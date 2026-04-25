@@ -1,0 +1,320 @@
+@page "/rrhh/estado-agente"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IConfiguration Configuration
+@rendermode InteractiveServer
+
+<PageTitle>Estado del agente</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver el estado del agente.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-start justify-content-between mb-3 gap-3 flex-wrap">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-broadcast-pin me-2"></i>Estado del agente</h1>
+                <p class="text-muted mb-0">Monitorea la salud de los agentes, heartbeats recientes, actividad de checadores y logs de sincronización.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-secondary" href="/rrhh/checadores"><i class="bi bi-hdd-network me-1"></i>Checadores</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/control-tiempo"><i class="bi bi-stopwatch me-1"></i>Control de tiempos</a>
+                <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>Actualizar</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (alertasHeartbeat > 0)
+        {
+            <div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span>Hay @alertasHeartbeat agente(s) sin heartbeat reciente.</span>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Agentes registrados</div><div class="fs-4 fw-bold">@agentes.Count</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Agentes activos</div><div class="fs-4 fw-bold">@agentes.Count(a => !a.TieneAlerta)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Alertas heartbeat</div><div class="fs-4 fw-bold">@alertasHeartbeat</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Checadores activos</div><div class="fs-4 fw-bold">@checadores.Count(c => c.IsActive)</div></div></div></div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-5">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-dark text-white">Estado de agentes</div>
+                    <div class="card-body p-0">
+                        @if (agentes.Count == 0)
+                        {
+                            <div class="p-3 text-muted">No hay heartbeats registrados todavía para esta empresa.</div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0 align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Agente</th>
+                                            <th>Heartbeat</th>
+                                            <th>Estado</th>
+                                            <th>Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in agentes)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.NombreAgente</div>
+                                                    <div class="small text-muted">@(item.Hostname ?? "—") · @(item.Version ?? "—")</div>
+                                                </td>
+                                                <td class="small">@item.UltimoHeartbeatLocalTexto</td>
+                                                <td><span class="badge @(item.TieneAlerta ? "bg-danger" : "bg-success")">@item.Estado</span></td>
+                                                <td class="small">@(string.IsNullOrWhiteSpace(item.UltimoError) ? "Sin errores" : item.UltimoError)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-primary text-white">Checadores</div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Nombre</th>
+                                        <th>Conexión</th>
+                                        <th>Últ. sync</th>
+                                        <th>Últ. evento</th>
+                                        <th>Activo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (checadores.Count == 0)
+                                    {
+                                        <tr><td colspan="5" class="text-center text-muted py-3">No hay checadores registrados.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in checadores)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.Nombre</div>
+                                                    <div class="small text-muted">@(item.NumeroSerie ?? "Sin serie")</div>
+                                                </td>
+                                                <td class="small">@(string.IsNullOrWhiteSpace(item.Ip) ? "—" : $"{item.Ip}:{item.Puerto}")</td>
+                                                <td class="small">@(item.UltimaSincronizacionUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Nunca")</td>
+                                                <td class="small">@(item.UltimoEventoLeido ?? "—")</td>
+                                                <td><span class="badge @(item.IsActive ? "bg-success" : "bg-secondary")">@(item.IsActive ? "Sí" : "No")</span></td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-secondary text-white">Logs recientes (últimos @RegistrosRecientesMaximos)</div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Nivel</th>
+                                        <th>Checador</th>
+                                        <th>Mensaje</th>
+                                        <th>Detalle</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (logs.Count == 0)
+                                    {
+                                        <tr><td colspan="5" class="text-center text-muted py-3">No hay logs recientes.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in logs)
+                                        {
+                                            <tr>
+                                                <td class="small">@item.FechaLocalTexto</td>
+                                                <td><span class="badge @ObtenerClaseNivel(item.Nivel)">@item.Nivel</span></td>
+                                                <td class="small">@(item.ChecadorNombre ?? "Agente")</td>
+                                                <td class="small fw-semibold">@item.Mensaje</td>
+                                                <td class="small">@(string.IsNullOrWhiteSpace(item.Detalle) ? "—" : item.Detalle)</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RrhhChecador> checadores = [];
+    private List<LogVm> logs = [];
+    private List<AgenteVm> agentes = [];
+    private bool _puedeVer;
+    private Guid _empresaId;
+    private bool cargando;
+    private string? error;
+    private int heartbeatStaleMinutes = 5;
+    private int alertasHeartbeat;
+    private static int RegistrosRecientesMaximos => 100;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        cargando = true;
+        error = null;
+
+        try
+        {
+            if (_empresaId == Guid.Empty)
+            {
+                error = "No hay empresa activa.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            heartbeatStaleMinutes = Math.Max(1, Configuration.GetValue<int?>("Asistencia:HeartbeatStaleMinutes") ?? 5);
+
+            checadores = await db.RrhhChecadores
+                .AsNoTracking()
+                .Where(c => c.EmpresaId == _empresaId)
+                .OrderByDescending(c => c.IsActive)
+                .ThenBy(c => c.Nombre)
+                .ToListAsync();
+
+            var logsDb = await db.RrhhLogsChecador
+                .AsNoTracking()
+                .Include(l => l.Checador)
+                .Where(l => l.EmpresaId == _empresaId)
+                .OrderByDescending(l => l.FechaUtc)
+                .Take(RegistrosRecientesMaximos)
+                .ToListAsync();
+
+            var estadosDb = await db.RrhhEstadosAgente
+                .AsNoTracking()
+                .Where(x => x.EmpresaId == _empresaId)
+                .OrderByDescending(x => x.UltimoHeartbeatUtc)
+                .ThenBy(x => x.NombreAgente)
+                .ToListAsync();
+
+            logs = logsDb.Select(l => new LogVm
+            {
+                FechaLocalTexto = l.FechaUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss"),
+                Nivel = string.IsNullOrWhiteSpace(l.Nivel) ? "Information" : l.Nivel,
+                ChecadorNombre = l.Checador?.Nombre,
+                Mensaje = l.Mensaje,
+                Detalle = l.Detalle
+            }).ToList();
+
+            agentes = estadosDb.Select(CrearAgenteVm).ToList();
+            alertasHeartbeat = agentes.Count(a => a.TieneAlerta);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private AgenteVm CrearAgenteVm(RrhhEstadoAgente estado)
+    {
+        var ultimoHeartbeatUtc = estado.UltimoHeartbeatUtc;
+        var tieneAlerta = !ultimoHeartbeatUtc.HasValue || DateTime.UtcNow - ultimoHeartbeatUtc.Value > TimeSpan.FromMinutes(heartbeatStaleMinutes);
+
+        return new AgenteVm
+        {
+            NombreAgente = estado.NombreAgente,
+            Hostname = estado.Hostname,
+            Version = estado.Version,
+            UltimoHeartbeatUtc = ultimoHeartbeatUtc,
+            UltimaEjecucionUtc = estado.UltimaEjecucionUtc,
+            MarcacionesLeidas = estado.MarcacionesLeidas,
+            MarcacionesEnviadas = estado.MarcacionesEnviadas,
+            UltimoError = estado.UltimoError,
+            Estado = tieneAlerta ? "Sin heartbeat reciente" : "Activo",
+            TieneAlerta = tieneAlerta
+        };
+    }
+
+    private static string ObtenerClaseNivel(string nivel)
+        => nivel.ToLowerInvariant() switch
+        {
+            "error" => "bg-danger",
+            "warning" => "bg-warning text-dark",
+            _ => "bg-info text-dark"
+        };
+
+    private sealed class AgenteVm
+    {
+        public string NombreAgente { get; set; } = string.Empty;
+        public string? Hostname { get; set; }
+        public string? Version { get; set; }
+        public DateTime? UltimoHeartbeatUtc { get; set; }
+        public DateTime? UltimaEjecucionUtc { get; set; }
+        public int MarcacionesLeidas { get; set; }
+        public int MarcacionesEnviadas { get; set; }
+        public string? UltimoError { get; set; }
+        public string Estado { get; set; } = string.Empty;
+        public bool TieneAlerta { get; set; }
+        public string UltimoHeartbeatLocalTexto => UltimoHeartbeatUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "Nunca";
+        public string UltimaEjecucionLocalTexto => UltimaEjecucionUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "Nunca";
+    }
+
+    private sealed class LogVm
+    {
+        public string FechaLocalTexto { get; set; } = string.Empty;
+        public string Nivel { get; set; } = string.Empty;
+        public string? ChecadorNombre { get; set; }
+        public string Mensaje { get; set; } = string.Empty;
+        public string? Detalle { get; set; }
+    }
+}

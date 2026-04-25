@@ -1,0 +1,735 @@
+@page "/contabilidad/cuentas-por-pagar"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Cuentas por Pagar</PageTitle>
+
+<div class="cxp-page">
+    @if (!_puedeVer)
+    {
+        <div class="cxp-alert-warn"><i class="bi bi-shield-lock me-2"></i>No tienes permisos para ver cuentas por pagar.</div>
+    }
+    else
+    {
+        <div class="cxp-header">
+            <div>
+                <h1 class="cxp-title"><i class="bi bi-receipt-cutoff me-2"></i>Cuentas por Pagar</h1>
+                <p class="cxp-subtitle">¿A quién le debes, cuánto y desde cuándo?</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="cxp-btn-new" @onclick="NuevaCuenta"><i class="bi bi-plus-circle me-1"></i>Nueva Cuenta</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(error)) { <div class="cxp-alert-danger"><i class="bi bi-exclamation-circle me-1"></i>@error</div> }
+        @if (!string.IsNullOrEmpty(ok)) { <div class="cxp-alert-ok"><i class="bi bi-check-circle me-1"></i>@ok</div> }
+
+        <div class="cxp-kpi-strip">
+            <div class="cxp-kpi" style="--kpi-accent:#ef4444;--kpi-bg:linear-gradient(135deg,#fef2f2,#fee2e2)">
+                <div class="cxp-kpi-icon-wrap"><i class="bi bi-cash-coin"></i></div>
+                <div class="cxp-kpi-value">@totalPendiente.ToString("C2")</div>
+                <div class="cxp-kpi-label">Por pagar</div>
+            </div>
+            <div class="cxp-kpi" style="--kpi-accent:#10b981;--kpi-bg:linear-gradient(135deg,#ecfdf5,#d1fae5)">
+                <div class="cxp-kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
+                <div class="cxp-kpi-value">@totalPagado.ToString("C2")</div>
+                <div class="cxp-kpi-label">Pagado</div>
+            </div>
+            <div class="cxp-kpi" style="--kpi-accent:#3b82f6;--kpi-bg:linear-gradient(135deg,#eff6ff,#dbeafe)">
+                <div class="cxp-kpi-icon-wrap"><i class="bi bi-building"></i></div>
+                <div class="cxp-kpi-value">@proveedoresConAdeudo</div>
+                <div class="cxp-kpi-label">Con adeudo</div>
+            </div>
+            <div class="cxp-kpi" style="--kpi-accent:@(montoVencido > 0 ? "#ef4444" : "#10b981");--kpi-bg:linear-gradient(135deg,@(montoVencido > 0 ? "#fef2f2,#fee2e2" : "#ecfdf5,#d1fae5"))">
+                <div class="cxp-kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                <div class="cxp-kpi-value">@montoVencido.ToString("C2")</div>
+                <div class="cxp-kpi-label">Vencido</div>
+            </div>
+        </div>
+
+        <div class="cxp-toolbar">
+            <div class="cxp-search-box">
+                <i class="bi bi-search"></i>
+                <input type="text" placeholder="Buscar proveedor..." @bind="textoBusqueda" @bind:event="oninput" @bind:after="AplicarFiltros" />
+            </div>
+            <select class="cxp-select" @bind="filtroEstatus" @bind:after="AplicarFiltros">
+                <option value="pendientes">Pendientes</option>
+                <option value="pagadas">Pagadas</option>
+                <option value="todas">Todas</option>
+            </select>
+            <select class="cxp-select" @bind="ordenarPor" @bind:after="AplicarFiltros">
+                <option value="mayor_adeudo">Mayor adeudo</option>
+                <option value="mayor_atraso">Mayor atraso</option>
+                <option value="nombre">Nombre A-Z</option>
+            </select>
+        </div>
+
+        @* ══ FORMULARIO NUEVA/EDITAR CUENTA ══ *@
+        @if (mostrarForm)
+        {
+            <div class="cxp-form-card">
+                <div class="cxp-form-title"><i class="bi bi-pencil-square me-1"></i>@(editando.Id == Guid.Empty ? "Nueva Cuenta por Pagar" : "Editar Cuenta")</div>
+                <EditForm Model="editando" OnValidSubmit="Guardar">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="cxp-lbl">Proveedor</label>
+                            <InputSelect class="form-select form-select-sm cxp-inp" @bind-Value="editando.ProveedorId">
+                                <option value="">— Seleccione —</option>
+                                @foreach (var p in proveedores) { <option value="@p.Id">@p.Nombre</option> }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Tipo</label>
+                            <InputSelect class="form-select form-select-sm cxp-inp" @bind-Value="editando.TipoDocumento">
+                                <option value="@TipoDocumentoCxP.Factura">Factura</option>
+                                <option value="@TipoDocumentoCxP.Nota">Nota</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="cxp-lbl">Nro. Documento</label>
+                            <InputText class="form-control form-control-sm cxp-inp" @bind-Value="editando.NumeroDocumento" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="cxp-lbl">Concepto</label>
+                            <InputText class="form-control form-control-sm cxp-inp" @bind-Value="editando.Concepto" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Emisión</label>
+                            <InputDate class="form-control form-control-sm cxp-inp" @bind-Value="editando.FechaEmision" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Vencimiento</label>
+                            <InputDate class="form-control form-control-sm cxp-inp" @bind-Value="editando.FechaVencimiento" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Subtotal</label>
+                            <InputNumber class="form-control form-control-sm cxp-inp" @bind-Value="editando.Subtotal" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Impuestos</label>
+                            <InputNumber class="form-control form-control-sm cxp-inp" @bind-Value="editando.Impuestos" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Total</label>
+                            <InputNumber class="form-control form-control-sm cxp-inp" @bind-Value="editando.Total" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="cxp-lbl">Estatus</label>
+                            <InputSelect class="form-select form-select-sm cxp-inp" @bind-Value="editando.Estatus">
+                                @foreach (var e in Enum.GetValues<EstatusCxP>()) { <option value="@e">@e</option> }
+                            </InputSelect>
+                        </div>
+                        <div class="col-12">
+                            <label class="cxp-lbl">Notas</label>
+                            <InputTextArea class="form-control form-control-sm cxp-inp" @bind-Value="editando.Notas" rows="2" />
+                        </div>
+                        <div class="col-12 d-flex gap-2 mt-1">
+                            <button class="cxp-btn-action btn-sm" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                            <button class="cxp-btn-cancel btn-sm" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
+                        </div>
+                    </div>
+                </EditForm>
+            </div>
+        }
+
+        @* ══ FORMULARIO DE PAGO ══ *@
+        @if (mostrarFormPago)
+        {
+            <div class="cxp-form-card" style="border-left:4px solid #3b82f6">
+                <div class="cxp-form-title" style="color:#1d4ed8"><i class="bi bi-cash-coin me-1"></i>Registrar Pago — @cuentaParaPago?.NumeroDocumento</div>
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label class="cxp-lbl">Saldo pendiente</label>
+                        <input class="form-control form-control-sm cxp-inp" value="@saldoPendiente.ToString("C2")" disabled />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="cxp-lbl">Importe</label>
+                        <InputNumber class="form-control form-control-sm cxp-inp" @bind-Value="nuevoPago.Monto" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="cxp-lbl">Fecha</label>
+                        <InputDate class="form-control form-control-sm cxp-inp" @bind-Value="nuevoPago.FechaPago" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="cxp-lbl">Método</label>
+                        <InputSelect class="form-select form-select-sm cxp-inp" @bind-Value="nuevoPago.MetodoPago">
+                            @foreach (var m in Enum.GetValues<MetodoPagoCxP>()) { <option value="@m">@m</option> }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="cxp-lbl">Referencia</label>
+                        <InputText class="form-control form-control-sm cxp-inp" @bind-Value="nuevoPago.Referencia" />
+                    </div>
+                    <div class="col-md-9">
+                        <label class="cxp-lbl">Notas</label>
+                        <InputText class="form-control form-control-sm cxp-inp" @bind-Value="nuevoPago.Notas" />
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <button class="cxp-btn-action btn-sm w-100" @onclick="GuardarPago" disabled="@guardando"><i class="bi bi-cash-coin me-1"></i>Pagar</button>
+                        <button class="cxp-btn-cancel btn-sm" @onclick="() => mostrarFormPago = false">✕</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @* ══ LISTADO POR PROVEEDOR ══ *@
+        @if (proveedoresAgrupados == null || !proveedoresAgrupados.Any())
+        {
+            @if (!mostrarForm)
+            {
+                <div class="cxp-empty"><i class="bi bi-inbox" style="font-size:1.8rem;opacity:.3"></i><span>No hay cuentas @(filtroEstatus == "pendientes" ? "pendientes" : filtroEstatus == "pagadas" ? "pagadas" : "registradas").</span></div>
+            }
+        }
+        else
+        {
+            @foreach (var prov in proveedoresAgrupados)
+            {
+                var isExpanded = expandedProveedor == prov.ProveedorId;
+                var atrasoColor = GetAtrasoColor(prov.MayorDiasAtraso);
+                var pctPagado = prov.Total > 0 ? Math.Min(100, (int)Math.Round((double)prov.TotalPagado / (double)prov.Total * 100)) : 0;
+                var barColor = prov.Saldo <= 0 ? "#10b981" : prov.TotalPagado > 0 ? "#f59e0b" : "#ef4444";
+
+                <div class="cxp-card @(isExpanded ? "cxp-expanded" : "") @(prov.Saldo <= 0 ? "cxp-card-paid" : "")">
+                    <div class="cxp-card-row" @onclick="() => ToggleProveedor(prov.ProveedorId)">
+                        <div class="cxp-card-left">
+                            <div class="cxp-avatar" style="background:@(prov.Saldo <= 0 ? "#10b981" : "#7c3aed")">@prov.ProveedorNombre[..1]</div>
+                            <div>
+                                <div class="cxp-card-name">@prov.ProveedorNombre</div>
+                                <div class="cxp-card-meta">@prov.Cuentas.Count cuenta@(prov.Cuentas.Count != 1 ? "s" : "")</div>
+                            </div>
+                        </div>
+                        <div class="cxp-card-nums">
+                            <div class="cxp-num-block">
+                                <span class="cxp-num-label">Total</span>
+                                <span class="cxp-num-val">@prov.Total.ToString("C2")</span>
+                            </div>
+                            <div class="cxp-num-block">
+                                <span class="cxp-num-label">Pagado</span>
+                                <span class="cxp-num-val" style="color:#10b981">@prov.TotalPagado.ToString("C2")</span>
+                            </div>
+                            <div class="cxp-num-block">
+                                <span class="cxp-num-label">Saldo</span>
+                                <span class="cxp-num-val cxp-num-saldo" style="color:@(prov.Saldo > 0 ? "#ef4444" : "#10b981")">@prov.Saldo.ToString("C2")</span>
+                            </div>
+                            <div class="cxp-num-block cxp-num-atraso">
+                                @if (prov.Saldo > 0 && prov.MayorDiasAtraso > 0)
+                                {
+                                    <span class="cxp-badge-atraso" style="background:@atrasoColor">@prov.MayorDiasAtraso d</span>
+                                }
+                                else if (prov.Saldo > 0)
+                                {
+                                    <span class="cxp-badge-atraso" style="background:#10b981">OK</span>
+                                }
+                                else
+                                {
+                                    <span class="cxp-badge-estado cxp-badge-pagado"><i class="bi bi-check-lg"></i></span>
+                                }
+                            </div>
+                            <div class="cxp-num-block cxp-num-estado">
+                                @if (prov.Saldo <= 0)
+                                {
+                                    <span class="cxp-badge-estado cxp-badge-pagado">Pagado</span>
+                                }
+                                else if (prov.TotalPagado > 0)
+                                {
+                                    <span class="cxp-badge-estado cxp-badge-parcial">Parcial</span>
+                                }
+                                else
+                                {
+                                    <span class="cxp-badge-estado cxp-badge-pendiente">Pendiente</span>
+                                }
+                            </div>
+                            <i class="bi @(isExpanded ? "bi-chevron-up" : "bi-chevron-down") cxp-chevron"></i>
+                        </div>
+                    </div>
+                    <div class="cxp-progress-track"><div class="cxp-progress-bar" style="width:@(pctPagado)%;background:@barColor"></div></div>
+
+                    @if (isExpanded)
+                    {
+                        <div class="cxp-detail-panel">
+                            @foreach (var cuenta in prov.Cuentas)
+                            {
+                                var cSaldo = cuenta.Total - cuenta.PagadoTotal;
+                                var cColor = cSaldo <= 0 ? "#10b981" : cSaldo < cuenta.Total ? "#f59e0b" : "#ef4444";
+                                var diasAtraso = cuenta.DiasAtraso;
+                                var isDetExpanded = expandedCuenta == cuenta.Id;
+
+                                <div class="cxp-doc @(cSaldo <= 0 ? "cxp-doc-paid" : "")">
+                                    <div class="cxp-doc-head" @onclick="() => ToggleCuenta(cuenta.Id)" @onclick:stopPropagation="true">
+                                        <div class="cxp-doc-left">
+                                            <span class="cxp-doc-tipo">@cuenta.TipoDocumento</span>
+                                            <span class="cxp-doc-num">@cuenta.NumeroDocumento</span>
+                                            @if (!string.IsNullOrWhiteSpace(cuenta.Concepto))
+                                            {
+                                                <span class="cxp-doc-concepto">@cuenta.Concepto</span>
+                                            }
+                                            <span class="cxp-doc-date"><i class="bi bi-calendar3 me-1"></i>@cuenta.FechaEmision.ToString("dd/MM/yyyy")</span>
+                                            @if (cuenta.FechaVencimiento.HasValue)
+                                            {
+                                                <span class="cxp-doc-date" style="color:@(diasAtraso > 0 ? "#ef4444" : "#6b7280")">
+                                                    <i class="bi bi-clock me-1"></i>Vence @cuenta.FechaVencimiento.Value.ToString("dd/MM/yyyy")
+                                                </span>
+                                            }
+                                        </div>
+                                        <div class="cxp-doc-right">
+                                            <span class="cxp-doc-total">@cuenta.Total.ToString("C2")</span>
+                                            <span class="cxp-doc-saldo" style="color:@cColor">@cSaldo.ToString("C2")</span>
+                                            @if (cSaldo > 0 && diasAtraso > 0)
+                                            {
+                                                <span class="cxp-badge-atraso-sm" style="background:@GetAtrasoColor(diasAtraso)">@diasAtraso d</span>
+                                            }
+                                            @if (_puedeEditar && cSaldo > 0)
+                                            {
+                                                <button class="cxp-btn-pay-sm" @onclick="() => AbrirPago(cuenta.CuentaOriginal)" @onclick:stopPropagation="true" title="Pagar"><i class="bi bi-cash-coin"></i></button>
+                                            }
+                                            @if (_puedeEditar)
+                                            {
+                                                <button class="cxp-btn-edit-sm" @onclick="() => EditarCuenta(cuenta.CuentaOriginal)" @onclick:stopPropagation="true" title="Editar"><i class="bi bi-pencil"></i></button>
+                                            }
+                                            <i class="bi @(isDetExpanded ? "bi-chevron-up" : "bi-chevron-down") cxp-chevron-sm"></i>
+                                        </div>
+                                    </div>
+
+                                    @if (isDetExpanded && cuenta.Pagos.Any())
+                                    {
+                                        <div class="cxp-doc-body">
+                                            <div class="cxp-section-title">Pagos realizados</div>
+                                            <table class="cxp-pay-table">
+                                                <thead><tr><th>#</th><th>Fecha</th><th>Método</th><th>Referencia</th><th>Notas</th><th class="text-end">Importe</th></tr></thead>
+                                                <tbody>
+                                                    @{ var pi = 1; }
+                                                    @foreach (var pago in cuenta.Pagos.OrderBy(p => p.FechaPago))
+                                                    {
+                                                        <tr>
+                                                            <td class="text-muted">@pi</td>
+                                                            <td>@pago.FechaPago.ToString("dd/MM/yyyy")</td>
+                                                            <td><span class="cxp-forma-pill">@pago.MetodoPago</span></td>
+                                                            <td class="fw-semibold">@(pago.Referencia ?? "—")</td>
+                                                            <td style="color:#6b7280">@(pago.Notas ?? "—")</td>
+                                                            <td class="text-end fw-bold" style="color:#10b981">@pago.Monto.ToString("C2")</td>
+                                                        </tr>
+                                                        pi++;
+                                                    }
+                                                </tbody>
+                                                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total pagado</td><td class="text-end fw-bold">@cuenta.PagadoTotal.ToString("C2")</td></tr></tfoot>
+                                            </table>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    }
+</div>
+
+<style>
+    .cxp-page { padding: .75rem; max-width: 1200px; margin: 0 auto; font-family: 'Segoe UI', system-ui, sans-serif; }
+    @@media (min-width:768px) { .cxp-page { padding: 1.25rem 1.75rem; } }
+
+    .cxp-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: .75rem; flex-wrap: wrap; gap: .5rem; }
+    .cxp-title { font-size: 1.35rem; font-weight: 800; color: #1e3a5f; margin: 0; letter-spacing: -.01em; }
+    .cxp-subtitle { font-size: .72rem; color: #94a3b8; margin-top: .1rem; }
+    .cxp-btn-new { background: linear-gradient(135deg,#1e3a5f,#2563eb); color: #fff; border: none; border-radius: 7px; font-size: .72rem; font-weight: 600; padding: .35rem .75rem; cursor: pointer; transition: opacity .1s; }
+    .cxp-btn-new:hover { opacity: .88; }
+
+    .cxp-alert-warn { background: #fef3c7; color: #92400e; padding: .55rem .85rem; border-radius: 8px; font-size: .78rem; font-weight: 600; margin-top: .75rem; }
+    .cxp-alert-danger { background: #fee2e2; color: #991b1b; padding: .45rem .75rem; border-radius: 8px; font-size: .75rem; font-weight: 600; margin-bottom: .5rem; }
+    .cxp-alert-ok { background: #d1fae5; color: #065f46; padding: .45rem .75rem; border-radius: 8px; font-size: .75rem; font-weight: 600; margin-bottom: .5rem; }
+
+    /* KPI */
+    .cxp-kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: .6rem; margin-bottom: .75rem; }
+    @@media (max-width:767px) { .cxp-kpi-strip { grid-template-columns: repeat(2,1fr); } }
+    .cxp-kpi { background: var(--kpi-bg); border-radius: 10px; padding: .7rem .85rem; position: relative; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+    .cxp-kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--kpi-accent); }
+    .cxp-kpi-icon-wrap { width: 28px; height: 28px; border-radius: 8px; background: var(--kpi-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: .72rem; margin-bottom: .35rem; opacity: .85; }
+    .cxp-kpi-value { font-size: 1.15rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+    .cxp-kpi-label { font-size: .58rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-top: .15rem; font-weight: 600; }
+
+    /* Toolbar */
+    .cxp-toolbar { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .cxp-search-box { position: relative; flex: 1; min-width: 160px; max-width: 260px; }
+    .cxp-search-box i { position: absolute; left: .5rem; top: 50%; transform: translateY(-50%); font-size: .68rem; color: #94a3b8; pointer-events: none; }
+    .cxp-search-box input { width: 100%; font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem .28rem 1.6rem; background: #fff; color: #1e293b; height: 28px; transition: border .15s, box-shadow .15s; }
+    .cxp-search-box input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); outline: none; }
+    .cxp-select { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem; background: #fff; color: #1e293b; height: 28px; cursor: pointer; }
+
+    /* Empty */
+    .cxp-empty { display: flex; align-items: center; justify-content: center; gap: .5rem; padding: 3rem 1rem; color: #94a3b8; font-size: .82rem; background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; }
+
+    /* Form cards */
+    .cxp-form-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: .75rem; margin-bottom: .75rem; box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .cxp-form-title { font-size: .82rem; font-weight: 800; color: #1e3a5f; margin-bottom: .5rem; }
+    .cxp-lbl { font-size: .6rem; font-weight: 700; color: #475569; margin-bottom: .1rem; display: block; }
+    .cxp-inp { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
+    .cxp-inp:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+    .cxp-btn-action { background: linear-gradient(135deg,#1e3a5f,#2563eb); color: #fff; border: none; border-radius: 7px; font-size: .72rem; font-weight: 600; padding: .35rem .65rem; cursor: pointer; }
+    .cxp-btn-action:hover { opacity: .88; color: #fff; }
+    .cxp-btn-cancel { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; border-radius: 7px; font-size: .72rem; font-weight: 600; padding: .35rem .65rem; cursor: pointer; }
+
+    /* Provider cards */
+    .cxp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: .5rem; overflow: hidden; transition: box-shadow .15s, border-color .15s; }
+    .cxp-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .cxp-expanded { border-color: #a78bfa; box-shadow: 0 2px 12px rgba(139,92,246,.1); }
+    .cxp-card-paid { opacity: .55; }
+    .cxp-card-paid:hover { opacity: .75; }
+
+    .cxp-card-row { display: flex; align-items: center; justify-content: space-between; padding: .6rem .85rem; cursor: pointer; gap: .5rem; flex-wrap: wrap; }
+    .cxp-card-left { display: flex; align-items: center; gap: .6rem; min-width: 200px; }
+    .cxp-avatar { width: 30px; height: 30px; border-radius: 8px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .7rem; flex-shrink: 0; }
+    .cxp-card-name { font-size: .82rem; font-weight: 700; color: #0f172a; line-height: 1.15; }
+    .cxp-card-meta { font-size: .62rem; color: #94a3b8; }
+
+    .cxp-card-nums { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
+    .cxp-num-block { text-align: right; }
+    .cxp-num-label { display: block; font-size: .52rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+    .cxp-num-val { display: block; font-size: .8rem; font-weight: 600; color: #334155; }
+    .cxp-num-saldo { font-weight: 800; font-size: .85rem; }
+    .cxp-num-atraso { min-width: 42px; text-align: center; }
+    .cxp-num-estado { min-width: 58px; text-align: center; }
+    .cxp-chevron { font-size: .65rem; color: #94a3b8; margin-left: .2rem; }
+
+    .cxp-badge-atraso { color: #fff; font-size: .58rem; padding: .15rem .4rem; border-radius: 10px; font-weight: 700; display: inline-block; }
+    .cxp-badge-atraso-sm { color: #fff; font-size: .52rem; padding: .1rem .3rem; border-radius: 8px; font-weight: 700; }
+    .cxp-badge-estado { font-size: .58rem; padding: .15rem .45rem; border-radius: 10px; font-weight: 700; display: inline-block; }
+    .cxp-badge-pagado { background: #d1fae5; color: #065f46; }
+    .cxp-badge-parcial { background: #fef3c7; color: #92400e; }
+    .cxp-badge-pendiente { background: #fee2e2; color: #991b1b; }
+
+    .cxp-progress-track { height: 3px; background: #f1f5f9; }
+    .cxp-progress-bar { height: 100%; transition: width .35s ease; border-radius: 0 3px 3px 0; }
+
+    .cxp-detail-panel { padding: .5rem .75rem .65rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+
+    /* Document rows */
+    .cxp-doc { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: .4rem; overflow: hidden; background: #fff; }
+    .cxp-doc-paid { background: #f0fdf4; border-color: #bbf7d0; }
+    .cxp-doc-head { display: flex; align-items: center; justify-content: space-between; padding: .45rem .7rem; cursor: pointer; gap: .35rem; flex-wrap: wrap; transition: background .1s; }
+    .cxp-doc-head:hover { background: #f8fafc; }
+    .cxp-doc-left { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+    .cxp-doc-right { display: flex; align-items: center; gap: .4rem; }
+    .cxp-doc-tipo { font-size: .52rem; background: #e0e7ff; color: #3730a3; padding: .1rem .35rem; border-radius: 6px; font-weight: 700; text-transform: uppercase; }
+    .cxp-doc-num { font-size: .78rem; font-weight: 700; color: #1e3a5f; }
+    .cxp-doc-concepto { font-size: .65rem; color: #64748b; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cxp-doc-date { font-size: .65rem; color: #94a3b8; }
+    .cxp-doc-total { font-size: .78rem; font-weight: 700; color: #0f172a; }
+    .cxp-doc-saldo { font-size: .72rem; font-weight: 700; }
+    .cxp-chevron-sm { font-size: .6rem; color: #94a3b8; }
+    .cxp-btn-pay-sm { width: 22px; height: 22px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: .6rem; border: 1px solid #86efac; background: #ecfdf5; color: #16a34a; cursor: pointer; }
+    .cxp-btn-pay-sm:hover { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .cxp-btn-edit-sm { width: 22px; height: 22px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: .6rem; border: 1px solid #93c5fd; background: #eff6ff; color: #2563eb; cursor: pointer; }
+    .cxp-btn-edit-sm:hover { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+    .cxp-doc-body { padding: .55rem .7rem; border-top: 1px solid #f1f5f9; }
+    .cxp-section-title { font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #475569; border-bottom: 2px solid #e2e8f0; padding-bottom: .2rem; margin-bottom: .5rem; }
+    .cxp-pay-table { width: 100%; border-collapse: collapse; font-size: .72rem; margin-bottom: .3rem; }
+    .cxp-pay-table thead th { background: #f1f5f9; color: #475569; font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: .3rem .45rem; border-bottom: 2px solid #e2e8f0; }
+    .cxp-pay-table tbody td { padding: .3rem .45rem; border-bottom: 1px solid #f8fafc; vertical-align: middle; }
+    .cxp-pay-table tfoot td { background: #f1f5f9; padding: .3rem .45rem; color: #1e3a5f; }
+    .cxp-forma-pill { background: #eef2ff; color: #3730a3; font-size: .56rem; padding: .1rem .35rem; border-radius: 6px; font-weight: 600; }
+</style>
+
+@code {
+    private List<Proveedor> proveedores = [];
+    private List<ProveedorAgrupado>? proveedoresAgrupados;
+    private List<ProveedorAgrupado> todosProveedores = [];
+    private CuentaPorPagar editando = new();
+    private bool mostrarForm, mostrarFormPago, guardando;
+    private string? error, ok;
+
+    private CuentaPorPagar? cuentaParaPago;
+    private PagoCxP nuevoPago = new();
+    private decimal saldoPendiente;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+
+    private string textoBusqueda = "";
+    private string filtroEstatus = "pendientes";
+    private string ordenarPor = "mayor_adeudo";
+    private Guid? expandedProveedor;
+    private Guid? expandedCuenta;
+
+    private decimal totalPendiente;
+    private decimal totalPagado;
+    private int proveedoresConAdeudo;
+    private decimal montoVencido;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+            await Cargar();
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "cxp.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "cxp.editar");
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var lista = await db.CuentasPorPagar
+            .Include(c => c.Proveedor)
+            .Include(c => c.Pagos)
+            .OrderByDescending(c => c.FechaEmision)
+            .AsNoTracking()
+            .ToListAsync();
+        proveedores = await db.Proveedores.Where(p => p.IsActive).OrderBy(p => p.Nombre).AsNoTracking().ToListAsync();
+
+        var cuentasView = lista.Select(c =>
+        {
+            var pagadoC = c.Pagos.Sum(p => p.Monto);
+            var saldoC = c.Total - pagadoC;
+            var diasAtraso = 0;
+            if (saldoC > 0 && c.FechaVencimiento.HasValue && c.FechaVencimiento.Value.Date < DateTime.Today)
+            {
+                diasAtraso = (DateTime.Today - c.FechaVencimiento.Value.Date).Days;
+            }
+
+            return new CuentaViewModel
+            {
+                Id = c.Id,
+                ProveedorId = c.ProveedorId,
+                ProveedorNombre = c.Proveedor.Nombre,
+                TipoDocumento = c.TipoDocumento,
+                NumeroDocumento = c.NumeroDocumento,
+                Concepto = c.Concepto,
+                FechaEmision = c.FechaEmision,
+                FechaVencimiento = c.FechaVencimiento,
+                DiasAtraso = diasAtraso,
+                Total = c.Total,
+                PagadoTotal = pagadoC,
+                Pagos = c.Pagos.ToList(),
+                CuentaOriginal = c
+            };
+        }).ToList();
+
+        var sumTotal = cuentasView.Sum(c => c.Total);
+        totalPagado = cuentasView.Sum(c => c.PagadoTotal);
+        totalPendiente = Math.Max(0, sumTotal - totalPagado);
+        montoVencido = cuentasView.Where(c => c.DiasAtraso > 0).Sum(c => c.Total - c.PagadoTotal);
+        montoVencido = Math.Max(0, montoVencido);
+
+        todosProveedores = cuentasView
+            .GroupBy(c => new { c.ProveedorId, c.ProveedorNombre })
+            .Select(g =>
+            {
+                var total = g.Sum(c => c.Total);
+                var pagado = g.Sum(c => c.PagadoTotal);
+                var mayorAtraso = g.Where(c => c.Total - c.PagadoTotal > 0).Select(c => c.DiasAtraso).DefaultIfEmpty(0).Max();
+
+                return new ProveedorAgrupado
+                {
+                    ProveedorId = g.Key.ProveedorId,
+                    ProveedorNombre = g.Key.ProveedorNombre,
+                    Total = total,
+                    TotalPagado = pagado,
+                    Saldo = Math.Max(0, total - pagado),
+                    MayorDiasAtraso = mayorAtraso,
+                    Cuentas = g.OrderByDescending(c => c.FechaEmision).ToList()
+                };
+            })
+            .ToList();
+
+        proveedoresConAdeudo = todosProveedores.Count(p => p.Saldo > 0);
+        AplicarFiltros();
+    }
+
+    private void AplicarFiltros()
+    {
+        var lista = todosProveedores.AsEnumerable();
+
+        lista = filtroEstatus switch
+        {
+            "pendientes" => lista.Where(p => p.Saldo > 0),
+            "pagadas" => lista.Where(p => p.Saldo <= 0),
+            _ => lista
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var busq = textoBusqueda.Trim();
+            lista = lista.Where(p => p.ProveedorNombre.Contains(busq, StringComparison.OrdinalIgnoreCase));
+        }
+
+        lista = ordenarPor switch
+        {
+            "mayor_adeudo" => lista.OrderByDescending(p => p.Saldo),
+            "mayor_atraso" => lista.OrderByDescending(p => p.MayorDiasAtraso).ThenByDescending(p => p.Saldo),
+            "nombre" => lista.OrderBy(p => p.ProveedorNombre),
+            _ => lista.OrderByDescending(p => p.Saldo)
+        };
+
+        proveedoresAgrupados = lista.ToList();
+    }
+
+    private void ToggleProveedor(Guid id)
+    {
+        if (expandedProveedor == id) { expandedProveedor = null; expandedCuenta = null; }
+        else { expandedProveedor = id; expandedCuenta = null; }
+    }
+
+    private void ToggleCuenta(Guid id) => expandedCuenta = expandedCuenta == id ? null : id;
+
+    private void NuevaCuenta()
+    {
+        if (!_puedeEditar) { error = "No tienes permisos para crear cuentas por pagar."; return; }
+        error = ok = null;
+        editando = new() { Id = Guid.Empty, FechaEmision = DateTime.Today };
+        mostrarForm = true; mostrarFormPago = false;
+    }
+
+    private void EditarCuenta(CuentaPorPagar c)
+    {
+        if (!_puedeEditar) { error = "No tienes permisos para editar cuentas por pagar."; return; }
+        error = ok = null;
+        editando = new()
+        {
+            Id = c.Id, ProveedorId = c.ProveedorId, TipoDocumento = c.TipoDocumento,
+            NumeroDocumento = c.NumeroDocumento, Concepto = c.Concepto,
+            FechaEmision = c.FechaEmision, FechaVencimiento = c.FechaVencimiento,
+            Subtotal = c.Subtotal, Impuestos = c.Impuestos, Total = c.Total,
+            Estatus = c.Estatus, Notas = c.Notas
+        };
+        mostrarForm = true; mostrarFormPago = false;
+    }
+
+    private void AbrirPago(CuentaPorPagar c)
+    {
+        if (!_puedeEditar) { error = "No tienes permisos para registrar pagos."; return; }
+        error = ok = null;
+        cuentaParaPago = c;
+        saldoPendiente = c.Total - c.Pagos.Sum(p => p.Monto);
+        nuevoPago = new() { FechaPago = DateTime.Today, Monto = saldoPendiente };
+        mostrarFormPago = true; mostrarForm = false;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos para guardar cuentas por pagar."; return; }
+            if (editando.ProveedorId == Guid.Empty || string.IsNullOrWhiteSpace(editando.NumeroDocumento))
+            { error = "Proveedor y número de documento son requeridos."; return; }
+
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId);
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (editando.Id == Guid.Empty)
+            {
+                var nueva = new CuentaPorPagar
+                {
+                    EmpresaId = empresaId, ProveedorId = editando.ProveedorId,
+                    TipoDocumento = editando.TipoDocumento, NumeroDocumento = editando.NumeroDocumento.Trim(),
+                    Concepto = editando.Concepto?.Trim(), FechaEmision = editando.FechaEmision,
+                    FechaVencimiento = editando.FechaVencimiento, Subtotal = editando.Subtotal,
+                    Impuestos = editando.Impuestos, Total = editando.Total,
+                    Estatus = editando.Estatus, Notas = editando.Notas?.Trim()
+                };
+                db.CuentasPorPagar.Add(nueva);
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Crear cuenta por pagar", nameof(CuentaPorPagar), nueva.Id, $"Cuenta {nueva.NumeroDocumento} creada.", empresaId);
+                ok = "Guardado."; mostrarForm = false; await Cargar();
+            }
+            else
+            {
+                var ex = await db.CuentasPorPagar.FirstOrDefaultAsync(c => c.Id == editando.Id);
+                if (ex == null) return;
+                ex.ProveedorId = editando.ProveedorId; ex.TipoDocumento = editando.TipoDocumento;
+                ex.NumeroDocumento = editando.NumeroDocumento.Trim(); ex.Concepto = editando.Concepto?.Trim();
+                ex.FechaEmision = editando.FechaEmision; ex.FechaVencimiento = editando.FechaVencimiento;
+                ex.Subtotal = editando.Subtotal; ex.Impuestos = editando.Impuestos; ex.Total = editando.Total;
+                ex.Estatus = editando.Estatus; ex.Notas = editando.Notas?.Trim(); ex.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Editar cuenta por pagar", nameof(CuentaPorPagar), ex.Id, $"Cuenta {ex.NumeroDocumento} actualizada.", empresaId);
+                ok = "Guardado."; mostrarForm = false; await Cargar();
+            }
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task GuardarPago()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos para registrar pagos."; return; }
+            if (cuentaParaPago == null || nuevoPago.Monto <= 0) { error = "El importe debe ser mayor a cero."; return; }
+            if (nuevoPago.Monto > saldoPendiente) { error = "El importe no puede exceder el saldo pendiente."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.PagosCxP.Add(new PagoCxP
+            {
+                CuentaPorPagarId = cuentaParaPago.Id, Monto = nuevoPago.Monto,
+                FechaPago = nuevoPago.FechaPago, MetodoPago = nuevoPago.MetodoPago,
+                Referencia = nuevoPago.Referencia?.Trim(), Notas = nuevoPago.Notas?.Trim()
+            });
+
+            var cuenta = await db.CuentasPorPagar.Include(c => c.Pagos).FirstAsync(c => c.Id == cuentaParaPago.Id);
+            var totalPag = cuenta.Pagos.Sum(p => p.Monto) + nuevoPago.Monto;
+            cuenta.Estatus = totalPag >= cuenta.Total ? EstatusCxP.Pagada : EstatusCxP.ParcialmentePagada;
+            cuenta.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Registrar pago CxP", nameof(PagoCxP), null, $"Pago {nuevoPago.Monto:C2} registrado para cuenta {cuenta.NumeroDocumento}.", cuenta.EmpresaId);
+            ok = "Pago registrado."; mostrarFormPago = false;
+            var keepProv = expandedProveedor;
+            await Cargar();
+            expandedProveedor = keepProv;
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private static string GetAtrasoColor(int dias) => dias switch
+    {
+        <= 0 => "#10b981",
+        <= 30 => "#f59e0b",
+        _ => "#ef4444"
+    };
+
+    private class CuentaViewModel
+    {
+        public Guid Id { get; set; }
+        public Guid ProveedorId { get; set; }
+        public string ProveedorNombre { get; set; } = "";
+        public TipoDocumentoCxP TipoDocumento { get; set; }
+        public string NumeroDocumento { get; set; } = "";
+        public string? Concepto { get; set; }
+        public DateTime FechaEmision { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public int DiasAtraso { get; set; }
+        public decimal Total { get; set; }
+        public decimal PagadoTotal { get; set; }
+        public List<PagoCxP> Pagos { get; set; } = [];
+        public CuentaPorPagar CuentaOriginal { get; set; } = null!;
+    }
+
+    private class ProveedorAgrupado
+    {
+        public Guid ProveedorId { get; set; }
+        public string ProveedorNombre { get; set; } = "";
+        public decimal Total { get; set; }
+        public decimal TotalPagado { get; set; }
+        public decimal Saldo { get; set; }
+        public int MayorDiasAtraso { get; set; }
+        public List<CuentaViewModel> Cuentas { get; set; } = [];
+    }
+}

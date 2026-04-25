@@ -1,0 +1,444 @@
+@page "/rrhh/ausencias"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Ausencias</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver ausencias.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-calendar-x me-2"></i>Ausencias</h1>
+                <p class="text-muted mb-0">Gestiona vacaciones y permisos con historial por empleado.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nueva ausencia</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Vacaciones</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Vacaciones)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Permisos</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Permiso)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Aprobadas</div><div class="fs-4 fw-bold">@lista.Count(a => a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Días vacaciones aprobados</div><div class="fs-4 fw-bold">@lista.Where(a => a.Tipo == TipoAusenciaRrhh.Vacaciones && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)).Sum(a => a.Dias)</div></div></div></div>
+        </div>
+
+        @if (mostrarForm)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white"><strong>@(editando.Id == Guid.Empty ? "Nueva ausencia" : "Editar ausencia")</strong></div>
+                <div class="card-body">
+                    <EditForm Model="editando" OnValidSubmit="GuardarAsync">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Empleado</label>
+                                <InputSelect class="form-select" @bind-Value="editando.EmpleadoId">
+                                    <option value="@Guid.Empty">Seleccione...</option>
+                                    @foreach (var empleado in empleados)
+                                    {
+                                        <option value="@empleado.Id">@empleado.NombreCompleto</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Tipo</label>
+                                <InputSelect class="form-select" @bind-Value="editando.Tipo" @bind-Value:after="OnTipoChangedAsync">
+                                    <option value="@TipoAusenciaRrhh.Vacaciones">Vacaciones</option>
+                                    <option value="@TipoAusenciaRrhh.Permiso">Permiso</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Estatus</label>
+                                <InputSelect class="form-select" @bind-Value="editando.Estatus">
+                                    @foreach (var estatus in Enum.GetValues<EstatusAusenciaRrhh>())
+                                    {
+                                        <option value="@estatus">@estatus</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Inicio</label>
+                                <InputDate class="form-control" @bind-Value="fechaInicioCaptura" @bind-Value:after="OnFechaChangedAsync" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Fin</label>
+                                <InputDate class="form-control" @bind-Value="fechaFinCaptura" @bind-Value:after="OnFechaChangedAsync" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Días</label>
+                                <InputNumber class="form-control" @bind-Value="editando.Dias" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Horas</label>
+                                <InputNumber class="form-control" @bind-Value="editando.Horas" />
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <div class="form-check mb-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.ConGocePago" disabled="@(editando.Tipo == TipoAusenciaRrhh.Vacaciones)" />
+                                    <label class="form-check-label">Con goce</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Motivo</label>
+                                <InputText class="form-control" @bind-Value="editando.Motivo" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Observaciones</label>
+                                <InputText class="form-control" @bind-Value="editando.Observaciones" />
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar</button>
+                                <button class="btn btn-outline-secondary" type="button" @onclick="CerrarFormulario">Cancelar</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Empleado</th>
+                            <th>Tipo</th>
+                            <th>Estatus</th>
+                            <th>Rango</th>
+                            <th class="text-center">Días</th>
+                            <th class="text-center">Horas</th>
+                            <th>Goce</th>
+                            <th>Motivo</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (lista.Count == 0)
+                        {
+                            <tr><td colspan="9" class="text-center text-muted py-4">No hay ausencias registradas.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in lista)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@item.NombreEmpleado</div>
+                                        <div class="small text-muted">@(string.IsNullOrWhiteSpace(item.AprobadoPor) ? "—" : $"Aprobó: {item.AprobadoPor}")</div>
+                                    </td>
+                                    <td>@item.Tipo</td>
+                                    <td><span class="badge @ObtenerClaseEstatus(item.Estatus)">@item.Estatus</span></td>
+                                    <td>@item.FechaInicio.ToString("dd/MM/yyyy") - @item.FechaFin.ToString("dd/MM/yyyy")</td>
+                                    <td class="text-center">@item.Dias</td>
+                                    <td class="text-center">@item.Horas.ToString("0.##")</td>
+                                    <td>@(item.ConGocePago ? "Sí" : "No")</td>
+                                    <td>
+                                        <div>@(string.IsNullOrWhiteSpace(item.Motivo) ? "—" : item.Motivo)</div>
+                                        @if (!string.IsNullOrWhiteSpace(item.Observaciones))
+                                        {
+                                            <div class="small text-muted">@item.Observaciones</div>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (_puedeEditar)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item)"><i class="bi bi-pencil"></i></button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Empleado> empleados = [];
+    private List<AusenciaListadoVm> lista = [];
+    private RrhhAusencia editando = new();
+    private DateTime fechaInicioCaptura = DateTime.Today;
+    private DateTime fechaFinCaptura = DateTime.Today;
+    private bool mostrarForm;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        empleados = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+
+        lista = await db.RrhhAusencias
+            .AsNoTracking()
+            .Include(a => a.Empleado)
+            .Where(a => a.EmpresaId == _empresaId && a.IsActive)
+            .OrderByDescending(a => a.FechaInicio)
+            .ThenByDescending(a => a.CreatedAt)
+            .Select(a => new AusenciaListadoVm
+            {
+                Id = a.Id,
+                EmpleadoId = a.EmpleadoId,
+                NombreEmpleado = a.Empleado.NombreCompleto,
+                Tipo = a.Tipo,
+                Estatus = a.Estatus,
+                FechaInicio = a.FechaInicio,
+                FechaFin = a.FechaFin,
+                Dias = a.Dias,
+                Horas = a.Horas,
+                ConGocePago = a.ConGocePago,
+                Motivo = a.Motivo,
+                Observaciones = a.Observaciones,
+                FechaAprobacion = a.FechaAprobacion,
+                AprobadoPor = a.AprobadoPor
+            })
+            .ToListAsync();
+    }
+
+    private void Nuevo()
+    {
+        error = ok = null;
+        editando = new RrhhAusencia
+        {
+            Tipo = TipoAusenciaRrhh.Vacaciones,
+            Estatus = EstatusAusenciaRrhh.Solicitada,
+            ConGocePago = true,
+            Dias = 1
+        };
+        fechaInicioCaptura = DateTime.Today;
+        fechaFinCaptura = DateTime.Today;
+        mostrarForm = true;
+    }
+
+    private void Editar(AusenciaListadoVm item)
+    {
+        error = ok = null;
+        editando = new RrhhAusencia
+        {
+            Id = item.Id,
+            EmpleadoId = item.EmpleadoId,
+            Tipo = item.Tipo,
+            Estatus = item.Estatus,
+            FechaInicio = item.FechaInicio,
+            FechaFin = item.FechaFin,
+            Dias = item.Dias,
+            Horas = item.Horas,
+            ConGocePago = item.ConGocePago,
+            Motivo = item.Motivo,
+            Observaciones = item.Observaciones,
+            FechaAprobacion = item.FechaAprobacion,
+            AprobadoPor = item.AprobadoPor
+        };
+        fechaInicioCaptura = item.FechaInicio.ToDateTime(TimeOnly.MinValue);
+        fechaFinCaptura = item.FechaFin.ToDateTime(TimeOnly.MinValue);
+        mostrarForm = true;
+    }
+
+    private Task OnTipoChangedAsync()
+    {
+        if (editando.Tipo == TipoAusenciaRrhh.Vacaciones)
+        {
+            editando.ConGocePago = true;
+            if (editando.Dias <= 0)
+            {
+                editando.Dias = Math.Max(1, (fechaFinCaptura.Date - fechaInicioCaptura.Date).Days + 1);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnFechaChangedAsync()
+    {
+        if (fechaFinCaptura.Date < fechaInicioCaptura.Date)
+        {
+            fechaFinCaptura = fechaInicioCaptura.Date;
+        }
+
+        if (editando.Dias <= 1 || editando.Tipo == TipoAusenciaRrhh.Vacaciones)
+        {
+            editando.Dias = Math.Max(1, (fechaFinCaptura.Date - fechaInicioCaptura.Date).Days + 1);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar ausencias.";
+                return;
+            }
+
+            if (_empresaId == Guid.Empty)
+            {
+                error = "No hay empresa activa.";
+                return;
+            }
+
+            if (editando.EmpleadoId == Guid.Empty)
+            {
+                error = "Selecciona un empleado.";
+                return;
+            }
+
+            if (fechaFinCaptura.Date < fechaInicioCaptura.Date)
+            {
+                error = "La fecha final no puede ser menor a la inicial.";
+                return;
+            }
+
+            if (editando.Dias <= 0 && editando.Horas <= 0)
+            {
+                error = "Captura días u horas para la ausencia.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = editando.Id == Guid.Empty
+                ? new RrhhAusencia()
+                : await db.RrhhAusencias.FirstOrDefaultAsync(a => a.Id == editando.Id);
+
+            if (entity == null)
+            {
+                error = "No se encontró la ausencia a editar.";
+                return;
+            }
+
+            if (editando.Id == Guid.Empty)
+            {
+                db.RrhhAusencias.Add(entity);
+            }
+
+            entity.EmpresaId = _empresaId;
+            entity.EmpleadoId = editando.EmpleadoId;
+            entity.Tipo = editando.Tipo;
+            entity.Estatus = editando.Estatus;
+            entity.FechaInicio = DateOnly.FromDateTime(fechaInicioCaptura.Date);
+            entity.FechaFin = DateOnly.FromDateTime(fechaFinCaptura.Date);
+            entity.Dias = editando.Dias;
+            entity.Horas = editando.Horas;
+            entity.ConGocePago = editando.Tipo == TipoAusenciaRrhh.Vacaciones || editando.ConGocePago;
+            entity.Motivo = string.IsNullOrWhiteSpace(editando.Motivo) ? null : editando.Motivo.Trim();
+            entity.Observaciones = string.IsNullOrWhiteSpace(editando.Observaciones) ? null : editando.Observaciones.Trim();
+            entity.UpdatedAt = DateTime.UtcNow;
+            entity.IsActive = true;
+            if (editando.Id == Guid.Empty)
+            {
+                entity.CreatedAt = DateTime.UtcNow;
+            }
+
+            if (entity.Estatus == EstatusAusenciaRrhh.Aprobada || entity.Estatus == EstatusAusenciaRrhh.Aplicada)
+            {
+                var state = await AuthStateProvider.GetAuthenticationStateAsync();
+                entity.FechaAprobacion ??= DateTime.UtcNow;
+                entity.AprobadoPor = state.User.Identity?.Name;
+            }
+            else
+            {
+                entity.FechaAprobacion = null;
+                entity.AprobadoPor = null;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Ausencia guardada.";
+            mostrarForm = false;
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void CerrarFormulario()
+    {
+        mostrarForm = false;
+        error = ok = null;
+    }
+
+    private static string ObtenerClaseEstatus(EstatusAusenciaRrhh estatus) => estatus switch
+    {
+        EstatusAusenciaRrhh.Solicitada => "bg-secondary",
+        EstatusAusenciaRrhh.Aprobada => "bg-success",
+        EstatusAusenciaRrhh.Rechazada => "bg-danger",
+        EstatusAusenciaRrhh.Aplicada => "bg-primary",
+        EstatusAusenciaRrhh.Cancelada => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private sealed class AusenciaListadoVm
+    {
+        public Guid Id { get; set; }
+        public Guid EmpleadoId { get; set; }
+        public string NombreEmpleado { get; set; } = string.Empty;
+        public TipoAusenciaRrhh Tipo { get; set; }
+        public EstatusAusenciaRrhh Estatus { get; set; }
+        public DateOnly FechaInicio { get; set; }
+        public DateOnly FechaFin { get; set; }
+        public int Dias { get; set; }
+        public decimal Horas { get; set; }
+        public bool ConGocePago { get; set; }
+        public string? Motivo { get; set; }
+        public string? Observaciones { get; set; }
+        public DateTime? FechaAprobacion { get; set; }
+        public string? AprobadoPor { get; set; }
+    }
+}

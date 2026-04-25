@@ -1,0 +1,2572 @@
+@page "/pedidos/{PedidoId:guid}/seguimiento"
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Inventario
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject IPedidoRepository PedidoRepository
+@inject CrmDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IAppConfigRepository AppConfigRepository
+@inject INotaEntregaPdfService NotaEntregaPdfService
+@rendermode InteractiveServer
+
+<PageTitle>Seguimiento de Pedido</PageTitle>
+
+<div class="sg-page">
+    @if (pedido == null)
+    {
+        <div class="d-flex align-items-center justify-content-center" style="height:60vh">
+            <div class="spinner-border text-primary me-2" role="status" style="width:1.6rem;height:1.6rem;"></div>
+            <span class="text-muted">Cargando...</span>
+        </div>
+    }
+    else
+    {
+        <!-- ?? Header ?? -->
+        <div class="sg-header mb-3">
+            <div class="sg-header-left">
+                <a class="sg-back" href="@(pedidoSerigrafia != null ? "/serigrafia/pedidos" : "/pedidos")">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <div>
+                    <div class="sg-title">
+                        <i class="bi bi-clipboard-data me-2"></i>@pedido.NumeroPedido
+                        <span class="sg-cliente">@pedido.Cliente?.RazonSocial</span>
+                    </div>
+                    <div class="sg-meta">
+                        <span><i class="bi bi-calendar3 me-1"></i>Pedido: @pedido.FechaPedido.ToString("dd/MM/yyyy")</span>
+                        @if (pedidoSerigrafia?.PedidoDetalle?.CotizacionSerigrafia != null)
+                        {
+                            <span><i class="bi bi-calculator me-1"></i>@ObtenerEtiquetaCotizacion(pedidoSerigrafia.PedidoDetalle.CotizacionSerigrafia)</span>
+                        }
+                        @if (pedidoSerigrafia?.FechaEntregaReal.HasValue == true)
+                        {
+                            <span>
+                                <i class="bi bi-calendar-check me-1"></i>Entrega: @pedidoSerigrafia.FechaEntregaReal.Value.ToString("dd/MM/yyyy")
+                            </span>
+                        }
+                        <span class="sg-estado-badge sg-estado-@pedido.Estado.ToString().ToLower()">@pedido.Estado</span>
+                    </div>
+                </div>
+            </div>
+            @if (pedidoSerigrafia != null)
+            {
+                var tallasTotal = pedidoSerigrafia.Tallas.Sum(t => t.Cantidad);
+                var procesos2 = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProceso).OrderBy(p => p.Orden).ToList();
+                var tallasListas = pedidoSerigrafia.Tallas.Count(t => EsTallaCompletada(t.Id, procesos2));
+                var pct = pedidoSerigrafia.Tallas.Any() ? (int)Math.Round((double)tallasListas / pedidoSerigrafia.Tallas.Count * 100) : 0;
+                <div class="sg-progress-block">
+                    <div class="sg-progress-label">
+                        <span>@tallasListas / @pedidoSerigrafia.Tallas.Count tallas completas</span>
+                        <span class="fw-bold">@pct%</span>
+                    </div>
+                    <div class="sg-progress-bar-wrap">
+                        <div class="sg-progress-bar" style="width:@pct%"></div>
+                    </div>
+                    <div class="sg-progress-sub">@tallasTotal piezas totales · @pedidoSerigrafia.TiposProceso.Count procesos</div>
+                </div>
+            }
+        </div>
+
+        @if (ObtenerObservacionOperativaPedido() is { Length: > 0 } observacionOperativa)
+        {
+            <div class="alert alert-info py-2 mb-3">
+                <i class="bi bi-info-circle me-1"></i>@observacionOperativa
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(errorFg))
+        {
+            <div class="alert alert-danger py-2 mb-3">@errorFg</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(okFg))
+        {
+            <div class="alert alert-success py-2 mb-3">@okFg</div>
+        }
+
+        @if (conceptosPedido.Any())
+        {
+            var conceptosCompletados = conceptosPedido.Count(c => c.Completado);
+            var conceptosPct = conceptosPedido.Count > 0 ? (int)Math.Round((double)conceptosCompletados / conceptosPedido.Count * 100) : 0;
+            <div class="sg-card mb-3">
+                <div class="sg-card-header">
+                    <span><i class="bi bi-list-check me-2"></i>Servicios del pedido</span>
+                    <span class="sg-card-sub">@conceptosCompletados / @conceptosPedido.Count completados</span>
+                </div>
+                <div class="sg-servicios-body">
+                    <div class="sg-progress-label mb-2">
+                        <span>Avance servicios</span>
+                        <span class="fw-bold">@conceptosPct%</span>
+                    </div>
+                    <div class="sg-progress-bar-wrap mb-3">
+                        <div class="sg-progress-bar" style="width:@conceptosPct%"></div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Descripción</th>
+                                    <th class="text-center">Cantidad</th>
+                                    <th class="text-end">Precio</th>
+                                    <th class="text-end">Total</th>
+                                    <th class="text-center">Completado</th>
+                                    <th>Fecha</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var concepto in conceptosPedido.OrderBy(c => c.CreatedAt))
+                                {
+                                    <tr>
+                                        <td>@concepto.Tipo</td>
+                                        <td>@concepto.Descripcion</td>
+                                        <td class="text-center">@concepto.Cantidad</td>
+                                        <td class="text-end">@concepto.PrecioUnitario.ToString("C2")</td>
+                                        <td class="text-end fw-semibold">@concepto.Total.ToString("C2")</td>
+                                        <td class="text-center">
+                                            <InputCheckbox Value="concepto.Completado"
+                                                           ValueChanged="async (bool value) => await OnConceptoCompletadoChanged(concepto, value)"
+                                                           ValueExpression="() => concepto.Completado" />
+                                        </td>
+                                        <td>
+                                            <InputDate TValue="DateTime?" class="form-control form-control-sm sg-servicio-date"
+                                                       Value="concepto.FechaCompletado"
+                                                       ValueChanged="async (DateTime? value) => await OnConceptoFechaChanged(concepto, value)"
+                                                       ValueExpression="() => concepto.FechaCompletado" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (ObtenerSkusPendientesFinishedGoods().ToList() is { Count: > 0 } skusPendientesFg)
+        {
+            <div class="sg-card mb-3">
+                <div class="sg-card-header">
+                    <span><i class="bi bi-box-seam me-2"></i>SKU listos para finished goods</span>
+                    <span class="sg-card-sub">Producción completa pendiente de ingreso</span>
+                </div>
+                <div class="sg-servicios-body">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                        <div class="text-muted small">Cuando un `SKU` completó todos sus procesos, puedes ingresarlo a `finished goods` sin registrar todavía una entrega.</div>
+                        @if (PuedeIngresarFinishedGoods())
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="IngresarTodosLosSkusPendientesAFinishedGoodsAsync" disabled="@guardandoFg">
+                                <i class="bi bi-box-arrow-in-down me-1"></i>Ingresar todos
+                            </button>
+                        }
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>SKU</th>
+                                    <th>Talla</th>
+                                    <th>Color</th>
+                                    <th class="text-center">Cantidad</th>
+                                    <th class="text-end">Precio unitario</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var skuFg in skusPendientesFg)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@skuFg.Sku</td>
+                                        <td>@skuFg.Talla</td>
+                                        <td>@(string.IsNullOrWhiteSpace(skuFg.Color) ? "—" : skuFg.Color)</td>
+                                        <td class="text-center">@skuFg.Cantidad.ToString("0.##")</td>
+                                        <td class="text-end">@skuFg.PrecioUnitario.ToString("C2")</td>
+                                        <td><span class="badge bg-success-subtle text-success-emphasis border">Completo</span></td>
+                                        <td class="text-end">
+                                            @if (PuedeIngresarFinishedGoods())
+                                            {
+                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => IngresarDetalleTallaAFinishedGoodsAsync(skuFg.PedidoDetalleTallaId)" disabled="@guardandoFg">
+                                                    <i class="bi bi-plus-square me-1"></i>Ingresar a FG
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted small">Sin permiso</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (detalleTallasPedido.Any())
+        {
+            <div class="sg-card mb-3">
+                <div class="sg-card-header">
+                    <span><i class="bi bi-tags me-2"></i>Snapshot comercial por talla</span>
+                    <span class="sg-card-sub">Precio congelado al momento de vender</span>
+                </div>
+                <div class="sg-servicios-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Talla</th>
+                                    <th>SKU</th>
+                                    <th class="text-center">Cantidad</th>
+                                    <th class="text-end">% variación</th>
+                                    <th class="text-end">Precio unitario</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var talla in detalleTallasPedido.OrderBy(t => t.Orden).ThenBy(t => t.Talla))
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@talla.Talla</td>
+                                        <td>@(talla.ProductoVariante?.Sku ?? "—")</td>
+                                        <td class="text-center">@talla.Cantidad.ToString("0.##")</td>
+                                        <td class="text-end">@talla.PorcentajeVariacion.ToString("N2")%</td>
+                                        <td class="text-end">@talla.PrecioUnitario.ToString("C2")</td>
+                                        <td class="text-end fw-semibold">@talla.Total.ToString("C2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="5" class="text-end fw-semibold">Subtotal producto</td>
+                                    <td class="text-end fw-bold">@detalleTallasPedido.Sum(t => t.Total).ToString("C2")</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Proceso compacto por talla y operación -->
+        @if (pedidoSerigrafia != null && pedidoSerigrafia.Tallas.Any() && pedidoSerigrafia.TiposProceso.Any())
+        {
+            var procesos = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProceso).OrderBy(p => p.Orden).ToList();
+            <div class="sg-card mb-3">
+                <div class="sg-card-header">
+                    <span><i class="bi bi-table me-2"></i>Proceso por talla y operación</span>
+                    <span class="sg-card-sub">@pedidoSerigrafia.Estilo @(string.IsNullOrEmpty(pedidoSerigrafia.CombinacionColor) ? "" : "· " + pedidoSerigrafia.CombinacionColor)</span>
+                </div>
+                @if (!PuedeEditarProcesosProduccion())
+                {
+                    <div class="alert alert-warning py-2 m-3 mb-0">
+                        <i class="bi bi-lock me-1"></i>La producción está cerrada para edición. Solo un usuario con la capacidad especial puede reabrir checks y fechas de proceso.
+                    </div>
+                }
+                <div class="sg-matrix-wrap">
+                    <table class="sg-matrix">
+                        <thead>
+                            <tr>
+                                <th class="sg-th-talla">Talla</th>
+                                @foreach (var proc in procesos)
+                                {
+                                    <th class="sg-th-proc">@proc?.Nombre</th>
+                                }
+                                <th class="sg-th-pct">Avance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var talla in pedidoSerigrafia.Tallas.OrderBy(t => t.Talla))
+                            {
+                                var tallaCompleta = EsTallaCompletada(talla.Id, procesos);
+                                var compCount = procesos.Count(p => seguimientoTallaProcesos.Any(s => s.PedidoSerigrafiaTallaId == talla.Id && s.TipoProcesoId == p!.Id && s.Completado));
+                                var tallaPct = procesos.Count > 0 ? (int)Math.Round((double)compCount / procesos.Count * 100) : 0;
+                                <tr class="@(tallaCompleta ? "sg-row-done" : compCount > 0 ? "sg-row-partial" : "")">
+                                    <td class="sg-td-talla">
+                                        <span class="sg-talla-num">#@talla.Talla</span>
+                                        <span class="sg-talla-qty">@talla.Cantidad pz</span>
+                                    </td>
+                                    @foreach (var proc in procesos)
+                                    {
+                                        var seg = seguimientoTallaProcesos.FirstOrDefault(s => s.PedidoSerigrafiaTallaId == talla.Id && s.TipoProcesoId == proc!.Id);
+                                        var cantidadAsignada = seg != null ? ObtenerCantidadAsignada(seg.Id) : 0;
+                                        var importeAsignado = seg != null ? ObtenerImporteAsignado(seg.Id) : 0m;
+                                        var personasAsignadas = seg != null ? ObtenerDestajos(seg.Id).Count(d => d.IsActive) : 0;
+                                        <td class="sg-td-proc @(seg?.Completado == true ? "sg-cell-done" : cantidadAsignada > 0 ? "sg-cell-wip" : "")">
+                                            @if (seg != null)
+                                            {
+                                                var pctPz = talla.Cantidad > 0 ? Math.Min(100, (int)Math.Round((double)cantidadAsignada / talla.Cantidad * 100)) : 0;
+                                                <div class="sg-op @(seg.Completado ? "sg-op--done" : cantidadAsignada > 0 ? "sg-op--wip" : "sg-op--idle")"
+                                                     @onclick="() => AbrirModalDestajo(seg, talla.Talla, proc?.Nombre)"
+                                                     role="button" tabindex="0">
+                                                    <div class="sg-op__head">
+                                                        <button class="sg-chk @(seg.Completado ? "sg-chk--on" : "")"
+                                                                @onclick="async () => await OnCheckTallaProcesoClickAsync(seg, talla.Talla, proc?.Nombre)"
+                                                                @onclick:stopPropagation="true"
+                                                                disabled="@(!PuedeEditarProcesosProduccion())"
+                                                                title="@(seg.Completado ? "Marcar pendiente" : "Marcar listo")">
+                                                            <i class="bi @(seg.Completado ? "bi-check-circle-fill" : "bi-circle")"></i>
+                                                        </button>
+                                                        <div class="sg-op__bar">
+                                                            <div class="sg-op__bar-fill @(pctPz >= 100 ? "is-full" : "")" style="width:@pctPz%"></div>
+                                                        </div>
+                                                        <span class="sg-op__count @(cantidadAsignada >= talla.Cantidad ? "is-ok" : "")">@cantidadAsignada/@talla.Cantidad</span>
+                                                    </div>
+                                                    <div class="sg-op__meta">
+                                                        <span class="sg-op__money">@importeAsignado.ToString("C2")</span>
+                                                        <div class="sg-op__date-wrap" @onclick:stopPropagation="true">
+                                                            <InputDate TValue="DateTime?" class="sg-op__date"
+                                                                       Value="seg.FechaPaso"
+                                                                       ValueChanged="async (DateTime? dt) => await OnFechaTallaProceso(seg, dt)"
+                                                                       ValueExpression="() => seg.FechaPaso"
+                                                                       disabled="@(!PuedeEditarProcesosProduccion())" />
+                                                        </div>
+                                                    </div>
+                                                    <div class="sg-op__foot">
+                                                        <span class="sg-op__people @(personasAsignadas > 0 ? "has-data" : "")">
+                                                            <i class="bi @(personasAsignadas > 0 ? "bi-people-fill" : "bi-person-plus")"></i>
+                                                            @if (personasAsignadas > 0)
+                                                            {
+                                                                <span class="sg-op__badge">@personasAsignadas</span>
+                                                            }
+                                                        </span>
+                                                        <span class="sg-op__cta">Detalle <i class="bi bi-chevron-right"></i></span>
+                                                    </div>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="sg-na">—</span>
+                                            }
+                                        </td>
+                                    }
+                                    <td class="sg-td-pct">
+                                        <div class="sg-mini-bar-wrap">
+                                            <div class="sg-mini-bar" style="width:@tallaPct%"></div>
+                                        </div>
+                                        <span class="sg-mini-pct">@compCount/@procesos.Count</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (modalConfirmarCheckAbierto && confirmacionSeguimiento is not null)
+        {
+            <div class="sg-modal-backdrop" @onclick="CerrarModalConfirmacionCheck"></div>
+            <div class="sg-modal-shell">
+                <div class="sg-modal-card" style="width:min(460px,100%);max-height:none;">
+                    <div class="sg-modal-header">
+                        <div>
+                            <div class="sg-modal-title">Confirmar completado</div>
+                            <div class="sg-modal-subtitle">Talla @confirmacionTallaNombre · @confirmacionProcesoNombre</div>
+                        </div>
+                        <button type="button" class="sg-modal-close" @onclick="CerrarModalConfirmacionCheck">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <div class="sg-modal-body">
+                        <div class="alert alert-info py-2 mb-3">
+                            <i class="bi bi-question-circle me-1"></i>¿Deseas agregar empleados a este proceso?
+                        </div>
+                        <div class="small text-muted mb-3">
+                            Si eliges <strong>No</strong>, el sistema completará automáticamente la cantidad pendiente. Si eliges <strong>Sí</strong>, podrás capturar participantes y el check se marcará solo cuando la cantidad asignada cubra el total.
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 justify-content-end">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CerrarModalConfirmacionCheck">Cancelar</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="ConfirmarCheckConEmpleadosAsync">Sí, agregar empleados</button>
+                            <button type="button" class="btn btn-primary btn-sm" @onclick="ConfirmarCheckSinEmpleadosAsync">No, completar cantidad</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (modalConfirmarIngresoFgAbierto && confirmacionIngresoFgItem is not null)
+        {
+            <div class="sg-modal-backdrop" @onclick="PosponerIngresoFinishedGoods"></div>
+            <div class="sg-modal-shell">
+                <div class="sg-modal-card" style="width:min(460px,100%);max-height:none;">
+                    <div class="sg-modal-header">
+                        <div>
+                            <div class="sg-modal-title">SKU listo para finished goods</div>
+                            <div class="sg-modal-subtitle">@confirmacionIngresoFgItem.Sku · Talla @confirmacionIngresoFgItem.Talla</div>
+                        </div>
+                        <button type="button" class="sg-modal-close" @onclick="PosponerIngresoFinishedGoods">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <div class="sg-modal-body">
+                        <div class="alert alert-success py-2 mb-3">
+                            <i class="bi bi-box-seam me-1"></i>El `SKU` completó todos sus procesos. ¿Deseas ingresarlo ahora a `finished goods`?
+                        </div>
+                        <div class="sg-modal-summary mb-3">
+                            <div class="sg-modal-kpi">
+                                <span class="sg-modal-kpi-label">Cliente</span>
+                                <strong>@(pedido?.Cliente?.RazonSocial ?? "—")</strong>
+                            </div>
+                            <div class="sg-modal-kpi">
+                                <span class="sg-modal-kpi-label">Color</span>
+                                <strong>@(string.IsNullOrWhiteSpace(confirmacionIngresoFgItem.Color) ? "—" : confirmacionIngresoFgItem.Color)</strong>
+                            </div>
+                            <div class="sg-modal-kpi">
+                                <span class="sg-modal-kpi-label">Cantidad</span>
+                                <strong>@confirmacionIngresoFgItem.Cantidad.ToString("0.##") pz</strong>
+                            </div>
+                        </div>
+                        @if (confirmacionIngresoFgEsUltimoSku)
+                        {
+                            <div class="alert alert-info py-2 mb-3">
+                                <i class="bi bi-stars me-1"></i>Este es el último `SKU` pendiente del pedido. Al ingresarlo a `FG`, la producción del pedido quedará completamente reflejada en inventario.
+                            </div>
+                        }
+                        <div class="small text-muted mb-3">
+                            Si eliges <strong>Ahora</strong>, se registrará el ingreso inmediato a `FG`. Si eliges <strong>Después</strong>, quedará en la lista de pendientes.
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 justify-content-end">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PosponerIngresoFinishedGoods">Después</button>
+                            <button type="button" class="btn btn-primary btn-sm" @onclick="ConfirmarIngresoFinishedGoodsDetectadoAsync" disabled="@guardandoFg">
+                                <i class="bi bi-box-arrow-in-down me-1"></i>Ingresar ahora
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (modalDestajoAbierto && modalSeguimiento is not null)
+        {
+            var segModal = modalSeguimiento;
+            var destajosModal = ObtenerDestajos(segModal.Id);
+            var destajosModalOrdenados = OrdenarDestajos(destajosModal).ToList();
+
+            <div class="sg-modal-backdrop" @onclick="CerrarModalDestajo"></div>
+            <div class="sg-modal-shell">
+                <div class="sg-modal-card">
+                    <div class="sg-modal-header">
+                        <div>
+                            <div class="sg-modal-title">Participantes del proceso</div>
+                            <div class="sg-modal-subtitle">Talla @modalTallaNombre · @modalProcesoNombre</div>
+                        </div>
+                        <button type="button" class="sg-modal-close" @onclick="CerrarModalDestajo">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <div class="sg-modal-body">
+                        @if (!string.IsNullOrWhiteSpace(modalDestajoError))
+                        {
+                            <div class="alert alert-warning py-2 mb-3">@modalDestajoError</div>
+                        }
+
+                        <div class="sg-modal-summary">
+                            <div class="sg-modal-kpi">
+                                <span class="sg-modal-kpi-label">Planeado</span>
+                                <strong>@ObtenerCantidadTallaSeguimiento(segModal) pz</strong>
+                            </div>
+                            <div class="sg-modal-kpi @(ObtenerCantidadAsignada(segModal.Id) >= ObtenerCantidadTallaSeguimiento(segModal) ? "is-ok" : "is-warn")">
+                                <span class="sg-modal-kpi-label">Asignado</span>
+                                <strong>@ObtenerCantidadAsignada(segModal.Id) pz</strong>
+                            </div>
+                            <div class="sg-modal-kpi @(ObtenerCantidadDisponible(segModal) == 0 ? "is-ok" : string.Empty)">
+                                <span class="sg-modal-kpi-label">Disponible</span>
+                                <strong>@ObtenerCantidadDisponible(segModal) pz</strong>
+                            </div>
+                            <div class="sg-modal-kpi">
+                                <span class="sg-modal-kpi-label">Personas</span>
+                                <strong>@destajosModalOrdenados.Count(d => d.IsActive)</strong>
+                            </div>
+                            <div class="sg-modal-kpi sg-modal-kpi-money">
+                                <span class="sg-modal-kpi-label">Importe</span>
+                                <strong>@ObtenerImporteAsignado(segModal.Id).ToString("C2")</strong>
+                            </div>
+                        </div>
+
+                        <div class="sg-destajo-list sg-destajo-list-modal">
+                            @if (destajosModalOrdenados.Any())
+                            {
+                                @foreach (var destajo in destajosModalOrdenados)
+                                {
+                                    var onEmpleadoChanged = CrearCambioEmpleadoCallback(destajo);
+                                    var onGuardarDestajo = CrearGuardarDestajoCallback(segModal, destajo);
+                                    var onEliminarDestajo = CrearEliminarDestajoCallback(segModal, destajo);
+                                    <div class="sg-destajo-item sg-destajo-item-modal">
+                                        <select class="sg-empleado-input" value="@ObtenerEmpleadoValue(destajo)" @onchange="onEmpleadoChanged">
+                                            <option value="">Selecciona empleado...</option>
+                                            @foreach (var empleado in empleadosActivos)
+                                            {
+                                                <option value="@empleado.Id">@empleado.NombreCompleto</option>
+                                            }
+                                        </select>
+                                        <div class="sg-destajo-row">
+                                            <div class="sg-campo-num">
+                                                <span class="sg-mini-label">Pzs</span>
+                                                <InputNumber class="sg-destajo-input" @bind-Value="destajo.CantidadProcesada" @bind-Value:after="() => OnCantidadDestajoCapturada(segModal, destajo)" />
+                                            </div>
+                                            <div class="sg-campo-num">
+                                                <span class="sg-mini-label">Tar</span>
+                                                <InputNumber class="sg-destajo-input sg-destajo-input-compact-money" @bind-Value="destajo.TarifaUnitario" />
+                                            </div>
+                                            <div class="sg-campo-num">
+                                                <span class="sg-mini-label">Min</span>
+                                                <InputNumber class="sg-destajo-input" @bind-Value="destajo.TiempoMinutos" />
+                                            </div>
+                                            <span class="sg-destajo-total">@CalcularImporteDestajo(destajo).ToString("C2")</span>
+                                            <div class="sg-destajo-buttons">
+                                                <button type="button" class="sg-destajo-save" title="Guardar" @onclick="onGuardarDestajo"><i class="bi bi-save"></i></button>
+                                                <button type="button" class="sg-destajo-remove" title="Quitar" @onclick="onEliminarDestajo"><i class="bi bi-trash"></i></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="sg-empty-split">Aún no hay participantes registrados para esta operación.</div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="sg-modal-footer">
+                        <button type="button" class="sg-destajo-add sg-destajo-add-modal" @onclick="() => AgregarDestajoDesdeModal(segModal)">
+                            <i class="bi bi-person-plus me-1"></i>Agregar empleado
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CerrarModalDestajo">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="sg-card">
+            <div class="sg-card-header">
+                <span><i class="bi bi-truck me-2"></i>Entregas parciales y notas</span>
+                <span class="sg-card-sub">Registrar parcialidades desde el pedido</span>
+            </div>
+            <div class="sg-entrega-body">
+                <div class="sg-entrega-resumen mb-3">
+                    <div class="sg-resumen-kpi">
+                        <span class="sg-resumen-label">Piezas pedido</span>
+                        <strong>@piezasPedidoTotal</strong>
+                    </div>
+                    <div class="sg-resumen-kpi sg-resumen-kpi-ok">
+                        <span class="sg-resumen-label">Entregadas</span>
+                        <strong>@piezasEntregadas</strong>
+                    </div>
+                    <div class="sg-resumen-kpi sg-resumen-kpi-warn">
+                        <span class="sg-resumen-label">Pendientes</span>
+                        <strong>@piezasPendientes</strong>
+                    </div>
+                    <div class="sg-resumen-kpi">
+                        <span class="sg-resumen-label">Notas</span>
+                        <strong>@notasEntrega.Count</strong>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(errorNota))
+                {
+                    <div class="alert alert-danger py-2">@errorNota</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(okNota))
+                {
+                    <div class="alert alert-success py-2">@okNota</div>
+                }
+
+                <div class="row g-3 align-items-end mb-3">
+                    <div class="col-md-3">
+                        <label class="sg-label">Fecha de nota</label>
+                        <InputDate TValue="DateTime" class="form-control sg-input" @bind-Value="fechaNotaEntrega" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="sg-label">Observaciones</label>
+                        <input type="text" class="form-control sg-input" @bind="observacionesNotaEntrega" placeholder="Chofer, ruta, parcialidad, etc." />
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check form-switch mt-4">
+                            <InputCheckbox class="form-check-input" @bind-Value="noRequiereFacturaNota" />
+                            <label class="form-check-label">No requiere factura</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2 d-grid">
+                            <button class="sg-btn-save" @onclick="CrearNotaEntregaAsync" disabled="@(guardandoNota || piezasPendientes <= 0)">
+                                <i class="bi bi-file-earmark-plus me-1"></i>Generar nota de entrega
+                        </button>
+                    </div>
+                </div>
+
+                @if (corridaPedido.Any())
+                {
+                    <div class="border rounded bg-white p-3 mb-3">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <div>
+                                <div class="sg-label mb-0">Entrega por talla</div>
+                                <div class="text-muted" style="font-size:.72rem">Captura la parcialidad real por talla. Total a entregar: <strong>@cantidadNotaEntrega</strong></div>
+                                @if (!PuedeTomarTodoPendiente())
+                                {
+                                    <div class="text-muted" style="font-size:.68rem">No puedes tomar todo lo pendiente hasta terminar los procesos de producción.</div>
+                                }
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AutollenarEntregaPendiente" disabled="@(!PuedeTomarTodoPendiente())">
+                                <i class="bi bi-magic me-1"></i>Tomar todo pendiente
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Talla</th>
+                                        <th class="text-center">Pedido</th>
+                                        <th class="text-end">Precio unit.</th>
+                                        <th class="text-center">Entregadas</th>
+                                        <th class="text-center">Pendientes</th>
+                                        <th class="text-center">Esta nota</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var talla in corridaPedido)
+                                    {
+                                        <tr>
+                                            <td class="fw-semibold">@talla.Talla</td>
+                                            <td class="text-center">@talla.CantidadPedido</td>
+                                            <td class="text-end">@talla.PrecioUnitario.ToString("C2")</td>
+                                            <td class="text-center">@talla.CantidadEntregada</td>
+                                            <td class="text-center">@talla.CantidadPendiente</td>
+                                            <td style="max-width:120px">
+                                                <InputNumber class="form-control form-control-sm" @bind-Value="talla.CantidadEntregar" @bind-Value:after="RecalcularEntregaActual" />
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" class="text-end fw-semibold">Total nota</td>
+                                        <td class="text-center fw-bold">@cantidadNotaEntrega</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                @if (notasEntrega.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Nota</th>
+                                    <th>Fecha</th>
+                                    <th class="text-center">Piezas</th>
+                                    <th class="text-end">Total</th>
+                                    <th>Estatus</th>
+                                    <th>CFDI</th>
+                                    <th>Factura</th>
+                                    <th>PDF</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var nota in notasEntrega.OrderByDescending(n => n.FechaNota))
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@nota.NumeroNota</td>
+                                        <td>@nota.FechaNota.ToString("dd/MM/yyyy")</td>
+                                        <td class="text-center">@ObtenerCantidadNota(nota)</td>
+                                        <td class="text-end">@nota.Total.ToString("C2")</td>
+                                        <td><span class="sg-estado-badge">@nota.Estatus</span></td>
+                                        <td>
+                                            @if (nota.NoRequiereFactura)
+                                            {
+                                                <span class="badge bg-secondary">No requerida</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-light text-dark">Requerida</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div>@ObtenerResumenFacturaNota(nota)</div>
+                                            @if (ObtenerResumenTallasNota(nota) is { Length: > 0 } resumenTallas)
+                                            {
+                                                <div class="text-muted" style="font-size:.68rem">@resumenTallas</div>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(nota.PdfUrl))
+                                            {
+                                                <a class="btn btn-sm btn-outline-danger" href="@nota.PdfUrl" target="_blank" download>
+                                                    <i class="bi bi-file-earmark-pdf"></i>
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted small">Pendiente</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="sg-empty-split">Aún no hay notas de entrega para este pedido.</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    /* ?? Page ????????????????????????????????????????? */
+    .sg-page { padding: 1rem 1.25rem; }
+    @@media (min-width:768px) { .sg-page { padding: 1.25rem 2rem; } }
+
+    /* ?? Header ??????????????????????????????????????? */
+    .sg-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+    .sg-header-left { display: flex; align-items: flex-start; gap: .75rem; }
+    .sg-back { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; border: 1.5px solid #d1d9e0; color: #4a6fa5; background: #fff; font-size: 1rem; flex-shrink: 0; margin-top: .15rem; }
+    .sg-back:hover { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+    .sg-title { font-size: 1.1rem; font-weight: 700; color: #1e3a5f; display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+    .sg-cliente { font-size: .85rem; font-weight: 500; color: #4a6fa5; }
+    .sg-meta { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; font-size: .75rem; color: #6c757d; margin-top: .25rem; }
+    .sg-estado-badge { font-size: .68rem; font-weight: 700; padding: .2rem .55rem; border-radius: 20px; background: #eef2fb; color: #1e3a5f; border: 1px solid #c8d4e8; }
+
+    /* ?? Progress block ???????????????????????????????? */
+    .sg-progress-block { min-width: 200px; }
+    .sg-progress-label { display: flex; justify-content: space-between; font-size: .72rem; color: #374151; margin-bottom: .25rem; }
+    .sg-progress-bar-wrap { height: 6px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+    .sg-progress-bar { height: 100%; background: linear-gradient(90deg,#10b981,#34d399); border-radius: 99px; transition: width .4s; }
+    .sg-progress-sub { font-size: .65rem; color: #9ca3af; margin-top: .2rem; }
+
+    /* ?? Card ?????????????????????????????????????????? */
+    .sg-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.04); overflow: hidden; }
+    .sg-card-header { display: flex; align-items: center; justify-content: space-between; padding: .6rem 1rem; background: #f8f9fb; border-bottom: 1px solid #e8edf5; font-size: .8rem; font-weight: 700; color: #1e3a5f; }
+    .sg-card-sub { font-size: .7rem; font-weight: 400; color: #6b7280; }
+
+    /* Matriz compacta por talla y operación */
+    .sg-matrix-wrap { overflow-x: auto; max-height: 58vh; overflow-y: auto; background: #fcfdff; }
+    .sg-matrix { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .74rem; }
+    .sg-matrix thead th { position: sticky; top: 0; z-index: 3; background: #1e3a5f; color: #d9e4f0; padding: .42rem .55rem; font-size: .65rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; border-right: 1px solid rgba(255,255,255,.08); }
+    .sg-matrix tbody td { padding: .22rem .35rem; border-bottom: 1px solid #eef2f7; border-right: 1px solid #f3f4f6; vertical-align: top; }
+    .sg-matrix tbody tr:last-child td { border-bottom: none; }
+    .sg-th-talla { min-width: 95px; position: sticky; left: 0; z-index: 4; }
+    .sg-th-proc { min-width: 152px; text-align: center; }
+    .sg-th-pct { min-width: 80px; text-align: center; }
+    .sg-td-talla { position: sticky; left: 0; background: #fff; z-index: 2; }
+    .sg-td-proc { text-align: center; }
+    .sg-td-pct { text-align: center; min-width: 80px; }
+    .sg-talla-num { font-weight: 700; color: #1e3a5f; margin-right: .28rem; }
+    .sg-talla-qty { font-size: .66rem; color: #6b7280; }
+    .sg-row-done td { background: rgba(16,185,129,.07) !important; }
+    .sg-row-partial td { background: rgba(245,158,11,.05) !important; }
+    .sg-row-done .sg-td-talla { background: rgba(16,185,129,.07) !important; }
+    .sg-row-partial .sg-td-talla { background: rgba(245,158,11,.05) !important; }
+    .sg-cell-done { background: rgba(16,185,129,.08) !important; }
+    .sg-cell-wip { background: rgba(245,158,11,.05) !important; }
+
+    /* Operation cell card */
+    .sg-op { display: flex; flex-direction: column; gap: .22rem; padding: .32rem .38rem; border-radius: 7px; border-left: 3px solid #e2e8f0; background: #fff; min-width: 0; cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+    .sg-op:hover { box-shadow: 0 2px 10px rgba(30,58,95,.1); }
+    .sg-op:focus-visible { outline: 2px solid #4a6fa5; outline-offset: 1px; }
+    .sg-op--done { border-left-color: #10b981; background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); }
+    .sg-op--wip { border-left-color: #f59e0b; background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%); }
+    .sg-op--idle { border-left-color: #e2e8f0; }
+    .sg-op__head { display: flex; align-items: center; gap: .3rem; }
+    .sg-chk { background: none; border: none; padding: 0; cursor: pointer; font-size: .92rem; line-height: 1; display: inline-flex; align-items: center; color: #cbd5e1; transition: color .15s; flex-shrink: 0; }
+    .sg-chk--on { color: #10b981; }
+    .sg-chk:hover:not(.sg-chk--on) { color: #64748b; }
+    .sg-op__bar { flex: 1; height: 4px; background: #e5e7eb; border-radius: 99px; overflow: hidden; min-width: 20px; }
+    .sg-op__bar-fill { height: 100%; background: linear-gradient(90deg, #f59e0b, #fbbf24); border-radius: 99px; transition: width .3s; }
+    .sg-op__bar-fill.is-full { background: linear-gradient(90deg, #10b981, #34d399); }
+    .sg-op__count { font-size: .58rem; font-weight: 800; color: #64748b; white-space: nowrap; flex-shrink: 0; letter-spacing: -.01em; }
+    .sg-op__count.is-ok { color: #166534; }
+    .sg-op__meta { display: flex; align-items: center; justify-content: space-between; gap: .2rem; }
+    .sg-op__money { font-size: .56rem; font-weight: 700; color: #075985; white-space: nowrap; }
+    .sg-op__date-wrap { flex-shrink: 0; }
+    .sg-op__date { font-size: .56rem !important; padding: .1rem .16rem !important; border-radius: 4px; border: 1px solid #e2e8f0; background: transparent; color: #64748b; width: 78px; min-width: 0; text-align: center; cursor: text; }
+    .sg-op__date:focus { border-color: #4a6fa5; background: #fff; outline: none; }
+    .sg-op__foot { display: flex; align-items: center; justify-content: space-between; gap: .2rem; padding-top: .18rem; border-top: 1px solid rgba(0,0,0,.04); }
+    .sg-op__people { display: inline-flex; align-items: center; gap: .2rem; font-size: .7rem; color: #94a3b8; }
+    .sg-op__people.has-data { color: #1e3a5f; }
+    .sg-op__badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 .18rem; border-radius: 999px; background: #1e3a5f; color: #fff; font-size: .5rem; font-weight: 800; }
+    .sg-op__cta { display: inline-flex; align-items: center; gap: .12rem; font-size: .52rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; transition: color .15s; }
+    .sg-op:hover .sg-op__cta { color: #1e3a5f; }
+    .sg-mini-label { display: block; font-size: .54rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #64748b; margin-bottom: .08rem; }
+    .sg-destajo-list { display: flex; flex-direction: column; gap: .25rem; }
+    .sg-destajo-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: .3rem; text-align: left; }
+    .sg-empleado-input { font-size: .66rem !important; padding: .22rem .3rem !important; border-radius: 6px; border: 1px solid #d1d9e0; background: #fff; color: #374151; width: 100%; min-width: 0; margin-bottom: .22rem; }
+    .sg-destajo-row { display: flex; align-items: flex-end; gap: .3rem; flex-wrap: nowrap; }
+    .sg-campo-num { display: flex; flex-direction: column; flex-shrink: 0; }
+    .sg-destajo-input { font-size: .62rem !important; padding: .16rem .18rem !important; border-radius: 5px; border: 1px solid #d1d9e0; background: #fff; color: #374151; width: 52px; min-width: 0; text-align: center; }
+    .sg-destajo-input-compact-money { width: 68px; }
+    .sg-destajo-total { font-size: .68rem; font-weight: 700; color: #065f46; white-space: nowrap; flex: 1; text-align: right; padding-bottom: .1rem; }
+    .sg-destajo-buttons { display: inline-flex; align-items: center; gap: .18rem; flex-shrink: 0; }
+    .sg-destajo-save, .sg-destajo-remove { border: none; color: #fff; width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; }
+    .sg-destajo-save { background: #1e3a5f; }
+    .sg-destajo-save:hover { background: #163052; }
+    .sg-destajo-remove { background: #dc2626; }
+    .sg-destajo-remove:hover { background: #b91c1c; }
+    .sg-destajo-add { border: 1px dashed #94a3b8; background: #fff; color: #1e3a5f; border-radius: 7px; padding: .28rem .42rem; font-size: .6rem; font-weight: 700; width: 100%; text-align: center; }
+    .sg-destajo-add:hover { background: #eff6ff; border-color: #4a6fa5; }
+    .sg-empty-split { font-size: .64rem; color: #94a3b8; padding: .45rem; border: 1px dashed #e2e8f0; border-radius: 6px; background: #fff; text-align: center; }
+    .sg-na { color: #cbd5e1; font-size: .88rem; }
+
+    /* ?? Mini progress ????????????????????????????????? */
+    .sg-mini-bar-wrap { height: 4px; background: #e5e7eb; border-radius: 99px; overflow: hidden; width: 58px; margin: 0 auto .18rem; }
+    .sg-mini-bar { height: 100%; background: #10b981; border-radius: 99px; transition: width .3s; }
+    .sg-mini-pct { font-size: .62rem; color: #6b7280; }
+
+    .sg-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .42); z-index: 1040; }
+    .sg-modal-shell { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1.2rem; z-index: 1050; }
+    .sg-modal-card { width: min(760px, 100%); max-height: 82vh; background: #fff; border-radius: 12px; border: 1px solid #dbe3ee; box-shadow: 0 24px 50px rgba(15,23,42,.22); overflow: hidden; display: flex; flex-direction: column; }
+    .sg-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; padding: .85rem 1rem; border-bottom: 1px solid #e8edf5; background: #f8fafc; }
+    .sg-modal-title { font-size: .88rem; font-weight: 800; color: #1e3a5f; }
+    .sg-modal-subtitle { font-size: .7rem; color: #64748b; margin-top: .12rem; }
+    .sg-modal-close { border: none; background: transparent; color: #64748b; width: 30px; height: 30px; border-radius: 8px; }
+    .sg-modal-close:hover { background: #eef2f7; color: #1e3a5f; }
+    .sg-modal-body { padding: .9rem 1rem; overflow: auto; }
+    .sg-modal-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .55rem; margin-bottom: .7rem; }
+    .sg-modal-kpi { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: .55rem .65rem; display: flex; flex-direction: column; gap: .15rem; }
+    .sg-modal-kpi-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+    .sg-modal-kpi strong { font-size: .84rem; color: #1f2937; }
+    .sg-modal-kpi.is-ok { border-color: #86efac; background: #f0fdf4; }
+    .sg-modal-kpi.is-warn { border-color: #fde68a; background: #fffbeb; }
+    .sg-modal-kpi-money { border-color: #bfdbfe; background: #eff6ff; }
+    .sg-modal-progress { border: 1px solid #e5edf5; border-radius: 10px; background: #fbfdff; padding: .65rem .75rem; }
+    .sg-modal-progress-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .68rem; color: #475569; margin-bottom: .35rem; }
+    .sg-modal-progress-track { height: 8px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .sg-modal-progress-bar { height: 100%; background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); border-radius: 999px; transition: width .25s ease; }
+    .sg-modal-progress-bar.is-ok { background: linear-gradient(90deg, #10b981 0%, #34d399 100%); }
+    .sg-destajo-list-modal { gap: .45rem; }
+    .sg-destajo-item-modal { padding: .45rem; }
+    .sg-modal-footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem 1rem; border-top: 1px solid #e8edf5; background: #fbfcfe; }
+    .sg-destajo-add-modal { width: auto; min-width: 170px; font-size: .68rem; padding: .45rem .75rem; }
+
+    /* Entrega y Facturación */
+    .sg-entrega-body { padding: .85rem 1rem; }
+    .sg-servicios-body { padding: .85rem 1rem; }
+    .sg-servicio-date { min-width: 125px; }
+    .sg-entrega-resumen { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: .75rem; }
+    @@media (max-width: 767px) { .sg-entrega-resumen { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+    .sg-resumen-kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: .7rem .85rem; display: flex; flex-direction: column; gap: .15rem; }
+    .sg-resumen-kpi-ok { border-color: #bbf7d0; background: #f0fdf4; }
+    .sg-resumen-kpi-warn { border-color: #fde68a; background: #fffbeb; }
+    .sg-resumen-label { font-size: .68rem; text-transform: uppercase; color: #64748b; letter-spacing: .04em; }
+    .sg-label { font-size: .72rem; font-weight: 600; color: #374151; display: block; margin-bottom: .2rem; }
+    .sg-input { font-size: .85rem; border: 1px solid #d1d9e0; border-radius: 6px; padding: .4rem .6rem; background: #fafbfc; color: #1e3a5f; }
+    .sg-input:focus { outline: none; border-color: #4a6fa5; box-shadow: 0 0 0 2px rgba(74,111,165,.15); }
+    .sg-btn-save { background: #1e3a5f; color: #fff; border: none; border-radius: 6px; padding: .5rem 1rem; font-size: .8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .sg-btn-save:hover { background: #163052; }
+    .sg-saved-msg { font-size: .9rem; color: #10b981; font-weight: 600; display: inline-flex; align-items: center; }
+
+    @@media (max-width: 991px) {
+        .sg-th-proc { min-width: 145px; }
+        .sg-modal-card { width: 100%; max-height: 88vh; }
+        .sg-modal-footer { flex-direction: column; align-items: stretch; }
+        .sg-destajo-add-modal { width: 100%; }
+    }
+</style>
+
+@code {
+    [Parameter] public Guid PedidoId { get; set; }
+
+    private Pedido? pedido;
+    private PedidoSerigrafia? pedidoSerigrafia;
+    private List<PedidoDetalleTalla> detalleTallasPedido = new();
+    private List<PedidoConcepto> conceptosPedido = new();
+    private List<NotaEntrega> notasEntrega = new();
+    private Dictionary<Guid, List<RegistroDestajoProceso>> destajosPorSeguimiento = new();
+    private List<Empleado> empleadosActivos = new();
+    private List<PedidoSerigrafiaTallaProceso> seguimientoTallaProcesos = new();
+    private List<EntregaTallaEditor> corridaPedido = new();
+    private DateTime fechaNotaEntrega = DateTime.Today;
+    private int cantidadNotaEntrega;
+    private string? observacionesNotaEntrega;
+    private bool noRequiereFacturaNota;
+    private bool guardandoNota;
+    private string? errorNota;
+    private string? okNota;
+    private Dictionary<Guid, decimal> existenciasFgPorDetalleTalla = new();
+    private int piezasPedidoTotal;
+    private int piezasEntregadas;
+    private int piezasPendientes;
+    private Guid empresaIdActual;
+    private bool modalDestajoAbierto;
+    private Guid? modalSeguimientoId;
+    private bool modalConfirmarCheckAbierto;
+    private Guid? confirmacionSeguimientoId;
+    private bool modalConfirmarIngresoFgAbierto;
+    private bool confirmacionIngresoFgEsUltimoSku;
+    private string modalTallaNombre = string.Empty;
+    private string modalProcesoNombre = string.Empty;
+    private string confirmacionTallaNombre = string.Empty;
+    private string confirmacionProcesoNombre = string.Empty;
+    private FinishedGoodPendienteItem? confirmacionIngresoFgItem;
+    private string? modalDestajoError;
+    private bool puedeReabrirProcesos;
+    private bool puedeIngresarFinishedGoods;
+    private bool inventarioFinishedGoodsDisponible = true;
+    private bool guardandoFg;
+    private string? errorFg;
+    private string? okFg;
+    private HashSet<Guid> detalleTallasIngresadasFg = new();
+    private readonly SemaphoreSlim _opLock = new(1, 1);
+
+    private PedidoSerigrafiaTallaProceso? modalSeguimiento
+        => modalSeguimientoId.HasValue
+            ? seguimientoTallaProcesos.FirstOrDefault(s => s.Id == modalSeguimientoId.Value)
+            : null;
+
+    private PedidoSerigrafiaTallaProceso? confirmacionSeguimiento
+        => confirmacionSeguimientoId.HasValue
+            ? seguimientoTallaProcesos.FirstOrDefault(s => s.Id == confirmacionSeguimientoId.Value)
+            : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        empresaIdActual = await ObtenerEmpresaActualIdAsync();
+        puedeReabrirProcesos = await TieneCapacidadAsync("pedidos.produccion.reabrir");
+        puedeIngresarFinishedGoods = await TieneCapacidadAsync("inventario.fg.ingresar") || await TieneCapacidadAsync("serigrafia.editar");
+        pedido = await PedidoRepository.GetByIdAsync(PedidoId);
+        conceptosPedido = pedido?.Conceptos.OrderBy(c => c.CreatedAt).ToList() ?? new();
+        empleadosActivos = await DbContext.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+        await CargarSerigrafiaAsync();
+        await CargarNotasEntregaAsync();
+    }
+
+    private bool EsTallaCompletada(Guid tallaId, IEnumerable<TipoProceso> procesos)
+    {
+        var procesoIds = procesos.Select(p => p.Id).ToList();
+        return procesoIds.All(pid => seguimientoTallaProcesos.Any(s => s.PedidoSerigrafiaTallaId == tallaId && s.TipoProcesoId == pid && s.Completado));
+    }
+
+    private async Task CargarSerigrafiaAsync()
+    {
+        pedidoSerigrafia = await DbContext.PedidosSerigrafia
+            .Include(p => p.PedidoDetalle)
+                .ThenInclude(pd => pd.Pedido)
+            .Include(p => p.PedidoDetalle)
+                .ThenInclude(pd => pd.CotizacionSerigrafia)
+                    .ThenInclude(c => c.Detalles)
+            .Include(p => p.TiposProceso)
+                .ThenInclude(tp => tp.TipoProceso)
+                    .ThenInclude(t => t.Posicion)
+            .Include(p => p.Tallas)
+            .FirstOrDefaultAsync(p => p.PedidoDetalle.PedidoId == PedidoId);
+
+        if (pedidoSerigrafia != null)
+        {
+            detalleTallasPedido = await DbContext.PedidosDetalleTalla
+                .AsNoTracking()
+                .Include(t => t.ProductoVariante)
+                .Where(t => t.PedidoDetalleId == pedidoSerigrafia.PedidoDetalleId && t.IsActive)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Talla)
+                .ToListAsync();
+
+            seguimientoTallaProcesos = await DbContext.PedidoSerigrafiaTallaProcesos
+                .Include(s => s.Empleado)
+                .Where(s => s.PedidoSerigrafiaId == pedidoSerigrafia.Id)
+                .ToListAsync();
+
+            destajosPorSeguimiento = await DbContext.RegistrosDestajoProceso
+                .Where(r => r.PedidoSerigrafiaId == pedidoSerigrafia.Id)
+                .OrderBy(r => r.Fecha)
+                .ThenBy(r => r.CreatedAt)
+                .GroupBy(r => r.PedidoSerigrafiaTallaProcesoId)
+                .ToDictionaryAsync(g => g.Key, g => g.ToList());
+
+            await CargarEstadoFinishedGoodsAsync();
+        }
+        else
+        {
+            detalleTallasPedido = new();
+            destajosPorSeguimiento = new();
+            existenciasFgPorDetalleTalla = new();
+            detalleTallasIngresadasFg = new();
+        }
+    }
+
+    private async Task CargarEstadoFinishedGoodsAsync()
+    {
+        if (pedidoSerigrafia == null)
+        {
+            inventarioFinishedGoodsDisponible = false;
+            existenciasFgPorDetalleTalla = new();
+            detalleTallasIngresadasFg = new();
+            return;
+        }
+
+        try
+        {
+            var variantesIds = detalleTallasPedido
+                .Where(t => t.ProductoVarianteId.HasValue)
+                .Select(t => t.ProductoVarianteId!.Value)
+                .Distinct()
+                .ToList();
+
+            var inventariosFg = variantesIds.Count == 0
+                ? []
+                : await DbContext.InventariosFinishedGoods
+                    .AsNoTracking()
+                    .Where(i => i.EmpresaId == empresaIdActual
+                        && i.ClienteId == pedidoSerigrafia.PedidoDetalle.Pedido.ClienteId
+                        && variantesIds.Contains(i.ProductoVarianteId)
+                        && i.IsActive)
+                    .ToListAsync();
+
+            existenciasFgPorDetalleTalla = detalleTallasPedido.ToDictionary(
+                t => t.Id,
+                t => t.ProductoVarianteId.HasValue
+                    ? inventariosFg.FirstOrDefault(i => i.ProductoVarianteId == t.ProductoVarianteId.Value)?.CantidadDisponible ?? 0m
+                    : 0m);
+
+            detalleTallasIngresadasFg = await DbContext.MovimientosFinishedGoods
+                .Where(m => m.PedidoSerigrafiaId == pedidoSerigrafia.Id
+                    && m.TipoMovimiento == MovimientoFinishedGoodTipoEnum.IngresoProduccion
+                    && m.PedidoDetalleTallaId.HasValue
+                    && m.IsActive)
+                .Select(m => m.PedidoDetalleTallaId!.Value)
+                .ToHashSetAsync();
+
+            inventarioFinishedGoodsDisponible = true;
+        }
+        catch (Exception ex) when (EsTablaFinishedGoodsInexistente(ex))
+        {
+            inventarioFinishedGoodsDisponible = false;
+            existenciasFgPorDetalleTalla = detalleTallasPedido.ToDictionary(t => t.Id, _ => 0m);
+            detalleTallasIngresadasFg = new();
+            errorFg ??= "El esquema de finished goods aún no existe en la base de datos. Aplica la migración pendiente para habilitar FG.";
+        }
+    }
+
+    private async Task CargarNotasEntregaAsync()
+    {
+        notasEntrega = await DbContext.NotasEntrega
+            .Include(n => n.Detalles)
+                .ThenInclude(d => d.Tallas)
+            .Include(n => n.FacturasRelacionadas)
+                .ThenInclude(r => r.Factura)
+            .Where(n => n.PedidoId == PedidoId && n.IsActive)
+            .OrderByDescending(n => n.FechaNota)
+            .ToListAsync();
+
+        piezasPedidoTotal = ObtenerPiezasPedidoTotal();
+        piezasEntregadas = notasEntrega.Sum(ObtenerCantidadNota);
+        piezasPendientes = Math.Max(0, piezasPedidoTotal - piezasEntregadas);
+        ConstruirCorridaEntrega();
+    }
+
+    private async Task OnCheckTallaProcesoClickAsync(PedidoSerigrafiaTallaProceso seg, string talla, string? proceso)
+    {
+        if (!PuedeEditarProcesosProduccion())
+        {
+            return;
+        }
+
+        var pendientesFgAntes = ObtenerIdsSkusPendientesFinishedGoods();
+
+        if (seg.Completado)
+        {
+            await DesmarcarProcesoAsync(seg);
+            return;
+        }
+
+        var cantidadObjetivo = ObtenerCantidadTallaSeguimiento(seg);
+        if (cantidadObjetivo > 0 && ObtenerCantidadAsignada(seg.Id) >= cantidadObjetivo)
+        {
+            await _opLock.WaitAsync();
+            try
+            {
+                await SincronizarCompletadoProcesoAsync(seg, await ObtenerUsuarioActualAsync());
+                DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+                await DbContext.SaveChangesAsync();
+            }
+            finally
+            {
+                _opLock.Release();
+            }
+
+            await CargarSerigrafiaAsync();
+            await ActualizarEstadoPedidoAsync();
+            LanzarConfirmacionIngresoFinishedGoodsSiAplica(pendientesFgAntes);
+            return;
+        }
+
+        AbrirModalConfirmacionCheck(seg, talla, proceso);
+    }
+
+    private async Task DesmarcarProcesoAsync(PedidoSerigrafiaTallaProceso seg)
+    {
+        await _opLock.WaitAsync();
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            var destajos = ObtenerDestajos(seg.Id);
+            var autoDestajos = destajos.Where(d => d.IsActive && d.EmpleadoId == Guid.Empty).ToList();
+
+            foreach (var autoDestajo in autoDestajos)
+            {
+                destajos.Remove(autoDestajo);
+                if (autoDestajo.Id != Guid.Empty)
+                {
+                    DbContext.RegistrosDestajoProceso.Remove(autoDestajo);
+                }
+            }
+
+            seg.Completado = false;
+            if (!destajos.Any(d => d.IsActive))
+            {
+                seg.FechaPaso = null;
+            }
+
+            await SincronizarCompletadoProcesoAsync(seg, usuarioActual);
+            DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+            await DbContext.SaveChangesAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+
+        await CargarSerigrafiaAsync();
+        await ActualizarEstadoPedidoAsync();
+    }
+
+    private void AbrirModalConfirmacionCheck(PedidoSerigrafiaTallaProceso seg, string talla, string? proceso)
+    {
+        confirmacionSeguimientoId = seg.Id;
+        confirmacionTallaNombre = talla;
+        confirmacionProcesoNombre = string.IsNullOrWhiteSpace(proceso) ? "Proceso" : proceso.Trim();
+        modalConfirmarCheckAbierto = true;
+    }
+
+    private void CerrarModalConfirmacionCheck()
+    {
+        modalConfirmarCheckAbierto = false;
+        confirmacionSeguimientoId = null;
+        confirmacionTallaNombre = string.Empty;
+        confirmacionProcesoNombre = string.Empty;
+    }
+
+    private async Task ConfirmarCheckConEmpleadosAsync()
+    {
+        var seg = confirmacionSeguimiento;
+        var talla = confirmacionTallaNombre;
+        var proceso = confirmacionProcesoNombre;
+        CerrarModalConfirmacionCheck();
+
+        if (seg == null)
+        {
+            return;
+        }
+
+        if (!ObtenerDestajos(seg.Id).Any(d => d.IsActive))
+        {
+            await AgregarDestajo(seg);
+        }
+
+        AbrirModalDestajo(seg, talla, proceso);
+    }
+
+    private async Task ConfirmarCheckSinEmpleadosAsync()
+    {
+        var seg = confirmacionSeguimiento;
+        CerrarModalConfirmacionCheck();
+
+        if (seg == null)
+        {
+            return;
+        }
+
+        await CompletarProcesoSinEmpleadosAsync(seg);
+    }
+
+    private async Task CompletarProcesoSinEmpleadosAsync(PedidoSerigrafiaTallaProceso seg)
+    {
+        var pendientesFgAntes = ObtenerIdsSkusPendientesFinishedGoods();
+
+        await _opLock.WaitAsync();
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            seg.EmpleadoId = ObtenerDestajos(seg.Id)
+                .Where(d => d.IsActive && d.EmpleadoId != Guid.Empty)
+                .Select(d => (Guid?)d.EmpleadoId)
+                .FirstOrDefault();
+            await SincronizarCompletadoProcesoAsync(seg, usuarioActual, forzarCompletado: true);
+            DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+            await DbContext.SaveChangesAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+
+        await CargarSerigrafiaAsync();
+        await ActualizarEstadoPedidoAsync();
+        LanzarConfirmacionIngresoFinishedGoodsSiAplica(pendientesFgAntes);
+    }
+
+    private async Task OnFechaTallaProceso(PedidoSerigrafiaTallaProceso seg, DateTime? value)
+    {
+        if (!PuedeEditarProcesosProduccion())
+        {
+            return;
+        }
+
+        await _opLock.WaitAsync();
+        try
+        {
+            seg.FechaPaso = value;
+            seg.UpdatedAt = DateTime.UtcNow;
+            seg.UpdatedBy = await ObtenerUsuarioActualAsync();
+            DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+            await DbContext.SaveChangesAsync();
+            await ActualizarEstadoPedidoAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    private List<RegistroDestajoProceso> ObtenerDestajos(Guid seguimientoId)
+    {
+        if (!destajosPorSeguimiento.TryGetValue(seguimientoId, out var destajos))
+        {
+            destajos = new();
+            destajosPorSeguimiento[seguimientoId] = destajos;
+        }
+
+        return destajos;
+    }
+
+    private async Task AgregarDestajo(PedidoSerigrafiaTallaProceso seg)
+    {
+        var cantidadDefault = pedidoSerigrafia?.Tallas.FirstOrDefault(t => t.Id == seg.PedidoSerigrafiaTallaId)?.Cantidad ?? 0;
+        var proceso = pedidoSerigrafia?.TiposProceso
+            .FirstOrDefault(tp => tp.TipoProcesoId == seg.TipoProcesoId)?
+            .TipoProceso;
+        var destajos = ObtenerDestajos(seg.Id);
+        var cantidadAsignada = destajos.Where(d => d.IsActive).Sum(d => Math.Max(0, d.CantidadProcesada));
+        var cantidadPendiente = Math.Max(0, cantidadDefault - cantidadAsignada);
+        var cantidadNueva = cantidadPendiente > 0 ? cantidadPendiente : 0;
+        var minutosDefault = ObtenerMinutosCotizacion(seg.TipoProcesoId, cantidadDefault, cantidadNueva);
+        var tarifaDefault = 0m;
+
+        if (proceso != null && seg.EmpleadoId.HasValue && seg.EmpleadoId.Value != Guid.Empty)
+        {
+            var tarifaResultado = await ResolverTarifaDestajoAsync(seg.TipoProcesoId, seg.EmpleadoId.Value, cantidadDefault, seg.FechaPaso ?? DateTime.UtcNow);
+            tarifaDefault = tarifaResultado.Tarifa;
+        }
+        else if (proceso != null)
+        {
+            tarifaDefault = ObtenerTarifaDestajoPorPieza(seg.TipoProcesoId, cantidadDefault);
+        }
+
+        destajos.Add(new RegistroDestajoProceso
+        {
+            PedidoSerigrafiaTallaProcesoId = seg.Id,
+            PedidoSerigrafiaId = seg.PedidoSerigrafiaId,
+            PedidoSerigrafiaTallaId = seg.PedidoSerigrafiaTallaId,
+            TipoProcesoId = seg.TipoProcesoId,
+            EmpleadoId = seg.EmpleadoId ?? Guid.Empty,
+            Fecha = seg.FechaPaso ?? DateTime.UtcNow,
+            CantidadProcesada = cantidadNueva,
+            TarifaUnitario = tarifaDefault,
+            TiempoMinutos = minutosDefault,
+            IsActive = true
+        });
+    }
+
+    private static string ObtenerEmpleadoValue(RegistroDestajoProceso destajo)
+        => destajo.EmpleadoId == Guid.Empty ? string.Empty : destajo.EmpleadoId.ToString();
+
+    private async Task OnDestajoEmpleadoChanged(RegistroDestajoProceso destajo, string? empleadoId)
+    {
+        destajo.EmpleadoId = Guid.TryParse(empleadoId, out var empleadoGuid) ? empleadoGuid : Guid.Empty;
+
+        if (destajo.EmpleadoId == Guid.Empty)
+        {
+            return;
+        }
+
+        var tallaCantidad = pedidoSerigrafia?.Tallas.FirstOrDefault(t => t.Id == destajo.PedidoSerigrafiaTallaId)?.Cantidad ?? 0;
+        var resultado = await ResolverTarifaDestajoAsync(destajo.TipoProcesoId, destajo.EmpleadoId, tallaCantidad, destajo.Fecha);
+        if (resultado.Tarifa > 0)
+        {
+            destajo.TarifaUnitario = resultado.Tarifa;
+            destajo.Importe = CalcularImporteDestajo(destajo);
+        }
+    }
+
+    private EventCallback<ChangeEventArgs> CrearCambioEmpleadoCallback(RegistroDestajoProceso destajo)
+        => EventCallback.Factory.Create<ChangeEventArgs>(this, async e => await OnDestajoEmpleadoChanged(destajo, e.Value?.ToString()));
+
+    private EventCallback CrearGuardarDestajoCallback(PedidoSerigrafiaTallaProceso seg, RegistroDestajoProceso destajo)
+        => EventCallback.Factory.Create(this, () => GuardarDestajo(seg, destajo));
+
+    private EventCallback CrearEliminarDestajoCallback(PedidoSerigrafiaTallaProceso seg, RegistroDestajoProceso destajo)
+        => EventCallback.Factory.Create(this, () => EliminarDestajo(seg, destajo));
+
+    private EventCallback CrearAgregarDestajoCallback(PedidoSerigrafiaTallaProceso seg)
+        => EventCallback.Factory.Create(this, async () => await AgregarDestajo(seg));
+
+    private void AbrirModalDestajo(PedidoSerigrafiaTallaProceso seg, string talla, string? proceso)
+    {
+        modalSeguimientoId = seg.Id;
+        modalTallaNombre = talla;
+        modalProcesoNombre = string.IsNullOrWhiteSpace(proceso) ? "Proceso" : proceso.Trim();
+        modalDestajoError = null;
+        modalDestajoAbierto = true;
+    }
+
+    private void CerrarModalDestajo()
+    {
+        modalDestajoAbierto = false;
+        modalSeguimientoId = null;
+        modalTallaNombre = string.Empty;
+        modalProcesoNombre = string.Empty;
+        modalDestajoError = null;
+    }
+
+    private async Task AgregarDestajoDesdeModal(PedidoSerigrafiaTallaProceso seg)
+    {
+        if (ObtenerCantidadDisponible(seg) <= 0)
+        {
+            modalDestajoError = "Ya no hay piezas disponibles para asignar en esta operación.";
+            return;
+        }
+
+        await AgregarDestajo(seg);
+        modalDestajoError = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnCantidadDestajoCapturada(PedidoSerigrafiaTallaProceso seg, RegistroDestajoProceso destajo)
+    {
+        var maximoDisponible = ObtenerCantidadDisponible(seg, destajo.Id == Guid.Empty ? null : destajo.Id);
+
+        if (destajo.CantidadProcesada < 0)
+            destajo.CantidadProcesada = 0;
+
+        if (destajo.CantidadProcesada > maximoDisponible)
+        {
+            destajo.CantidadProcesada = maximoDisponible;
+            modalDestajoError = $"Solo puedes capturar hasta {maximoDisponible} pieza(s) disponibles en este registro.";
+            return;
+        }
+
+        modalDestajoError = null;
+    }
+
+    private int ObtenerCantidadAsignada(Guid seguimientoId)
+    {
+        var asignado = ObtenerDestajos(seguimientoId)
+            .Where(d => d.IsActive)
+            .Sum(d => Math.Max(0, d.CantidadProcesada));
+
+        if (asignado > 0)
+        {
+            return asignado;
+        }
+
+        var seg = seguimientoTallaProcesos.FirstOrDefault(s => s.Id == seguimientoId);
+        return seg?.Completado == true ? ObtenerCantidadTallaSeguimiento(seg) : 0;
+    }
+
+    private int ObtenerCantidadTallaSeguimiento(PedidoSerigrafiaTallaProceso seg)
+        => pedidoSerigrafia?.Tallas.FirstOrDefault(t => t.Id == seg.PedidoSerigrafiaTallaId)?.Cantidad ?? 0;
+
+    private int ObtenerCantidadDisponible(PedidoSerigrafiaTallaProceso seg, Guid? excludingDestajoId = null)
+    {
+        var total = ObtenerCantidadTallaSeguimiento(seg);
+        var asignado = ObtenerDestajos(seg.Id)
+            .Where(d => d.IsActive && d.Id != excludingDestajoId)
+            .Sum(d => Math.Max(0, d.CantidadProcesada));
+
+        if (asignado == 0 && excludingDestajoId == null && seg.Completado)
+        {
+            return 0;
+        }
+
+        return Math.Max(0, total - asignado);
+    }
+
+    private int ObtenerPorcentajeAsignado(PedidoSerigrafiaTallaProceso seg)
+    {
+        var total = ObtenerCantidadTallaSeguimiento(seg);
+        if (total <= 0)
+            return 0;
+
+        return (int)Math.Round((double)ObtenerCantidadAsignada(seg.Id) / total * 100);
+    }
+
+    private static IEnumerable<RegistroDestajoProceso> OrdenarDestajos(IEnumerable<RegistroDestajoProceso> destajos)
+        => destajos.OrderBy(d => d.CreatedAt == default ? d.Fecha : d.CreatedAt)
+            .ThenBy(d => d.Fecha);
+
+    private decimal ObtenerImporteAsignado(Guid seguimientoId)
+        => ObtenerDestajos(seguimientoId)
+            .Where(d => d.IsActive)
+            .Sum(CalcularImporteDestajo);
+
+    private decimal ObtenerTarifaDestajoPorPieza(Guid tipoProcesoId, int cantidadTotal)
+    {
+        var minutosPorPieza = ObtenerMinutosCotizacionPorPieza(tipoProcesoId, cantidadTotal);
+        if (minutosPorPieza <= 0)
+        {
+            return 0m;
+        }
+
+        var tarifaMinuto = ObtenerTarifaOperacionPorMinuto(tipoProcesoId);
+        if (tarifaMinuto <= 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(minutosPorPieza * tarifaMinuto, 4);
+    }
+
+    private async Task<DestajoTarifaResultado> ResolverTarifaDestajoAsync(Guid tipoProcesoId, Guid empleadoId, int cantidadTotal, DateTime fecha)
+    {
+        var proceso = pedidoSerigrafia?.TiposProceso
+            .FirstOrDefault(tp => tp.TipoProcesoId == tipoProcesoId)?
+            .TipoProceso;
+        if (proceso == null)
+        {
+            return new DestajoTarifaResultado();
+        }
+
+        var empleado = empleadosActivos.FirstOrDefault(e => e.Id == empleadoId);
+        if (empleado == null)
+        {
+            return new DestajoTarifaResultado();
+        }
+
+        var minutosPorPieza = ObtenerMinutosCotizacionPorPieza(tipoProcesoId, cantidadTotal);
+        var tarifasEsquema = await ObtenerTarifasEsquemaEmpleadoAsync(empleadoId, fecha);
+        return DestajoTarifaResolver.Resolver(proceso, empleado.PosicionId, minutosPorPieza, tarifasEsquema);
+    }
+
+    private async Task<List<EsquemaPagoTarifa>> ObtenerTarifasEsquemaEmpleadoAsync(Guid empleadoId, DateTime fecha)
+    {
+        var asignacion = await DbContext.EmpleadosEsquemaPago
+            .AsNoTracking()
+            .Where(a => a.EmpleadoId == empleadoId
+                && a.VigenteDesde <= fecha
+                && (a.VigenteHasta == null || a.VigenteHasta >= fecha))
+            .OrderByDescending(a => a.VigenteDesde)
+            .FirstOrDefaultAsync();
+
+        if (asignacion == null)
+        {
+            return [];
+        }
+
+        return await DbContext.EsquemasPagoTarifa
+            .AsNoTracking()
+            .Where(t => t.EsquemaPagoId == asignacion.EsquemaPagoId)
+            .ToListAsync();
+    }
+
+    private decimal ObtenerTarifaOperacionPorMinuto(Guid tipoProcesoId)
+        => Math.Round(
+            pedidoSerigrafia?.TiposProceso
+                .FirstOrDefault(tp => tp.TipoProcesoId == tipoProcesoId)?
+                .TipoProceso?
+                .Posicion?
+                .TarifaPorMinuto
+            ?? 0m,
+            4);
+
+    private decimal ObtenerMinutosCotizacionPorPieza(Guid tipoProcesoId, int cantidadTotal)
+    {
+        var minutosProrrateados = ObtenerMinutosCotizacion(tipoProcesoId, cantidadTotal, 1);
+        if (!minutosProrrateados.HasValue)
+        {
+            return 0m;
+        }
+
+        return Math.Round((decimal)minutosProrrateados.Value, 4);
+    }
+
+    private int? ObtenerMinutosCotizacion(Guid tipoProcesoId, int cantidadTotal, int cantidadAsignada)
+    {
+        var detalles = pedidoSerigrafia?.PedidoDetalle?.CotizacionSerigrafia?.Detalles;
+        if (detalles == null || !detalles.Any())
+        {
+            return null;
+        }
+
+        var minutosBase = detalles
+            .Where(d => d.Categoria == CotizacionCategoria.ManoObra && d.TipoProcesoId == tipoProcesoId && d.Tiempo.HasValue)
+            .Sum(d => d.Tiempo ?? 0m);
+
+        if (minutosBase <= 0)
+        {
+            return null;
+        }
+
+        if (cantidadTotal <= 0 || cantidadAsignada <= 0)
+        {
+            return (int)Math.Ceiling(minutosBase);
+        }
+
+        var minutosProrrateados = (minutosBase * cantidadAsignada) / cantidadTotal;
+        return (int)Math.Ceiling(minutosProrrateados);
+    }
+
+    private decimal CalcularImporteDestajo(RegistroDestajoProceso destajo)
+    {
+        var cantidad = Math.Max(0, destajo.CantidadProcesada);
+        var tarifa = Math.Max(0, destajo.TarifaUnitario);
+        return cantidad * tarifa;
+    }
+
+    private Task SincronizarCompletadoProcesoAsync(PedidoSerigrafiaTallaProceso seg, string? usuarioActual, bool forzarCompletado = false)
+    {
+        var cantidadObjetivo = ObtenerCantidadTallaSeguimiento(seg);
+        var cantidadAsignada = ObtenerCantidadAsignada(seg.Id);
+        var completar = forzarCompletado || (cantidadObjetivo > 0 && cantidadAsignada >= cantidadObjetivo);
+
+        seg.Completado = completar;
+        seg.FechaPaso = completar
+            ? seg.FechaPaso ?? DateTime.UtcNow
+            : cantidadAsignada == 0 ? null : seg.FechaPaso;
+        seg.UpdatedAt = DateTime.UtcNow;
+        seg.UpdatedBy = usuarioActual;
+
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarDestajo(PedidoSerigrafiaTallaProceso seg, RegistroDestajoProceso destajo)
+    {
+        if (destajo.EmpleadoId == Guid.Empty || pedidoSerigrafia == null)
+        {
+            modalDestajoError = "Selecciona un empleado antes de guardar.";
+            return;
+        }
+
+        var pendientesFgAntes = ObtenerIdsSkusPendientesFinishedGoods();
+
+        var maximoDisponible = ObtenerCantidadDisponible(seg, destajo.Id == Guid.Empty ? null : destajo.Id);
+        var cantidadCapturada = Math.Max(0, destajo.CantidadProcesada);
+
+        if (cantidadCapturada <= 0)
+        {
+            modalDestajoError = "La cantidad procesada debe ser mayor a cero.";
+            return;
+        }
+
+        if (cantidadCapturada > maximoDisponible)
+        {
+            modalDestajoError = $"No puedes asignar {cantidadCapturada} piezas. Solo quedan {maximoDisponible} disponibles para esta operación.";
+            return;
+        }
+
+        await _opLock.WaitAsync();
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            destajo.PedidoSerigrafiaId = seg.PedidoSerigrafiaId;
+            destajo.PedidoSerigrafiaTallaProcesoId = seg.Id;
+            destajo.PedidoSerigrafiaTallaId = seg.PedidoSerigrafiaTallaId;
+            destajo.TipoProcesoId = seg.TipoProcesoId;
+            destajo.EmpleadoId = destajo.EmpleadoId;
+            destajo.Fecha = seg.FechaPaso ?? DateTime.UtcNow;
+            destajo.CantidadProcesada = Math.Max(0, destajo.CantidadProcesada);
+            destajo.TarifaUnitario = Math.Max(0, destajo.TarifaUnitario);
+            destajo.Importe = CalcularImporteDestajo(destajo);
+            destajo.IsActive = true;
+
+            seg.EmpleadoId = ObtenerDestajos(seg.Id)
+                .Where(d => d.IsActive && d.EmpleadoId != Guid.Empty)
+                .Select(d => (Guid?)d.EmpleadoId)
+                .FirstOrDefault();
+            await SincronizarCompletadoProcesoAsync(seg, usuarioActual);
+            DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+
+            if (destajo.Id == Guid.Empty)
+            {
+                destajo.Id = Guid.NewGuid();
+                destajo.CreatedAt = DateTime.UtcNow;
+                destajo.CreatedBy = usuarioActual;
+                DbContext.RegistrosDestajoProceso.Add(destajo);
+            }
+            else
+            {
+                destajo.UpdatedAt = DateTime.UtcNow;
+                destajo.UpdatedBy = usuarioActual;
+                DbContext.RegistrosDestajoProceso.Update(destajo);
+            }
+
+            await DbContext.SaveChangesAsync();
+            modalDestajoError = null;
+            await CargarSerigrafiaAsync();
+            await ActualizarEstadoPedidoAsync();
+            LanzarConfirmacionIngresoFinishedGoodsSiAplica(pendientesFgAntes);
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    private async Task EliminarDestajo(PedidoSerigrafiaTallaProceso seg, RegistroDestajoProceso destajo)
+    {
+        var destajos = ObtenerDestajos(seg.Id);
+
+        if (destajo.Id == Guid.Empty)
+        {
+            destajos.Remove(destajo);
+            return;
+        }
+
+        await _opLock.WaitAsync();
+        try
+        {
+            destajos.Remove(destajo);
+            DbContext.RegistrosDestajoProceso.Remove(destajo);
+
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            var siguienteEmpleadoId = destajos
+                .Where(d => d.Id != destajo.Id && d.IsActive && d.EmpleadoId != Guid.Empty)
+                .Select(d => (Guid?)d.EmpleadoId)
+                .FirstOrDefault();
+
+            seg.EmpleadoId = siguienteEmpleadoId;
+            await SincronizarCompletadoProcesoAsync(seg, usuarioActual);
+            DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+
+            await DbContext.SaveChangesAsync();
+            modalDestajoError = null;
+            await CargarSerigrafiaAsync();
+            await ActualizarEstadoPedidoAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    private async Task OnConceptoCompletadoChanged(PedidoConcepto concepto, bool value)
+    {
+        await _opLock.WaitAsync();
+        try
+        {
+            concepto.Completado = value;
+            concepto.FechaCompletado = value ? (concepto.FechaCompletado ?? DateTime.UtcNow) : null;
+            concepto.UpdatedAt = DateTime.UtcNow;
+            concepto.UpdatedBy = await ObtenerUsuarioActualAsync();
+            DbContext.PedidoConceptos.Update(concepto);
+            await DbContext.SaveChangesAsync();
+            await ActualizarEstadoPedidoAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    private async Task OnConceptoFechaChanged(PedidoConcepto concepto, DateTime? value)
+    {
+        await _opLock.WaitAsync();
+        try
+        {
+            concepto.FechaCompletado = value;
+            concepto.Completado = value.HasValue || concepto.Completado;
+            concepto.UpdatedAt = DateTime.UtcNow;
+            concepto.UpdatedBy = await ObtenerUsuarioActualAsync();
+            DbContext.PedidoConceptos.Update(concepto);
+            await DbContext.SaveChangesAsync();
+            await ActualizarEstadoPedidoAsync();
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    private async Task CrearNotaEntregaAsync()
+    {
+        errorNota = okNota = null;
+
+        if (pedido == null)
+        {
+            errorNota = "No se encontró el pedido.";
+            return;
+        }
+
+        if (piezasPendientes <= 0)
+        {
+            errorNota = "El pedido ya no tiene piezas pendientes por entregar.";
+            return;
+        }
+
+        RecalcularEntregaActual();
+
+        if (cantidadNotaEntrega <= 0)
+        {
+            errorNota = "Captura una cantidad válida por talla para la parcialidad.";
+            return;
+        }
+
+        if (cantidadNotaEntrega > piezasPendientes)
+        {
+            errorNota = $"La cantidad excede el pendiente actual ({piezasPendientes} piezas).";
+            return;
+        }
+
+        guardandoNota = true;
+
+        try
+        {
+            var usuario = await ObtenerUsuarioActualAsync();
+            var numeroNota = await AppConfigRepository.GetNextCodeAsync("NOT-", "Consecutivo:NotaEntrega");
+            var pedidoDetalleId = pedidoSerigrafia?.PedidoDetalleId ?? pedido.Detalles.FirstOrDefault()?.Id;
+            var detallesNota = ConstruirDetallesNotaEntrega(pedidoDetalleId, usuario);
+            if (!detallesNota.Any())
+            {
+                errorNota = "No se pudieron construir las líneas comerciales de la nota.";
+                return;
+            }
+
+            var salidasFg = detalleTallasPedido.Any()
+                ? await ConstruirSalidasFinishedGoodsAsync()
+                : [];
+
+            if (detalleTallasPedido.Any() && corridaPedido.Any(t => t.CantidadEntregar > 0) && !salidasFg.Any())
+            {
+                errorNota = "No se encontraron existencias de finished goods para las tallas seleccionadas.";
+                return;
+            }
+
+            var subtotal = detallesNota.Sum(d => d.Importe);
+            var tasaImpuesto = pedido.Subtotal > 0 ? pedido.Impuestos / pedido.Subtotal : 0m;
+            var impuestos = Math.Round(subtotal * tasaImpuesto, 2);
+            var total = Math.Round(subtotal + impuestos, 2);
+
+            var nota = new NotaEntrega
+            {
+                Id = Guid.NewGuid(),
+                PedidoId = pedido.Id,
+                ClienteId = pedido.ClienteId,
+                NumeroNota = numeroNota,
+                FechaNota = fechaNotaEntrega,
+                Estatus = NotaEntregaEstatus.Emitida,
+                NoRequiereFactura = noRequiereFacturaNota,
+                Observaciones = LimpiarTexto(observacionesNotaEntrega),
+                Subtotal = subtotal,
+                Impuestos = impuestos,
+                Total = total,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            };
+
+            foreach (var detalleNota in detallesNota)
+            {
+                nota.Detalles.Add(detalleNota);
+            }
+
+            foreach (var salida in salidasFg)
+            {
+                salida.Inventario.CantidadDisponible = salida.ExistenciaNueva;
+                salida.Inventario.UpdatedAt = DateTime.UtcNow;
+                salida.Inventario.UpdatedBy = usuario;
+
+                DbContext.MovimientosFinishedGoods.Add(new MovimientoFinishedGood
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = salida.Inventario.EmpresaId,
+                    InventarioFinishedGoodId = salida.Inventario.Id,
+                    TipoMovimiento = MovimientoFinishedGoodTipoEnum.SalidaNotaEntrega,
+                    Cantidad = salida.Cantidad,
+                    ExistenciaAnterior = salida.ExistenciaAnterior,
+                    ExistenciaNueva = salida.ExistenciaNueva,
+                    FechaMovimiento = DateTime.UtcNow,
+                    Referencia = numeroNota,
+                    Observaciones = $"Salida por nota de entrega {numeroNota}",
+                    PedidoId = pedido.Id,
+                    PedidoSerigrafiaId = pedidoSerigrafia?.Id,
+                    PedidoDetalleTallaId = salida.Detalle.Id,
+                    NotaEntregaId = nota.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                });
+            }
+
+            DbContext.NotasEntrega.Add(nota);
+            await DbContext.SaveChangesAsync();
+            try
+            {
+                await NotaEntregaPdfService.GenerateAndStoreAsync(nota.Id);
+            }
+            catch
+            {
+                foreach (var salida in salidasFg)
+                {
+                    salida.Inventario.CantidadDisponible = salida.ExistenciaAnterior;
+                    salida.Inventario.UpdatedAt = DateTime.UtcNow;
+                    salida.Inventario.UpdatedBy = usuario;
+                }
+
+                var movimientosSalida = await DbContext.MovimientosFinishedGoods
+                    .Where(m => m.NotaEntregaId == nota.Id && m.TipoMovimiento == MovimientoFinishedGoodTipoEnum.SalidaNotaEntrega)
+                    .ToListAsync();
+                if (movimientosSalida.Any())
+                {
+                    DbContext.MovimientosFinishedGoods.RemoveRange(movimientosSalida);
+                }
+
+                DbContext.NotasEntrega.Remove(nota);
+                await DbContext.SaveChangesAsync();
+                throw;
+            }
+
+            await CargarNotasEntregaAsync();
+            await ActualizarEstadoPedidoAsync();
+
+            observacionesNotaEntrega = null;
+            noRequiereFacturaNota = false;
+            fechaNotaEntrega = DateTime.Today;
+            okNota = $"Nota {numeroNota} creada correctamente.";
+        }
+        catch (Exception ex)
+        {
+            errorNota = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardandoNota = false;
+        }
+    }
+
+    private async Task ActualizarEstadoPedidoAsync()
+    {
+        if (pedido == null) return;
+
+        var conceptos = await DbContext.PedidoConceptos
+            .Where(c => c.PedidoId == PedidoId && c.IsActive)
+            .ToListAsync();
+
+        conceptosPedido = conceptos;
+
+        var totalConceptos = conceptos.Count;
+        var conceptosCompletados = conceptos.Count(c => c.Completado);
+        var serviciosEnProceso = conceptos.Any(c => c.Completado || c.FechaCompletado.HasValue);
+        var serviciosCompletos = totalConceptos == 0 || conceptosCompletados == totalConceptos;
+
+        var productoCompleto = false;
+        var productoEnProceso = false;
+
+        if (pedidoSerigrafia != null)
+        {
+            var procesos = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProcesoId).ToList();
+            var tallas = pedidoSerigrafia.Tallas.Select(t => t.Id).ToList();
+            var segs = await DbContext.PedidoSerigrafiaTallaProcesos
+                .Where(s => s.PedidoSerigrafiaId == pedidoSerigrafia.Id)
+                .ToListAsync();
+
+            var totalComb = procesos.Count * tallas.Count;
+            var completados = segs.Count(s => s.Completado && procesos.Contains(s.TipoProcesoId) && tallas.Contains(s.PedidoSerigrafiaTallaId));
+            productoCompleto = totalComb > 0 && completados == totalComb;
+            productoEnProceso = completados > 0;
+        }
+
+        var nuevoEstado = EstadoPedidoEnum.Nuevo;
+        await CargarNotasEntregaAsync();
+
+        var totalPagado = await DbContext.PagosPedido
+            .Where(pg => pg.PedidoId == PedidoId && pg.IsActive)
+            .SumAsync(pg => pg.Monto);
+
+        var tieneNotas = notasEntrega.Any();
+        var notasFacturadas = notasEntrega.Count(n => n.FacturasRelacionadas.Any(r => r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado));
+        var entregaCompleta = piezasPedidoTotal > 0 && piezasEntregadas >= piezasPedidoTotal;
+        var cumplimientoOperativoCompleto = pedidoSerigrafia != null
+            ? productoCompleto && serviciosCompletos
+            : totalConceptos > 0 && serviciosCompletos;
+        var cumplimientoOperativoEnProceso = pedidoSerigrafia != null
+            ? productoEnProceso || serviciosEnProceso
+            : serviciosEnProceso;
+
+        if (cumplimientoOperativoCompleto && entregaCompleta && tieneNotas && notasFacturadas == notasEntrega.Count)
+        {
+            nuevoEstado = pedido.Total > 0 && totalPagado >= pedido.Total
+                ? EstadoPedidoEnum.Pagado
+                : EstadoPedidoEnum.Facturado;
+        }
+        else if (cumplimientoOperativoCompleto && entregaCompleta && tieneNotas)
+        {
+            nuevoEstado = EstadoPedidoEnum.Entregado;
+        }
+        else if (cumplimientoOperativoCompleto)
+        {
+            nuevoEstado = EstadoPedidoEnum.Producido;
+        }
+        else if (cumplimientoOperativoEnProceso || tieneNotas)
+        {
+            nuevoEstado = EstadoPedidoEnum.EnProceso;
+        }
+
+        if (pedido != null && pedido.Estado != nuevoEstado)
+        {
+            pedido.Estado = nuevoEstado;
+            pedido.UpdatedAt = DateTime.UtcNow;
+            pedido.UpdatedBy = await ObtenerUsuarioActualAsync();
+            DbContext.Pedidos.Update(pedido);
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private async Task<string?> ObtenerUsuarioActualAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name;
+    }
+
+    private async Task<Guid> ObtenerEmpresaActualIdAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId)
+            ? empresaId
+            : Guid.Empty;
+    }
+
+    private async Task<bool> TieneCapacidadAsync(string clave)
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.HasClaim("Capacidad", clave);
+    }
+
+    private bool PuedeEditarProcesosProduccion()
+        => !ProduccionCerradaParaEdicion() || puedeReabrirProcesos;
+
+    private bool PuedeIngresarFinishedGoods()
+        => inventarioFinishedGoodsDisponible && puedeIngresarFinishedGoods;
+
+    private bool ProduccionCerradaParaEdicion()
+        => pedido?.Estado is EstadoPedidoEnum.Producido or EstadoPedidoEnum.Entregado or EstadoPedidoEnum.Facturado or EstadoPedidoEnum.Pagado;
+
+    private string? ObtenerObservacionOperativaPedido()
+    {
+        if (pedido is null)
+        {
+            return null;
+        }
+
+        if (!inventarioFinishedGoodsDisponible)
+        {
+            return "Finished goods pendiente de habilitar en base de datos";
+        }
+
+        if (ObtenerSkusPendientesFinishedGoods().Any())
+        {
+            return "Producción completada por SKU · Pendiente de ingresar a finished goods";
+        }
+
+        if (pedido.Estado == EstadoPedidoEnum.Producido && piezasPendientes > 0)
+        {
+            return "Producción completada · Entrega pendiente";
+        }
+
+        if (!PuedeEditarProcesosProduccion())
+        {
+            return "Producción cerrada para edición de checks y fechas";
+        }
+
+        return null;
+    }
+
+    private IEnumerable<FinishedGoodPendienteItem> ObtenerSkusPendientesFinishedGoods()
+    {
+        if (pedidoSerigrafia == null || !detalleTallasPedido.Any() || !pedidoSerigrafia.TiposProceso.Any())
+        {
+            return [];
+        }
+
+        if (!inventarioFinishedGoodsDisponible)
+        {
+            return [];
+        }
+
+        var procesos = pedidoSerigrafia.TiposProceso
+            .Select(tp => tp.TipoProceso)
+            .Where(tp => tp != null)
+            .Cast<TipoProceso>()
+            .ToList();
+
+        return detalleTallasPedido
+            .Where(t => t.ProductoVarianteId.HasValue && t.Cantidad > 0)
+            .Select(t => new { Detalle = t, TallaProduccion = ResolverTallaProduccion(t) })
+            .Where(x => x.TallaProduccion != null)
+            .Where(x => EsTallaCompletada(x.TallaProduccion!.Id, procesos))
+            .Where(x => !detalleTallasIngresadasFg.Contains(x.Detalle.Id))
+            .OrderBy(x => x.Detalle.Orden)
+            .ThenBy(x => x.Detalle.Talla)
+            .Select(x => new FinishedGoodPendienteItem
+            {
+                PedidoDetalleTallaId = x.Detalle.Id,
+                Sku = x.Detalle.ProductoVariante?.Sku ?? "—",
+                Talla = x.Detalle.Talla,
+                Color = x.Detalle.ProductoVariante?.Color ?? pedidoSerigrafia.CombinacionColor,
+                Cantidad = x.Detalle.Cantidad,
+                PrecioUnitario = x.Detalle.PrecioUnitario
+            });
+    }
+
+    private HashSet<Guid> ObtenerIdsSkusPendientesFinishedGoods()
+        => ObtenerSkusPendientesFinishedGoods()
+            .Select(x => x.PedidoDetalleTallaId)
+            .ToHashSet();
+
+    private void LanzarConfirmacionIngresoFinishedGoodsSiAplica(HashSet<Guid> pendientesAntes)
+    {
+        if (!PuedeIngresarFinishedGoods() || modalConfirmarIngresoFgAbierto)
+        {
+            return;
+        }
+
+        var pendientesActuales = ObtenerSkusPendientesFinishedGoods().ToList();
+        var nuevoPendiente = pendientesActuales
+            .FirstOrDefault(x => !pendientesAntes.Contains(x.PedidoDetalleTallaId));
+
+        if (nuevoPendiente == null)
+        {
+            return;
+        }
+
+        confirmacionIngresoFgItem = nuevoPendiente;
+        confirmacionIngresoFgEsUltimoSku = pendientesActuales.Count == 1;
+        modalConfirmarIngresoFgAbierto = true;
+    }
+
+    private void PosponerIngresoFinishedGoods()
+    {
+        modalConfirmarIngresoFgAbierto = false;
+        confirmacionIngresoFgItem = null;
+        confirmacionIngresoFgEsUltimoSku = false;
+    }
+
+    private async Task ConfirmarIngresoFinishedGoodsDetectadoAsync()
+    {
+        var item = confirmacionIngresoFgItem;
+        PosponerIngresoFinishedGoods();
+
+        if (item == null)
+        {
+            return;
+        }
+
+        await IngresarDetalleTallaAFinishedGoodsAsync(item.PedidoDetalleTallaId);
+    }
+
+    private PedidoSerigrafiaTalla? ResolverTallaProduccion(PedidoDetalleTalla detalle)
+    {
+        if (pedidoSerigrafia == null)
+        {
+            return null;
+        }
+
+        var coincidencia = pedidoSerigrafia.Tallas.FirstOrDefault(t => string.Equals(t.Talla, detalle.Talla, StringComparison.OrdinalIgnoreCase));
+        return coincidencia;
+    }
+
+    private async Task IngresarTodosLosSkusPendientesAFinishedGoodsAsync()
+    {
+        foreach (var skuPendiente in ObtenerSkusPendientesFinishedGoods().ToList())
+        {
+            await IngresarDetalleTallaAFinishedGoodsAsync(skuPendiente.PedidoDetalleTallaId, mostrarMensajes: false);
+            if (!string.IsNullOrWhiteSpace(errorFg))
+            {
+                return;
+            }
+        }
+
+        okFg = "Todos los SKU completos pendientes se ingresaron a finished goods.";
+    }
+
+    private async Task IngresarDetalleTallaAFinishedGoodsAsync(Guid pedidoDetalleTallaId, bool mostrarMensajes = true)
+    {
+        if (!PuedeIngresarFinishedGoods())
+        {
+            errorFg = inventarioFinishedGoodsDisponible
+                ? "No tienes permisos para ingresar SKU a finished goods."
+                : "Finished goods no está disponible hasta aplicar la migración correspondiente.";
+            return;
+        }
+
+        if (empresaIdActual == Guid.Empty || pedido is null || pedidoSerigrafia is null)
+        {
+            errorFg = "No se pudo resolver la empresa o el pedido activo para finished goods.";
+            return;
+        }
+
+        errorFg = null;
+        if (mostrarMensajes)
+        {
+            okFg = null;
+        }
+
+        await _opLock.WaitAsync();
+        guardandoFg = true;
+        try
+        {
+            var detalle = await DbContext.PedidosDetalleTalla
+                .Include(t => t.ProductoVariante)
+                .Include(t => t.PedidoDetalle)
+                    .ThenInclude(pd => pd.Producto)
+                .FirstOrDefaultAsync(t => t.Id == pedidoDetalleTallaId);
+
+            if (detalle == null || detalle.ProductoVarianteId == null || detalle.ProductoVariante == null)
+            {
+                errorFg = "El SKU seleccionado ya no existe o no tiene variante asociada.";
+                return;
+            }
+
+            if (detalleTallasIngresadasFg.Contains(detalle.Id))
+            {
+                errorFg = "Ese SKU ya fue ingresado previamente a finished goods.";
+                return;
+            }
+
+            var tallaProduccion = ResolverTallaProduccion(detalle);
+            var procesos = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProceso).Where(tp => tp != null).Cast<TipoProceso>().ToList();
+            if (tallaProduccion == null || !EsTallaCompletada(tallaProduccion.Id, procesos))
+            {
+                errorFg = "Ese SKU todavía no completa todos sus procesos de producción.";
+                return;
+            }
+
+            var usuario = await ObtenerUsuarioActualAsync();
+            var inventario = await DbContext.InventariosFinishedGoods
+                .FirstOrDefaultAsync(i => i.EmpresaId == empresaIdActual
+                    && i.ClienteId == pedido.ClienteId
+                    && i.ProductoVarianteId == detalle.ProductoVarianteId.Value);
+
+            var existenciaAnterior = inventario?.CantidadDisponible ?? 0m;
+            var cantidadIngreso = detalle.Cantidad;
+
+            if (inventario == null)
+            {
+                inventario = new InventarioFinishedGood
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = empresaIdActual,
+                    ClienteId = pedido.ClienteId,
+                    ProductoId = detalle.PedidoDetalle.ProductoId,
+                    ProductoVarianteId = detalle.ProductoVarianteId.Value,
+                    Sku = detalle.ProductoVariante.Sku,
+                    Talla = detalle.Talla,
+                    Color = detalle.ProductoVariante.Color ?? pedidoSerigrafia.CombinacionColor,
+                    CantidadDisponible = cantidadIngreso,
+                    CantidadReservada = 0m,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                };
+
+                DbContext.InventariosFinishedGoods.Add(inventario);
+            }
+            else
+            {
+                inventario.CantidadDisponible += cantidadIngreso;
+                inventario.Color ??= detalle.ProductoVariante.Color ?? pedidoSerigrafia.CombinacionColor;
+                inventario.UpdatedAt = DateTime.UtcNow;
+                inventario.UpdatedBy = usuario;
+                DbContext.InventariosFinishedGoods.Update(inventario);
+            }
+
+            DbContext.MovimientosFinishedGoods.Add(new MovimientoFinishedGood
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresaIdActual,
+                InventarioFinishedGood = inventario,
+                TipoMovimiento = MovimientoFinishedGoodTipoEnum.IngresoProduccion,
+                Cantidad = cantidadIngreso,
+                ExistenciaAnterior = existenciaAnterior,
+                ExistenciaNueva = existenciaAnterior + cantidadIngreso,
+                FechaMovimiento = DateTime.UtcNow,
+                Referencia = pedido.NumeroPedido,
+                Observaciones = $"Ingreso desde producción del pedido {pedido.NumeroPedido}",
+                PedidoId = pedido.Id,
+                PedidoSerigrafiaId = pedidoSerigrafia.Id,
+                PedidoDetalleTallaId = detalle.Id,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            });
+
+            await DbContext.SaveChangesAsync();
+            await CargarSerigrafiaAsync();
+            detalleTallasIngresadasFg.Add(detalle.Id);
+
+            if (mostrarMensajes)
+            {
+                okFg = $"El SKU {detalle.ProductoVariante.Sku} se ingresó correctamente a finished goods.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorFg = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardandoFg = false;
+            _opLock.Release();
+        }
+    }
+
+    private static string ObtenerEtiquetaCotizacion(CotizacionSerigrafia cotizacion)
+    {
+        var descripcion = string.IsNullOrWhiteSpace(cotizacion.Descripcion) ? "Sin descripción" : cotizacion.Descripcion.Trim();
+        return $"Cotización: {descripcion} · {cotizacion.CreatedAt:dd/MM/yyyy}";
+    }
+
+    private int ObtenerPiezasPedidoTotal()
+        => detalleTallasPedido.Any()
+            ? (int)Math.Round(detalleTallasPedido.Sum(t => t.Cantidad))
+            : pedidoSerigrafia?.Tallas.Sum(t => t.Cantidad)
+            ?? pedido?.Detalles.Sum(d => d.Cantidad)
+            ?? 0;
+
+    private void ConstruirCorridaEntrega()
+    {
+        var tallasPedido = detalleTallasPedido.Any()
+            ? detalleTallasPedido
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => decimal.TryParse(t.Talla, out var numero) ? numero : decimal.MaxValue)
+                .ThenBy(t => t.Talla)
+                .Select(t => new EntregaTallaEditor
+                {
+                    Talla = t.Talla,
+                    Orden = t.Orden,
+                    CantidadPedido = (int)Math.Round(t.Cantidad),
+                    PrecioUnitario = t.PrecioUnitario,
+                    CantidadEntregada = ObtenerCantidadEntregadaPorTalla(t.Talla),
+                    CantidadEntregar = 0
+                })
+                .ToList()
+            : pedidoSerigrafia?.Tallas
+                .OrderBy(t => decimal.TryParse(t.Talla, out var numero) ? numero : decimal.MaxValue)
+                .ThenBy(t => t.Talla)
+                .Select((t, index) => new EntregaTallaEditor
+                {
+                    Talla = t.Talla,
+                    Orden = index + 1,
+                    CantidadPedido = t.Cantidad,
+                    PrecioUnitario = 0m,
+                    CantidadEntregada = ObtenerCantidadEntregadaPorTalla(t.Talla),
+                    CantidadEntregar = 0
+                })
+                .ToList()
+            ?? new();
+
+        foreach (var talla in tallasPedido)
+        {
+            talla.CantidadPendiente = Math.Max(0, talla.CantidadPedido - talla.CantidadEntregada);
+        }
+
+        corridaPedido = tallasPedido;
+        RecalcularEntregaActual();
+    }
+
+    private decimal CalcularSubtotalNotaEntrega()
+    {
+        if (!corridaPedido.Any(t => t.CantidadEntregar > 0))
+        {
+            return 0m;
+        }
+
+        if (detalleTallasPedido.Any())
+        {
+            return Math.Round(corridaPedido.Sum(t => t.CantidadEntregar * t.PrecioUnitario), 2);
+        }
+
+        var proporcion = piezasPedidoTotal > 0 ? (decimal)cantidadNotaEntrega / piezasPedidoTotal : 1m;
+        return Math.Round(pedido?.Subtotal * proporcion ?? 0m, 2);
+    }
+
+    private decimal ObtenerCantidadFinishedGoodDisponible(EntregaTallaEditor talla)
+    {
+        var detalle = ResolverDetallePedidoTalla(talla);
+        return detalle != null && existenciasFgPorDetalleTalla.TryGetValue(detalle.Id, out var cantidad)
+            ? cantidad
+            : 0m;
+    }
+
+    private int ObtenerCantidadEntregadaPorTalla(string talla)
+        => (int)Math.Round(notasEntrega
+            .SelectMany(n => n.Detalles)
+            .SelectMany(d => d.Tallas)
+            .Where(t => string.Equals(t.Talla, talla, StringComparison.OrdinalIgnoreCase))
+            .Sum(t => t.Cantidad));
+
+    private void RecalcularEntregaActual()
+    {
+        foreach (var talla in corridaPedido)
+        {
+            if (talla.CantidadEntregar < 0)
+            {
+                talla.CantidadEntregar = 0;
+            }
+
+            if (talla.CantidadEntregar > talla.CantidadPendiente)
+            {
+                talla.CantidadEntregar = talla.CantidadPendiente;
+            }
+        }
+
+        cantidadNotaEntrega = corridaPedido.Sum(t => t.CantidadEntregar);
+    }
+
+    private bool PuedeTomarTodoPendiente()
+    {
+        if (pedidoSerigrafia == null || !pedidoSerigrafia.Tallas.Any() || !pedidoSerigrafia.TiposProceso.Any())
+        {
+            return true;
+        }
+
+        var procesos = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProceso).Where(tp => tp != null).Cast<TipoProceso>();
+        return pedidoSerigrafia.Tallas.All(t => EsTallaCompletada(t.Id, procesos));
+    }
+
+    private void AutollenarEntregaPendiente()
+    {
+        if (!PuedeTomarTodoPendiente())
+        {
+            errorNota = "Primero termina los procesos de producción antes de tomar todo lo pendiente.";
+            return;
+        }
+
+        foreach (var talla in corridaPedido)
+        {
+            talla.CantidadEntregar = talla.CantidadPendiente;
+        }
+
+        RecalcularEntregaActual();
+    }
+
+    private static int ObtenerCantidadNota(NotaEntrega nota)
+    {
+        var cantidadTallas = nota.Detalles.SelectMany(d => d.Tallas).Sum(t => t.Cantidad);
+        return cantidadTallas > 0
+            ? (int)Math.Round(cantidadTallas)
+            : (int)Math.Round(nota.Detalles.Sum(d => d.Cantidad));
+    }
+
+    private string ConstruirDescripcionNota()
+    {
+        if (pedidoSerigrafia != null)
+        {
+            return string.IsNullOrWhiteSpace(pedidoSerigrafia.CombinacionColor)
+                ? $"Entrega parcial pedido {pedido?.NumeroPedido} - {pedidoSerigrafia.Estilo}"
+                : $"Entrega parcial pedido {pedido?.NumeroPedido} - {pedidoSerigrafia.Estilo} / {pedidoSerigrafia.CombinacionColor}";
+        }
+
+        return $"Entrega parcial pedido {pedido?.NumeroPedido}";
+    }
+
+    private List<NotaEntregaDetalle> ConstruirDetallesNotaEntrega(Guid? pedidoDetalleId, string? usuario)
+    {
+        var detalles = new List<NotaEntregaDetalle>();
+
+        foreach (var talla in corridaPedido
+            .Where(t => t.CantidadEntregar > 0)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla))
+        {
+            var detallePedidoTalla = ResolverDetallePedidoTalla(talla);
+            var precioUnitario = detallePedidoTalla?.PrecioUnitario ?? talla.PrecioUnitario;
+            var importe = Math.Round(talla.CantidadEntregar * precioUnitario, 2);
+
+            var detalleNota = new NotaEntregaDetalle
+            {
+                Id = Guid.NewGuid(),
+                PedidoDetalleId = pedidoDetalleId,
+                Descripcion = ConstruirDescripcionNotaTalla(talla, detallePedidoTalla),
+                Cantidad = talla.CantidadEntregar,
+                PrecioUnitario = precioUnitario,
+                Importe = importe,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            };
+
+            detalleNota.Tallas.Add(new NotaEntregaDetalleTalla
+            {
+                Id = Guid.NewGuid(),
+                PedidoDetalleTallaId = detallePedidoTalla?.Id,
+                Talla = talla.Talla,
+                Orden = talla.Orden,
+                Cantidad = talla.CantidadEntregar,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            });
+
+            detalles.Add(detalleNota);
+        }
+
+        return detalles;
+    }
+
+    private async Task<List<SalidaFinishedGoodPlan>> ConstruirSalidasFinishedGoodsAsync()
+    {
+        if (!inventarioFinishedGoodsDisponible)
+        {
+            errorNota = "Finished goods no está disponible en la base de datos. Aplica la migración pendiente antes de generar notas con descuento de FG.";
+            return [];
+        }
+
+        var salidas = new List<SalidaFinishedGoodPlan>();
+
+        foreach (var talla in corridaPedido
+            .Where(t => t.CantidadEntregar > 0)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla))
+        {
+            var detallePedidoTalla = ResolverDetallePedidoTalla(talla);
+            if (detallePedidoTalla?.ProductoVarianteId == null)
+            {
+                errorNota = $"La talla {talla.Talla} no tiene SKU asociado para descontar finished goods.";
+                return [];
+            }
+
+            var inventario = await DbContext.InventariosFinishedGoods
+                .FirstOrDefaultAsync(i => i.EmpresaId == empresaIdActual
+                    && i.ClienteId == pedido!.ClienteId
+                    && i.ProductoVarianteId == detallePedidoTalla.ProductoVarianteId.Value);
+
+            if (inventario == null || inventario.CantidadDisponible < talla.CantidadEntregar)
+            {
+                var disponible = inventario?.CantidadDisponible ?? 0m;
+                errorNota = $"No hay suficiente finished goods para la talla {talla.Talla}. Disponible: {disponible:0.##}, solicitado: {talla.CantidadEntregar:0.##}.";
+                return [];
+            }
+
+            salidas.Add(new SalidaFinishedGoodPlan
+            {
+                Detalle = detallePedidoTalla,
+                Inventario = inventario,
+                Cantidad = talla.CantidadEntregar,
+                ExistenciaAnterior = inventario.CantidadDisponible,
+                ExistenciaNueva = inventario.CantidadDisponible - talla.CantidadEntregar
+            });
+        }
+
+        return salidas;
+    }
+
+    private PedidoDetalleTalla? ResolverDetallePedidoTalla(EntregaTallaEditor talla)
+    {
+        var coincidencia = detalleTallasPedido.FirstOrDefault(t => t.Orden == talla.Orden
+            && string.Equals(t.Talla, talla.Talla, StringComparison.OrdinalIgnoreCase));
+
+        coincidencia ??= detalleTallasPedido.FirstOrDefault(t => string.Equals(t.Talla, talla.Talla, StringComparison.OrdinalIgnoreCase));
+        return coincidencia;
+    }
+
+    private string ConstruirDescripcionNotaTalla(EntregaTallaEditor talla, PedidoDetalleTalla? detallePedidoTalla)
+    {
+        var descripcionBase = ConstruirDescripcionNota();
+        var sku = detallePedidoTalla?.ProductoVariante?.Sku;
+
+        return string.IsNullOrWhiteSpace(sku)
+            ? $"{descripcionBase} · Talla {talla.Talla}"
+            : $"{descripcionBase} · Talla {talla.Talla} · SKU {sku}";
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private static bool EsTablaFinishedGoodsInexistente(Exception ex)
+    {
+        var actual = ex;
+        while (actual != null)
+        {
+            if (actual.Message.Contains("movimientosfinishedgoods", StringComparison.OrdinalIgnoreCase)
+                || actual.Message.Contains("inventariosfinishedgoods", StringComparison.OrdinalIgnoreCase)
+                || actual.Message.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            actual = actual.InnerException!;
+        }
+
+        return false;
+    }
+
+    private static string ObtenerResumenFacturaNota(NotaEntrega nota)
+    {
+        var facturas = nota.FacturasRelacionadas
+            .Where(r => r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado)
+            .Select(r => r.Factura.FolioFiscal ?? r.Factura.FolioInterno)
+            .Distinct()
+            .ToList();
+
+        return facturas.Count == 0 ? "Pendiente" : string.Join(", ", facturas);
+    }
+
+    private static string? ObtenerResumenTallasNota(NotaEntrega nota)
+    {
+        var tallas = nota.Detalles
+            .SelectMany(d => d.Tallas)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => $"{t.Talla}: {t.Cantidad:0.##}")
+            .ToList();
+
+        return tallas.Count == 0 ? null : string.Join(" · ", tallas);
+    }
+
+    private sealed class EntregaTallaEditor
+    {
+        public string Talla { get; set; } = string.Empty;
+        public int Orden { get; set; }
+        public int CantidadPedido { get; set; }
+        public decimal PrecioUnitario { get; set; }
+        public int CantidadEntregada { get; set; }
+        public int CantidadPendiente { get; set; }
+        public int CantidadEntregar { get; set; }
+    }
+
+    private sealed class SalidaFinishedGoodPlan
+    {
+        public PedidoDetalleTalla Detalle { get; set; } = null!;
+        public InventarioFinishedGood Inventario { get; set; } = null!;
+        public decimal Cantidad { get; set; }
+        public decimal ExistenciaAnterior { get; set; }
+        public decimal ExistenciaNueva { get; set; }
+    }
+
+    private sealed class FinishedGoodPendienteItem
+    {
+        public Guid PedidoDetalleTallaId { get; set; }
+        public string Sku { get; set; } = string.Empty;
+        public string Talla { get; set; } = string.Empty;
+        public string? Color { get; set; }
+        public decimal Cantidad { get; set; }
+        public decimal PrecioUnitario { get; set; }
+    }
+}

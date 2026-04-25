@@ -1,0 +1,736 @@
+@page "/dashboard"
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject CrmDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="db-page">
+    @if (cargando)
+    {
+        <div class="d-flex align-items-center justify-content-center" style="height:60vh">
+            <div class="spinner-border text-primary me-2" role="status" style="width:1.6rem;height:1.6rem;"></div>
+            <span class="text-muted">Cargando dashboard...</span>
+        </div>
+    }
+    else
+    {
+        <!-- Filtro de periodo -->
+        <div class="db-toolbar">
+            <div class="db-toolbar-left">
+                <i class="bi bi-speedometer2 me-2"></i>
+                <span class="db-toolbar-title">Dashboard</span>
+            </div>
+            <div class="db-toolbar-right">
+                <select class="db-periodo-select" @onchange="OnPeriodoChanged">
+                    <option value="mes" selected="@(periodo == "mes")">Este mes</option>
+                    <option value="trimestre" selected="@(periodo == "trimestre")">Últimos 3 meses</option>
+                    <option value="semestre" selected="@(periodo == "semestre")">Últimos 6 meses</option>
+                    <option value="anio" selected="@(periodo == "anio")">Este año</option>
+                    <option value="todo" selected="@(periodo == "todo")">Todo</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="db-kpi-row">
+            <div class="db-kpi db-kpi-blue">
+                <div class="db-kpi-icon"><i class="bi bi-clipboard-check"></i></div>
+                <div class="db-kpi-body">
+                    <div class="db-kpi-value">@totalPedidosPeriodo</div>
+                    <div class="db-kpi-label">Pedidos</div>
+                </div>
+                <div class="db-kpi-trend">
+                    @if (pedidosTrendPct != 0)
+                    {
+                        <span class="@(pedidosTrendPct >= 0 ? "db-trend-up" : "db-trend-down")">
+                            <i class="bi @(pedidosTrendPct >= 0 ? "bi-arrow-up-short" : "bi-arrow-down-short")"></i>@Math.Abs(pedidosTrendPct)%
+                        </span>
+                    }
+                </div>
+            </div>
+            <div class="db-kpi db-kpi-green">
+                <div class="db-kpi-icon"><i class="bi bi-cash-stack"></i></div>
+                <div class="db-kpi-body">
+                    <div class="db-kpi-value">@ingresoPeriodo.ToString("C0")</div>
+                    <div class="db-kpi-label">Ingresos</div>
+                </div>
+                <div class="db-kpi-trend">
+                    @if (ingresoTrendPct != 0)
+                    {
+                        <span class="@(ingresoTrendPct >= 0 ? "db-trend-up" : "db-trend-down")">
+                            <i class="bi @(ingresoTrendPct >= 0 ? "bi-arrow-up-short" : "bi-arrow-down-short")"></i>@Math.Abs(ingresoTrendPct)%
+                        </span>
+                    }
+                </div>
+            </div>
+            <div class="db-kpi db-kpi-purple">
+                <div class="db-kpi-icon"><i class="bi bi-layers"></i></div>
+                <div class="db-kpi-body">
+                    <div class="db-kpi-value">@totalPiezasPeriodo.ToString("N0")</div>
+                    <div class="db-kpi-label">Piezas</div>
+                </div>
+                <div class="db-kpi-trend"></div>
+            </div>
+            <div class="db-kpi db-kpi-orange">
+                <div class="db-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+                <div class="db-kpi-body">
+                    <div class="db-kpi-value">@pedidosPendientes</div>
+                    <div class="db-kpi-label">Pendientes</div>
+                </div>
+                <div class="db-kpi-trend">
+                    <span class="db-trend-neutral">de @totalPedidosPeriodo</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <!-- Pedidos por Estado -->
+            <div class="col-lg-4">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-pie-chart me-2"></i>Por Estado</span>
+                    </div>
+                    <div class="db-card-body">
+                        @if (!pedidosPorEstado.Any())
+                        {
+                            <div class="db-empty">Sin pedidos en este periodo</div>
+                        }
+                        else
+                        {
+                            <div class="db-estado-list">
+                                @foreach (var item in pedidosPorEstado)
+                                {
+                                    var pct = totalPedidosPeriodo > 0 ? (int)Math.Round((double)item.Count / totalPedidosPeriodo * 100) : 0;
+                                    var color = GetEstadoColor(item.Estado);
+                                    <div class="db-estado-row">
+                                        <div class="db-estado-info">
+                                            <span class="db-estado-dot" style="background:@color"></span>
+                                            <span class="db-estado-name">@item.Estado</span>
+                                            <span class="db-estado-count">@item.Count</span>
+                                        </div>
+                                        <div class="db-estado-bar-wrap">
+                                            <div class="db-estado-bar" style="width:@pct%;background:@color"></div>
+                                        </div>
+                                        <span class="db-estado-pct">@pct%</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ingresos por Mes -->
+            <div class="col-lg-8">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-bar-chart me-2"></i>Ingresos por Mes</span>
+                        <span class="db-card-sub">Total: @ingresosPorMes.Sum(m => m.Ingreso).ToString("C0")</span>
+                    </div>
+                    <div class="db-card-body">
+                        @if (!ingresosPorMes.Any())
+                        {
+                            <div class="db-empty">Sin datos en este periodo</div>
+                        }
+                        else
+                        {
+                            var maxIngreso = ingresosPorMes.Max(m => m.Ingreso);
+                            <div class="db-bars-v">
+                                @foreach (var mes in ingresosPorMes)
+                                {
+                                    var h = maxIngreso > 0 ? (int)Math.Round((double)mes.Ingreso / (double)maxIngreso * 100) : 0;
+                                    <div class="db-bar-col">
+                                        <div class="db-bar-amount">@mes.Ingreso.ToString("C0")</div>
+                                        <div class="db-bar-track">
+                                            <div class="db-bar-fill" style="height:@h%"></div>
+                                        </div>
+                                        <div class="db-bar-label">@mes.Label</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <!-- Top Clientes -->
+            <div class="col-lg-6">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-trophy me-2"></i>Top Clientes</span>
+                        <span class="db-card-sub">Por ingreso</span>
+                    </div>
+                    <div class="db-card-body db-card-body-scroll">
+                        @if (!topClientes.Any())
+                        {
+                            <div class="db-empty">Sin datos</div>
+                        }
+                        else
+                        {
+                            var maxCli = topClientes.First().Total;
+                            var rank = 0;
+                            @foreach (var cli in topClientes)
+                            {
+                                rank++;
+                                var pct = maxCli > 0 ? (int)Math.Round((double)cli.Total / (double)maxCli * 100) : 0;
+                                <div class="db-rank-row">
+                                    <span class="db-rank-pos db-rank-@rank">@rank</span>
+                                    <div class="db-rank-info">
+                                        <span class="db-rank-name">@cli.Nombre</span>
+                                        <div class="db-rank-bar-wrap">
+                                            <div class="db-rank-bar" style="width:@pct%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="db-rank-vals">
+                                        <span class="db-rank-total">@cli.Total.ToString("C0")</span>
+                                        <span class="db-rank-count">@cli.Pedidos ped · @cli.Piezas.ToString("N0") pz</span>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Productos / Modelos -->
+            <div class="col-lg-6">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-star me-2"></i>Top Modelos</span>
+                        <span class="db-card-sub">Por piezas producidas</span>
+                    </div>
+                    <div class="db-card-body db-card-body-scroll">
+                        @if (!topProductos.Any())
+                        {
+                            <div class="db-empty">Sin datos</div>
+                        }
+                        else
+                        {
+                            var maxProd = topProductos.First().Piezas;
+                            var rank = 0;
+                            @foreach (var prod in topProductos)
+                            {
+                                rank++;
+                                var pct = maxProd > 0 ? (int)Math.Round((double)prod.Piezas / maxProd * 100) : 0;
+                                <div class="db-rank-row">
+                                    <span class="db-rank-pos db-rank-@rank">@rank</span>
+                                    <div class="db-rank-info">
+                                        <span class="db-rank-name">@prod.Nombre</span>
+                                        <div class="db-rank-bar-wrap">
+                                            <div class="db-rank-bar db-rank-bar-alt" style="width:@pct%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="db-rank-vals">
+                                        <span class="db-rank-total">@prod.Piezas.ToString("N0") pz</span>
+                                        <span class="db-rank-count">@prod.Pedidos ped · @prod.Ingreso.ToString("C0")</span>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <!-- Ganancia estimada por Producto -->
+            <div class="col-lg-6">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-graph-up-arrow me-2"></i>Ganancia por Producto</span>
+                        <span class="db-card-sub">Precio venta − Costo cotización</span>
+                    </div>
+                    <div class="db-card-body db-card-body-scroll">
+                        @if (!gananciaProductos.Any())
+                        {
+                            <div class="db-empty">Sin cotizaciones con pedidos</div>
+                        }
+                        else
+                        {
+                            @foreach (var g in gananciaProductos)
+                            {
+                                var margenPct = g.Ingreso > 0 ? (int)Math.Round((double)g.Ganancia / (double)g.Ingreso * 100) : 0;
+                                var margenColor = margenPct >= 30 ? "#10b981" : margenPct >= 15 ? "#f59e0b" : "#ef4444";
+                                <div class="db-ganancia-row">
+                                    <div class="db-ganancia-info">
+                                        <span class="db-ganancia-name">@g.Nombre</span>
+                                        <span class="db-ganancia-piezas">@g.Piezas.ToString("N0") pz</span>
+                                    </div>
+                                    <div class="db-ganancia-nums">
+                                        <span class="db-ganancia-ingreso">Ingreso: @g.Ingreso.ToString("C0")</span>
+                                        <span class="db-ganancia-costo">Costo: @g.Costo.ToString("C0")</span>
+                                        <span class="db-ganancia-util" style="color:@margenColor">
+                                            Ganancia: @g.Ganancia.ToString("C0") <small>(@margenPct%)</small>
+                                        </span>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Distribución de Tallas -->
+            <div class="col-lg-6">
+                <div class="db-card h-100">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-distribute-vertical me-2"></i>Tallas más Producidas</span>
+                        <span class="db-card-sub">Distribución total</span>
+                    </div>
+                    <div class="db-card-body db-card-body-scroll">
+                        @if (!distribucionTallas.Any())
+                        {
+                            <div class="db-empty">Sin datos de tallas</div>
+                        }
+                        else
+                        {
+                            var maxTalla = distribucionTallas.First().Cantidad;
+                            @foreach (var t in distribucionTallas)
+                            {
+                                var pct = maxTalla > 0 ? (int)Math.Round((double)t.Cantidad / maxTalla * 100) : 0;
+                                <div class="db-talla-row">
+                                    <span class="db-talla-label">#@t.Talla</span>
+                                    <div class="db-talla-bar-wrap">
+                                        <div class="db-talla-bar" style="width:@pct%"></div>
+                                    </div>
+                                    <span class="db-talla-qty">@t.Cantidad.ToString("N0") pz</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pedidos Recientes -->
+        <div class="row g-3 mb-3">
+            <div class="col-12">
+                <div class="db-card">
+                    <div class="db-card-header">
+                        <span><i class="bi bi-clock-history me-2"></i>Pedidos Recientes</span>
+                        <a href="/serigrafia/pedidos" class="db-ver-todos">Ver todos <i class="bi bi-arrow-right"></i></a>
+                    </div>
+                    <div class="db-card-body p-0">
+                        @if (!pedidosRecientes.Any())
+                        {
+                            <div class="db-empty py-3">Sin pedidos recientes</div>
+                        }
+                        else
+                        {
+                            <table class="db-table">
+                                <thead>
+                                    <tr>
+                                        <th>Pedido</th>
+                                        <th>Cliente</th>
+                                        <th>Estilo</th>
+                                        <th>Piezas</th>
+                                        <th>Venta</th>
+                                        <th>Costo</th>
+                                        <th>Ganancia</th>
+                                        <th>Margen</th>
+                                        <th>Estado</th>
+                                        <th>Fecha</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in pedidosRecientes)
+                                    {
+                                        var color = GetEstadoColor(p.Estado);
+                                        var margenColor = p.Margen >= 30 ? "#10b981" : p.Margen >= 15 ? "#f59e0b" : p.Ganancia < 0 ? "#ef4444" : "#6b7280";
+                                        <tr>
+                                            <td class="db-td-num">@p.NumeroPedido</td>
+                                            <td>@p.Cliente</td>
+                                            <td>@p.Estilo</td>
+                                            <td class="text-center">@p.Piezas.ToString("N0")</td>
+                                            <td class="text-end">@p.Total.ToString("C0")</td>
+                                            <td class="text-end" style="color:#6b7280">@p.Costo.ToString("C0")</td>
+                                            <td class="text-end fw-semibold" style="color:@margenColor">@p.Ganancia.ToString("C0")</td>
+                                            <td class="text-center fw-semibold" style="color:@margenColor">@p.Margen%</td>
+                                            <td><span class="db-estado-chip" style="background:@(color)20;color:@color;border-color:@(color)40">@p.Estado</span></td>
+                                            <td class="db-td-date">@p.Fecha.ToString("dd/MM/yy")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    /* Page */
+    .db-page { padding: 1rem 1.25rem; }
+    @@media (min-width:768px) { .db-page { padding: 1.25rem 2rem; } }
+
+    /* Toolbar */
+    .db-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: .5rem; }
+    .db-toolbar-left { display: flex; align-items: center; font-size: 1.1rem; font-weight: 700; color: #1e3a5f; }
+    .db-toolbar-title { margin-left: .1rem; }
+    .db-periodo-select { font-size: .78rem; border: 1px solid #d1d9e0; border-radius: 6px; padding: .3rem .6rem; background: #fff; color: #374151; cursor: pointer; }
+    .db-periodo-select:focus { outline: none; border-color: #4a6fa5; }
+
+    /* KPI Cards */
+    .db-kpi-row { display: grid; grid-template-columns: repeat(4,1fr); gap: .75rem; margin-bottom: 1rem; }
+    @@media (max-width:991px) { .db-kpi-row { grid-template-columns: repeat(2,1fr); } }
+    @@media (max-width:575px) { .db-kpi-row { grid-template-columns: 1fr; } }
+    .db-kpi { background: #fff; border-radius: 10px; padding: .85rem 1rem; display: flex; align-items: center; gap: .75rem; box-shadow: 0 1px 4px rgba(0,0,0,.05); border-left: 4px solid transparent; }
+    .db-kpi-blue  { border-left-color: #3b82f6; }
+    .db-kpi-green { border-left-color: #10b981; }
+    .db-kpi-purple { border-left-color: #8b5cf6; }
+    .db-kpi-orange { border-left-color: #f59e0b; }
+    .db-kpi-icon { font-size: 1.5rem; opacity: .25; flex-shrink: 0; }
+    .db-kpi-blue .db-kpi-icon { color: #3b82f6; }
+    .db-kpi-green .db-kpi-icon { color: #10b981; }
+    .db-kpi-purple .db-kpi-icon { color: #8b5cf6; }
+    .db-kpi-orange .db-kpi-icon { color: #f59e0b; }
+    .db-kpi-body { flex: 1; min-width: 0; }
+    .db-kpi-value { font-size: 1.3rem; font-weight: 800; color: #1e3a5f; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .db-kpi-label { font-size: .68rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+    .db-kpi-trend { font-size: .7rem; flex-shrink: 0; }
+    .db-trend-up { color: #10b981; font-weight: 600; }
+    .db-trend-down { color: #ef4444; font-weight: 600; }
+    .db-trend-neutral { color: #9ca3af; }
+
+    /* Card */
+    .db-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.04); overflow: hidden; }
+    .db-card-header { display: flex; align-items: center; justify-content: space-between; padding: .6rem 1rem; background: #f8f9fb; border-bottom: 1px solid #e8edf5; font-size: .8rem; font-weight: 700; color: #1e3a5f; }
+    .db-card-sub { font-size: .7rem; font-weight: 400; color: #6b7280; }
+    .db-card-body { padding: .85rem 1rem; }
+    .db-card-body-scroll { max-height: 320px; overflow-y: auto; }
+    .db-empty { font-size: .78rem; color: #9ca3af; text-align: center; padding: 1.5rem 0; }
+
+    /* Estado list */
+    .db-estado-list { display: flex; flex-direction: column; gap: .5rem; }
+    .db-estado-row { display: flex; align-items: center; gap: .5rem; }
+    .db-estado-info { display: flex; align-items: center; gap: .4rem; min-width: 110px; }
+    .db-estado-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .db-estado-name { font-size: .75rem; color: #374151; }
+    .db-estado-count { font-size: .7rem; font-weight: 700; color: #1e3a5f; margin-left: auto; }
+    .db-estado-bar-wrap { flex: 1; height: 6px; background: #f0f2f5; border-radius: 99px; overflow: hidden; }
+    .db-estado-bar { height: 100%; border-radius: 99px; transition: width .4s; }
+    .db-estado-pct { font-size: .65rem; color: #6b7280; min-width: 28px; text-align: right; }
+
+    /* Vertical Bars (chart) */
+    .db-bars-v { display: flex; align-items: flex-end; gap: .35rem; height: 220px; padding-top: 1.5rem; }
+    .db-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+    .db-bar-amount { font-size: .58rem; color: #6b7280; margin-bottom: .25rem; white-space: nowrap; }
+    .db-bar-track { flex: 1; width: 100%; max-width: 40px; background: #f0f2f5; border-radius: 6px 6px 0 0; position: relative; overflow: hidden; display: flex; align-items: flex-end; }
+    .db-bar-fill { width: 100%; background: linear-gradient(180deg,#3b82f6,#60a5fa); border-radius: 6px 6px 0 0; transition: height .4s; min-height: 2px; }
+    .db-bar-label { font-size: .6rem; color: #6b7280; margin-top: .3rem; white-space: nowrap; }
+
+    /* Rank rows */
+    .db-rank-row { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-bottom: 1px solid #f5f5f5; }
+    .db-rank-row:last-child { border-bottom: none; }
+    .db-rank-pos { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 800; flex-shrink: 0; background: #f0f2f5; color: #6b7280; }
+    .db-rank-1 { background: #fef3c7; color: #d97706; }
+    .db-rank-2 { background: #e5e7eb; color: #6b7280; }
+    .db-rank-3 { background: #fed7aa; color: #c2410c; }
+    .db-rank-info { flex: 1; min-width: 0; }
+    .db-rank-name { font-size: .78rem; font-weight: 600; color: #1e3a5f; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .db-rank-bar-wrap { height: 4px; background: #f0f2f5; border-radius: 99px; overflow: hidden; margin-top: .2rem; }
+    .db-rank-bar { height: 100%; background: linear-gradient(90deg,#10b981,#34d399); border-radius: 99px; transition: width .3s; }
+    .db-rank-bar-alt { background: linear-gradient(90deg,#8b5cf6,#a78bfa); }
+    .db-rank-vals { text-align: right; flex-shrink: 0; }
+    .db-rank-total { font-size: .78rem; font-weight: 700; color: #1e3a5f; display: block; }
+    .db-rank-count { font-size: .62rem; color: #9ca3af; }
+
+    /* Ganancia rows */
+    .db-ganancia-row { padding: .5rem 0; border-bottom: 1px solid #f5f5f5; }
+    .db-ganancia-row:last-child { border-bottom: none; }
+    .db-ganancia-info { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .2rem; }
+    .db-ganancia-name { font-size: .78rem; font-weight: 700; color: #1e3a5f; }
+    .db-ganancia-piezas { font-size: .65rem; color: #9ca3af; }
+    .db-ganancia-nums { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .db-ganancia-ingreso, .db-ganancia-costo, .db-ganancia-util { font-size: .72rem; }
+    .db-ganancia-ingreso { color: #374151; }
+    .db-ganancia-costo { color: #6b7280; }
+    .db-ganancia-util { font-weight: 700; }
+
+    /* Talla rows */
+    .db-talla-row { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; }
+    .db-talla-label { font-size: .75rem; font-weight: 700; color: #1e3a5f; min-width: 40px; }
+    .db-talla-bar-wrap { flex: 1; height: 8px; background: #f0f2f5; border-radius: 99px; overflow: hidden; }
+    .db-talla-bar { height: 100%; background: linear-gradient(90deg,#f59e0b,#fbbf24); border-radius: 99px; transition: width .3s; }
+    .db-talla-qty { font-size: .7rem; color: #6b7280; min-width: 55px; text-align: right; }
+
+    /* Table */
+    .db-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .db-table thead th { background: #1e3a5f; color: #d9e4f0; padding: .45rem .7rem; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+    .db-table tbody td { padding: .45rem .7rem; border-bottom: 1px solid #f0f2f5; color: #374151; }
+    .db-table tbody tr:last-child td { border-bottom: none; }
+    .db-table tbody tr:hover td { background: #f8f9fb; }
+    .db-td-num { font-weight: 700; color: #1e3a5f; }
+    .db-td-date { font-size: .7rem; color: #6b7280; white-space: nowrap; }
+    .db-estado-chip { font-size: .62rem; font-weight: 700; padding: .15rem .5rem; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+    .db-ver-todos { font-size: .72rem; color: #4a6fa5; text-decoration: none; font-weight: 600; }
+    .db-ver-todos:hover { color: #1e3a5f; }
+</style>
+
+@code {
+    private bool cargando = true;
+    private string periodo = "mes";
+
+    // KPIs
+    private int totalPedidosPeriodo;
+    private decimal ingresoPeriodo;
+    private int totalPiezasPeriodo;
+    private int pedidosPendientes;
+    private int pedidosTrendPct;
+    private int ingresoTrendPct;
+
+    // Datos
+    private List<EstadoCount> pedidosPorEstado = [];
+    private List<MesIngreso> ingresosPorMes = [];
+    private List<ClienteRank> topClientes = [];
+    private List<ProductoRank> topProductos = [];
+    private List<GananciaProducto> gananciaProductos = [];
+    private List<TallaDistribucion> distribucionTallas = [];
+    private List<PedidoReciente> pedidosRecientes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+        cargando = false;
+    }
+
+    private async Task OnPeriodoChanged(ChangeEventArgs e)
+    {
+        periodo = e.Value?.ToString() ?? "mes";
+        cargando = true;
+        await CargarDatos();
+        cargando = false;
+    }
+
+    private DateTime GetFechaInicio()
+    {
+        var now = DateTime.UtcNow;
+        return periodo switch
+        {
+            "mes" => new DateTime(now.Year, now.Month, 1),
+            "trimestre" => now.AddMonths(-3),
+            "semestre" => now.AddMonths(-6),
+            "anio" => new DateTime(now.Year, 1, 1),
+            _ => DateTime.MinValue
+        };
+    }
+
+    private async Task CargarDatos()
+    {
+        var desde = GetFechaInicio();
+
+        var pedidos = await DbContext.Pedidos
+            .Include(p => p.Cliente)
+            .Include(p => p.Detalles)
+                .ThenInclude(d => d.Producto)
+            .Where(p => p.FechaPedido >= desde)
+            .ToListAsync();
+
+        totalPedidosPeriodo = pedidos.Count;
+        ingresoPeriodo = pedidos.Sum(p => p.Total);
+        pedidosPendientes = pedidos.Count(p => p.Estado != EstadoPedidoEnum.Entregado && p.Estado != EstadoPedidoEnum.Facturado && p.Estado != EstadoPedidoEnum.Pagado && p.Estado != EstadoPedidoEnum.Cancelado);
+
+        var pedidoIds = pedidos.Select(p => p.Id).ToList();
+        var serigrafias = await DbContext.PedidosSerigrafia
+            .Include(ps => ps.Tallas)
+            .Include(ps => ps.PedidoDetalle)
+            .Where(ps => pedidoIds.Contains(ps.PedidoDetalle.PedidoId))
+            .ToListAsync();
+
+        totalPiezasPeriodo = serigrafias.Sum(ps => ps.Tallas.Sum(t => t.Cantidad));
+
+        await CalcularTrends(desde, pedidos);
+
+        pedidosPorEstado = pedidos
+            .GroupBy(p => p.Estado)
+            .Select(g => new EstadoCount { Estado = g.Key, Count = g.Count() })
+            .OrderByDescending(e => e.Count)
+            .ToList();
+
+        ingresosPorMes = pedidos
+            .GroupBy(p => new { p.FechaPedido.Year, p.FechaPedido.Month })
+            .Select(g => new MesIngreso
+            {
+                Year = g.Key.Year,
+                Month = g.Key.Month,
+                Ingreso = g.Sum(p => p.Total),
+                Label = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMM yy")
+            })
+            .OrderBy(m => m.Year).ThenBy(m => m.Month)
+            .ToList();
+
+        topClientes = pedidos
+            .GroupBy(p => new { p.ClienteId, Nombre = p.Cliente?.RazonSocial ?? "?" })
+            .Select(g => new ClienteRank
+            {
+                Nombre = g.Key.Nombre,
+                Total = g.Sum(p => p.Total),
+                Pedidos = g.Count(),
+                Piezas = serigrafias.Where(s => g.Select(p => p.Id).Contains(s.PedidoDetalle.PedidoId)).Sum(s => s.Tallas.Sum(t => t.Cantidad))
+            })
+            .OrderByDescending(c => c.Total)
+            .Take(10)
+            .ToList();
+
+        topProductos = pedidos
+            .SelectMany(p => p.Detalles)
+            .GroupBy(d => new { d.ProductoId, Nombre = d.Producto?.Nombre ?? "?" })
+            .Select(g => new ProductoRank
+            {
+                Nombre = g.Key.Nombre,
+                Piezas = g.Sum(d => d.Cantidad),
+                Pedidos = g.Select(d => d.PedidoId).Distinct().Count(),
+                Ingreso = g.Sum(d => d.Total)
+            })
+            .OrderByDescending(p => p.Piezas)
+            .Take(10)
+            .ToList();
+
+        var cotizaciones = await DbContext.CotizacionesSerigrafia
+            .Include(c => c.Producto)
+            .Include(c => c.Detalles)
+            .ToListAsync();
+
+        var cotizDict = cotizaciones
+            .GroupBy(c => c.ProductoId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First());
+
+        // Recalcular pedidos sin precio (creados antes del fix)
+        var pedidosSinPrecio = pedidos.Where(p => p.Total == 0 && p.Detalles.Any()).ToList();
+        if (pedidosSinPrecio.Any())
+        {
+            foreach (var p in pedidosSinPrecio)
+            {
+                foreach (var d in p.Detalles)
+                {
+                    if (cotizDict.TryGetValue(d.ProductoId, out var cot))
+                    {
+                        var piezas = serigrafias.FirstOrDefault(s => s.PedidoDetalle.PedidoId == p.Id)?.Tallas.Sum(t => t.Cantidad) ?? d.Cantidad;
+                        d.PrecioUnitario = cot.PrecioFinalContado;
+                        d.Cantidad = piezas;
+                        d.Total = cot.PrecioFinalContado * piezas;
+                        d.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                var sub = p.Detalles.Sum(d => d.Total);
+                p.Subtotal = sub;
+                p.Impuestos = Math.Round(sub * 0.16m, 2);
+                p.Total = sub + p.Impuestos;
+                p.UpdatedAt = DateTime.UtcNow;
+            }
+            await DbContext.SaveChangesAsync();
+            ingresoPeriodo = pedidos.Sum(p => p.Total);
+        }
+
+        gananciaProductos = pedidos
+            .SelectMany(p => p.Detalles)
+            .GroupBy(d => new { d.ProductoId, Nombre = d.Producto?.Nombre ?? "?" })
+            .Where(g => cotizDict.ContainsKey(g.Key.ProductoId))
+            .Select(g =>
+            {
+                var cot = cotizDict[g.Key.ProductoId];
+                var ingreso = g.Sum(d => d.Total);
+                var piezas = g.Sum(d => d.Cantidad);
+                var costo = cot.CostoTotalPorPar * piezas;
+                return new GananciaProducto
+                {
+                    Nombre = g.Key.Nombre,
+                    Piezas = piezas,
+                    Ingreso = ingreso,
+                    Costo = costo,
+                    Ganancia = ingreso - costo
+                };
+            })
+            .OrderByDescending(g => g.Ganancia)
+            .Take(10)
+            .ToList();
+
+        var todasTallas = serigrafias.SelectMany(s => s.Tallas).ToList();
+        distribucionTallas = todasTallas
+            .GroupBy(t => t.Talla)
+            .Select(g => new TallaDistribucion { Talla = g.Key, Cantidad = g.Sum(t => t.Cantidad) })
+            .OrderByDescending(t => t.Cantidad)
+            .Take(15)
+            .ToList();
+
+        pedidosRecientes = pedidos
+            .OrderByDescending(p => p.FechaPedido)
+            .Take(10)
+            .Select(p =>
+            {
+                var ps = serigrafias.FirstOrDefault(s => s.PedidoDetalle.PedidoId == p.Id);
+                var piezas = ps?.Tallas.Sum(t => t.Cantidad) ?? 0;
+                var productoId = p.Detalles.FirstOrDefault()?.ProductoId;
+                var costo = productoId.HasValue && cotizDict.TryGetValue(productoId.Value, out var cot)
+                    ? cot.CostoTotalPorPar * piezas
+                    : 0m;
+                var ganancia = p.Total - costo;
+                var margen = p.Total > 0 ? (int)Math.Round((double)ganancia / (double)p.Total * 100) : 0;
+                return new PedidoReciente
+                {
+                    NumeroPedido = p.NumeroPedido,
+                    Cliente = p.Cliente?.RazonSocial ?? "—",
+                    Estilo = ps?.Estilo ?? "—",
+                    Piezas = piezas,
+                    Total = p.Total,
+                    Costo = costo,
+                    Ganancia = ganancia,
+                    Margen = margen,
+                    Estado = p.Estado,
+                    Fecha = p.FechaPedido
+                };
+            })
+            .ToList();
+    }
+
+    private async Task CalcularTrends(DateTime desde, List<Pedido> pedidosActuales)
+    {
+        if (periodo == "todo")
+        {
+            pedidosTrendPct = 0;
+            ingresoTrendPct = 0;
+            return;
+        }
+
+        var duracion = DateTime.UtcNow - desde;
+        var desdeAnterior = desde - duracion;
+
+        var pedidosAnteriores = await DbContext.Pedidos
+            .Where(p => p.FechaPedido >= desdeAnterior && p.FechaPedido < desde)
+            .ToListAsync();
+
+        var pedidosAnt = pedidosAnteriores.Count;
+        var ingresoAnt = pedidosAnteriores.Sum(p => p.Total);
+
+        pedidosTrendPct = pedidosAnt > 0 ? (int)Math.Round(((double)pedidosActuales.Count - pedidosAnt) / pedidosAnt * 100) : 0;
+        ingresoTrendPct = ingresoAnt > 0 ? (int)Math.Round(((double)ingresoPeriodo - (double)ingresoAnt) / (double)ingresoAnt * 100) : 0;
+    }
+
+    private static string GetEstadoColor(EstadoPedidoEnum estado) => estado switch
+    {
+        EstadoPedidoEnum.Nuevo => "#3b82f6",
+        EstadoPedidoEnum.EnProceso => "#f59e0b",
+        EstadoPedidoEnum.Producido => "#8b5cf6",
+        EstadoPedidoEnum.Entregado => "#10b981",
+        EstadoPedidoEnum.Facturado => "#059669",
+        EstadoPedidoEnum.Pagado => "#047857",
+        EstadoPedidoEnum.Cancelado => "#ef4444",
+        _ => "#6b7280"
+    };
+
+    private class EstadoCount { public EstadoPedidoEnum Estado; public int Count; }
+    private class MesIngreso { public int Year; public int Month; public decimal Ingreso; public string Label = ""; }
+    private class ClienteRank { public string Nombre = ""; public decimal Total; public int Pedidos; public int Piezas; }
+    private class ProductoRank { public string Nombre = ""; public int Piezas; public int Pedidos; public decimal Ingreso; }
+    private class GananciaProducto { public string Nombre = ""; public int Piezas; public decimal Ingreso; public decimal Costo; public decimal Ganancia; }
+    private class TallaDistribucion { public string Talla = ""; public int Cantidad; }
+    private class PedidoReciente { public string NumeroPedido = ""; public string Cliente = ""; public string Estilo = ""; public int Piezas; public decimal Total; public decimal Costo; public decimal Ganancia; public int Margen; public EstadoPedidoEnum Estado; public DateTime Fecha; }
+}

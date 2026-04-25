@@ -1,0 +1,164 @@
+@page "/superadmin/configuracion-nomina"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Configuración Maestra de Nómina</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_esSuperAdmin)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para administrar la configuración maestra de nómina.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-bank me-2"></i>Configuración Maestra de Nómina</h1>
+                <p class="text-muted mb-0">Define la normativa global que comparten todas las empresas para ISR, subsidio, UMA y salarios mínimos.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-4">
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-semibold">Parámetros normativos</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">UMA diaria</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.UmaDiaria" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Salario mínimo general</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.SalarioMinimoGeneral" />
+                            </div>
+                            <div>
+                                <label class="form-label">Salario mínimo frontera</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.SalarioMinimoFrontera" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-8 col-lg-6">
+                    <div class="card h-100 border-success">
+                        <div class="card-header bg-success-subtle fw-semibold">ISR y subsidio</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Tabla ISR JSON</label>
+                                <InputTextArea class="form-control font-monospace" @bind-Value="configuracion.TablaIsrJson" rows="8" />
+                            </div>
+                            <div>
+                                <label class="form-label">Tabla subsidio empleo JSON</label>
+                                <InputTextArea class="form-control font-monospace" @bind-Value="configuracion.TablaSubsidioJson" rows="6" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar configuración maestra</button>
+                    <a class="btn btn-outline-secondary" href="/superadmin/empresas">Volver</a>
+                </div>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private NominaConfiguracionGlobal configuracion = new();
+    private bool _esSuperAdmin;
+    private bool guardando;
+    private string? error;
+    private string? ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+
+        if (_esSuperAdmin)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracion = await MundoVs.Core.Services.NominaConfiguracionLoader.OrderByVigencia(db.NominaConfiguracionesGlobales
+            .AsNoTracking())
+            .FirstOrDefaultAsync()
+            ?? new NominaConfiguracionGlobal();
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+
+        if (!_esSuperAdmin)
+        {
+            error = "No tienes permisos para editar la configuración maestra de nómina.";
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existente = await MundoVs.Core.Services.NominaConfiguracionLoader.OrderByVigencia(db.NominaConfiguracionesGlobales)
+                .FirstOrDefaultAsync();
+
+            if (existente == null)
+            {
+                configuracion.Id = configuracion.Id == Guid.Empty ? Guid.NewGuid() : configuracion.Id;
+                configuracion.TablaIsrJson = LimpiarJson(configuracion.TablaIsrJson, NominaConfiguracion.TablaIsrDefaultJson);
+                configuracion.TablaSubsidioJson = LimpiarJson(configuracion.TablaSubsidioJson, NominaConfiguracion.TablaSubsidioDefaultJson);
+                configuracion.CreatedAt = DateTime.UtcNow;
+                configuracion.IsActive = true;
+                db.NominaConfiguracionesGlobales.Add(configuracion);
+            }
+            else
+            {
+                existente.UmaDiaria = configuracion.UmaDiaria;
+                existente.SalarioMinimoGeneral = configuracion.SalarioMinimoGeneral;
+                existente.SalarioMinimoFrontera = configuracion.SalarioMinimoFrontera;
+                existente.TablaIsrJson = LimpiarJson(configuracion.TablaIsrJson, NominaConfiguracion.TablaIsrDefaultJson);
+                existente.TablaSubsidioJson = LimpiarJson(configuracion.TablaSubsidioJson, NominaConfiguracion.TablaSubsidioDefaultJson);
+                existente.UpdatedAt = DateTime.UtcNow;
+                existente.IsActive = true;
+                configuracion = existente;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Configuración maestra de nómina guardada.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static string LimpiarJson(string? valor, string valorDefault)
+        => string.IsNullOrWhiteSpace(valor) ? valorDefault : valor.Trim();
+}

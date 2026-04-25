@@ -1,0 +1,704 @@
+@page "/rrhh/turnos"
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Turnos</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver turnos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-clock-history me-2"></i>Turnos</h1>
+                <p class="text-muted mb-0">Configura horarios base por día y úsalos después en la asignación de empleados.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo turno</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (mostrarForm)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo turno" : $"Editar turno: {editando.Nombre}")</h5>
+                    <span class="badge bg-light text-primary">@((editando.IsActive ? "Activo" : "Inactivo"))</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Descripción</label>
+                            <InputText class="form-control" @bind-Value="editando.Descripcion" />
+                        </div>
+                        <div class="col-md-2">
+                            <div class="form-check mt-4 pt-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label">Activo</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Día</th>
+                                    <th class="text-center">Labora</th>
+                                    <th>Entrada</th>
+                                    <th>Salida</th>
+                                    <th>Descansos</th>
+                                    <th>Descanso 1</th>
+                                    <th>Descanso 2</th>
+                                    <th>Resumen</th>
+                                     <th class="text-end">Planeado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var dia in editando.Dias)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@dia.NombreDia</td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input" @bind="dia.Labora" />
+                                        </td>
+                                        <td>
+                                            <input type="text"
+                                                   class="form-control form-control-sm"
+                                                   placeholder="08:00"
+                                                   value="@dia.HoraEntradaTexto"
+                                                   @onchange="e => dia.HoraEntradaTexto = e.Value?.ToString() ?? string.Empty"
+                                                   disabled="@(!dia.Labora)" />
+                                        </td>
+                                        <td>
+                                            <input type="text"
+                                                   class="form-control form-control-sm"
+                                                   placeholder="15:00"
+                                                   value="@dia.HoraSalidaTexto"
+                                                   @onchange="e => dia.HoraSalidaTexto = e.Value?.ToString() ?? string.Empty"
+                                                   disabled="@(!dia.Labora)" />
+                                        </td>
+                                        <td>
+                                            <InputSelect class="form-select form-select-sm" @bind-Value="dia.CantidadDescansos" disabled="@(!dia.Labora)">
+                                                <option value="0">0</option>
+                                                <option value="1">1</option>
+                                                <option value="2">2</option>
+                                            </InputSelect>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex flex-column gap-1">
+                                                <div class="d-flex gap-1">
+                                                    <input type="text"
+                                                           class="form-control form-control-sm"
+                                                           placeholder="13:00"
+                                                           value="@dia.Descanso1InicioTexto"
+                                                           @onchange="e => dia.Descanso1InicioTexto = e.Value?.ToString() ?? string.Empty"
+                                                           disabled="@(!dia.Labora || dia.CantidadDescansos < 1)" />
+                                                    <input type="text"
+                                                           class="form-control form-control-sm"
+                                                           placeholder="13:30"
+                                                           value="@dia.Descanso1FinTexto"
+                                                           @onchange="e => dia.Descanso1FinTexto = e.Value?.ToString() ?? string.Empty"
+                                                           disabled="@(!dia.Labora || dia.CantidadDescansos < 1)" />
+                                                </div>
+                                                <div class="form-check small mb-0">
+                                                    <input type="checkbox" class="form-check-input" @bind="dia.Descanso1EsPagado" disabled="@(!dia.Labora || dia.CantidadDescansos < 1)" />
+                                                    <label class="form-check-label">Pagado</label>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex flex-column gap-1">
+                                                <div class="d-flex gap-1">
+                                                    <input type="text"
+                                                           class="form-control form-control-sm"
+                                                           placeholder="16:00"
+                                                           value="@dia.Descanso2InicioTexto"
+                                                           @onchange="e => dia.Descanso2InicioTexto = e.Value?.ToString() ?? string.Empty"
+                                                           disabled="@(!dia.Labora || dia.CantidadDescansos < 2)" />
+                                                    <input type="text"
+                                                           class="form-control form-control-sm"
+                                                           placeholder="16:15"
+                                                           value="@dia.Descanso2FinTexto"
+                                                           @onchange="e => dia.Descanso2FinTexto = e.Value?.ToString() ?? string.Empty"
+                                                           disabled="@(!dia.Labora || dia.CantidadDescansos < 2)" />
+                                                </div>
+                                                <div class="form-check small mb-0">
+                                                    <input type="checkbox" class="form-check-input" @bind="dia.Descanso2EsPagado" disabled="@(!dia.Labora || dia.CantidadDescansos < 2)" />
+                                                    <label class="form-check-label">Pagado</label>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="small text-muted">@ObtenerResumenDia(dia)</td>
+                                         <td class="text-end small fw-semibold">@ObtenerTiempoPlaneadoDia(dia)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-3 small">
+                        <span class="badge text-bg-light">Días laborables: @editando.Dias.Count(d => d.Labora)</span>
+                        <span class="badge text-bg-light">Jornada bruta: @FormatearMinutos(CalcularTotalesSemanales(editando.Dias).MinutosJornadaBruta)</span>
+                        <span class="badge text-bg-light">Descanso pagado: @FormatearMinutos(CalcularTotalesSemanales(editando.Dias).MinutosDescansoPagado)</span>
+                        <span class="badge text-bg-light">Descanso no pagado: @FormatearMinutos(CalcularTotalesSemanales(editando.Dias).MinutosDescansoNoPagado)</span>
+                        <span class="badge text-bg-primary">Planeado trabajado: @FormatearMinutos(CalcularTotalesSemanales(editando.Dias).MinutosPlaneadosTrabajados)</span>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button class="btn btn-success" @onclick="Guardar" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar turno</button>
+                        <button class="btn btn-outline-secondary" @onclick="CerrarFormulario" disabled="@guardando">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Turno</th>
+                            <th>Resumen semanal</th>
+                            <th class="text-center">Empleados</th>
+                            <th class="text-center">Activo</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (lista.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No hay turnos configurados.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in lista)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@item.Nombre</div>
+                                        <div class="small text-muted">@(string.IsNullOrWhiteSpace(item.Descripcion) ? "Sin descripción" : item.Descripcion)</div>
+                                    </td>
+                                    <td class="small">@item.Resumen</td>
+                                    <td class="text-center">@item.EmpleadosAsignados</td>
+                                    <td class="text-center"><span class="badge @(item.IsActive ? "bg-success" : "bg-secondary")">@(item.IsActive ? "Sí" : "No")</span></td>
+                                    <td class="text-end">
+                                        @if (_puedeEditar)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)"><i class="bi bi-pencil"></i></button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<TurnoResumenVm> lista = [];
+    private TurnoEditVm editando = CrearTurnoVacio();
+    private bool mostrarForm;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private string? error;
+    private string? ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var turnos = await db.TurnosBase
+            .Include(t => t.Detalles)
+            .Include(t => t.Empleados)
+            .AsNoTracking()
+            .OrderBy(t => t.Nombre)
+            .ToListAsync();
+
+        lista = turnos.Select(t => new TurnoResumenVm
+            {
+                Id = t.Id,
+                Nombre = t.Nombre,
+                Descripcion = t.Descripcion,
+                IsActive = t.IsActive,
+                EmpleadosAsignados = t.Empleados.Count(e => e.IsActive),
+                Resumen = ConstruirResumenSemanal(t.Detalles)
+            })
+            .ToList();
+    }
+
+    private void Nuevo()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para crear turnos.";
+            return;
+        }
+
+        error = ok = null;
+        editando = CrearTurnoVacio();
+        mostrarForm = true;
+    }
+
+    private async Task Editar(Guid id)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar turnos.";
+            return;
+        }
+
+        error = ok = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var turno = await db.TurnosBase
+            .Include(t => t.Detalles)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (turno == null)
+        {
+            error = "No se encontró el turno.";
+            return;
+        }
+
+        editando = new TurnoEditVm
+        {
+            Id = turno.Id,
+            Nombre = turno.Nombre,
+            Descripcion = turno.Descripcion,
+            IsActive = turno.IsActive,
+            Dias = CrearDiasSemana(turno.Detalles)
+        };
+        mostrarForm = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null;
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para guardar turnos.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editando.Nombre))
+        {
+            error = "El nombre del turno es requerido.";
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId);
+            if (empresaId == Guid.Empty)
+            {
+                error = "No hay empresa activa.";
+                return;
+            }
+
+            var usuario = state.User.Identity?.Name;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            TurnoBase turno;
+
+            if (editando.Id == Guid.Empty)
+            {
+                turno = new TurnoBase
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = empresaId,
+                    Nombre = editando.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(editando.Descripcion) ? null : editando.Descripcion.Trim(),
+                    IsActive = editando.IsActive,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario
+                };
+                db.TurnosBase.Add(turno);
+            }
+            else
+            {
+                turno = await db.TurnosBase
+                    .Include(t => t.Detalles)
+                    .FirstOrDefaultAsync(t => t.Id == editando.Id)
+                    ?? throw new InvalidOperationException("No se encontró el turno a guardar.");
+
+                turno.Nombre = editando.Nombre.Trim();
+                turno.Descripcion = string.IsNullOrWhiteSpace(editando.Descripcion) ? null : editando.Descripcion.Trim();
+                turno.IsActive = editando.IsActive;
+                turno.UpdatedAt = DateTime.UtcNow;
+                turno.UpdatedBy = usuario;
+            }
+
+            var detallesExistentes = turno.Detalles.ToDictionary(d => d.DiaSemana);
+            foreach (var dia in editando.Dias.OrderBy(d => d.DiaSemana))
+            {
+                var entrada = dia.Labora ? ConvertirHora(dia.HoraEntradaTexto) : null;
+                var salida = dia.Labora ? ConvertirHora(dia.HoraSalidaTexto) : null;
+                var cantidadDescansos = dia.Labora ? (byte)(dia.CantidadDescansos > 2 ? 2 : dia.CantidadDescansos) : (byte)0;
+                var descanso1Inicio = dia.Labora && cantidadDescansos >= 1 ? ConvertirHora(dia.Descanso1InicioTexto) : null;
+                var descanso1Fin = dia.Labora && cantidadDescansos >= 1 ? ConvertirHora(dia.Descanso1FinTexto) : null;
+                var descanso2Inicio = dia.Labora && cantidadDescansos >= 2 ? ConvertirHora(dia.Descanso2InicioTexto) : null;
+                var descanso2Fin = dia.Labora && cantidadDescansos >= 2 ? ConvertirHora(dia.Descanso2FinTexto) : null;
+
+                if (detallesExistentes.TryGetValue(dia.DiaSemana, out var detalleExistente))
+                {
+                    detalleExistente.Labora = dia.Labora;
+                    detalleExistente.HoraEntrada = entrada;
+                    detalleExistente.HoraSalida = salida;
+                    detalleExistente.CantidadDescansos = cantidadDescansos;
+                    detalleExistente.Descanso1Inicio = descanso1Inicio;
+                    detalleExistente.Descanso1Fin = descanso1Fin;
+                    detalleExistente.Descanso1EsPagado = dia.Labora && cantidadDescansos >= 1 && dia.Descanso1EsPagado;
+                    detalleExistente.Descanso2Inicio = descanso2Inicio;
+                    detalleExistente.Descanso2Fin = descanso2Fin;
+                    detalleExistente.Descanso2EsPagado = dia.Labora && cantidadDescansos >= 2 && dia.Descanso2EsPagado;
+                    detalleExistente.IsActive = true;
+                    detalleExistente.UpdatedAt = DateTime.UtcNow;
+                    detalleExistente.UpdatedBy = usuario;
+                    continue;
+                }
+
+                turno.Detalles.Add(new TurnoBaseDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    TurnoBaseId = turno.Id,
+                    DiaSemana = dia.DiaSemana,
+                    Labora = dia.Labora,
+                    HoraEntrada = entrada,
+                    HoraSalida = salida,
+                    CantidadDescansos = cantidadDescansos,
+                    Descanso1Inicio = descanso1Inicio,
+                    Descanso1Fin = descanso1Fin,
+                    Descanso1EsPagado = dia.Labora && cantidadDescansos >= 1 && dia.Descanso1EsPagado,
+                    Descanso2Inicio = descanso2Inicio,
+                    Descanso2Fin = descanso2Fin,
+                    Descanso2EsPagado = dia.Labora && cantidadDescansos >= 2 && dia.Descanso2EsPagado,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                });
+            }
+
+            var diasEditados = editando.Dias.Select(d => d.DiaSemana).ToHashSet();
+            var detallesObsoletos = turno.Detalles.Where(d => !diasEditados.Contains(d.DiaSemana)).ToList();
+            if (detallesObsoletos.Count > 0)
+                db.TurnosBaseDetalle.RemoveRange(detallesObsoletos);
+
+            await db.SaveChangesAsync();
+            ok = "Turno guardado.";
+            mostrarForm = false;
+            await CargarAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            error = "El turno cambió en la base de datos mientras lo editabas. Vuelve a abrirlo e intenta guardar de nuevo.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void CerrarFormulario()
+    {
+        mostrarForm = false;
+        error = ok = null;
+        editando = CrearTurnoVacio();
+    }
+
+    private static TurnoEditVm CrearTurnoVacio()
+        => new()
+        {
+            Dias = CrearDiasSemana([])
+        };
+
+    private static List<TurnoDiaEditVm> CrearDiasSemana(IEnumerable<TurnoBaseDetalle> detalles)
+    {
+        var mapa = detalles.ToDictionary(d => d.DiaSemana, d => d);
+        return Enum.GetValues<DiaSemanaTurno>()
+            .OrderBy(d => d)
+            .Select(dia =>
+            {
+                mapa.TryGetValue(dia, out var detalle);
+                return new TurnoDiaEditVm
+                {
+                    DiaSemana = dia,
+                    NombreDia = ObtenerNombreDia(dia),
+                    Labora = detalle?.Labora ?? false,
+                    HoraEntradaTexto = detalle?.HoraEntrada?.ToString("hh':'mm") ?? string.Empty,
+                    HoraSalidaTexto = detalle?.HoraSalida?.ToString("hh':'mm") ?? string.Empty,
+                    CantidadDescansos = detalle?.CantidadDescansos ?? 0,
+                    Descanso1InicioTexto = detalle?.Descanso1Inicio?.ToString("hh':'mm") ?? string.Empty,
+                    Descanso1FinTexto = detalle?.Descanso1Fin?.ToString("hh':'mm") ?? string.Empty,
+                    Descanso1EsPagado = detalle?.Descanso1EsPagado ?? false,
+                    Descanso2InicioTexto = detalle?.Descanso2Inicio?.ToString("hh':'mm") ?? string.Empty,
+                    Descanso2FinTexto = detalle?.Descanso2Fin?.ToString("hh':'mm") ?? string.Empty,
+                    Descanso2EsPagado = detalle?.Descanso2EsPagado ?? false
+                };
+            })
+            .ToList();
+    }
+
+    private static string ObtenerNombreDia(DiaSemanaTurno dia) => dia switch
+    {
+        DiaSemanaTurno.Lunes => "Lunes",
+        DiaSemanaTurno.Martes => "Martes",
+        DiaSemanaTurno.Miercoles => "Miércoles",
+        DiaSemanaTurno.Jueves => "Jueves",
+        DiaSemanaTurno.Viernes => "Viernes",
+        DiaSemanaTurno.Sabado => "Sábado",
+        DiaSemanaTurno.Domingo => "Domingo",
+        _ => dia.ToString()
+    };
+
+    private static TimeSpan? ConvertirHora(string? valor)
+        => string.IsNullOrWhiteSpace(valor)
+            ? null
+            : TimeSpan.TryParse(valor, out var hora)
+                ? hora
+                : null;
+
+    private static string ObtenerResumenDia(TurnoDiaEditVm dia)
+    {
+        if (!dia.Labora)
+        {
+            return "Descanso";
+        }
+
+        var entrada = ConvertirHora(dia.HoraEntradaTexto);
+        var salida = ConvertirHora(dia.HoraSalidaTexto);
+        if (!entrada.HasValue || !salida.HasValue)
+        {
+            return "Horario pendiente";
+        }
+
+        var duracion = CalcularDuracionDia(dia);
+        var etiquetaHoras = duracion.MinutosJornadaBruta > 0 ? $" · Bruta {FormatearMinutos(duracion.MinutosJornadaBruta)}" : string.Empty;
+        var descansos = new List<string>();
+        if (dia.CantidadDescansos >= 1)
+        {
+            descansos.Add($"D1 {dia.Descanso1InicioTexto}-{dia.Descanso1FinTexto}{(dia.Descanso1EsPagado ? " pagado" : string.Empty)}".Trim());
+        }
+
+        if (dia.CantidadDescansos >= 2)
+        {
+            descansos.Add($"D2 {dia.Descanso2InicioTexto}-{dia.Descanso2FinTexto}{(dia.Descanso2EsPagado ? " pagado" : string.Empty)}".Trim());
+        }
+
+        var resumenDescansos = descansos.Count == 0 ? string.Empty : $" · {string.Join(" · ", descansos)}";
+        var etiquetaPlaneado = $" · Planeado {FormatearMinutos(duracion.MinutosPlaneadosTrabajados)}";
+        return $"{FormatearHora(entrada)} - {FormatearHora(salida)}{etiquetaHoras}{resumenDescansos}{etiquetaPlaneado}";
+    }
+
+    private static string ObtenerTiempoPlaneadoDia(TurnoDiaEditVm dia)
+    {
+        if (!dia.Labora)
+        {
+            return "—";
+        }
+
+        var duracion = CalcularDuracionDia(dia);
+        return duracion.MinutosPlaneadosTrabajados <= 0
+            ? "Pendiente"
+            : FormatearMinutos(duracion.MinutosPlaneadosTrabajados);
+    }
+
+    private static string ConstruirResumenSemanal(IEnumerable<TurnoBaseDetalle> detalles)
+    {
+        var diasLaborables = detalles
+            .Where(d => d.Labora)
+            .OrderBy(d => d.DiaSemana)
+            .Select(d =>
+            {
+                var descansos = new List<string>();
+                if (d.CantidadDescansos >= 1)
+                {
+                    descansos.Add($"D1 {FormatearHora(d.Descanso1Inicio)}-{FormatearHora(d.Descanso1Fin)}{(d.Descanso1EsPagado ? " pag." : string.Empty)}");
+                }
+
+                if (d.CantidadDescansos >= 2)
+                {
+                    descansos.Add($"D2 {FormatearHora(d.Descanso2Inicio)}-{FormatearHora(d.Descanso2Fin)}{(d.Descanso2EsPagado ? " pag." : string.Empty)}");
+                }
+
+                var resumenDescansos = descansos.Count == 0 ? string.Empty : $" ({string.Join(", ", descansos)})";
+                return $"{ObtenerNombreDia(d.DiaSemana)} {FormatearHora(d.HoraEntrada)}-{FormatearHora(d.HoraSalida)}{resumenDescansos}";
+            })
+            .ToList();
+
+        var totalPlaneado = detalles
+            .Select(CalcularDuracionDia)
+            .Sum(d => d.MinutosPlaneadosTrabajados);
+
+        return diasLaborables.Count == 0
+            ? "Sin días laborables"
+            : $"{string.Join(" · ", diasLaborables)} · Planeado sem. {FormatearMinutos(totalPlaneado)}";
+    }
+
+    private static string FormatearHora(TimeSpan? hora)
+        => hora.HasValue ? hora.Value.ToString("hh':'mm") : "--:--";
+
+    private static TurnoDuracionVm CalcularTotalesSemanales(IEnumerable<TurnoDiaEditVm> dias)
+        => dias.Aggregate(new TurnoDuracionVm(), (acumulado, dia) => acumulado + CalcularDuracionDia(dia));
+
+    private static TurnoDuracionVm CalcularDuracionDia(TurnoDiaEditVm dia)
+    {
+        var entrada = ConvertirHora(dia.HoraEntradaTexto);
+        var salida = ConvertirHora(dia.HoraSalidaTexto);
+        if (!dia.Labora || !entrada.HasValue || !salida.HasValue)
+        {
+            return new TurnoDuracionVm();
+        }
+
+        var jornadaBruta = Math.Max(0, (int)Math.Round((salida.Value - entrada.Value).TotalMinutes));
+        var descanso1 = dia.CantidadDescansos >= 1 ? CalcularMinutosRango(ConvertirHora(dia.Descanso1InicioTexto), ConvertirHora(dia.Descanso1FinTexto)) : 0;
+        var descanso2 = dia.CantidadDescansos >= 2 ? CalcularMinutosRango(ConvertirHora(dia.Descanso2InicioTexto), ConvertirHora(dia.Descanso2FinTexto)) : 0;
+        var descansoPagado = (dia.Descanso1EsPagado ? descanso1 : 0) + (dia.Descanso2EsPagado ? descanso2 : 0);
+        var descansoNoPagado = (dia.Descanso1EsPagado ? 0 : descanso1) + (dia.Descanso2EsPagado ? 0 : descanso2);
+
+        return new TurnoDuracionVm
+        {
+            MinutosJornadaBruta = jornadaBruta,
+            MinutosDescansoPagado = descansoPagado,
+            MinutosDescansoNoPagado = descansoNoPagado,
+            MinutosPlaneadosTrabajados = Math.Max(0, jornadaBruta - descansoNoPagado)
+        };
+    }
+
+    private static TurnoDuracionVm CalcularDuracionDia(TurnoBaseDetalle detalle)
+    {
+        if (!detalle.Labora || !detalle.HoraEntrada.HasValue || !detalle.HoraSalida.HasValue)
+        {
+            return new TurnoDuracionVm();
+        }
+
+        var jornadaBruta = Math.Max(0, (int)Math.Round((detalle.HoraSalida.Value - detalle.HoraEntrada.Value).TotalMinutes));
+        var descanso1 = detalle.CantidadDescansos >= 1 ? CalcularMinutosRango(detalle.Descanso1Inicio, detalle.Descanso1Fin) : 0;
+        var descanso2 = detalle.CantidadDescansos >= 2 ? CalcularMinutosRango(detalle.Descanso2Inicio, detalle.Descanso2Fin) : 0;
+        var descansoPagado = (detalle.Descanso1EsPagado ? descanso1 : 0) + (detalle.Descanso2EsPagado ? descanso2 : 0);
+        var descansoNoPagado = (detalle.Descanso1EsPagado ? 0 : descanso1) + (detalle.Descanso2EsPagado ? 0 : descanso2);
+
+        return new TurnoDuracionVm
+        {
+            MinutosJornadaBruta = jornadaBruta,
+            MinutosDescansoPagado = descansoPagado,
+            MinutosDescansoNoPagado = descansoNoPagado,
+            MinutosPlaneadosTrabajados = Math.Max(0, jornadaBruta - descansoNoPagado)
+        };
+    }
+
+    private static int CalcularMinutosRango(TimeSpan? inicio, TimeSpan? fin)
+        => !inicio.HasValue || !fin.HasValue
+            ? 0
+            : Math.Max(0, (int)Math.Round((fin.Value - inicio.Value).TotalMinutes));
+
+    private static string FormatearMinutos(int minutos)
+    {
+        var horas = minutos / 60;
+        var restantes = minutos % 60;
+        return $"{horas}:{restantes:00} h";
+    }
+
+    private sealed class TurnoResumenVm
+    {
+        public Guid Id { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public bool IsActive { get; set; }
+        public int EmpleadosAsignados { get; set; }
+        public string Resumen { get; set; } = string.Empty;
+    }
+
+    private sealed class TurnoEditVm
+    {
+        public Guid Id { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public bool IsActive { get; set; } = true;
+        public List<TurnoDiaEditVm> Dias { get; set; } = [];
+    }
+
+    private sealed class TurnoDiaEditVm
+    {
+        public DiaSemanaTurno DiaSemana { get; set; }
+        public string NombreDia { get; set; } = string.Empty;
+        public bool Labora { get; set; }
+        public string HoraEntradaTexto { get; set; } = string.Empty;
+        public string HoraSalidaTexto { get; set; } = string.Empty;
+        public byte CantidadDescansos { get; set; }
+        public string Descanso1InicioTexto { get; set; } = string.Empty;
+        public string Descanso1FinTexto { get; set; } = string.Empty;
+        public bool Descanso1EsPagado { get; set; }
+        public string Descanso2InicioTexto { get; set; } = string.Empty;
+        public string Descanso2FinTexto { get; set; } = string.Empty;
+        public bool Descanso2EsPagado { get; set; }
+    }
+
+    private sealed class TurnoDuracionVm
+    {
+        public int MinutosJornadaBruta { get; set; }
+        public int MinutosDescansoPagado { get; set; }
+        public int MinutosDescansoNoPagado { get; set; }
+        public int MinutosPlaneadosTrabajados { get; set; }
+
+        public static TurnoDuracionVm operator +(TurnoDuracionVm left, TurnoDuracionVm right)
+            => new()
+            {
+                MinutosJornadaBruta = left.MinutosJornadaBruta + right.MinutosJornadaBruta,
+                MinutosDescansoPagado = left.MinutosDescansoPagado + right.MinutosDescansoPagado,
+                MinutosDescansoNoPagado = left.MinutosDescansoNoPagado + right.MinutosDescansoNoPagado,
+                MinutosPlaneadosTrabajados = left.MinutosPlaneadosTrabajados + right.MinutosPlaneadosTrabajados
+            };
+    }
+}

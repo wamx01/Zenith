@@ -1,0 +1,3342 @@
+@page "/serigrafia/pedidos"
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Calzado
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject IPedidoSerigrafiaRepository PedidoSerigrafiaRepository
+@inject IClienteRepository ClienteRepository
+@inject IPedidoRepository PedidoRepository
+@inject IProductoRepository ProductoRepository
+@inject IProductoClienteRepository ProductoClienteRepository
+@inject IRepository<TipoProceso> TipoProcesoRepository
+@inject IRepository<PedidoDetalle> PedidoDetalleRepository
+@inject CrmDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Pedidos</PageTitle>
+
+<div class="ps-page">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+        <div>
+            <h1 class="ps-title mb-1"><i class="bi bi-clipboard-check me-2"></i>Pedidos</h1>
+            <p class="text-muted mb-0" style="font-size:.85rem">Gestión y seguimiento de pedidos</p>
+        </div>
+        <button class="btn ps-btn-primary" @onclick="NuevoPedido">
+            <i class="bi bi-plus-circle me-1"></i> Nuevo Pedido
+        </button>
+    </div>
+
+    <!-- Filtros -->
+    <div class="ps-card mb-4">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="ps-label">Estado</label>
+                <select class="form-select ps-input" @onchange="FiltrarPorEstado">
+                    <option value="">Todos los pedidos</option>
+                    <option value="pendientes">Pendientes</option>
+                    <option value="completados">Completados</option>
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="ps-label">Desde</label>
+                <input type="date" class="form-control ps-input" @bind="fechaDesde" />
+            </div>
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="ps-label">Hasta</label>
+                <input type="date" class="form-control ps-input" @bind="fechaHasta" />
+            </div>
+            <div class="col-12 col-sm-6 col-md-4">
+                <label class="ps-label">Buscar</label>
+                <input type="text"
+                       class="form-control ps-input"
+                       @bind="busquedaTexto"
+                       @bind:event="oninput"
+                       placeholder="Pedido, cliente, estilo, color..." />
+            </div>
+            <div class="col-12 col-sm-6 col-md-2">
+                <button class="btn ps-btn-secondary w-100" @onclick="FiltrarPorFechas">
+                    <i class="bi bi-search me-1"></i> Buscar
+                </button>
+            </div>
+        </div>
+        <div class="ps-filter-meta">
+            <span class="ps-filter-pill">@PedidosFiltrados.Count() de @(pedidos?.Count() ?? 0) pedidos</span>
+            <span class="ps-filter-hint">Usa <strong>Procesar</strong> para entrar directo al seguimiento del pedido.</span>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="ps-card ps-form-card mb-4">
+            <div class="ps-form-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi @(pedidoEditando.Id == Guid.Empty ? "bi-plus-circle" : "bi-pencil-square") fs-5"></i>
+                    <h5 class="mb-0">@(pedidoEditando.Id == Guid.Empty ? "Nuevo Pedido" : "Editar Pedido")</h5>
+                </div>
+            </div>
+            <div class="p-4">
+                <EditForm Model="pedidoEditando" OnValidSubmit="GuardarPedido">
+
+                    <div class="ps-section-label">Información General</div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-12 col-sm-6 col-md-3">
+                            <label class="ps-label">Fecha Recibido</label>
+                            <InputDate class="form-control ps-input" @bind-Value="pedidoEditando.FechaRecibido" />
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-3">
+                            <label class="ps-label">Fecha Estimada</label>
+                            <InputDate class="form-control ps-input" @bind-Value="pedidoEditando.FechaEstimada" />
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-3">
+                            <label class="ps-label">Cliente</label>
+                            <InputSelect class="form-select ps-input" @bind-Value="clienteSeleccionadoId" @bind-Value:after="OnClienteChanged">
+                                <option value="">Seleccione cliente...</option>
+                                @if (clientes != null)
+                                {
+                                    @foreach (var cliente in clientes)
+                                    {
+                                        <option value="@cliente.Id">@cliente.RazonSocial</option>
+                                    }
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="ps-label">Tipo de Precio</label>
+                            <InputSelect class="form-select ps-input" @bind-Value="tipoPrecioSeleccionado">
+                                <option value="@TipoPrecioEnum.Contado">Contado</option>
+                                <option value="@TipoPrecioEnum.Credito">Crédito</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="ps-label">Tipo de captura</label>
+                            <InputSelect class="form-select ps-input" @bind-Value="tipoCapturaSeleccionado">
+                                <option value="@PedidoModoCaptura.Productos">Productos</option>
+                                @if (pedidoEditando.Id == Guid.Empty)
+                                {
+                                    <option value="@PedidoModoCaptura.Servicios">Servicios</option>
+                                }
+                                <option value="@PedidoModoCaptura.Ambos">Ambos</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    @if (MuestraProductos)
+                    {
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-sm-6 col-md-3">
+                                <label class="ps-label">Producto</label>
+                                <InputSelect class="form-select ps-input" @bind-Value="productoSeleccionadoId" @bind-Value:after="OnProductoChanged" disabled="@(productosCliente == null || !productosCliente.Any())">
+                                    <option value="">@(productosCliente == null ? "Seleccione cliente primero" : productosCliente.Any() ? "Seleccione producto..." : "Sin productos asignados ni cotizados")</option>
+                                    @if (productosCliente != null)
+                                    {
+                                        @foreach (var producto in productosCliente)
+                                        {
+                                            <option value="@producto.Id">@producto.Nombre</option>
+                                        }
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-5">
+                                <label class="ps-label">Cotización base</label>
+                                <InputSelect class="form-select ps-input"
+                                             @bind-Value="cotizacionSeleccionadaId"
+                                             @bind-Value:after="OnCotizacionChanged"
+                                             disabled="!productoSeleccionadoId.HasValue || !cotizacionesProducto.Any()">
+                                    <option value="">@(productoSeleccionadoId.HasValue
+                                        ? (cotizacionesProducto.Any() ? "Seleccione cotización..." : "Sin cotizaciones disponibles")
+                                        : "Seleccione producto primero")</option>
+                                    @foreach (var cotizacion in cotizacionesProducto)
+                                    {
+                                        <option value="@cotizacion.Id">@ObtenerEtiquetaCotizacion(cotizacion)</option>
+                                    }
+                                </InputSelect>
+                                <small class="text-muted">El precio del pedido se calculará con la cotización seleccionada.</small>
+                            </div>
+                        </div>
+
+                        @if (cotizacionSeleccionadaId.HasValue)
+                        {
+                            var cotizacionSeleccionada = cotizacionesProducto.FirstOrDefault(c => c.Id == cotizacionSeleccionadaId.Value);
+                            if (cotizacionSeleccionada != null)
+                            {
+                                <div class="row g-3 mb-4">
+                                    <div class="col-12 col-md-4">
+                                        <div class="ps-box">
+                                            <small class="text-muted d-block">Descripción</small>
+                                            <strong>@(string.IsNullOrWhiteSpace(cotizacionSeleccionada.Descripcion) ? "Sin descripción" : cotizacionSeleccionada.Descripcion)</strong>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="ps-box">
+                                            <small class="text-muted d-block">Precio contado</small>
+                                            <strong>@cotizacionSeleccionada.PrecioFinalContado.ToString("C2")</strong>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <div class="ps-box">
+                                            <small class="text-muted d-block">Precio crédito</small>
+                                            <strong>@cotizacionSeleccionada.PrecioCredito.ToString("C2")</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if (tallasEditando.Any(t => t.Cantidad > 0))
+                                {
+                                    var resumenPrecios = ConstruirResumenPreciosCotizacion(cotizacionSeleccionada, tallasEditando, pedidoEditando.CombinacionColor, tipoPrecioSeleccionado);
+                                    <div class="ps-box mb-4">
+                                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                            <div>
+                                                <div class="ps-section-label mb-1" style="border-bottom:none;padding-bottom:0">Precio aplicado por talla</div>
+                                                <div class="text-muted small">La cotización define el precio final. Si no hay coincidencia específica, se usa el precio base.</div>
+                                            </div>
+                                            <span class="ps-total-badge">Subtotal producto: @resumenPrecios.Sum(r => r.Subtotal).ToString("C2")</span>
+                                        </div>
+
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle mb-0">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th>Talla</th>
+                                                        <th>SKU</th>
+                                                        <th class="text-center">Cantidad</th>
+                                                        <th>Precio origen</th>
+                                                        <th class="text-end">% aplicado</th>
+                                                        <th class="text-end">Precio unitario</th>
+                                                        <th class="text-end">Subtotal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var precio in resumenPrecios)
+                                                    {
+                                                        <tr>
+                                                            <td class="fw-semibold">@precio.Talla</td>
+                                                            <td class="small">@ObtenerSkuTallaResumen(precio.Talla, precio.ColorAplicado)</td>
+                                                            <td class="text-center">@precio.Cantidad</td>
+                                                            <td>
+                                                                <div>@precio.Etiqueta</div>
+                                                                @if (!string.IsNullOrWhiteSpace(precio.ColorAplicado))
+                                                                {
+                                                                    <div class="text-muted small">@precio.ColorAplicado</div>
+                                                                }
+                                                            </td>
+                                                            <td class="text-end">@precio.PorcentajeAplicado.ToString("N2")%</td>
+                                                            <td class="text-end fw-semibold">@precio.PrecioUnitario.ToString("C2")</td>
+                                                            <td class="text-end">@precio.Subtotal.ToString("C2")</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+
+                        <div class="ps-section-label">Detalles del Pedido</div>
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">Estilo</label>
+                                <InputText class="form-control ps-input" @bind-Value="pedidoEditando.Estilo" placeholder="Ej: Polo Básico" />
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">@(ProductoUsaVariantesColor ? "Variación" : "Combinación de Color")</label>
+                                @if (ProductoUsaVariantesColor)
+                                {
+                                    <InputSelect class="form-select ps-input" @bind-Value="variacionSeleccionada" @bind-Value:after="OnVariacionSeleccionadaChanged">
+                                        <option value="">Seleccione variación...</option>
+                                        @foreach (var variacion in ObtenerVariacionesDisponibles(productoSeleccionadoId))
+                                        {
+                                            <option value="@variacion">@variacion</option>
+                                        }
+                                    </InputSelect>
+                                    <small class="text-muted">La variación filtra los `SKU` disponibles para tallas y fracciones.</small>
+                                }
+                                else
+                                {
+                                    <InputText class="form-control ps-input" @bind-Value="pedidoEditando.CombinacionColor" placeholder="Ej: FIUSHA/MORADO/BLANCO" />
+                                }
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">Captura de escala</label>
+                                <InputSelect class="form-select ps-input" @bind-Value="capturaEscalaSeleccionada" @bind-Value:after="OnCapturaEscalaChanged">
+                                    <option value="@CapturaEscalaModo.Tallas">Tallas</option>
+                                    @if (ProductoPermiteFraccion)
+                                    {
+                                        <option value="@CapturaEscalaModo.Fraccion">Fracción</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        @if (ProductoPermiteFraccion)
+                        {
+                            <div class="row g-3 mb-4">
+                                <div class="col-12 col-md-6">
+                                    <label class="ps-label">Fracciones disponibles</label>
+                                    <InputSelect class="form-select ps-input"
+                                                 @bind-Value="fraccionSeleccionadaId"
+                                                 @bind-Value:after="OnFraccionRapidaChanged"
+                                                 disabled="!fraccionesDisponiblesCliente.Any()">
+                                        <option value="">Seleccione fracción si desea generar una escala...</option>
+                                        @foreach (var fraccion in fraccionesDisponiblesCliente)
+                                        {
+                                            <option value="@fraccion.Id">@fraccion.Codigo - @fraccion.Nombre</option>
+                                        }
+                                    </InputSelect>
+                                    <small class="text-muted">Si eliges una fracción, primero se toma la variación y luego se generan los `SKU` relacionados.</small>
+                                </div>
+                            </div>
+                        }
+
+                        @if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+                        {
+                            <div class="row g-3 mb-4">
+                                <div class="col-12 col-md-5">
+                                    <label class="ps-label">Fracción</label>
+                                    <InputSelect class="form-select ps-input" @bind-Value="fraccionSeleccionadaId" @bind-Value:after="OnFraccionSeleccionadaChanged" disabled="!fraccionesDisponiblesCliente.Any()">
+                                        <option value="">Seleccione fracción...</option>
+                                        @foreach (var fraccion in fraccionesDisponiblesCliente)
+                                        {
+                                            <option value="@fraccion.Id">@fraccion.Codigo - @fraccion.Nombre</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="ps-label">Cuántas fracciones</label>
+                                    <InputNumber class="form-control ps-input" @bind-Value="cantidadFracciones" @bind-Value:after="OnCantidadFraccionesChanged" />
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="ps-label">Generación</label>
+                                    <div class="ps-box py-2">
+                                        @if (fraccionSeleccionadaId.HasValue)
+                                        {
+                                            <span class="small text-muted">La distribución se genera automáticamente con la fracción seleccionada.</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="small text-muted">Selecciona una fracción para generar las tallas del pedido.</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                @if (tallasEditando.Any())
+                                {
+                                    <div class="col-12">
+                                        <div class="ps-box">
+                                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                                <div>
+                                                    <div class="ps-section-label mb-1" style="border-bottom:none;padding-bottom:0">SKU resuelto por fracción</div>
+                                                    <div class="text-muted small">La fracción genera las tallas y la variación elegida determina los `SKU` relacionados.</div>
+                                                </div>
+                                                <span class="ps-total-badge">Pares: @tallasEditando.Sum(t => t.Cantidad)</span>
+                                            </div>
+
+                                            <div class="table-responsive">
+                                                <table class="table table-sm align-middle mb-0">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Talla</th>
+                                                            <th class="text-center">Cantidad</th>
+                                                            <th>SKU resuelto</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var talla in tallasEditando.OrderBy(t => t.Talla))
+                                                        {
+                                                            <tr>
+                                                                <td class="fw-semibold">@talla.Talla</td>
+                                                                <td class="text-center">@talla.Cantidad</td>
+                                                                <td>@ObtenerEtiquetaSkuResuelto(talla.Talla)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+
+                    @if (MuestraProductos)
+                    {
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">OC (Orden de Compra)</label>
+                                <InputText class="form-control ps-input" @bind-Value="pedidoEditando.OrdenCompra" />
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">Lote Cliente</label>
+                                <InputText class="form-control ps-input" @bind-Value="pedidoEditando.LoteCliente" />
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4">
+                                <label class="ps-label">Corrida</label>
+                                <InputText class="form-control ps-input" @bind-Value="pedidoEditando.Corrida" placeholder="Ej: 25-28 o nombre interno de corrida" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="ps-section-label mb-0">Escala de Tallas</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="ps-total-badge">Total: @tallasEditando.Sum(t => t.Cantidad)</span>
+                                @if (capturaEscalaSeleccionada == CapturaEscalaModo.Tallas)
+                                {
+                                    <button type="button" class="btn ps-btn-secondary btn-sm" @onclick="AgregarCorridaDisponible" disabled="@(HayTallasDisponiblesParaCaptura ? null : "disabled")">
+                                        <i class="bi bi-collection me-1"></i> Agregar todas las tallas
+                                    </button>
+                                    <button type="button" class="btn ps-btn-secondary btn-sm" @onclick="AgregarTallasSeleccionadas" disabled="@(HayTallasDisponiblesSeleccionadas() ? null : "disabled")">
+                                        <i class="bi bi-check2-square me-1"></i> Agregar selección
+                                    </button>
+                                    <div class="input-group input-group-sm" style="width:260px">
+                                        <InputSelect class="form-select ps-input" @bind-Value="nuevaTallaSeleccionada" disabled="@(HayTallasDisponiblesParaCaptura ? null : "disabled")">
+                                            <option value="">@(HayTallasDisponiblesParaCaptura ? "Seleccione talla..." : "Sin tallas configuradas")</option>
+                                            @foreach (var tallaDisponible in ObtenerTallasDisponiblesParaCaptura())
+                                            {
+                                                <option value="@tallaDisponible.Talla">@ObtenerEtiquetaTallaDisponible(tallaDisponible.Talla)</option>
+                                            }
+                                        </InputSelect>
+                                        <button type="button" class="btn ps-btn-dark" @onclick="AgregarTalla" disabled="@((HayTallasDisponiblesParaCaptura && !string.IsNullOrWhiteSpace(nuevaTallaSeleccionada)) ? null : "disabled")">
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="ps-filter-pill">Fracción x @cantidadFracciones</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="ps-box mb-4">
+                            @if (tallasEditando.Any())
+                            {
+                                var tallasSinSku = ObtenerTallasSinSku().Select(t => t.Talla).ToList();
+
+                                @if (tallasSinSku.Any())
+                                {
+                                    <div class="alert alert-warning py-2 small mb-3">
+                                        No existe `SKU` para las tallas <strong>@string.Join(", ", tallasSinSku)</strong> con la variación actual.
+                                    </div>
+                                }
+
+                                <div class="row g-2">
+                                    @foreach (var talla in tallasEditando.OrderBy(t => t.Talla))
+                                    {
+                                        <div class="col-6 col-sm-4 col-md-2">
+                                            <div class="ps-talla-item">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span class="ps-talla-label">#@talla.Talla</span>
+                                                    <button type="button" class="btn-close" style="font-size:.55rem" @onclick="() => QuitarTalla(talla)" aria-label="Quitar"></button>
+                                                </div>
+                                                <input type="number" class="form-control form-control-sm ps-input text-center" @bind="talla.Cantidad" @bind:after="OnCantidadesTallaChanged" min="0" />
+                                                <div class="small text-muted mt-1 text-truncate" title="@ObtenerEtiquetaSkuResuelto(talla.Talla)">
+                                                    SKU: @ObtenerEtiquetaSkuResuelto(talla.Talla)
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (capturaEscalaSeleccionada == CapturaEscalaModo.Tallas && HayTallasDisponiblesParaCaptura)
+                                {
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-4 mb-2">
+                                        <div>
+                                            <div class="ps-section-label mb-1" style="border-bottom:none;padding-bottom:0">Más SKU disponibles para esta variación</div>
+                                            <div class="text-muted small">Puedes seguir agregando varios SKU del mismo pedido.</div>
+                                        </div>
+                                        <span class="ps-total-badge">Disponibles: @ObtenerTallasDisponiblesParaCaptura().Count()</span>
+                                    </div>
+
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width:120px" class="text-center">
+                                                        <button type="button" class="ps-select-toggle @(TodasLasTallasDisponiblesSeleccionadas() ? "is-selected" : string.Empty)" @onclick="AlternarSeleccionTodasLasDisponibles">
+                                                            <i class="bi @(TodasLasTallasDisponiblesSeleccionadas() ? "bi-check2-square" : "bi-square")"></i>
+                                                            <span>Todas</span>
+                                                        </button>
+                                                    </th>
+                                                    <th>Talla</th>
+                                                    <th>Variación</th>
+                                                    <th>SKU relacionado</th>
+                                                    <th class="text-end">Precio cotizado</th>
+                                                    <th style="width:90px"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var tallaDisponible in ObtenerTallasDisponiblesParaCaptura())
+                                                {
+                                                    <tr>
+                                                        <td class="text-center">
+                                                            <button type="button" class="ps-select-toggle @(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "is-selected" : string.Empty)" @onclick="() => AlternarSeleccionTallaDisponible(tallaDisponible.Talla)">
+                                                                <i class="bi @(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "bi-check2-square" : "bi-square")"></i>
+                                                                <span>@(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "Marcada" : "Marcar")</span>
+                                                            </button>
+                                                        </td>
+                                                        <td class="fw-semibold">@tallaDisponible.Talla</td>
+                                                        <td>@ObtenerEtiquetaVariacionAplicada()</td>
+                                                        <td>@ObtenerEtiquetaSkuResuelto(tallaDisponible.Talla)</td>
+                                                        <td class="text-end">@ObtenerPrecioCotizadoTallaTexto(tallaDisponible.Talla)</td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm ps-btn-secondary" @onclick="() => SeleccionarTallaDisponible(tallaDisponible.Talla)">
+                                                                Agregar
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            }
+                            else if (capturaEscalaSeleccionada == CapturaEscalaModo.Tallas && HayTallasDisponiblesParaCaptura)
+                            {
+                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                    <div>
+                                        <div class="ps-section-label mb-1" style="border-bottom:none;padding-bottom:0">Tallas disponibles para la variación actual</div>
+                                        <div class="text-muted small">Selecciona una talla puntual, agrega varias o carga todas las tallas disponibles.</div>
+                                    </div>
+                                    <span class="ps-total-badge">Disponibles: @ObtenerTallasDisponiblesParaCaptura().Count()</span>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                    <th style="width:120px" class="text-center">
+                                                        <button type="button" class="ps-select-toggle @(TodasLasTallasDisponiblesSeleccionadas() ? "is-selected" : string.Empty)" @onclick="AlternarSeleccionTodasLasDisponibles">
+                                                            <i class="bi @(TodasLasTallasDisponiblesSeleccionadas() ? "bi-check2-square" : "bi-square")"></i>
+                                                            <span>Todas</span>
+                                                        </button>
+                                                    </th>
+                                                <th>Talla</th>
+                                                    <th>Variación</th>
+                                                <th>SKU relacionado</th>
+                                                    <th class="text-end">Precio cotizado</th>
+                                                <th style="width:90px"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var tallaDisponible in ObtenerTallasDisponiblesParaCaptura())
+                                            {
+                                                <tr>
+                                                        <td class="text-center">
+                                                            <button type="button" class="ps-select-toggle @(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "is-selected" : string.Empty)" @onclick="() => AlternarSeleccionTallaDisponible(tallaDisponible.Talla)">
+                                                                <i class="bi @(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "bi-check2-square" : "bi-square")"></i>
+                                                                <span>@(EstaTallaDisponibleSeleccionada(tallaDisponible.Talla) ? "Marcada" : "Marcar")</span>
+                                                            </button>
+                                                        </td>
+                                                    <td class="fw-semibold">@tallaDisponible.Talla</td>
+                                                        <td>@ObtenerEtiquetaVariacionAplicada()</td>
+                                                    <td>@ObtenerEtiquetaSkuResuelto(tallaDisponible.Talla)</td>
+                                                        <td class="text-end">@ObtenerPrecioCotizadoTallaTexto(tallaDisponible.Talla)</td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm ps-btn-secondary" @onclick="() => SeleccionarTallaDisponible(tallaDisponible.Talla)">
+                                                            Agregar
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="text-muted small mb-0"><i class="bi bi-info-circle me-1"></i>@ObtenerMensajeCapturaTallas()</p>
+                            }
+                        </div>
+                    }
+
+                    @if (MuestraServicios)
+                    {
+                        <div class="ps-section-label">Servicios / conceptos</div>
+                        <div class="ps-box mb-4">
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-3">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="min-width:130px">Tipo</th>
+                                            <th>Descripción</th>
+                                            <th style="min-width:90px">Cantidad</th>
+                                            <th style="min-width:130px">Precio</th>
+                                            <th style="min-width:120px">Total</th>
+                                            <th style="width:36px"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (conceptosEditando.Any())
+                                        {
+                                            @foreach (var concepto in conceptosEditando)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <InputSelect class="form-select form-select-sm ps-input" @bind-Value="concepto.Tipo">
+                                                            @foreach (var tipo in Enum.GetValues<PedidoConceptoTipo>())
+                                                            {
+                                                                <option value="@tipo">@tipo</option>
+                                                            }
+                                                        </InputSelect>
+                                                    </td>
+                                                    <td>
+                                                        <InputText class="form-control form-control-sm ps-input" @bind-Value="concepto.Descripcion" />
+                                                    </td>
+                                                    <td>
+                                                        <InputNumber class="form-control form-control-sm ps-input" @bind-Value="concepto.Cantidad" />
+                                                    </td>
+                                                    <td>
+                                                        <InputNumber class="form-control form-control-sm ps-input" @bind-Value="concepto.PrecioUnitario" />
+                                                    </td>
+                                                    <td class="fw-semibold">@CalcularTotalConcepto(concepto).ToString("C2")</td>
+                                                    <td>
+                                                        <button type="button" class="btn ps-action-btn ps-action-delete" @onclick="() => QuitarConcepto(concepto)">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td colspan="6" class="text-muted small">No hay servicios capturados.</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <button type="button" class="btn ps-btn-secondary btn-sm" @onclick="AgregarConcepto">
+                                    <i class="bi bi-plus-circle me-1"></i> Agregar servicio
+                                </button>
+                                <span class="ps-total-badge">Servicios: @conceptosEditando.Sum(CalcularTotalConcepto).ToString("C2")</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (MuestraProductos)
+                    {
+                        <div class="ps-section-label">Tipos de Proceso</div>
+                        <div class="ps-box mb-4">
+                            @if (tiposProceso != null && tiposProceso.Any())
+                            {
+                                <div class="row g-2">
+                                    @foreach (var tipo in tiposProceso.OrderBy(t => t.Orden))
+                                    {
+                                        var isChecked = procesosSeleccionados.Contains(tipo.Id);
+                                        <div class="col-6 col-sm-4 col-md-3">
+                                            <label class="ps-check-pill @(isChecked ? "ps-check-active" : "")">
+                                                <input type="checkbox" class="d-none"
+                                                       checked="@isChecked"
+                                                       @onchange="async (e) => await ToggleProceso(tipo.Id, e.Value)" />
+                                                <i class="bi @(isChecked ? "bi-check-circle-fill" : "bi-circle") me-1"></i>
+                                                @tipo.Nombre
+                                            </label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="text-muted small mb-0">No hay tipos de proceso configurados.</p>
+                            }
+                        </div>
+                    }
+
+                    @if (MuestraProductos && pedidoEditando.Id != Guid.Empty && procesosSeleccionados.Any() && tallasEditando.Any(t => t.Id != Guid.Empty))
+                    {
+                        var procesosSeleccion = tiposProceso?.Where(tp => procesosSeleccionados.Contains(tp.Id)).OrderBy(tp => tp.Orden).ToList() ?? new List<TipoProceso>();
+                        <div class="ps-section-label">Seguimiento por talla y proceso</div>
+                        <div class="ps-box mb-4">
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th style="min-width:120px">Talla</th>
+                                            @foreach (var proc in procesosSeleccion)
+                                            {
+                                                <th style="min-width:180px">@proc.Nombre</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var talla in tallasEditando.Where(t => t.Id != Guid.Empty).OrderBy(t => t.Talla))
+                                        {
+                                            <tr>
+                                                <td><strong>@talla.Talla</strong> <span class="badge bg-primary">@talla.Cantidad</span></td>
+                                                @foreach (var proc in procesosSeleccion)
+                                                {
+                                                    var seg = seguimientoTallaProcesos.FirstOrDefault(s => s.PedidoSerigrafiaTallaId == talla.Id && s.TipoProcesoId == proc.Id);
+                                                    <td>
+                                                        @if (seg != null)
+                                                        {
+                                                            <div class="form-check mb-1">
+                                                                <InputCheckbox class="form-check-input"
+                                                                               Value="seg.Completado"
+                                                                               ValueChanged="async (bool value) => await OnSeguimientoChecked(seg, value)"
+                                                                               ValueExpression="() => seg.Completado" />
+                                                                <label class="form-check-label">Listo</label>
+                                                            </div>
+                                                            <InputDate TValue="DateTime?" class="form-control form-control-sm"
+                                                                       Value="seg.FechaPaso"
+                                                                       ValueChanged="async (DateTime? value) => await OnSeguimientoFechaChanged(seg, value)"
+                                                                       ValueExpression="() => seg.FechaPaso" />
+                                                             @if (seg.Completado || seg.EmpleadoId.HasValue)
+                                                             {
+                                                                 <InputSelect TValue="Guid?" class="form-select form-select-sm mt-1"
+                                                                              Value="seg.EmpleadoId"
+                                                                              ValueChanged="async (Guid? value) => await OnSeguimientoEmpleadoChanged(seg, value)"
+                                                                              ValueExpression="() => seg.EmpleadoId">
+                                                                     <option value="">Empleado...</option>
+                                                                     @foreach (var empleado in empleadosActivos)
+                                                                     {
+                                                                         <option value="@empleado.Id">@empleado.NombreCompleto</option>
+                                                                     }
+                                                                 </InputSelect>
+                                                             }
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">-</span>
+                                                        }
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
+                    @if (MuestraProductos)
+                    {
+                        <div class="ps-section-label">Factura / Entrega</div>
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-md-7">
+                                <label class="ps-label">Factura / Nota</label>
+                                <InputTextArea class="form-control ps-input" rows="2" @bind-Value="pedidoEditando.Factura" placeholder="Folio o referencia de factura..." />
+                            </div>
+                            <div class="col-12 col-md-5">
+                                <label class="ps-label">Fecha entrega (real)</label>
+                                <InputDate class="form-control ps-input" @bind-Value="pedidoEditando.FechaEntregaReal" />
+                            </div>
+                        </div>
+                    }
+
+                    @if (MuestraProductos && pedidoEditando.Id != Guid.Empty)
+                    {
+                        var totalPedido = totalPedidoActual;
+                        var totalPagado = pagosDelPedido.Sum(p => p.Monto);
+                        var saldo = totalPedido - totalPagado;
+                        var pctPagado = totalPedido > 0 ? Math.Min(100, (int)Math.Round((double)totalPagado / (double)totalPedido * 100)) : 0;
+                        var saldoColor = saldo <= 0 ? "#10b981" : saldo < totalPedido ? "#f59e0b" : "#ef4444";
+
+                        <div class="ps-section-label">Pagos</div>
+                        <div class="ps-box mb-4">
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div>
+                                        <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Total pedido</span>
+                                        <div style="font-size:1rem;font-weight:700;color:#1e3a5f">@totalPedido.ToString("C2")</div>
+                                    </div>
+                                    <div>
+                                        <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Pagado</span>
+                                        <div style="font-size:1rem;font-weight:700;color:#10b981">@totalPagado.ToString("C2")</div>
+                                    </div>
+                                    <div>
+                                        <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Saldo</span>
+                                        <div style="font-size:1rem;font-weight:700;color:@saldoColor">@saldo.ToString("C2")</div>
+                                    </div>
+                                </div>
+                                <span class="ps-total-badge" style="background:@saldoColor">@pctPagado% pagado</span>
+                            </div>
+                            <div style="height:6px;background:#f0f2f5;border-radius:99px;overflow:hidden;margin-bottom:.75rem">
+                                <div style="height:100%;width:@(pctPagado)%;background:@saldoColor;border-radius:99px;transition:width .3s"></div>
+                            </div>
+
+                            @if (pagosDelPedido.Any())
+                            {
+                                <table class="table table-sm mb-3" style="font-size:.78rem">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fecha</th>
+                                            <th>Forma de pago</th>
+                                            <th>Referencia</th>
+                                            <th class="text-end">Monto</th>
+                                            <th style="width:36px"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var pago in pagosDelPedido.OrderBy(p => p.FechaPago))
+                                        {
+                                            <tr>
+                                                <td>@pago.FechaPago.ToString("dd/MM/yyyy")</td>
+                                                <td>@GetFormaPagoLabel(pago.FormaPago)</td>
+                                                <td>@(pago.Referencia ?? "—")</td>
+                                                <td class="text-end fw-semibold" style="color:#10b981">@pago.Monto.ToString("C2")</td>
+                                                <td>
+                                                    <button type="button" class="btn ps-action-btn ps-action-delete" style="width:22px;height:22px;font-size:.65rem" @onclick="async () => await EliminarPago(pago)">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+
+                            <div class="row g-2 align-items-end">
+                                <div class="col-6 col-sm-3">
+                                    <label class="ps-label">Fecha</label>
+                                    <input type="date" class="form-control form-control-sm ps-input" @bind="nuevoPagoFecha" />
+                                </div>
+                                <div class="col-6 col-sm-2">
+                                    <label class="ps-label">Monto</label>
+                                    <input type="number" step="0.01" class="form-control form-control-sm ps-input" @bind="nuevoPagoMonto" placeholder="0.00" />
+                                </div>
+                                <div class="col-6 col-sm-2">
+                                    <label class="ps-label">Forma de pago</label>
+                                    <select class="form-select form-select-sm ps-input" @bind="nuevoPagoFormaPago">
+                                        <option value="@FormaPagoEnum.Transferencia">Transferencia</option>
+                                        <option value="@FormaPagoEnum.Efectivo">Efectivo</option>
+                                        <option value="@FormaPagoEnum.Cheque">Cheque</option>
+                                        <option value="@FormaPagoEnum.TarjetaCredito">Tarjeta Crédito</option>
+                                        <option value="@FormaPagoEnum.TarjetaDebito">Tarjeta Débito</option>
+                                        <option value="@FormaPagoEnum.Otro">Otro</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-sm-3">
+                                    <label class="ps-label">Referencia</label>
+                                    <input type="text" class="form-control form-control-sm ps-input" @bind="nuevoPagoReferencia" placeholder="No. transferencia..." />
+                                </div>
+                                <div class="col-12 col-sm-2">
+                                    <button type="button" class="btn ps-btn-secondary btn-sm w-100" @onclick="AgregarPago">
+                                        <i class="bi bi-plus-circle me-1"></i> Agregar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (MuestraProductos)
+                    {
+                        <div class="ps-section-label">Consumos e inventario</div>
+                        <div class="ps-box mb-4">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                <div>
+                                    <div class="fw-semibold">Revisión previa antes de guardar</div>
+                                    <div class="text-muted small">Consulta cuánto se va a usar y cuánto hay en inventario de materias primas e insumos para este pedido.</div>
+                                </div>
+                                @if (inventarioComprobadoEn.HasValue)
+                                {
+                                    <span class="ps-filter-pill">Comprobado @inventarioComprobadoEn.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                }
+                            </div>
+
+                            @if (revisandoComprobacionInventario)
+                            {
+                                <div class="d-flex align-items-center gap-2 text-muted small">
+                                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                                    <span>Comprobando consumos e inventario...</span>
+                                </div>
+                            }
+                            else
+                            {
+                                @if (HayFaltantesInventario)
+                                {
+                                    <div class="alert alert-warning py-2 mb-3">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>Hay materiales que no alcanzan en inventario. Esto te alerta, pero no impide guardar el pedido.
+                                    </div>
+                                }
+                                else if (comprobacionInventarioItems.Any())
+                                {
+                                    <div class="alert alert-success py-2 mb-3">
+                                        <i class="bi bi-check-circle me-1"></i>La comprobación terminó. Ya puedes confirmar y guardar el pedido.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-info py-2 mb-3">
+                                        <i class="bi bi-info-circle me-1"></i>Presiona <strong>Comprobar consumos e inventario</strong> antes de guardar el pedido.
+                                    </div>
+                                }
+
+                                @if (avisosComprobacionInventario.Any())
+                                {
+                                    <div class="alert alert-secondary py-2 mb-3">
+                                        <ul class="mb-0 ps-3">
+                                            @foreach (var aviso in avisosComprobacionInventario)
+                                            {
+                                                <li>@aviso</li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+
+                                @if (comprobacionInventarioItems.Any())
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0 ps-inventory-table">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Tipo</th>
+                                                    <th>Concepto</th>
+                                                    <th class="text-end">Voy a usar</th>
+                                                    <th class="text-end">En inventario</th>
+                                                    <th class="text-end">Faltante</th>
+                                                    <th>Estado</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var item in comprobacionInventarioItems)
+                                                {
+                                                    <tr>
+                                                        <td>@item.Tipo</td>
+                                                        <td>
+                                                            <div class="fw-semibold">@item.Nombre</div>
+                                                            <div class="small text-muted">@item.ReferenciasTexto</div>
+                                                        </td>
+                                                        <td class="text-end">@item.CantidadRequerida.ToString("N4") @item.UnidadMedida</td>
+                                                        <td class="text-end">@(item.ExistenciaInventario.HasValue ? $"{item.ExistenciaInventario.Value:N4} {item.UnidadMedida}" : "N/D")</td>
+                                                        <td class="text-end">@(item.ExistenciaInventario.HasValue ? $"{item.Faltante:N4} {item.UnidadMedida}" : "N/D")</td>
+                                                        <td><span class="ps-inventory-status @item.EstadoClase">@item.EstadoTexto</span></td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2 pt-2" style="border-top:1px solid #f0f0f0">
+                        @if (MuestraProductos)
+                        {
+                            <button type="button" class="btn ps-btn-secondary" @onclick="ComprobarConsumosInventario" disabled="@revisandoComprobacionInventario">
+                                <i class="bi bi-clipboard2-data me-1"></i> Comprobar consumos e inventario
+                            </button>
+                        }
+                        <button type="submit" class="btn ps-btn-primary" disabled="@(MuestraProductos && (!inventarioComprobado || revisandoComprobacionInventario))">
+                            <i class="bi bi-save me-1"></i> Confirmar y guardar pedido
+                        </button>
+                        <button type="button" class="btn ps-btn-ghost" @onclick="CancelarEdicion">
+                            <i class="bi bi-x-circle me-1"></i> Cancelar
+                        </button>
+                    </div>
+                    @if (MuestraProductos && !inventarioComprobado)
+                    {
+                        <div class="small text-muted mt-2">Primero ejecuta <strong>Comprobar consumos e inventario</strong> y después confirma el guardado.</div>
+                    }
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <!-- Tabla de Pedidos -->
+    <div class="ps-card ps-table-card">
+        @if (pedidos == null)
+        {
+            <div class="d-flex align-items-center justify-content-center p-5">
+                <div class="spinner-border text-primary me-2" role="status" style="width:1.6rem;height:1.6rem;"></div>
+                <span class="text-muted">Cargando pedidos...</span>
+            </div>
+        }
+        else if (!pedidos.Any())
+        {
+            <div class="text-center p-5">
+                <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                <p class="text-muted mb-3">No hay pedidos registrados.</p>
+                <button class="btn ps-btn-primary" @onclick="NuevoPedido">
+                    <i class="bi bi-plus-circle me-1"></i> Crear primer pedido
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="ps-grid-wrapper">
+                <table class="ps-table">
+                    <thead>
+                        <tr>
+                            <th class="ps-col-sticky ps-col-sticky-actions" style="width:150px" rowspan="2">Acciones</th>
+                            <th class="ps-col-sticky ps-col-sticky-status" style="width:44px" rowspan="2"></th>
+                            <th rowspan="2">Recibido</th>
+                            <th rowspan="2">Estimada</th>
+                            <th rowspan="2" style="min-width:160px">Cliente</th>
+                            <th rowspan="2" style="min-width:120px">Estilo</th>
+                            <th rowspan="2" style="min-width:140px">Color</th>
+                            <th rowspan="2" style="min-width:90px"># OC</th>
+                            <th rowspan="2" style="min-width:90px">Lote</th>
+                            <th rowspan="2">Corrida</th>
+                            <th rowspan="2" style="min-width:240px">Cotización</th>
+                            @if (tablaProcesses.Any())
+                            {
+                                <th colspan="@tablaProcesses.Count" class="ps-th-group ps-th-group-proc">Procesos</th>
+                            }
+                            @if (tallasTabla.Any())
+                            {
+                                <th colspan="@tallasTabla.Count" class="ps-th-group ps-th-group-talla">Tallas</th>
+                            }
+                            <th rowspan="2" style="min-width:180px">Factura</th>
+                        </tr>
+                        <tr>
+                            @foreach (var proc in tablaProcesses)
+                            {
+                                <th class="ps-th-proc" title="@proc.Nombre">@proc.Nombre</th>
+                            }
+                            @foreach (var tallaCol in tallasTabla)
+                            {
+                                <th class="ps-th-talla">#@tallaCol</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (PedidosFiltrados.Any())
+                        {
+                            @foreach (var pedido in PedidosFiltrados)
+                            {
+                                var estadoPedido = pedido.PedidoDetalle?.Pedido?.Estado ?? EstadoPedidoEnum.Nuevo;
+                                var completado = estadoPedido is EstadoPedidoEnum.Facturado or EstadoPedidoEnum.Entregado or EstadoPedidoEnum.Pagado;
+                                var atrasado = pedido.FechaEstimada.HasValue && pedido.FechaEstimada.Value.Date < DateTime.Now.Date && !completado;
+                                var rowClass = completado ? "ps-row-done" : atrasado ? "ps-row-late" : "";
+                                seguimientosPorPedido.TryGetValue(pedido.Id, out var segsRow);
+                                segsRow ??= new();
+                                var procesoIdsPedido = pedido.TiposProceso.Select(tp => tp.TipoProcesoId).ToList();
+                                var tallaIdsPedido = pedido.Tallas.Select(t => t.Id).ToHashSet();
+                                var totalCombinaciones = procesoIdsPedido.Count * tallaIdsPedido.Count;
+                                var completadasProceso = segsRow.Count(s => s.Completado && procesoIdsPedido.Contains(s.TipoProcesoId) && tallaIdsPedido.Contains(s.PedidoSerigrafiaTallaId));
+                                var avancePct = totalCombinaciones > 0 ? (int)Math.Round((double)completadasProceso / totalCombinaciones * 100) : 0;
+                                <tr class="@rowClass">
+                                    <td class="ps-col-sticky ps-col-sticky-actions ps-td-actions">
+                                        <div class="ps-row-actions">
+                                            @if (pedido.PedidoDetalle != null)
+                                            {
+                                                <a class="ps-btn-procesar" href="/pedidos/@pedido.PedidoDetalle.PedidoId/seguimiento" title="Abrir seguimiento del pedido">
+                                                    <i class="bi bi-play-circle-fill"></i>
+                                                    <span>Procesar</span>
+                                                </a>
+                                            }
+                                            <div class="ps-row-icons">
+                                                <button class="btn ps-action-btn ps-action-edit" title="Editar" @onclick="async () => await EditarPedido(pedido)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn ps-action-btn ps-action-delete" title="Eliminar" @onclick="() => EliminarPedido(pedido)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="ps-col-sticky ps-col-sticky-status text-center">
+                                        <div class="ps-row-status">
+                                            @if (estadoPedido == EstadoPedidoEnum.Pagado)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" title="Pagado"></i>
+                                            }
+                                            else if (estadoPedido == EstadoPedidoEnum.Facturado)
+                                            {
+                                                <i class="bi bi-receipt-cutoff text-success" title="Facturado"></i>
+                                            }
+                                            else if (estadoPedido == EstadoPedidoEnum.Entregado)
+                                            {
+                                                <i class="bi bi-truck text-success" title="Entregado"></i>
+                                            }
+                                            else if (estadoPedido == EstadoPedidoEnum.Producido)
+                                            {
+                                                <i class="bi bi-gear-fill text-primary" title="Producido"></i>
+                                            }
+                                            else if (estadoPedido == EstadoPedidoEnum.EnProceso)
+                                            {
+                                                <i class="bi bi-hourglass-split text-warning" title="En proceso"></i>
+                                            }
+                                            else if (atrasado)
+                                            {
+                                                <i class="bi bi-exclamation-circle-fill text-danger" title="Atrasado"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-clock text-secondary" title="Pendiente"></i>
+                                            }
+
+                                            @if (totalCombinaciones > 0)
+                                            {
+                                                <div class="ps-row-prog-wrap" title="@completadasProceso/@totalCombinaciones operaciones completas">
+                                                    <div class="ps-row-prog-bar @(avancePct == 100 ? "is-done" : string.Empty)" style="width:@avancePct%"></div>
+                                                </div>
+                                                <span class="ps-row-prog-lbl">@avancePct%</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td class="ps-td-date">@pedido.FechaRecibido?.ToString("dd/MM/yy")</td>
+                                    <td class="ps-td-date @(atrasado ? "text-danger fw-semibold" : "")">@pedido.FechaEstimada?.ToString("dd/MM/yy")</td>
+                                    <td style="font-weight:500">@pedido.PedidoDetalle?.Pedido?.Cliente?.RazonSocial</td>
+                                    <td><strong>@pedido.Estilo</strong></td>
+                                    <td>@pedido.CombinacionColor</td>
+                                    <td>@pedido.OrdenCompra</td>
+                                    <td>@pedido.LoteCliente</td>
+                                    <td>@pedido.Corrida</td>
+                                    <td style="white-space:normal;max-width:240px">
+                                        @if (pedido.PedidoDetalle?.CotizacionSerigrafia != null)
+                                        {
+                                            <div class="fw-semibold">@pedido.PedidoDetalle.CotizacionSerigrafia.Descripcion</div>
+                                            <div class="small text-muted">@ObtenerEtiquetaCotizacion(pedido.PedidoDetalle.CotizacionSerigrafia)</div>
+                                            @if (pedido.PedidoDetalle.DetallesTalla.Any())
+                                            {
+                                                <div class="small mt-1" style="color:#1e3a5f;font-weight:600">Subtotal producto: @pedido.PedidoDetalle.DetallesTalla.Sum(t => t.Total).ToString("C2")</div>
+                                                <div class="text-muted" style="font-size:.68rem">@ObtenerResumenPrecioTallas(pedido.PedidoDetalle.DetallesTalla)</div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    @foreach (var proc in tablaProcesses)
+                                    {
+                                        var tieneProc = pedido.TiposProceso.Any(tp => tp.TipoProcesoId == proc.Id);
+                                        if (tieneProc)
+                                        {
+                                            var totalT = pedido.Tallas.Count;
+                                            var compT = segsRow.Count(s => s.TipoProcesoId == proc.Id && s.Completado);
+                                            var cellCls = totalT > 0 && compT == totalT ? "ps-col-proc-done" :
+                                                          compT > 0 ? "ps-col-proc-partial" : "";
+                                            <td class="text-center @cellCls" title="@compT/@totalT tallas">
+                                                @if (totalT > 0 && compT == totalT)
+                                                {
+                                                    <i class="bi bi-check-lg ps-proc-icon-done"></i>
+                                                }
+                                                else if (compT > 0)
+                                                {
+                                                    <span class="ps-proc-frac">@compT/@totalT</span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-square ps-proc-icon-pending"></i>
+                                                }
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            <td class="ps-col-proc-na text-center"><span>—</span></td>
+                                        }
+                                    }
+                                    @foreach (var tallaCol in tallasTabla)
+                                    {
+                                        var tallaObj = pedido.Tallas.FirstOrDefault(t => t.Talla == tallaCol);
+                                        if (tallaObj != null)
+                                        {
+                                            var (compP, totP) = ProgresoTalla(pedido.Id, tallaObj.Id, procesoIdsPedido);
+                                            var tCls = totP > 0 && compP == totP ? "ps-col-talla-done" :
+                                                       compP > 0 ? "ps-col-talla-partial" : "";
+                                            <td class="text-center @tCls" title="@compP/@totP procesos">
+                                                <strong class="ps-talla-qty">@tallaObj.Cantidad</strong>
+                                                @if (totP > 0)
+                                                {
+                                                    <div class="ps-talla-sub">@compP/@totP</div>
+                                                }
+                                            </td>
+                                        }
+                                        else
+                                        {
+                                            <td></td>
+                                        }
+                                    }
+                                    <td style="white-space:normal;font-size:.78rem;color:#666;max-width:180px">@pedido.Factura</td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td colspan="@(12 + tablaProcesses.Count + tallasTabla.Count)" class="text-center py-4 text-muted">
+                                    No hay pedidos que coincidan con la búsqueda actual.
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+</div>
+
+<style>
+    /* ── Layout ───────────────────────────────────────── */
+    .ps-page { padding: 1.25rem 1rem; }
+    @@media (min-width: 768px) { .ps-page { padding: 1.5rem 2rem; } }
+
+    /* ── Title ────────────────────────────────────────── */
+    .ps-title { font-size: clamp(1.3rem, 3vw, 1.7rem); font-weight: 700; color: #1e3a5f; }
+
+    /* ── Card base ────────────────────────────────────── */
+    .ps-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem 1.25rem; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+
+    /* ── Buttons ──────────────────────────────────────── */
+    .ps-btn-primary   { background: #1e3a5f; color: #fff; border: none; padding: .45rem 1.1rem; border-radius: 6px; font-size: .875rem; font-weight: 500; }
+    .ps-btn-primary:hover   { background: #163052; color: #fff; }
+    .ps-btn-secondary { background: #4a6fa5; color: #fff; border: none; padding: .45rem 1.1rem; border-radius: 6px; font-size: .875rem; font-weight: 500; }
+    .ps-btn-secondary:hover { background: #3a5f93; color: #fff; }
+    .ps-btn-ghost     { background: transparent; color: #4a6fa5; border: 1.5px solid #4a6fa5; padding: .45rem 1.1rem; border-radius: 6px; font-size: .875rem; font-weight: 500; }
+    .ps-btn-ghost:hover { background: #f0f4fa; }
+    .ps-btn-dark      { background: #2c3e50; color: #fff; border: none; font-size: .82rem; }
+    .ps-btn-dark:hover { background: #1a252f; color: #fff; }
+
+    /* ── Form card ────────────────────────────────────── */
+    .ps-form-card  { padding: 0 !important; overflow: hidden; }
+    .ps-form-header { background: #1e3a5f; color: #fff; padding: .85rem 1.5rem; }
+
+    /* ── Labels & Inputs ──────────────────────────────── */
+    .ps-label { font-size: .78rem; font-weight: 600; color: #495057; margin-bottom: .3rem; display: block; }
+    .ps-input { border: 1px solid #ced4da; border-radius: 6px; font-size: .875rem; color: #2c3e50; background: #fafbfc; transition: border-color .15s, box-shadow .15s; }
+    .ps-input:focus { border-color: #4a6fa5; box-shadow: 0 0 0 3px rgba(74,111,165,.15); outline: none; }
+    .ps-filter-meta { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-top: .7rem; padding-top: .7rem; border-top: 1px solid #e8edf5; }
+    .ps-filter-pill { display: inline-flex; align-items: center; padding: .28rem .65rem; border-radius: 999px; background: #eef2fb; color: #1e3a5f; font-size: .68rem; font-weight: 700; border: 1px solid #c8d4e8; }
+    .ps-filter-hint { font-size: .68rem; color: #6b7280; }
+
+    /* ── Section labels ───────────────────────────────── */
+    .ps-section-label { font-size: .68rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: #4a6fa5; border-bottom: 1px solid #e8edf5; padding-bottom: .35rem; margin-bottom: .85rem; }
+
+    /* ── Box (procesos / tallas) ──────────────────────── */
+    .ps-box { background: #f8f9fb; border: 1px solid #e5eaf2; border-radius: 8px; padding: .85rem; }
+
+    /* ── Proceso pills ────────────────────────────────── */
+    .ps-check-pill { display: flex; align-items: center; gap: .35rem; padding: .35rem .7rem; border: 1.5px solid #d1d9e0; border-radius: 20px; cursor: pointer; font-size: .8rem; background: #fff; color: #495057; transition: all .15s; user-select: none; white-space: nowrap; }
+    .ps-check-pill:hover { border-color: #4a6fa5; color: #1e3a5f; }
+    .ps-check-pill.ps-check-active { border-color: #1e3a5f; background: #1e3a5f; color: #fff; }
+
+    /* ── Talla items ──────────────────────────────────── */
+    .ps-talla-item { background: #fff; border: 1px solid #d1d9e0; border-radius: 6px; padding: .45rem .55rem; }
+    .ps-talla-label { font-size: .78rem; font-weight: 700; color: #1e3a5f; }
+    .ps-total-badge { background: #1e3a5f; color: #fff; font-size: .72rem; padding: .25rem .65rem; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+    .ps-select-toggle { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-width: 88px; padding: .3rem .55rem; border: 1px solid #c8d4e8; border-radius: 8px; background: #fff; color: #1e3a5f; font-size: .72rem; font-weight: 600; transition: all .15s ease; }
+    .ps-select-toggle:hover { background: #eef4ff; border-color: #4a6fa5; }
+    .ps-select-toggle.is-selected { background: #1e3a5f; border-color: #1e3a5f; color: #fff; box-shadow: 0 2px 8px rgba(30,58,95,.18); }
+    .ps-inventory-table thead th { white-space: nowrap; font-size: .72rem; color: #475569; }
+    .ps-inventory-status { display: inline-flex; align-items: center; padding: .22rem .55rem; border-radius: 999px; font-size: .67rem; font-weight: 700; border: 1px solid transparent; }
+    .ps-inventory-status--ok { background: #f0fdf4; color: #166534; border-color: #86efac; }
+    .ps-inventory-status--warning { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+    .ps-inventory-status--info { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+
+    /* ── Table card ───────────────────────────────────── */
+    .ps-table-card { padding: 0 !important; overflow: hidden; }
+    .ps-grid-wrapper { max-height: 68vh; overflow: auto; }
+    .ps-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+
+    .ps-table thead th { position: sticky; top: 0; z-index: 5; background: #1e3a5f; color: #d9e4f0; white-space: nowrap; font-size: .7rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: .6rem .8rem; border-bottom: 2px solid #163052; border-right: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
+    .ps-table tbody td { font-size: .8rem; padding: .5rem .8rem; border-bottom: 1px solid #f0f2f5; border-right: 1px solid #f5f5f5; vertical-align: middle; white-space: nowrap; color: #2c3e50; }
+    .ps-table tbody tr:last-child td { border-bottom: none; }
+    .ps-table tbody tr:hover td { background: #f5f8fd !important; }
+
+    /* Row states */
+    .ps-row-done td { background: rgba(40,167,69,.05); }
+    .ps-row-late td { background: rgba(220,53,69,.05); }
+
+    /* Sticky column */
+    .ps-col-sticky { position: sticky; left: 0; z-index: 4; background: #fff; }
+    .ps-col-sticky-actions { left: 0; min-width: 150px; }
+    .ps-col-sticky-status { left: 150px; }
+    .ps-table thead .ps-col-sticky { z-index: 7; background: #1e3a5f; }
+    .ps-row-done .ps-col-sticky { background: rgba(40,167,69,.05) !important; }
+    .ps-row-late .ps-col-sticky { background: rgba(220,53,69,.05) !important; }
+    .ps-table tbody tr:hover .ps-col-sticky { background: #f5f8fd !important; }
+
+    .ps-td-date { font-size: .78rem; color: #6c757d; }
+    .ps-row-status { display: flex; flex-direction: column; align-items: center; gap: .16rem; min-width: 34px; }
+    .ps-row-prog-wrap { width: 34px; height: 4px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .ps-row-prog-bar { height: 100%; background: linear-gradient(90deg, #f59e0b, #fbbf24); border-radius: 999px; transition: width .25s ease; }
+    .ps-row-prog-bar.is-done { background: linear-gradient(90deg, #10b981, #34d399); }
+    .ps-row-prog-lbl { font-size: .52rem; font-weight: 700; color: #94a3b8; line-height: 1; }
+
+    /* ── Badges ───────────────────────────────────────── */
+    .ps-badge-qty     { background: #1e3a5f; color: #fff; font-size: .7rem; padding: .22rem .6rem; border-radius: 12px; font-weight: 600; }
+    .ps-badge-proceso { background: #eef2fb; color: #1e3a5f; font-size: .68rem; padding: .2rem .5rem; border-radius: 10px; font-weight: 600; border: 1px solid #c8d4e8; display: inline-block; }
+    .ps-badge-talla   { background: #f0f4fa; color: #2c3e50; font-size: .68rem; padding: .18rem .45rem; border-radius: 8px; border: 1px solid #d1d9e0; display: inline-flex; align-items: center; gap: .2rem; }
+    .ps-badge-talla.ps-talla-done    { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .ps-badge-talla.ps-talla-partial { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .ps-talla-prog { font-size: .6rem; opacity: .75; margin-left: .15rem; }
+    .ps-proc-done    { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .ps-proc-partial { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .ps-proc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: .25rem; vertical-align: middle; }
+    .ps-dot-done    { background: #10b981; }
+    .ps-dot-partial { background: #f59e0b; }
+    .ps-dot-none    { background: #d1d5db; }
+
+    /* ── Columnas dinámicas proceso ──────────────────── */
+    .ps-th-group { text-align: center; font-size: .65rem; letter-spacing: .07em; padding: .3rem .5rem; border-left: 2px solid rgba(255,255,255,.12) !important; border-right: 2px solid rgba(255,255,255,.12) !important; }
+    .ps-th-group-proc  { background: #1a3050; }
+    .ps-th-group-talla { background: #163a52; }
+    .ps-th-proc  { font-size: .62rem; padding: .35rem .4rem; text-align: center; max-width: 70px; overflow: hidden; text-overflow: ellipsis; background: #1e3a5f; border-left: 1px solid rgba(255,255,255,.06) !important; }
+    .ps-th-talla { font-size: .65rem; padding: .35rem .4rem; text-align: center; font-weight: 700; background: #163a5a; border-left: 1px solid rgba(255,255,255,.06) !important; }
+    .ps-col-proc-done    { background: rgba(16,185,129,.10); }
+    .ps-col-proc-partial { background: rgba(245,158,11,.10); }
+    .ps-col-proc-na      { opacity: .3; }
+    .ps-col-talla-done    { background: rgba(16,185,129,.12); }
+    .ps-col-talla-partial { background: rgba(245,158,11,.12); }
+    .ps-proc-icon-done    { color: #10b981; font-size: .9rem; }
+    .ps-proc-icon-pending { color: #cbd5e1; font-size: .78rem; }
+    .ps-proc-frac { font-size: .65rem; font-weight: 700; color: #92400e; }
+    .ps-talla-qty { font-size: .82rem; color: #1e3a5f; }
+    .ps-col-talla-done .ps-talla-qty { color: #065f46; }
+    .ps-col-talla-partial .ps-talla-qty { color: #92400e; }
+    .ps-talla-sub { font-size: .58rem; color: #9ca3af; line-height: 1.1; margin-top: .05rem; }
+
+    /* ── Action buttons ───────────────────────────────── */
+    .ps-td-actions { min-width: 136px; }
+    .ps-row-actions { display: flex; flex-direction: column; align-items: stretch; gap: .28rem; }
+    .ps-row-icons { display: flex; gap: .25rem; }
+    .ps-btn-procesar { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; width: 100%; padding: .36rem .6rem; border-radius: 7px; background: #1e3a5f; color: #fff; font-size: .72rem; font-weight: 700; text-decoration: none; border: 1px solid #1e3a5f; transition: all .15s; }
+    .ps-btn-procesar:hover { background: #163052; border-color: #163052; color: #fff; }
+    .ps-action-btn { width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: .78rem; border: 1px solid transparent; transition: all .15s; }
+    .ps-action-edit   { background: #eaf0fb; color: #1e3a5f; border-color: #c8d4e8; }
+    .ps-action-edit:hover   { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+    .ps-action-delete { background: #fdecea; color: #c1121f; border-color: #f4b8b4; }
+    .ps-action-delete:hover { background: #c1121f; color: #fff; border-color: #c1121f; }
+
+    @@media (max-width: 991px) {
+        .ps-filter-hint { width: 100%; }
+    }
+</style>
+
+@code {
+    private IEnumerable<PedidoSerigrafia>? pedidos;
+    private PedidoSerigrafia pedidoEditando = new();
+    private IEnumerable<Cliente>? clientes;
+    private IEnumerable<Producto>? productosCliente;
+    private List<ProductoClienteOption> productosClienteOpciones = new();
+    private IEnumerable<CotizacionSerigrafia> cotizacionesProducto = [];
+    private IEnumerable<TipoProceso>? tiposProceso;
+    private Dictionary<Guid, List<ProductoVarianteOption>> variantesDisponiblesPorProducto = new();
+    private List<TallaClienteDisponible> tallasDisponiblesCliente = new();
+    private List<ClienteFraccionCalzado> fraccionesDisponiblesCliente = new();
+    private List<PedidoConcepto> conceptosEditando = new();
+    private List<Empleado> empleadosActivos = new();
+    private HashSet<Guid> procesosSeleccionados = new();
+    private List<PedidoSerigrafiaTalla> tallasEditando = new();
+    private HashSet<string> tallasDisponiblesSeleccionadas = new(StringComparer.OrdinalIgnoreCase);
+    private List<PedidoSerigrafiaTallaProceso> seguimientoTallaProcesos = new();
+    private Dictionary<Guid, List<PedidoSerigrafiaTallaProceso>> seguimientosPorPedido = new();
+    private List<TipoProceso> tablaProcesses = new();
+    private List<string> tallasTabla = new();
+    private string? nuevaTallaSeleccionada;
+    private string busquedaTexto = string.Empty;
+    private Guid? clienteSeleccionadoId;
+    private Guid? productoSeleccionadoId;
+    private Guid? cotizacionSeleccionadaId;
+    private Guid? fraccionSeleccionadaId;
+    private Guid pedidoBaseIdEditando;
+    private TipoPrecioEnum tipoPrecioSeleccionado = TipoPrecioEnum.Contado;
+    private PedidoModoCaptura tipoCapturaSeleccionado = PedidoModoCaptura.Productos;
+    private CapturaEscalaModo capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+    private bool mostrarFormulario;
+    private DateTime? fechaDesde;
+    private DateTime? fechaHasta;
+    private int cantidadFracciones = 1;
+    private string? variacionSeleccionada;
+    private readonly List<ComprobacionInventarioItem> comprobacionInventarioItems = new();
+    private readonly List<string> avisosComprobacionInventario = new();
+    private bool inventarioComprobado;
+    private bool revisandoComprobacionInventario;
+    private DateTime? inventarioComprobadoEn;
+
+    // Pagos
+    private List<PagoPedido> pagosDelPedido = new();
+    private decimal totalPedidoActual;
+    private DateTime nuevoPagoFecha = DateTime.Now;
+    private decimal nuevoPagoMonto;
+    private FormaPagoEnum nuevoPagoFormaPago = FormaPagoEnum.Transferencia;
+    private string? nuevoPagoReferencia;
+    private bool MuestraProductos => tipoCapturaSeleccionado is PedidoModoCaptura.Productos or PedidoModoCaptura.Ambos;
+    private bool MuestraServicios => tipoCapturaSeleccionado is PedidoModoCaptura.Servicios or PedidoModoCaptura.Ambos;
+    private ProductoClienteOption? ProductoSeleccionadoConfig
+        => productoSeleccionadoId.HasValue
+            ? productosClienteOpciones.FirstOrDefault(p => p.ProductoId == productoSeleccionadoId.Value)
+            : null;
+    private bool ProductoUsaVariantesColor => ProductoSeleccionadoConfig?.UsaVariantesColor == true;
+    private bool ProductoPermiteFraccion => fraccionesDisponiblesCliente.Any();
+    private bool HayTallasDisponiblesParaCaptura => ObtenerTallasDisponiblesParaCaptura().Any();
+    private bool HayFaltantesInventario => comprobacionInventarioItems.Any(item => item.HayFaltante);
+    private IEnumerable<PedidoSerigrafia> PedidosFiltrados
+        => pedidos == null
+            ? []
+            : pedidos.Where(p =>
+                string.IsNullOrWhiteSpace(busquedaTexto)
+                || (p.PedidoDetalle?.Pedido?.NumeroPedido?.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (p.PedidoDetalle?.Pedido?.Cliente?.RazonSocial?.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (!string.IsNullOrWhiteSpace(p.Estilo) && p.Estilo.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(p.CombinacionColor) && p.CombinacionColor.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(p.OrdenCompra) && p.OrdenCompra.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase))
+                || (!string.IsNullOrWhiteSpace(p.LoteCliente) && p.LoteCliente.Contains(busquedaTexto, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        clientes = await ClienteRepository.GetAllAsync();
+        tiposProceso = await TipoProcesoRepository.GetAllAsync();
+        empleadosActivos = await DbContext.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+        await CargarPedidos();
+    }
+
+    private async Task CargarPedidos()
+    {
+        pedidos = await PedidoSerigrafiaRepository.GetAllAsync();
+        await CargarSeguimientosPorPedidoAsync();
+        ComputarColumnas();
+    }
+
+    private async Task CargarSeguimientosPorPedidoAsync()
+    {
+        if (pedidos == null) return;
+        var ids = pedidos.Select(p => p.Id).ToList();
+        var todos = await DbContext.PedidoSerigrafiaTallaProcesos
+            .Where(s => ids.Contains(s.PedidoSerigrafiaId))
+            .ToListAsync();
+        seguimientosPorPedido = todos.GroupBy(s => s.PedidoSerigrafiaId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+    }
+
+    private void ComputarColumnas()
+    {
+        if (pedidos == null || tiposProceso == null) return;
+        var usedIds = pedidos.SelectMany(p => p.TiposProceso.Select(tp => tp.TipoProcesoId)).ToHashSet();
+        tablaProcesses = tiposProceso.Where(tp => usedIds.Contains(tp.Id)).OrderBy(tp => tp.Orden).ToList();
+        tallasTabla = pedidos.SelectMany(p => p.Tallas.Select(t => t.Talla))
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
+    }
+
+    private (int completados, int total) ProgresoTalla(Guid pedidoId, Guid tallaId, IEnumerable<Guid> procesoIds)
+    {
+        if (!seguimientosPorPedido.TryGetValue(pedidoId, out var segs)) return (0, 0);
+        var total = procesoIds.Count();
+        var completados = segs.Count(s => s.PedidoSerigrafiaTallaId == tallaId && procesoIds.Contains(s.TipoProcesoId) && s.Completado);
+        return (completados, total);
+    }
+
+    private async Task ActualizarEstadoPedidoAsync(Guid pedidoSerigrafiaId)
+    {
+        var pedidoSerigrafia = await DbContext.PedidosSerigrafia
+            .Include(p => p.TiposProceso)
+            .Include(p => p.Tallas)
+            .FirstOrDefaultAsync(p => p.Id == pedidoSerigrafiaId);
+
+        if (pedidoSerigrafia == null) return;
+
+        var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoSerigrafia.PedidoDetalleId);
+        if (detalle == null) return;
+
+        var pedido = await DbContext.Pedidos.FindAsync(detalle.PedidoId);
+        if (pedido == null) return;
+
+        var procesos = pedidoSerigrafia.TiposProceso.Select(tp => tp.TipoProcesoId).ToList();
+        var tallas = pedidoSerigrafia.Tallas.Select(t => t.Id).ToList();
+        var segs = await DbContext.PedidoSerigrafiaTallaProcesos
+            .Where(s => s.PedidoSerigrafiaId == pedidoSerigrafiaId)
+            .ToListAsync();
+        var conceptos = await DbContext.PedidoConceptos
+            .Where(c => c.PedidoId == pedido.Id && c.IsActive)
+            .ToListAsync();
+        var notasEntrega = await DbContext.NotasEntrega
+            .Include(n => n.Detalles)
+                .ThenInclude(d => d.Tallas)
+            .Include(n => n.FacturasRelacionadas)
+                .ThenInclude(r => r.Factura)
+            .Where(n => n.PedidoId == pedido.Id && n.IsActive)
+            .ToListAsync();
+
+        var totalComb = procesos.Count * tallas.Count;
+        var completados = segs.Count(s => s.Completado && procesos.Contains(s.TipoProcesoId) && tallas.Contains(s.PedidoSerigrafiaTallaId));
+        var totalConceptos = conceptos.Count;
+        var conceptosCompletados = conceptos.Count(c => c.Completado);
+        var serviciosEnProceso = conceptos.Any(c => c.Completado || c.FechaCompletado.HasValue);
+        var serviciosCompletos = totalConceptos == 0 || conceptosCompletados == totalConceptos;
+        var productoCompleto = totalComb > 0 && completados == totalComb;
+        var productoEnProceso = completados > 0;
+
+        var nuevoEstado = EstadoPedidoEnum.Nuevo;
+
+        var totalPagado = await DbContext.PagosPedido
+            .Where(pg => pg.PedidoId == pedido.Id && pg.IsActive)
+            .SumAsync(pg => pg.Monto);
+        var piezasPedidoTotal = pedidoSerigrafia.Tallas.Sum(t => t.Cantidad);
+        var piezasEntregadas = notasEntrega.Sum(ObtenerCantidadNotaEntrega);
+        var entregaCompleta = piezasPedidoTotal > 0 && piezasEntregadas >= piezasPedidoTotal;
+        var tieneNotas = notasEntrega.Any();
+        var notasFacturadas = notasEntrega.Count(n => n.FacturasRelacionadas.Any(r => r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado));
+        var cumplimientoOperativoCompleto = productoCompleto && serviciosCompletos;
+        var cumplimientoOperativoEnProceso = productoEnProceso || serviciosEnProceso;
+
+        if (cumplimientoOperativoCompleto && entregaCompleta && tieneNotas && notasFacturadas == notasEntrega.Count)
+        {
+            nuevoEstado = pedido.Total > 0 && totalPagado >= pedido.Total
+                ? EstadoPedidoEnum.Pagado
+                : EstadoPedidoEnum.Facturado;
+        }
+        else if (cumplimientoOperativoCompleto && entregaCompleta && tieneNotas)
+        {
+            nuevoEstado = EstadoPedidoEnum.Entregado;
+        }
+        else if (cumplimientoOperativoCompleto)
+        {
+            nuevoEstado = EstadoPedidoEnum.Producido;
+        }
+        else if (cumplimientoOperativoEnProceso || tieneNotas)
+        {
+            nuevoEstado = EstadoPedidoEnum.EnProceso;
+        }
+
+        if (pedido.Estado != nuevoEstado)
+        {
+            pedido.Estado = nuevoEstado;
+            pedido.UpdatedAt = DateTime.UtcNow;
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private static int ObtenerCantidadNotaEntrega(NotaEntrega nota)
+    {
+        var cantidadTallas = nota.Detalles.SelectMany(d => d.Tallas).Sum(t => t.Cantidad);
+        return cantidadTallas > 0
+            ? (int)Math.Round(cantidadTallas)
+            : (int)Math.Round(nota.Detalles.Sum(d => d.Cantidad));
+    }
+
+    // ===== Formulario =====
+
+    private void NuevoPedido()
+    {
+        pedidoEditando = new PedidoSerigrafia { FechaRecibido = DateTime.Now };
+        nuevaTallaSeleccionada = null;
+        clienteSeleccionadoId = null;
+        productoSeleccionadoId = null;
+        cotizacionSeleccionadaId = null;
+        fraccionSeleccionadaId = null;
+        pedidoBaseIdEditando = Guid.Empty;
+        productosCliente = null;
+        productosClienteOpciones = new();
+        cotizacionesProducto = [];
+        variantesDisponiblesPorProducto = new();
+        tallasDisponiblesCliente = new();
+        fraccionesDisponiblesCliente = new();
+        conceptosEditando = new();
+        procesosSeleccionados = new HashSet<Guid>();
+        tallasEditando = new List<PedidoSerigrafiaTalla>();
+        pagosDelPedido = new();
+        totalPedidoActual = 0;
+        tipoPrecioSeleccionado = TipoPrecioEnum.Contado;
+        tipoCapturaSeleccionado = PedidoModoCaptura.Productos;
+        capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+        cantidadFracciones = 1;
+        variacionSeleccionada = null;
+        ResetNuevoPago();
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarPedido(PedidoSerigrafia pedido)
+    {
+        pedidoEditando = new PedidoSerigrafia
+        {
+            Id = pedido.Id,
+            PedidoDetalleId = pedido.PedidoDetalleId,
+            Estilo = pedido.Estilo,
+            CombinacionColor = pedido.CombinacionColor,
+            OrdenCompra = pedido.OrdenCompra,
+            LoteCliente = pedido.LoteCliente,
+            Corrida = pedido.Corrida,
+            FechaRecibido = pedido.FechaRecibido,
+            FechaEstimada = pedido.FechaEstimada,
+            FechaEntregaReal = pedido.FechaEntregaReal,
+            Hecho = pedido.Hecho,
+            Factura = pedido.Factura,
+            CreatedAt = pedido.CreatedAt,
+            CreatedBy = pedido.CreatedBy,
+            IsActive = pedido.IsActive
+        };
+
+        tallasEditando = pedido.Tallas.Select(t => new PedidoSerigrafiaTalla
+        {
+            Id = t.Id,
+            PedidoSerigrafiaId = t.PedidoSerigrafiaId,
+            Talla = t.Talla,
+            Cantidad = t.Cantidad
+        }).ToList();
+
+        pedidoBaseIdEditando = pedido.PedidoDetalle?.PedidoId ?? Guid.Empty;
+        clienteSeleccionadoId = pedido.PedidoDetalle?.Pedido?.ClienteId;
+        productoSeleccionadoId = pedido.PedidoDetalle?.ProductoId;
+        cotizacionSeleccionadaId = pedido.PedidoDetalle?.CotizacionSerigrafiaId;
+        fraccionSeleccionadaId = pedido.PedidoDetalle?.ClienteFraccionCalzadoId;
+        variacionSeleccionada = pedido.PedidoDetalle?.VariacionValor;
+        tipoPrecioSeleccionado = pedido.PedidoDetalle?.Pedido?.TipoPrecio ?? TipoPrecioEnum.Contado;
+        procesosSeleccionados = pedido.TiposProceso.Select(tp => tp.TipoProcesoId).ToHashSet();
+        await CargarProductosClienteAsync(clienteSeleccionadoId);
+        await CargarCotizacionesProductoAsync(productoSeleccionadoId);
+        await CargarConceptosAsync(pedidoBaseIdEditando);
+        tipoCapturaSeleccionado = conceptosEditando.Any() ? PedidoModoCaptura.Ambos : PedidoModoCaptura.Productos;
+        await RecargarTallasAsync(pedido.Id);
+        capturaEscalaSeleccionada = pedido.PedidoDetalle?.AplicaFraccionCalzado == true ? CapturaEscalaModo.Fraccion : CapturaEscalaModo.Tallas;
+        cantidadFracciones = CalcularCantidadFraccionesSugerida();
+        if (ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(variacionSeleccionada))
+        {
+            variacionSeleccionada = pedidoEditando.CombinacionColor;
+        }
+        await CargarSeguimientosAsync(pedido.Id);
+        await CargarPagosAsync(pedido.PedidoDetalleId);
+        ResetNuevoPago();
+        mostrarFormulario = true;
+    }
+
+    private async Task GuardarPedido()
+    {
+        if (!clienteSeleccionadoId.HasValue) return;
+
+        var incluyeProductos = MuestraProductos;
+        var incluyeServicios = MuestraServicios;
+        if (!incluyeProductos && !incluyeServicios) return;
+        if (incluyeProductos && !inventarioComprobado) return;
+        if (incluyeProductos && !productoSeleccionadoId.HasValue) return;
+        if (incluyeProductos && !cotizacionSeleccionadaId.HasValue) return;
+
+        var productoId = productoSeleccionadoId;
+        var cotizacionId = cotizacionSeleccionadaId;
+        var productoConfig = ProductoSeleccionadoConfig;
+        var colorSeleccionado = ObtenerColorSeleccionado();
+
+        if (ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(colorSeleccionado)) return;
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            if (!fraccionSeleccionadaId.HasValue) return;
+            if (cantidadFracciones <= 0) return;
+        }
+
+        pedidoEditando.CombinacionColor = colorSeleccionado ?? string.Empty;
+
+        var cantidadTotal = incluyeProductos ? tallasEditando.Sum(t => t.Cantidad) : 0;
+        if (incluyeProductos && cantidadTotal <= 0) return;
+
+        if (incluyeProductos && productoConfig?.TieneVariantes == true)
+        {
+            var tallasSinSku = productoConfig.UsaVariantesTalla
+                ? ObtenerTallasSinSku().ToList()
+                : new List<PedidoSerigrafiaTalla>();
+
+            if (tallasSinSku.Any()) return;
+        }
+
+        var conceptosValidos = ObtenerConceptosValidos();
+        if (incluyeServicios && !conceptosValidos.Any()) return;
+
+        decimal precioUnitario = 0;
+        decimal subtotalProducto = 0;
+        CotizacionSerigrafia? cotizacionPrecio = null;
+
+        if (incluyeProductos)
+        {
+            cotizacionPrecio = await DbContext.CotizacionesSerigrafia
+                .AsNoTracking()
+                .Include(c => c.PreciosVariantes)
+                .FirstOrDefaultAsync(c => c.Id == cotizacionId && c.ProductoId == productoId && c.IsActive);
+
+            if (cotizacionPrecio == null) return;
+
+            subtotalProducto = CalcularSubtotalProductoDesdeCotizacion(cotizacionPrecio, tallasEditando, colorSeleccionado, tipoPrecioSeleccionado);
+            precioUnitario = cantidadTotal > 0
+                ? Math.Round(subtotalProducto / cantidadTotal, 4)
+                : 0m;
+        }
+
+        var subtotalServicios = conceptosValidos.Sum(c => c.Total);
+        var subtotal = subtotalProducto + subtotalServicios;
+        var iva = Math.Round(subtotal * 0.16m, 2);
+        var totalConIva = subtotal + iva;
+        var usuarioActual = await ObtenerUsuarioActualAsync();
+
+        if (pedidoEditando.Id == Guid.Empty)
+        {
+            var pedido = new Pedido
+            {
+                NumeroPedido = $"SER-{DateTime.UtcNow:yyyyMMddHHmmss}",
+                ClienteId = clienteSeleccionadoId.Value,
+                FechaPedido = pedidoEditando.FechaRecibido ?? DateTime.UtcNow,
+                Estado = EstadoPedidoEnum.Nuevo,
+                TipoPrecio = tipoPrecioSeleccionado,
+                Subtotal = subtotal,
+                Impuestos = iva,
+                Total = totalConIva,
+                CreatedBy = usuarioActual
+            };
+            await PedidoRepository.AddAsync(pedido);
+            pedidoBaseIdEditando = pedido.Id;
+
+            await SincronizarConceptosAsync(pedido.Id, conceptosValidos, usuarioActual);
+
+            if (!incluyeProductos)
+            {
+                await CargarPedidos();
+                CancelarEdicion();
+                NavigationManager.NavigateTo("/pedidos");
+                return;
+            }
+
+            var detalle = new PedidoDetalle
+            {
+                PedidoId = pedido.Id,
+                ProductoId = productoId!.Value,
+                ProductoVarianteId = productoConfig?.TieneVariantes == true && productoConfig.UsaVariantesTalla == false
+                    ? ResolverProductoVarianteSeleccionado(productoId.Value, null, colorSeleccionado)
+                    : null,
+                CotizacionSerigrafiaId = cotizacionId,
+                Cantidad = cantidadTotal,
+                PrecioUnitario = precioUnitario,
+                Total = subtotalProducto,
+                TallaBaseCalzado = tallasEditando.OrderBy(t => t.Talla).Select(t => t.Talla).FirstOrDefault(),
+                VariacionValor = colorSeleccionado,
+                AplicaFraccionCalzado = capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion,
+                ClienteFraccionCalzadoId = capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion ? fraccionSeleccionadaId : null,
+                CreatedBy = usuarioActual
+            };
+            await PedidoDetalleRepository.AddAsync(detalle);
+            await SincronizarDetalleTallasAsync(detalle.Id, detalle.ProductoId, cotizacionPrecio!, colorSeleccionado, tipoPrecioSeleccionado, usuarioActual, capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion);
+
+            pedidoEditando.PedidoDetalleId = detalle.Id;
+            pedidoEditando.CreatedBy = usuarioActual;
+            await PedidoSerigrafiaRepository.AddAsync(pedidoEditando);
+        }
+        else
+        {
+            pedidoEditando.UpdatedAt = DateTime.UtcNow;
+            pedidoEditando.UpdatedBy = usuarioActual;
+            await PedidoSerigrafiaRepository.UpdateAsync(pedidoEditando);
+
+            var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoEditando.PedidoDetalleId);
+            if (detalle == null) return;
+
+            pedidoBaseIdEditando = detalle.PedidoId;
+            detalle.ProductoId = productoId!.Value;
+            detalle.ProductoVarianteId = productoConfig?.TieneVariantes == true && productoConfig.UsaVariantesTalla == false
+                ? ResolverProductoVarianteSeleccionado(productoId.Value, null, colorSeleccionado)
+                : null;
+            detalle.CotizacionSerigrafiaId = cotizacionId;
+            detalle.Cantidad = cantidadTotal;
+            detalle.PrecioUnitario = precioUnitario;
+            detalle.Total = subtotalProducto;
+            detalle.TallaBaseCalzado = tallasEditando.OrderBy(t => t.Talla).Select(t => t.Talla).FirstOrDefault();
+            detalle.VariacionValor = colorSeleccionado;
+            detalle.AplicaFraccionCalzado = capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion;
+            detalle.ClienteFraccionCalzadoId = capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion ? fraccionSeleccionadaId : null;
+            detalle.UpdatedAt = DateTime.UtcNow;
+            detalle.UpdatedBy = usuarioActual;
+
+            await SincronizarDetalleTallasAsync(detalle.Id, detalle.ProductoId, cotizacionPrecio!, colorSeleccionado, tipoPrecioSeleccionado, usuarioActual, capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion);
+
+            var pedido = await DbContext.Pedidos.FindAsync(detalle.PedidoId);
+            if (pedido == null) return;
+
+            pedido.ClienteId = clienteSeleccionadoId.Value;
+            pedido.FechaPedido = pedidoEditando.FechaRecibido ?? pedido.FechaPedido;
+            pedido.TipoPrecio = tipoPrecioSeleccionado;
+            pedido.Subtotal = subtotal;
+            pedido.Impuestos = iva;
+            pedido.Total = totalConIva;
+            pedido.UpdatedAt = DateTime.UtcNow;
+            pedido.UpdatedBy = usuarioActual;
+
+            await DbContext.SaveChangesAsync();
+            await SincronizarConceptosAsync(pedido.Id, conceptosValidos, usuarioActual);
+        }
+
+        await ActualizarTallasAsync(pedidoEditando.Id);
+        await RecargarTallasAsync(pedidoEditando.Id);
+        await ActualizarProcesosAsync(pedidoEditando.Id);
+        await CargarSeguimientosAsync(pedidoEditando.Id);
+        await ActualizarEstadoPedidoAsync(pedidoEditando.Id);
+        await CargarPedidos();
+        CancelarEdicion();
+    }
+
+    private async Task ComprobarConsumosInventario()
+    {
+        InvalidarComprobacionInventario();
+
+        if (!MuestraProductos || !productoSeleccionadoId.HasValue)
+        {
+            return;
+        }
+
+        if (!cotizacionSeleccionadaId.HasValue)
+        {
+            avisosComprobacionInventario.Add("Selecciona una cotización antes de revisar consumos e inventario.");
+            return;
+        }
+
+        var cantidadTotal = tallasEditando.Where(t => t.Cantidad > 0).Sum(t => t.Cantidad);
+        if (cantidadTotal <= 0)
+        {
+            avisosComprobacionInventario.Add("Captura al menos una talla con cantidad mayor a cero antes de revisar inventario.");
+            return;
+        }
+
+        revisandoComprobacionInventario = true;
+
+        try
+        {
+            var detallesCotizacion = await DbContext.CotizacionDetalles
+                .AsNoTracking()
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionSeleccionadaId.Value)
+                .Where(d => d.Categoria == CotizacionCategoria.Tinta || d.Categoria == CotizacionCategoria.InsumoBasico || d.Categoria == CotizacionCategoria.InsumoDiverso)
+                .Select(d => new ComprobacionInventarioFuente
+                {
+                    Categoria = d.Categoria,
+                    Concepto = d.Concepto,
+                    Consumo = d.Consumo,
+                    MateriaPrimaId = d.MateriaPrimaId,
+                    MateriaPrimaNombre = d.MateriaPrima != null ? d.MateriaPrima.Nombre : null,
+                    MateriaPrimaUnidadMedida = d.MateriaPrima != null ? d.MateriaPrima.UnidadMedida : null,
+                    MateriaPrimaExistencia = d.MateriaPrima != null ? d.MateriaPrima.Cantidad : null,
+                    InsumoId = d.InsumoId,
+                    InsumoNombre = d.Insumo != null ? d.Insumo.Nombre : null,
+                    InsumoUnidadMedida = d.Insumo != null ? d.Insumo.UnidadMedida : null,
+                    InsumoExistencia = d.Insumo != null ? d.Insumo.Cantidad : null
+                })
+                .ToListAsync();
+
+            if (!detallesCotizacion.Any(d => d.Consumo > 0))
+            {
+                avisosComprobacionInventario.Add("La cotización seleccionada no tiene materias primas o insumos con consumo capturado.");
+                inventarioComprobado = true;
+                inventarioComprobadoEn = DateTime.Now;
+                return;
+            }
+
+            var referencias = string.Join(" • ", tallasEditando
+                .Where(t => t.Cantidad > 0)
+                .OrderBy(t => t.Talla)
+                .Select(t => $"{t.Talla} x{t.Cantidad}"));
+
+            var acumulado = new Dictionary<string, ComprobacionInventarioItem>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var consumo in detallesCotizacion.Where(d => d.Consumo > 0))
+            {
+                var cantidadRequerida = consumo.Consumo * cantidadTotal;
+                if (cantidadRequerida <= 0)
+                {
+                    continue;
+                }
+
+                var tipo = consumo.Categoria == CotizacionCategoria.Tinta ? "Materia prima" : "Insumo";
+                var itemId = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaId : consumo.InsumoId;
+                var nombre = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaNombre : consumo.InsumoNombre;
+                var unidadMedida = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaUnidadMedida : consumo.InsumoUnidadMedida;
+                var existencia = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaExistencia : consumo.InsumoExistencia;
+                var sinVinculoInventario = !itemId.HasValue;
+                var clave = itemId.HasValue
+                    ? $"{tipo}:{itemId.Value}"
+                    : $"{tipo}:sin-mapeo:{(nombre ?? consumo.Concepto).Trim().ToUpperInvariant()}";
+
+                if (!acumulado.TryGetValue(clave, out var item))
+                {
+                    item = new ComprobacionInventarioItem
+                    {
+                        Tipo = tipo,
+                        Nombre = string.IsNullOrWhiteSpace(nombre) ? consumo.Concepto : nombre!,
+                        UnidadMedida = string.IsNullOrWhiteSpace(unidadMedida) ? string.Empty : unidadMedida!,
+                        ExistenciaInventario = existencia,
+                        SinVinculoInventario = sinVinculoInventario
+                    };
+                    acumulado[clave] = item;
+                }
+
+                item.CantidadRequerida += cantidadRequerida;
+                item.Referencias.Add(referencias);
+            }
+
+            comprobacionInventarioItems.AddRange(acumulado.Values
+                .OrderByDescending(item => item.HayFaltante)
+                .ThenByDescending(item => item.SinVinculoInventario)
+                .ThenBy(item => item.Tipo)
+                .ThenBy(item => item.Nombre));
+
+            inventarioComprobado = true;
+            inventarioComprobadoEn = DateTime.Now;
+        }
+        finally
+        {
+            revisandoComprobacionInventario = false;
+        }
+    }
+
+    private async Task EliminarPedido(PedidoSerigrafia pedido)
+    {
+        var p = new PedidoSerigrafia
+        {
+            Id = pedido.Id,
+            PedidoDetalleId = pedido.PedidoDetalleId,
+            Estilo = pedido.Estilo,
+            CombinacionColor = pedido.CombinacionColor,
+            OrdenCompra = pedido.OrdenCompra,
+            LoteCliente = pedido.LoteCliente,
+            Corrida = pedido.Corrida,
+            FechaRecibido = pedido.FechaRecibido,
+            FechaEstimada = pedido.FechaEstimada,
+            FechaEntregaReal = pedido.FechaEntregaReal,
+            Hecho = pedido.Hecho,
+            Factura = pedido.Factura,
+            CreatedAt = pedido.CreatedAt,
+            IsActive = false,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await PedidoSerigrafiaRepository.UpdateAsync(p);
+        await CargarPedidos();
+    }
+
+    private void CancelarEdicion()
+    {
+        InvalidarComprobacionInventario();
+        nuevaTallaSeleccionada = null;
+        pedidoEditando = new();
+        pedidoBaseIdEditando = Guid.Empty;
+        mostrarFormulario = false;
+        cotizacionSeleccionadaId = null;
+        fraccionSeleccionadaId = null;
+        cotizacionesProducto = [];
+        productosClienteOpciones = new();
+        variantesDisponiblesPorProducto = new();
+        tallasDisponiblesCliente = new();
+        fraccionesDisponiblesCliente = new();
+        conceptosEditando = new();
+        procesosSeleccionados = new HashSet<Guid>();
+        tallasEditando = new();
+        seguimientoTallaProcesos = new();
+        pagosDelPedido = new();
+        totalPedidoActual = 0;
+        tipoPrecioSeleccionado = TipoPrecioEnum.Contado;
+        tipoCapturaSeleccionado = PedidoModoCaptura.Productos;
+        capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+        cantidadFracciones = 1;
+        variacionSeleccionada = null;
+    }
+
+    private void AgregarConcepto()
+    {
+        conceptosEditando.Add(new PedidoConcepto());
+    }
+
+    private void QuitarConcepto(PedidoConcepto concepto)
+    {
+        conceptosEditando.Remove(concepto);
+    }
+
+    private decimal CalcularTotalConcepto(PedidoConcepto concepto)
+    {
+        var cantidad = concepto.Cantidad < 0 ? 0 : concepto.Cantidad;
+        var precio = concepto.PrecioUnitario < 0 ? 0 : concepto.PrecioUnitario;
+        return cantidad * precio;
+    }
+
+    private List<PedidoConcepto> ObtenerConceptosValidos()
+    {
+        return conceptosEditando
+            .Where(c => !string.IsNullOrWhiteSpace(c.Descripcion) && c.Cantidad > 0 && c.PrecioUnitario >= 0)
+            .Select(c => new PedidoConcepto
+            {
+                Tipo = c.Tipo,
+                Descripcion = c.Descripcion.Trim(),
+                Cantidad = c.Cantidad,
+                PrecioUnitario = c.PrecioUnitario,
+                Total = CalcularTotalConcepto(c),
+                IsActive = true
+            })
+            .ToList();
+    }
+
+    private async Task CargarConceptosAsync(Guid pedidoId)
+    {
+        if (pedidoId == Guid.Empty)
+        {
+            conceptosEditando = new();
+            return;
+        }
+
+        conceptosEditando = await DbContext.PedidoConceptos
+            .AsNoTracking()
+            .Where(c => c.PedidoId == pedidoId && c.IsActive)
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new PedidoConcepto
+            {
+                Id = c.Id,
+                PedidoId = c.PedidoId,
+                Tipo = c.Tipo,
+                Descripcion = c.Descripcion,
+                Cantidad = c.Cantidad,
+                PrecioUnitario = c.PrecioUnitario,
+                Total = c.Total,
+                CreatedAt = c.CreatedAt,
+                CreatedBy = c.CreatedBy,
+                IsActive = c.IsActive
+            })
+            .ToListAsync();
+    }
+
+    private async Task SincronizarConceptosAsync(Guid pedidoId, List<PedidoConcepto> conceptos, string? usuarioActual)
+    {
+        var existentes = await DbContext.PedidoConceptos
+            .Where(c => c.PedidoId == pedidoId)
+            .ToListAsync();
+
+        if (existentes.Any())
+        {
+            DbContext.PedidoConceptos.RemoveRange(existentes);
+        }
+
+        if (conceptos.Any())
+        {
+            DbContext.PedidoConceptos.AddRange(conceptos.Select(c => new PedidoConcepto
+            {
+                Id = Guid.NewGuid(),
+                PedidoId = pedidoId,
+                Tipo = c.Tipo,
+                Descripcion = c.Descripcion,
+                Cantidad = c.Cantidad,
+                PrecioUnitario = c.PrecioUnitario,
+                Total = c.Total,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuarioActual,
+                IsActive = true
+            }));
+        }
+
+        await DbContext.SaveChangesAsync();
+    }
+
+    // ===== Tallas dinámicas =====
+
+    private void AgregarTalla()
+    {
+        InvalidarComprobacionInventario();
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion) return;
+        if (string.IsNullOrWhiteSpace(nuevaTallaSeleccionada)) return;
+        if (tallasEditando.Any(t => string.Equals(t.Talla, nuevaTallaSeleccionada.Trim(), StringComparison.OrdinalIgnoreCase))) return;
+        tallasEditando.Add(new PedidoSerigrafiaTalla { Talla = nuevaTallaSeleccionada.Trim(), Cantidad = 1 });
+        tallasDisponiblesSeleccionadas.RemoveWhere(t => string.Equals(t, nuevaTallaSeleccionada.Trim(), StringComparison.OrdinalIgnoreCase));
+        nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+    }
+
+    private void QuitarTalla(PedidoSerigrafiaTalla talla)
+    {
+        InvalidarComprobacionInventario();
+        tallasEditando.Remove(talla);
+        LimpiarSeleccionTallasDisponibles();
+    }
+
+    private void SeleccionarTallaDisponible(string talla)
+    {
+        nuevaTallaSeleccionada = talla;
+        AgregarTalla();
+    }
+
+    private void AgregarCorridaDisponible()
+    {
+        InvalidarComprobacionInventario();
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            return;
+        }
+
+        foreach (var talla in ObtenerTallasDisponiblesParaCaptura().ToList())
+        {
+            tallasEditando.Add(new PedidoSerigrafiaTalla
+            {
+                Talla = talla.Talla,
+                Cantidad = 1
+            });
+        }
+
+        tallasDisponiblesSeleccionadas.Clear();
+        nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+    }
+
+    private void AgregarTallasSeleccionadas()
+    {
+        InvalidarComprobacionInventario();
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            return;
+        }
+
+        foreach (var talla in ObtenerTallasDisponiblesParaCaptura()
+            .Where(t => tallasDisponiblesSeleccionadas.Contains(t.Talla))
+            .ToList())
+        {
+            tallasEditando.Add(new PedidoSerigrafiaTalla
+            {
+                Talla = talla.Talla,
+                Cantidad = 1
+            });
+        }
+
+        tallasDisponiblesSeleccionadas.Clear();
+        nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+    }
+
+    private bool EstaTallaDisponibleSeleccionada(string talla)
+        => tallasDisponiblesSeleccionadas.Contains(talla);
+
+    private bool HayTallasDisponiblesSeleccionadas()
+        => ObtenerTallasDisponiblesParaCaptura().Any(t => tallasDisponiblesSeleccionadas.Contains(t.Talla));
+
+    private bool TodasLasTallasDisponiblesSeleccionadas()
+    {
+        var disponibles = ObtenerTallasDisponiblesParaCaptura().Select(t => t.Talla).ToList();
+        return disponibles.Count > 0 && disponibles.All(tallasDisponiblesSeleccionadas.Contains);
+    }
+
+    private void OnTallaDisponibleSeleccionadaChanged(string talla, object? value)
+    {
+        var marcada = value is bool boolValue && boolValue;
+        if (marcada)
+        {
+            tallasDisponiblesSeleccionadas.Add(talla);
+        }
+        else
+        {
+            tallasDisponiblesSeleccionadas.Remove(talla);
+        }
+    }
+
+    private void OnToggleSeleccionDisponibles(ChangeEventArgs args)
+    {
+        var seleccionarTodas = args.Value is bool boolValue && boolValue;
+        var disponibles = ObtenerTallasDisponiblesParaCaptura().Select(t => t.Talla).ToList();
+
+        if (seleccionarTodas)
+        {
+            foreach (var talla in disponibles)
+            {
+                tallasDisponiblesSeleccionadas.Add(talla);
+            }
+        }
+        else
+        {
+            tallasDisponiblesSeleccionadas.RemoveWhere(t => disponibles.Contains(t, StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    private void AlternarSeleccionTallaDisponible(string talla)
+    {
+        if (EstaTallaDisponibleSeleccionada(talla))
+        {
+            tallasDisponiblesSeleccionadas.Remove(talla);
+            return;
+        }
+
+        tallasDisponiblesSeleccionadas.Add(talla);
+    }
+
+    private void AlternarSeleccionTodasLasDisponibles()
+    {
+        var disponibles = ObtenerTallasDisponiblesParaCaptura().Select(t => t.Talla).ToList();
+        if (disponibles.Count == 0)
+        {
+            return;
+        }
+
+        if (disponibles.All(tallasDisponiblesSeleccionadas.Contains))
+        {
+            tallasDisponiblesSeleccionadas.RemoveWhere(t => disponibles.Contains(t, StringComparer.OrdinalIgnoreCase));
+            return;
+        }
+
+        foreach (var talla in disponibles)
+        {
+            tallasDisponiblesSeleccionadas.Add(talla);
+        }
+    }
+
+    private void LimpiarSeleccionTallasDisponibles()
+    {
+        var disponibles = ObtenerTallasDisponiblesParaCaptura().Select(t => t.Talla).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        tallasDisponiblesSeleccionadas.RemoveWhere(t => !disponibles.Contains(t));
+    }
+
+    private async Task ActualizarTallasAsync(Guid pedidoSerigrafiaId)
+    {
+        var existentes = DbContext.PedidoSerigrafiaTallas.Where(t => t.PedidoSerigrafiaId == pedidoSerigrafiaId);
+        DbContext.PedidoSerigrafiaTallas.RemoveRange(existentes);
+
+        foreach (var talla in tallasEditando.Where(t => t.Cantidad > 0))
+        {
+            DbContext.PedidoSerigrafiaTallas.Add(new PedidoSerigrafiaTalla
+            {
+                Id = Guid.NewGuid(),
+                PedidoSerigrafiaId = pedidoSerigrafiaId,
+                Talla = talla.Talla,
+                Cantidad = talla.Cantidad,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
+        await DbContext.SaveChangesAsync();
+    }
+
+    private async Task RecargarTallasAsync(Guid pedidoSerigrafiaId)
+    {
+        tallasEditando = await DbContext.PedidoSerigrafiaTallas
+            .Where(t => t.PedidoSerigrafiaId == pedidoSerigrafiaId)
+            .OrderBy(t => t.Talla)
+            .ToListAsync();
+    }
+
+    private Task OnVariacionSeleccionadaChanged()
+    {
+        InvalidarComprobacionInventario();
+        pedidoEditando.CombinacionColor = LimpiarTexto(variacionSeleccionada) ?? string.Empty;
+        tallasDisponiblesSeleccionadas.Clear();
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            GenerarTallasDesdeFraccion();
+        }
+
+        nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+        return Task.CompletedTask;
+    }
+
+    private Task OnCapturaEscalaChanged()
+    {
+        InvalidarComprobacionInventario();
+        tallasDisponiblesSeleccionadas.Clear();
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            fraccionSeleccionadaId ??= ProductoSeleccionadoConfig?.ClienteFraccionCalzadoId ?? fraccionesDisponiblesCliente.FirstOrDefault()?.Id;
+            GenerarTallasDesdeFraccion();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnFraccionSeleccionadaChanged()
+    {
+        InvalidarComprobacionInventario();
+        tallasDisponiblesSeleccionadas.Clear();
+        GenerarTallasDesdeFraccion();
+        return Task.CompletedTask;
+    }
+
+    private Task OnFraccionRapidaChanged()
+    {
+        InvalidarComprobacionInventario();
+        tallasDisponiblesSeleccionadas.Clear();
+        if (fraccionSeleccionadaId.HasValue)
+        {
+            capturaEscalaSeleccionada = CapturaEscalaModo.Fraccion;
+            GenerarTallasDesdeFraccion();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnCantidadFraccionesChanged()
+    {
+        InvalidarComprobacionInventario();
+        if (cantidadFracciones < 1)
+        {
+            cantidadFracciones = 1;
+        }
+
+        GenerarTallasDesdeFraccion();
+        return Task.CompletedTask;
+    }
+
+    private void ConfigurarCapturaProducto()
+    {
+        var producto = ProductoSeleccionadoConfig;
+        if (producto == null)
+        {
+            nuevaTallaSeleccionada = null;
+            variacionSeleccionada = null;
+            fraccionSeleccionadaId = null;
+            capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+            cantidadFracciones = 1;
+            tallasEditando = new();
+            tallasDisponiblesSeleccionadas.Clear();
+            return;
+        }
+
+        if (producto.UsaVariantesColor)
+        {
+            variacionSeleccionada = ObtenerVariacionesDisponibles(productoSeleccionadoId)
+                .FirstOrDefault(v => string.Equals(v, variacionSeleccionada, StringComparison.OrdinalIgnoreCase))
+                ?? (pedidoEditando.Id == Guid.Empty ? null : ObtenerVariacionesDisponibles(productoSeleccionadoId).FirstOrDefault());
+            pedidoEditando.CombinacionColor = variacionSeleccionada ?? string.Empty;
+        }
+        else
+        {
+            variacionSeleccionada = null;
+            pedidoEditando.CombinacionColor ??= string.Empty;
+        }
+
+        if (!ProductoPermiteFraccion)
+        {
+            capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+            fraccionSeleccionadaId = null;
+            cantidadFracciones = 1;
+            nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+            return;
+        }
+
+        if (pedidoEditando.Id == Guid.Empty && !tallasEditando.Any())
+        {
+            capturaEscalaSeleccionada = producto.AplicaFraccionCalzado ? CapturaEscalaModo.Fraccion : CapturaEscalaModo.Tallas;
+            fraccionSeleccionadaId = producto.ClienteFraccionCalzadoId ?? fraccionesDisponiblesCliente.FirstOrDefault()?.Id;
+            if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+            {
+                GenerarTallasDesdeFraccion();
+            }
+        }
+
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Tallas)
+        {
+            nuevaTallaSeleccionada = ObtenerTallasDisponiblesParaCaptura().FirstOrDefault()?.Talla;
+        }
+    }
+
+    private void GenerarTallasDesdeFraccion()
+    {
+        if (capturaEscalaSeleccionada != CapturaEscalaModo.Fraccion)
+        {
+            return;
+        }
+
+        if (ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(ObtenerColorSeleccionado()))
+        {
+            tallasEditando = new();
+            return;
+        }
+
+        var fraccion = fraccionesDisponiblesCliente.FirstOrDefault(f => f.Id == fraccionSeleccionadaId);
+        if (fraccion == null || !fraccion.Detalles.Any())
+        {
+            tallasEditando = new();
+            return;
+        }
+
+        if (cantidadFracciones < 1)
+        {
+            cantidadFracciones = 1;
+        }
+
+        tallasEditando = fraccion.Detalles
+            .Where(d => d.Unidades > 0)
+            .OrderBy(d => d.Orden)
+            .ThenBy(d => d.Talla)
+            .Select(d => new PedidoSerigrafiaTalla
+            {
+                Talla = d.Talla,
+                Cantidad = (int)Math.Round(d.Unidades * cantidadFracciones, MidpointRounding.AwayFromZero)
+            })
+            .Where(t => t.Cantidad > 0)
+            .ToList();
+    }
+
+    private IEnumerable<string> ObtenerVariacionesDisponibles(Guid? productoId)
+        => productoId.HasValue && variantesDisponiblesPorProducto.TryGetValue(productoId.Value, out var variantes)
+            ? variantes
+                .Select(v => v.Color)
+                .Where(color => !string.IsNullOrWhiteSpace(color))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(color => color)
+                .Cast<string>()
+            : [];
+
+    private IEnumerable<TallaClienteDisponible> ObtenerTallasDisponiblesParaCaptura()
+        => tallasDisponiblesCliente
+            .Where(t => !tallasEditando.Any(editada => string.Equals(editada.Talla, t.Talla, StringComparison.OrdinalIgnoreCase)))
+            .Where(t => TallaDisponibleParaVariacion(t.Talla))
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla);
+
+    private string? ObtenerColorSeleccionado()
+        => ProductoUsaVariantesColor
+            ? LimpiarTexto(variacionSeleccionada)
+            : LimpiarTexto(pedidoEditando.CombinacionColor);
+
+    private IEnumerable<PedidoSerigrafiaTalla> ObtenerTallasSinSku()
+    {
+        if (!productoSeleccionadoId.HasValue || ProductoSeleccionadoConfig?.TieneVariantes != true || ProductoSeleccionadoConfig.UsaVariantesTalla != true)
+        {
+            return [];
+        }
+
+        var colorSeleccionado = ObtenerColorSeleccionado();
+        return tallasEditando.Where(t => t.Cantidad > 0 && ResolverProductoVarianteSeleccionado(productoSeleccionadoId.Value, t.Talla, colorSeleccionado) == null);
+    }
+
+    private bool TallaDisponibleParaVariacion(string talla)
+    {
+        if (!productoSeleccionadoId.HasValue)
+        {
+            return false;
+        }
+
+        if (ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(ObtenerColorSeleccionado()))
+        {
+            return false;
+        }
+
+        if (ProductoSeleccionadoConfig?.TieneVariantes != true || ProductoSeleccionadoConfig.UsaVariantesTalla != true)
+        {
+            return true;
+        }
+
+        return ResolverProductoVarianteSeleccionado(productoSeleccionadoId.Value, talla, ObtenerColorSeleccionado()) != null;
+    }
+
+    private string ObtenerMensajeCapturaTallas()
+    {
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Tallas && ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(ObtenerColorSeleccionado()))
+        {
+            return "Selecciona primero la variación/color para cargar la corrida y las tallas disponibles de ese pedido.";
+        }
+
+        if (capturaEscalaSeleccionada == CapturaEscalaModo.Fraccion)
+        {
+            return ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(ObtenerColorSeleccionado())
+                ? "Selecciona primero la variación/color para generar la fracción del pedido."
+                : "Selecciona una fracción y cuántas fracciones quieres para generar la escala.";
+        }
+
+        if (tallasDisponiblesCliente.Any())
+        {
+            return "Agrega una talla puntual o carga la corrida completa para este pedido.";
+        }
+
+        return "Primero configura las tallas disponibles para este cliente; después podrás seleccionar varios SKU con la variación elegida.";
+    }
+
+    private string ObtenerEtiquetaSkuResuelto(string talla)
+    {
+        if (!productoSeleccionadoId.HasValue)
+        {
+            return "Selecciona producto";
+        }
+
+        if (ProductoUsaVariantesColor && string.IsNullOrWhiteSpace(ObtenerColorSeleccionado()))
+        {
+            return "Selecciona variación";
+        }
+
+        return ObtenerSkuTallaResumen(talla, ObtenerColorSeleccionado()) is { } sku && sku != "—"
+            ? sku
+            : "Sin SKU";
+    }
+
+    private string ObtenerEtiquetaVariacionAplicada()
+    {
+        var variacion = ObtenerColorSeleccionado();
+        return string.IsNullOrWhiteSpace(variacion) ? "Base" : variacion;
+    }
+
+    private string ObtenerPrecioCotizadoTallaTexto(string talla)
+    {
+        var precio = ObtenerPrecioCotizadoTalla(talla);
+        return precio.HasValue ? precio.Value.ToString("C2") : "—";
+    }
+
+    private decimal? ObtenerPrecioCotizadoTalla(string talla)
+    {
+        if (!cotizacionSeleccionadaId.HasValue)
+        {
+            return null;
+        }
+
+        var cotizacion = cotizacionesProducto.FirstOrDefault(c => c.Id == cotizacionSeleccionadaId.Value);
+        if (cotizacion == null)
+        {
+            return null;
+        }
+
+        var preciosAceptados = cotizacion.PreciosVariantes
+            .Where(p => p.IsActive && p.Aceptada)
+            .ToList();
+
+        var precioBaseRegistro = preciosAceptados.FirstOrDefault(p => p.EsPrecioBase);
+        var precioBase = precioBaseRegistro is null
+            ? tipoPrecioSeleccionado == TipoPrecioEnum.Credito ? cotizacion.PrecioCredito : cotizacion.PrecioFinalContado
+            : ObtenerPrecioCotizado(precioBaseRegistro, tipoPrecioSeleccionado);
+
+        return ResolverPrecioCotizadoPorVariante(preciosAceptados, talla, ObtenerColorSeleccionado(), tipoPrecioSeleccionado, precioBase);
+    }
+
+    private string ObtenerEtiquetaTallaDisponible(string talla)
+    {
+        var sku = ObtenerEtiquetaSkuResuelto(talla);
+        return string.IsNullOrWhiteSpace(sku)
+            ? talla
+            : $"{talla} · {sku}";
+    }
+
+    private string ObtenerSkuTallaResumen(string talla, string? colorSeleccionado)
+    {
+        if (!productoSeleccionadoId.HasValue)
+        {
+            return "—";
+        }
+
+        var varianteId = ResolverProductoVarianteSeleccionado(productoSeleccionadoId.Value, talla, colorSeleccionado);
+        if (!varianteId.HasValue || !variantesDisponiblesPorProducto.TryGetValue(productoSeleccionadoId.Value, out var variantes))
+        {
+            return "—";
+        }
+
+        return variantes.FirstOrDefault(v => v.Id == varianteId.Value)?.Sku ?? "—";
+    }
+
+    private Guid? ResolverProductoVarianteSeleccionado(Guid productoId, string? talla, string? colorSeleccionado)
+    {
+        if (!variantesDisponiblesPorProducto.TryGetValue(productoId, out var variantes))
+        {
+            return null;
+        }
+
+        var query = variantes.AsEnumerable();
+        if (ProductoUsaVariantesColor)
+        {
+            if (string.IsNullOrWhiteSpace(colorSeleccionado))
+            {
+                return null;
+            }
+
+            query = query.Where(v => string.Equals(v.Color, colorSeleccionado, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (ProductoSeleccionadoConfig?.UsaVariantesTalla == true)
+        {
+            if (string.IsNullOrWhiteSpace(talla))
+            {
+                return null;
+            }
+
+            query = query.Where(v => string.Equals(v.Talla, talla, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query.Select(v => (Guid?)v.Id).FirstOrDefault();
+    }
+
+    private int CalcularCantidadFraccionesSugerida()
+    {
+        if (!fraccionSeleccionadaId.HasValue)
+        {
+            return 1;
+        }
+
+        var fraccion = fraccionesDisponiblesCliente.FirstOrDefault(f => f.Id == fraccionSeleccionadaId.Value);
+        if (fraccion == null || fraccion.UnidadesPorFraccion <= 0)
+        {
+            return 1;
+        }
+
+        var total = tallasEditando.Sum(t => t.Cantidad);
+        return total <= 0
+            ? 1
+            : Math.Max(1, (int)Math.Round(total / fraccion.UnidadesPorFraccion, MidpointRounding.AwayFromZero));
+    }
+
+    private async Task SincronizarDetalleTallasAsync(
+        Guid pedidoDetalleId,
+        Guid productoId,
+        CotizacionSerigrafia cotizacion,
+        string? colorSeleccionado,
+        TipoPrecioEnum tipoPrecio,
+        string? usuarioActual,
+        bool generadaDesdeFraccion)
+    {
+        var existentes = await DbContext.PedidosDetalleTalla
+            .Where(t => t.PedidoDetalleId == pedidoDetalleId)
+            .ToListAsync();
+
+        if (existentes.Any())
+        {
+            DbContext.PedidosDetalleTalla.RemoveRange(existentes);
+        }
+
+        var resumenPrecios = ConstruirResumenPreciosCotizacion(cotizacion, tallasEditando, colorSeleccionado, tipoPrecio);
+        var variantesProducto = await DbContext.ProductosVariantes
+            .AsNoTracking()
+            .Where(v => v.ProductoId == productoId && v.IsActive && v.Activa)
+            .ToListAsync();
+
+        foreach (var precio in resumenPrecios.Where(p => p.Cantidad > 0))
+        {
+            DbContext.PedidosDetalleTalla.Add(new PedidoDetalleTalla
+            {
+                Id = Guid.NewGuid(),
+                PedidoDetalleId = pedidoDetalleId,
+                ProductoVarianteId = ResolverProductoVarianteId(variantesProducto, precio.Talla, colorSeleccionado),
+                Talla = precio.Talla,
+                Orden = precio.Orden,
+                Cantidad = precio.Cantidad,
+                PrecioUnitario = precio.PrecioUnitario,
+                Total = precio.Subtotal,
+                PorcentajeVariacion = precio.PorcentajeAplicado,
+                GeneradaDesdeFraccion = generadaDesdeFraccion,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuarioActual,
+                IsActive = true
+            });
+        }
+
+        await DbContext.SaveChangesAsync();
+    }
+
+    private static Guid? ResolverProductoVarianteId(IEnumerable<ProductoVariante> variantes, string? talla, string? colorSeleccionado)
+    {
+        if (string.IsNullOrWhiteSpace(talla) && string.IsNullOrWhiteSpace(colorSeleccionado))
+        {
+            return null;
+        }
+
+        var normalizadaTalla = string.IsNullOrWhiteSpace(talla) ? null : talla.Trim();
+        var normalizadoColor = string.IsNullOrWhiteSpace(colorSeleccionado) ? null : colorSeleccionado.Trim();
+
+        var coincidencia = variantes.FirstOrDefault(v => CoincideValor(v.Talla, normalizadaTalla) && CoincideValor(v.Color, normalizadoColor));
+        coincidencia ??= variantes.FirstOrDefault(v => CoincideValor(v.Talla, normalizadaTalla) && string.IsNullOrWhiteSpace(v.Color));
+        coincidencia ??= variantes.FirstOrDefault(v => string.IsNullOrWhiteSpace(v.Talla) && CoincideValor(v.Color, normalizadoColor));
+
+        return coincidencia?.Id;
+    }
+
+    // ===== Procesos =====
+
+    private async Task ToggleProceso(Guid tipoProcesoId, object? value)
+    {
+        if (value is bool b && b) procesosSeleccionados.Add(tipoProcesoId);
+        else procesosSeleccionados.Remove(tipoProcesoId);
+
+        if (pedidoEditando.Id != Guid.Empty)
+        {
+            await CargarSeguimientosAsync(pedidoEditando.Id);
+        }
+    }
+
+    private async Task OnProductoChanged()
+    {
+        InvalidarComprobacionInventario();
+        tallasEditando = new();
+        tallasDisponiblesSeleccionadas.Clear();
+        variacionSeleccionada = null;
+        fraccionSeleccionadaId = null;
+        cantidadFracciones = 1;
+        capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+        await CargarCotizacionesProductoAsync(productoSeleccionadoId);
+        ConfigurarCapturaProducto();
+
+        if (!productoSeleccionadoId.HasValue || pedidoEditando.Id != Guid.Empty)
+            return;
+
+        var cotizacion = await DbContext.CotizacionesSerigrafia
+            .AsNoTracking()
+            .Include(c => c.Procesos)
+            .Where(c => c.ProductoId == productoSeleccionadoId.Value && c.IsActive)
+            .Where(c => !clienteSeleccionadoId.HasValue || c.ClienteId == clienteSeleccionadoId.Value)
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync(c => !cotizacionSeleccionadaId.HasValue || c.Id == cotizacionSeleccionadaId.Value);
+
+        procesosSeleccionados = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+    }
+
+    private async Task OnCotizacionChanged()
+    {
+        InvalidarComprobacionInventario();
+        if (!cotizacionSeleccionadaId.HasValue)
+        {
+            procesosSeleccionados = new HashSet<Guid>();
+            return;
+        }
+
+        var cotizacion = await DbContext.CotizacionesSerigrafia
+            .AsNoTracking()
+            .Include(c => c.Procesos)
+            .FirstOrDefaultAsync(c => c.Id == cotizacionSeleccionadaId.Value && c.IsActive);
+
+        procesosSeleccionados = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+    }
+
+    private async Task ActualizarProcesosAsync(Guid pedidoSerigrafiaId)
+    {
+        var existentes = DbContext.PedidoSerigrafiaProcesoDetalles.Where(p => p.PedidoSerigrafiaId == pedidoSerigrafiaId);
+        DbContext.PedidoSerigrafiaProcesoDetalles.RemoveRange(existentes);
+
+        foreach (var tipoProcesoId in procesosSeleccionados)
+        {
+            DbContext.PedidoSerigrafiaProcesoDetalles.Add(new PedidoSerigrafiaProcesoDetalle
+            {
+                Id = Guid.NewGuid(),
+                PedidoSerigrafiaId = pedidoSerigrafiaId,
+                TipoProcesoId = tipoProcesoId,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
+        await DbContext.SaveChangesAsync();
+    }
+
+    // ===== Cliente/Producto =====
+
+    private async Task OnClienteChanged()
+    {
+        InvalidarComprobacionInventario();
+        if (clienteSeleccionadoId.HasValue)
+        {
+            await CargarProductosClienteAsync(clienteSeleccionadoId.Value);
+            productoSeleccionadoId = null;
+            cotizacionSeleccionadaId = null;
+            fraccionSeleccionadaId = null;
+            cotizacionesProducto = [];
+            procesosSeleccionados = new HashSet<Guid>();
+            tallasEditando = new();
+            tallasDisponiblesSeleccionadas.Clear();
+            capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+            cantidadFracciones = 1;
+            variacionSeleccionada = null;
+        }
+        else
+        {
+            productosCliente = null;
+            productosClienteOpciones = new();
+            productoSeleccionadoId = null;
+            cotizacionSeleccionadaId = null;
+            fraccionSeleccionadaId = null;
+            cotizacionesProducto = [];
+            variantesDisponiblesPorProducto = new();
+            tallasDisponiblesCliente = new();
+            fraccionesDisponiblesCliente = new();
+            procesosSeleccionados = new HashSet<Guid>();
+            tallasEditando = new();
+            tallasDisponiblesSeleccionadas.Clear();
+            capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
+            cantidadFracciones = 1;
+            variacionSeleccionada = null;
+        }
+    }
+
+    private async Task CargarProductosClienteAsync(Guid? clienteId)
+    {
+        if (!clienteId.HasValue)
+        {
+            productosCliente = null;
+            productosClienteOpciones = new();
+            variantesDisponiblesPorProducto = new();
+            tallasDisponiblesCliente = new();
+            fraccionesDisponiblesCliente = new();
+            return;
+        }
+
+        var asignados = await DbContext.ProductosClientes
+            .AsNoTracking()
+            .Include(pc => pc.Producto)
+            .Where(pc => pc.ClienteId == clienteId.Value && pc.IsActive && pc.Producto.IsActive)
+            .OrderBy(pc => pc.Producto.Nombre)
+            .ToListAsync();
+
+        var cotizacionesCliente = await DbContext.CotizacionesSerigrafia
+            .AsNoTracking()
+            .Include(c => c.Producto)
+            .Where(c => c.ClienteId == clienteId.Value && c.IsActive && c.Producto.IsActive)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+
+        productosClienteOpciones = asignados
+            .Select(pc => new ProductoClienteOption
+            {
+                ProductoId = pc.ProductoId,
+                Nombre = pc.Producto.Nombre,
+                TallaBaseCalzado = pc.TallaBaseCalzado,
+                TieneVariantes = pc.Producto.TieneVariantes,
+                UsaVariantesTalla = pc.Producto.UsaVariantesTalla,
+                UsaVariantesColor = pc.Producto.UsaVariantesColor,
+                AplicaFraccionCalzado = pc.AplicaFraccionCalzado,
+                ClienteFraccionCalzadoId = pc.ClienteFraccionCalzadoId
+            })
+            .ToList();
+
+        foreach (var cotizacion in cotizacionesCliente)
+        {
+            if (productosClienteOpciones.Any(p => p.ProductoId == cotizacion.ProductoId))
+            {
+                continue;
+            }
+
+            productosClienteOpciones.Add(new ProductoClienteOption
+            {
+                ProductoId = cotizacion.ProductoId,
+                Nombre = cotizacion.Producto.Nombre,
+                TallaBaseCalzado = null,
+                TieneVariantes = cotizacion.Producto.TieneVariantes,
+                UsaVariantesTalla = cotizacion.Producto.UsaVariantesTalla,
+                UsaVariantesColor = cotizacion.Producto.UsaVariantesColor,
+                AplicaFraccionCalzado = false,
+                ClienteFraccionCalzadoId = null
+            });
+        }
+
+        productosCliente = asignados
+            .Select(pc => pc.Producto)
+            .Concat(cotizacionesCliente.Select(c => c.Producto))
+            .GroupBy(p => p.Id)
+            .Select(g => g.First())
+            .OrderBy(p => p.Nombre)
+            .ToList();
+
+        tallasDisponiblesCliente = await DbContext.ClientesTallasCalzado
+            .AsNoTracking()
+            .Where(t => t.ClienteId == clienteId.Value && t.IsActive && t.Activa)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => new TallaClienteDisponible
+            {
+                Talla = t.Talla,
+                Orden = t.Orden,
+                EsTallaBaseDefault = t.EsTallaBaseDefault
+            })
+            .ToListAsync();
+
+        if (!tallasDisponiblesCliente.Any())
+        {
+            tallasDisponiblesCliente = await DbContext.CatalogoTallasCalzado
+                .AsNoTracking()
+                .Where(t => t.IsActive && t.Activa)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Talla)
+                .Select(t => new TallaClienteDisponible
+                {
+                    Talla = t.Talla,
+                    Orden = t.Orden,
+                    EsTallaBaseDefault = false
+                })
+                .ToListAsync();
+        }
+
+        if (!tallasDisponiblesCliente.Any())
+        {
+            tallasDisponiblesCliente = await DbContext.CatalogoTallasCalzado
+                .AsNoTracking()
+                .Where(t => t.IsActive && t.Activa)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Talla)
+                .Select(t => new TallaClienteDisponible
+                {
+                    Talla = t.Talla,
+                    Orden = t.Orden,
+                    EsTallaBaseDefault = false
+                })
+                .ToListAsync();
+        }
+
+        fraccionesDisponiblesCliente = await DbContext.ClientesFraccionesCalzado
+            .AsNoTracking()
+            .Include(f => f.Detalles)
+            .Where(f => f.ClienteId == clienteId.Value && f.IsActive && f.Activa)
+            .OrderBy(f => f.Nombre)
+            .ToListAsync();
+
+        var productoIds = productosClienteOpciones.Select(p => p.ProductoId).ToList();
+        variantesDisponiblesPorProducto = productoIds.Count == 0
+            ? new()
+            : await DbContext.ProductosVariantes
+                .AsNoTracking()
+                .Where(v => productoIds.Contains(v.ProductoId) && v.IsActive && v.Activa)
+                .OrderBy(v => v.ProductoId)
+                .ThenBy(v => v.Color)
+                .ThenBy(v => v.Talla)
+                .Select(v => new ProductoVarianteOption
+                {
+                    Id = v.Id,
+                    ProductoId = v.ProductoId,
+                    Sku = v.Sku,
+                    Talla = v.Talla,
+                    Color = v.Color,
+                    Precio = v.PrecioOverride
+                })
+                .GroupBy(v => v.ProductoId)
+                .ToDictionaryAsync(g => g.Key, g => g.ToList());
+
+        if (pedidoEditando.Id != Guid.Empty)
+        {
+            await CargarSeguimientosAsync(pedidoEditando.Id);
+        }
+    }
+
+    private async Task CargarCotizacionesProductoAsync(Guid? productoId)
+    {
+        if (!productoId.HasValue)
+        {
+            cotizacionesProducto = [];
+            cotizacionSeleccionadaId = null;
+            return;
+        }
+
+        cotizacionesProducto = await DbContext.CotizacionesSerigrafia
+            .AsNoTracking()
+            .Include(c => c.PreciosVariantes)
+            .Where(c => c.ProductoId == productoId.Value && c.IsActive)
+            .Where(c => !clienteSeleccionadoId.HasValue || c.ClienteId == clienteSeleccionadoId.Value)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+
+        if (cotizacionSeleccionadaId.HasValue && !cotizacionesProducto.Any(c => c.Id == cotizacionSeleccionadaId.Value))
+        {
+            cotizacionSeleccionadaId = null;
+        }
+
+        if (pedidoEditando.Id == Guid.Empty && !cotizacionSeleccionadaId.HasValue)
+        {
+            cotizacionSeleccionadaId = cotizacionesProducto.FirstOrDefault()?.Id;
+        }
+    }
+
+    private string ObtenerEtiquetaCotizacion(CotizacionSerigrafia cotizacion)
+    {
+        var descripcion = string.IsNullOrWhiteSpace(cotizacion.Descripcion) ? "Sin descripción" : cotizacion.Descripcion.Trim();
+        return $"{descripcion} · {cotizacion.CreatedAt:dd/MM/yyyy} · Contado {cotizacion.PrecioFinalContado:C2}";
+    }
+
+    private static decimal CalcularSubtotalProductoDesdeCotizacion(
+        CotizacionSerigrafia cotizacion,
+        IEnumerable<PedidoSerigrafiaTalla> tallas,
+        string? colorSeleccionado,
+        TipoPrecioEnum tipoPrecio)
+    {
+        var preciosAceptados = cotizacion.PreciosVariantes
+            .Where(p => p.IsActive && p.Aceptada)
+            .ToList();
+
+        var precioBase = preciosAceptados.FirstOrDefault(p => p.EsPrecioBase) is { } precioBaseVariante
+            ? ObtenerPrecioCotizado(precioBaseVariante, tipoPrecio)
+            : tipoPrecio == TipoPrecioEnum.Credito
+                ? cotizacion.PrecioCredito
+                : cotizacion.PrecioFinalContado;
+
+        decimal subtotal = 0m;
+        foreach (var talla in tallas.Where(t => t.Cantidad > 0))
+        {
+            var precioTalla = ResolverPrecioCotizadoPorVariante(preciosAceptados, talla.Talla, colorSeleccionado, tipoPrecio, precioBase);
+            subtotal += talla.Cantidad * precioTalla;
+        }
+
+        return subtotal;
+    }
+
+    private static List<PrecioTallaCotizacionResumen> ConstruirResumenPreciosCotizacion(
+        CotizacionSerigrafia cotizacion,
+        IEnumerable<PedidoSerigrafiaTalla> tallas,
+        string? colorSeleccionado,
+        TipoPrecioEnum tipoPrecio)
+    {
+        var preciosAceptados = cotizacion.PreciosVariantes
+            .Where(p => p.IsActive && p.Aceptada)
+            .ToList();
+
+        var precioBaseRegistro = preciosAceptados.FirstOrDefault(p => p.EsPrecioBase);
+        var precioBase = precioBaseRegistro is null
+            ? tipoPrecio == TipoPrecioEnum.Credito
+                ? cotizacion.PrecioCredito
+                : cotizacion.PrecioFinalContado
+            : ObtenerPrecioCotizado(precioBaseRegistro, tipoPrecio);
+
+        return tallas
+            .Where(t => t.Cantidad > 0)
+            .OrderBy(t => t.Talla)
+            .Select((talla, index) =>
+            {
+                var coincidencia = ResolverRegistroPrecioCotizado(preciosAceptados, talla.Talla, colorSeleccionado);
+                var precioUnitario = coincidencia is null ? precioBase : ObtenerPrecioCotizado(coincidencia, tipoPrecio);
+                return new PrecioTallaCotizacionResumen
+                {
+                    Orden = index + 1,
+                    Talla = talla.Talla,
+                    Cantidad = talla.Cantidad,
+                    Etiqueta = coincidencia?.Etiqueta ?? "Precio base",
+                    ColorAplicado = string.IsNullOrWhiteSpace(colorSeleccionado) ? null : colorSeleccionado.Trim(),
+                    PorcentajeAplicado = coincidencia?.PorcentajeVariacionAplicado ?? 0m,
+                    PrecioUnitario = precioUnitario,
+                    Subtotal = talla.Cantidad * precioUnitario
+                };
+            })
+            .ToList();
+    }
+
+    private static decimal ResolverPrecioCotizadoPorVariante(
+        IReadOnlyCollection<CotizacionVariantePrecio> preciosAceptados,
+        string? talla,
+        string? colorSeleccionado,
+        TipoPrecioEnum tipoPrecio,
+        decimal precioBase)
+    {
+        var normalizadaTalla = string.IsNullOrWhiteSpace(talla) ? null : talla.Trim();
+        var normalizadoColor = string.IsNullOrWhiteSpace(colorSeleccionado) ? null : colorSeleccionado.Trim();
+
+        var coincidencia = ResolverRegistroPrecioCotizado(preciosAceptados, normalizadaTalla, normalizadoColor);
+
+        return coincidencia == null ? precioBase : ObtenerPrecioCotizado(coincidencia, tipoPrecio);
+    }
+
+    private static CotizacionVariantePrecio? ResolverRegistroPrecioCotizado(
+        IReadOnlyCollection<CotizacionVariantePrecio> preciosAceptados,
+        string? talla,
+        string? colorSeleccionado)
+    {
+        var normalizadaTalla = string.IsNullOrWhiteSpace(talla) ? null : talla.Trim();
+        var normalizadoColor = string.IsNullOrWhiteSpace(colorSeleccionado) ? null : colorSeleccionado.Trim();
+
+        var coincidencia = preciosAceptados.FirstOrDefault(p => !p.EsPrecioBase
+            && CoincideValor(p.Talla, normalizadaTalla)
+            && CoincideValor(p.Color, normalizadoColor));
+
+        coincidencia ??= preciosAceptados.FirstOrDefault(p => !p.EsPrecioBase
+            && CoincideValor(p.Talla, normalizadaTalla)
+            && string.IsNullOrWhiteSpace(p.Color));
+
+        coincidencia ??= preciosAceptados.FirstOrDefault(p => !p.EsPrecioBase
+            && string.IsNullOrWhiteSpace(p.Talla)
+            && CoincideValor(p.Color, normalizadoColor));
+
+        return coincidencia;
+    }
+
+    private static bool CoincideValor(string? esperado, string? actual)
+        => !string.IsNullOrWhiteSpace(esperado)
+            && !string.IsNullOrWhiteSpace(actual)
+            && string.Equals(esperado.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static decimal ObtenerPrecioCotizado(CotizacionVariantePrecio precio, TipoPrecioEnum tipoPrecio)
+        => tipoPrecio == TipoPrecioEnum.Credito ? precio.PrecioCredito : precio.PrecioContado;
+
+    private static string ObtenerResumenPrecioTallas(IEnumerable<PedidoDetalleTalla> detallesTalla)
+    {
+        var resumen = detallesTalla
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => $"{t.Talla}: {t.PrecioUnitario:C2}")
+            .Take(4)
+            .ToList();
+
+        if (resumen.Count == 0)
+        {
+            return "";
+        }
+
+        var tieneMas = detallesTalla.Skip(4).Any();
+        return tieneMas
+            ? $"{string.Join(" · ", resumen)} · ..."
+            : string.Join(" · ", resumen);
+    }
+
+    private sealed class PrecioTallaCotizacionResumen
+    {
+        public int Orden { get; set; }
+        public string Talla { get; set; } = string.Empty;
+        public int Cantidad { get; set; }
+        public string Etiqueta { get; set; } = string.Empty;
+        public string? ColorAplicado { get; set; }
+        public decimal PorcentajeAplicado { get; set; }
+        public decimal PrecioUnitario { get; set; }
+        public decimal Subtotal { get; set; }
+    }
+
+    private async Task CargarSeguimientosAsync(Guid pedidoId)
+    {
+        if (pedidoId == Guid.Empty)
+        {
+            seguimientoTallaProcesos = new();
+            return;
+        }
+
+        seguimientoTallaProcesos = await DbContext.PedidoSerigrafiaTallaProcesos
+            .Include(s => s.Empleado)
+            .Where(s => s.PedidoSerigrafiaId == pedidoId)
+            .ToListAsync();
+
+        var tallaIds = tallasEditando.Where(t => t.Id != Guid.Empty).Select(t => t.Id).ToList();
+        var procesoIds = procesosSeleccionados.ToList();
+
+        var nuevos = new List<PedidoSerigrafiaTallaProceso>();
+        foreach (var tallaId in tallaIds)
+        {
+            foreach (var procId in procesoIds)
+            {
+                if (!seguimientoTallaProcesos.Any(s => s.PedidoSerigrafiaTallaId == tallaId && s.TipoProcesoId == procId))
+                {
+                    nuevos.Add(new PedidoSerigrafiaTallaProceso
+                    {
+                        Id = Guid.NewGuid(),
+                        PedidoSerigrafiaId = pedidoId,
+                        PedidoSerigrafiaTallaId = tallaId,
+                        TipoProcesoId = procId,
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+                }
+            }
+        }
+
+        if (nuevos.Any())
+        {
+            DbContext.PedidoSerigrafiaTallaProcesos.AddRange(nuevos);
+            await DbContext.SaveChangesAsync();
+            seguimientoTallaProcesos.AddRange(nuevos);
+        }
+    }
+
+    private async Task GuardarSeguimientoAsync(PedidoSerigrafiaTallaProceso seg)
+    {
+        seg.UpdatedAt = DateTime.UtcNow;
+        seg.UpdatedBy = await ObtenerUsuarioActualAsync();
+        DbContext.PedidoSerigrafiaTallaProcesos.Update(seg);
+        await DbContext.SaveChangesAsync();
+        await ActualizarEstadoPedidoAsync(seg.PedidoSerigrafiaId);
+    }
+
+    private async Task OnSeguimientoChecked(PedidoSerigrafiaTallaProceso seg, bool value)
+    {
+        seg.Completado = value;
+        if (value && seg.FechaPaso == null)
+        {
+            seg.FechaPaso = DateTime.UtcNow;
+        }
+        await GuardarSeguimientoAsync(seg);
+    }
+
+    private async Task OnSeguimientoFechaChanged(PedidoSerigrafiaTallaProceso seg, DateTime? value)
+    {
+        seg.FechaPaso = value;
+        await GuardarSeguimientoAsync(seg);
+    }
+
+    private async Task OnSeguimientoEmpleadoChanged(PedidoSerigrafiaTallaProceso seg, Guid? value)
+    {
+        seg.EmpleadoId = value;
+        await GuardarSeguimientoAsync(seg);
+    }
+
+    // ===== Filtros =====
+
+    private async Task FiltrarPorEstado(ChangeEventArgs e)
+    {
+        var estado = e.Value?.ToString();
+        pedidos = estado switch
+        {
+            "pendientes" => await PedidoSerigrafiaRepository.GetPendientesAsync(),
+            "completados" => await PedidoSerigrafiaRepository.GetCompletadosAsync(),
+            _ => await PedidoSerigrafiaRepository.GetAllAsync()
+        };
+        await CargarSeguimientosPorPedidoAsync();
+        ComputarColumnas();
+    }
+
+    private async Task FiltrarPorFechas()
+    {
+        if (fechaDesde.HasValue && fechaHasta.HasValue)
+        {
+            pedidos = await PedidoSerigrafiaRepository.GetByFechaRangoAsync(fechaDesde.Value, fechaHasta.Value);
+            await CargarSeguimientosPorPedidoAsync();
+            ComputarColumnas();
+        }
+        else
+            await CargarPedidos();
+    }
+
+    // ===== Pagos =====
+
+    private async Task CargarPagosAsync(Guid pedidoDetalleId)
+    {
+        var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoDetalleId);
+        if (detalle == null) { pagosDelPedido = new(); totalPedidoActual = 0; return; }
+
+        var pedido = await DbContext.Pedidos.FindAsync(detalle.PedidoId);
+        totalPedidoActual = pedido?.Total ?? 0;
+
+        pagosDelPedido = await DbContext.PagosPedido
+            .Where(p => p.PedidoId == detalle.PedidoId)
+            .OrderBy(p => p.FechaPago)
+            .ToListAsync();
+    }
+
+    private async Task AgregarPago()
+    {
+        if (nuevoPagoMonto <= 0 || pedidoEditando.Id == Guid.Empty) return;
+
+        var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoEditando.PedidoDetalleId);
+        if (detalle == null) return;
+
+        // Validar que no exceda el saldo
+        var pagadoActual = pagosDelPedido.Sum(p => p.Monto);
+        var saldoRestante = totalPedidoActual - pagadoActual;
+        if (nuevoPagoMonto > saldoRestante)
+        {
+            nuevoPagoMonto = saldoRestante;
+        }
+        if (nuevoPagoMonto <= 0) return;
+
+        var pago = new PagoPedido
+        {
+            Id = Guid.NewGuid(),
+            PedidoId = detalle.PedidoId,
+            FechaPago = nuevoPagoFecha,
+            Monto = nuevoPagoMonto,
+            FormaPago = nuevoPagoFormaPago,
+            Referencia = nuevoPagoReferencia,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        DbContext.PagosPedido.Add(pago);
+        await DbContext.SaveChangesAsync();
+
+        pagosDelPedido.Add(pago);
+        ResetNuevoPago();
+        await ActualizarEstadoPedidoAsync(pedidoEditando.Id);
+        await CargarPedidos();
+    }
+
+    private async Task EliminarPago(PagoPedido pago)
+    {
+        DbContext.PagosPedido.Remove(pago);
+        await DbContext.SaveChangesAsync();
+        pagosDelPedido.Remove(pago);
+        await ActualizarEstadoPedidoAsync(pedidoEditando.Id);
+        await CargarPedidos();
+    }
+
+    private async Task<string?> ObtenerUsuarioActualAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name;
+    }
+
+    private void ResetNuevoPago()
+    {
+        nuevoPagoFecha = DateTime.Now;
+        nuevoPagoMonto = 0;
+        nuevoPagoFormaPago = FormaPagoEnum.Transferencia;
+        nuevoPagoReferencia = null;
+    }
+
+    private static string GetFormaPagoLabel(FormaPagoEnum forma) => forma switch
+    {
+        FormaPagoEnum.Efectivo => "Efectivo",
+        FormaPagoEnum.Cheque => "Cheque",
+        FormaPagoEnum.Transferencia => "Transferencia",
+        FormaPagoEnum.TarjetaCredito => "Tarjeta Crédito",
+        FormaPagoEnum.TarjetaDebito => "Tarjeta Débito",
+        _ => "Otro"
+    };
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private void OnCantidadesTallaChanged()
+        => InvalidarComprobacionInventario();
+
+    private void InvalidarComprobacionInventario()
+    {
+        inventarioComprobado = false;
+        inventarioComprobadoEn = null;
+        comprobacionInventarioItems.Clear();
+        avisosComprobacionInventario.Clear();
+    }
+
+    private sealed class ProductoClienteOption
+    {
+        public Guid ProductoId { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public string? TallaBaseCalzado { get; set; }
+        public bool TieneVariantes { get; set; }
+        public bool UsaVariantesTalla { get; set; }
+        public bool UsaVariantesColor { get; set; }
+        public bool AplicaFraccionCalzado { get; set; }
+        public Guid? ClienteFraccionCalzadoId { get; set; }
+    }
+
+    private sealed class ProductoVarianteOption
+    {
+        public Guid Id { get; set; }
+        public Guid ProductoId { get; set; }
+        public string Sku { get; set; } = string.Empty;
+        public string? Talla { get; set; }
+        public string? Color { get; set; }
+        public decimal? Precio { get; set; }
+    }
+
+    private sealed class TallaClienteDisponible
+    {
+        public string Talla { get; set; } = string.Empty;
+        public int Orden { get; set; }
+        public bool EsTallaBaseDefault { get; set; }
+    }
+
+    private sealed class ComprobacionInventarioFuente
+    {
+        public CotizacionCategoria Categoria { get; set; }
+        public string Concepto { get; set; } = string.Empty;
+        public decimal Consumo { get; set; }
+        public Guid? MateriaPrimaId { get; set; }
+        public string? MateriaPrimaNombre { get; set; }
+        public string? MateriaPrimaUnidadMedida { get; set; }
+        public decimal? MateriaPrimaExistencia { get; set; }
+        public Guid? InsumoId { get; set; }
+        public string? InsumoNombre { get; set; }
+        public string? InsumoUnidadMedida { get; set; }
+        public decimal? InsumoExistencia { get; set; }
+    }
+
+    private sealed class ComprobacionInventarioItem
+    {
+        public string Tipo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string UnidadMedida { get; set; } = string.Empty;
+        public decimal CantidadRequerida { get; set; }
+        public decimal? ExistenciaInventario { get; set; }
+        public bool SinVinculoInventario { get; set; }
+        public HashSet<string> Referencias { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public decimal Faltante => ExistenciaInventario.HasValue ? Math.Max(0, CantidadRequerida - ExistenciaInventario.Value) : 0;
+        public bool HayFaltante => ExistenciaInventario.HasValue && CantidadRequerida > ExistenciaInventario.Value;
+        public string ReferenciasTexto => Referencias.Count == 0 ? string.Empty : string.Join(" • ", Referencias.OrderBy(x => x));
+        public string EstadoTexto => SinVinculoInventario
+            ? "Sin vínculo inventario"
+            : HayFaltante
+                ? "No alcanza"
+                : "Disponible";
+        public string EstadoClase => SinVinculoInventario
+            ? "ps-inventory-status--info"
+            : HayFaltante
+                ? "ps-inventory-status--warning"
+                : "ps-inventory-status--ok";
+    }
+
+    private enum PedidoModoCaptura
+    {
+        Productos = 1,
+        Servicios = 2,
+        Ambos = 3
+    }
+
+    private enum CapturaEscalaModo
+    {
+        Tallas = 1,
+        Fraccion = 2
+    }
+}

@@ -1,0 +1,1121 @@
+@page "/rrhh/dashboard"
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Dashboard RH</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver el dashboard de Recursos Humanos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-start justify-content-between mb-3 gap-3 flex-wrap">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-speedometer2 me-2"></i>Dashboard RH</h1>
+                <p class="text-muted mb-0">Resumen operativo por empresa de plantilla, asistencia, ausencias, banco de horas y nómina.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-secondary" href="/rrhh/empleados"><i class="bi bi-person-vcard me-1"></i>Empleados</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/asistencias"><i class="bi bi-calendar-check me-1"></i>Asistencias</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/nominas"><i class="bi bi-wallet2 me-1"></i>Nóminas</a>
+                <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>@(cargando ? "Actualizando..." : "Actualizar")</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white py-2">Filtros</div>
+            <div class="card-body py-3">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3 col-lg-2">
+                        <label class="form-label">Desde</label>
+                        <InputDate class="form-control" @bind-Value="filtroDesde" />
+                    </div>
+                    <div class="col-md-3 col-lg-2">
+                        <label class="form-label">Hasta</label>
+                        <InputDate class="form-control" @bind-Value="filtroHasta" />
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="small text-muted mb-1">Empresa</div>
+                        <div class="form-control bg-light">@empresaEtiqueta</div>
+                    </div>
+                    <div class="col-lg-4 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar</button>
+                        <button class="btn btn-outline-secondary" @onclick="RestablecerPeriodoAsync" disabled="@cargando">Mes actual</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Empleados activos</div>
+                        <div class="fs-4 fw-bold">@resumen.EmpleadosActivos</div>
+                        <div class="small text-muted">@resumen.DepartamentosActivos departamentos</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Asistencias</div>
+                        <div class="fs-4 fw-bold">@resumen.AsistenciasPeriodo</div>
+                        <div class="small text-muted">@resumen.RetardosPeriodo con retardo</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Por revisar</div>
+                        <div class="fs-4 fw-bold">@resumen.AsistenciasPorRevisar</div>
+                        <div class="small text-muted">@resumen.AsistenciasIncompletas incompletas</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Ausencias activas</div>
+                        <div class="fs-4 fw-bold">@resumen.AusenciasActivas</div>
+                        <div class="small text-muted">@resumen.AusenciasPendientes pendientes</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Horas extra</div>
+                        <div class="fs-4 fw-bold">@resumen.HorasExtraPeriodo.ToString("0.##")</div>
+                        <div class="small text-muted">Horas autorizadas</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <div class="small text-muted text-uppercase">Total nómina</div>
+                        <div class="fs-5 fw-bold">@resumen.TotalNominaPeriodo.ToString("C0")</div>
+                        <div class="small text-muted">@resumen.NominasPeriodo nómina(s) en rango</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_puedeVerNominas)
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm h-100 rh-trend-card">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <div class="small text-muted text-uppercase">Nómina vs período anterior</div>
+                                    <div class="fs-5 fw-bold">@resumen.TotalNominaPeriodo.ToString("C0")</div>
+                                </div>
+                                <span class="badge @ObtenerBadgeTendencia(comparativo.NominaVariacionPorcentaje)">@FormatoVariacion(comparativo.NominaVariacionPorcentaje)</span>
+                            </div>
+                            <div class="small text-muted mb-2">Anterior: @comparativo.NominaAnterior.ToString("C0")</div>
+                            <div class="rh-progress"><div class="rh-progress-bar bg-success" style="@ObtenerEstiloBarraHorizontal(comparativo.NominaProgresoVisual)"></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm h-100 rh-trend-card">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <div class="small text-muted text-uppercase">Tiempo extra vs período anterior</div>
+                                    <div class="fs-5 fw-bold">@resumen.TotalHorasExtraMontoPeriodo.ToString("C0")</div>
+                                </div>
+                                <span class="badge @ObtenerBadgeTendencia(comparativo.HorasExtraVariacionPorcentaje)">@FormatoVariacion(comparativo.HorasExtraVariacionPorcentaje)</span>
+                            </div>
+                            <div class="small text-muted mb-2">Anterior: @comparativo.HorasExtraAnterior.ToString("C0")</div>
+                            <div class="rh-progress"><div class="rh-progress-bar bg-primary" style="@ObtenerEstiloBarraHorizontal(comparativo.HorasExtraProgresoVisual)"></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm h-100 rh-trend-card">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <div class="small text-muted text-uppercase">Bonos vs período anterior</div>
+                                    <div class="fs-5 fw-bold">@resumen.TotalBonosPeriodo.ToString("C0")</div>
+                                </div>
+                                <span class="badge @ObtenerBadgeTendencia(comparativo.BonosVariacionPorcentaje)">@FormatoVariacion(comparativo.BonosVariacionPorcentaje)</span>
+                            </div>
+                            <div class="small text-muted mb-2">Anterior: @comparativo.BonosAnterior.ToString("C0")</div>
+                            <div class="rh-progress"><div class="rh-progress-bar bg-warning" style="@ObtenerEstiloBarraHorizontal(comparativo.BonosProgresoVisual)"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_puedeVerNominas)
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-xxl-8">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-success text-white py-2 d-flex justify-content-between align-items-center">
+                            <span>Nóminas pagadas por semana</span>
+                            <span class="badge bg-light text-success">@nominasPagadasPorSemana.Count semana(s)</span>
+                        </div>
+                        <div class="card-body">
+                            @if (nominasPagadasPorSemana.Count == 0)
+                            {
+                                <div class="text-muted small">No hay nóminas pagadas con fecha de pago en el rango seleccionado.</div>
+                            }
+                            else
+                            {
+                                <div class="rh-bar-chart">
+                                    @foreach (var semana in nominasPagadasPorSemana)
+                                    {
+                                        <div class="rh-bar-column" title="@($"{semana.Etiqueta}: {semana.TotalPagado:C2}")">
+                                            <div class="rh-bar-value">@semana.TotalPagado.ToString("C0")</div>
+                                            <div class="rh-bar-track">
+                                                <div class="rh-bar rh-bar-payroll" style="@ObtenerEstiloBarraVertical(semana.TotalPagado, MaxTotalNominaSemanal)"></div>
+                                            </div>
+                                            <div class="rh-bar-label">@semana.Etiqueta</div>
+                                            <div class="rh-bar-sub">@semana.Nominas nómina(s)</div>
+                                        </div>
+                                    }
+                                </div>
+
+                                <div class="row g-2 mt-3">
+                                    @foreach (var semana in nominasPagadasPorSemana)
+                                    {
+                                        <div class="col-md-6 col-xl-4">
+                                            <div class="border rounded p-2 small h-100">
+                                                <div class="d-flex justify-content-between fw-semibold mb-1">
+                                                    <span>@semana.Etiqueta</span>
+                                                    <span>@semana.TotalPagado.ToString("C0")</span>
+                                                </div>
+                                                <div class="text-muted">Horas extra: @semana.TotalHorasExtra.ToString("C0") · Bonos: @semana.TotalBonos.ToString("C0")</div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xxl-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-dark text-white py-2">Indicadores financieros</div>
+                        <div class="card-body">
+                            <div class="row g-3 mb-3">
+                                <div class="col-4">
+                                    <div class="rh-ring-card">
+                                        <div class="rh-ring" style="@($"--value:{resumen.PorcentajeHorasExtraSobreNomina.ToString("0.##", CultureInfo.InvariantCulture)};--ring-color:#0d6efd")">
+                                            <span>@resumen.PorcentajeHorasExtraSobreNomina.ToString("0.#")%</span>
+                                        </div>
+                                        <div class="small fw-semibold mt-2">Tiempo extra</div>
+                                        <div class="small text-muted">@resumen.TotalHorasExtraMontoPeriodo.ToString("C0")</div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="rh-ring-card">
+                                        <div class="rh-ring" style="@($"--value:{resumen.PorcentajeBonosSobreNomina.ToString("0.##", CultureInfo.InvariantCulture)};--ring-color:#198754")">
+                                            <span>@resumen.PorcentajeBonosSobreNomina.ToString("0.#")%</span>
+                                        </div>
+                                        <div class="small fw-semibold mt-2">Bonos</div>
+                                        <div class="small text-muted">@resumen.TotalBonosPeriodo.ToString("C0")</div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="rh-ring-card">
+                                        <div class="rh-ring" style="@($"--value:{resumen.PorcentajeDeduccionesSobreNomina.ToString("0.##", CultureInfo.InvariantCulture)};--ring-color:#dc3545")">
+                                            <span>@resumen.PorcentajeDeduccionesSobreNomina.ToString("0.#")%</span>
+                                        </div>
+                                        <div class="small fw-semibold mt-2">Deducciones</div>
+                                        <div class="small text-muted">@resumen.TotalDeduccionesMontoPeriodo.ToString("C0")</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column gap-3 small">
+                                <div>
+                                    <div class="d-flex justify-content-between mb-1"><span>Carga de horas extra</span><strong>@resumen.PorcentajeHorasExtraSobreNomina.ToString("0.#")%</strong></div>
+                                    <div class="rh-progress"><div class="rh-progress-bar bg-primary" style="@ObtenerEstiloBarraHorizontal(resumen.PorcentajeHorasExtraSobreNomina)"></div></div>
+                                </div>
+                                <div>
+                                    <div class="d-flex justify-content-between mb-1"><span>Peso de bonos</span><strong>@resumen.PorcentajeBonosSobreNomina.ToString("0.#")%</strong></div>
+                                    <div class="rh-progress"><div class="rh-progress-bar bg-success" style="@ObtenerEstiloBarraHorizontal(resumen.PorcentajeBonosSobreNomina)"></div></div>
+                                </div>
+                                <div>
+                                    <div class="d-flex justify-content-between mb-1"><span>Carga de deducciones</span><strong>@resumen.PorcentajeDeduccionesSobreNomina.ToString("0.#")%</strong></div>
+                                    <div class="rh-progress"><div class="rh-progress-bar bg-danger" style="@ObtenerEstiloBarraHorizontal(resumen.PorcentajeDeduccionesSobreNomina)"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-xl-7">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-primary text-white py-2">Empleados por departamento</div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Departamento</th>
+                                        <th class="text-end">Empleados</th>
+                                        <th class="text-end">%</th>
+                                        <th class="text-end">IMSS</th>
+                                        <th class="text-end">Infonavit</th>
+                                        <th class="text-end">Semanal</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (departamentos.Count == 0)
+                                    {
+                                        <tr><td colspan="6" class="text-center text-muted py-3">No hay empleados activos para resumir.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in departamentos)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.Nombre</div>
+                                                    <div class="rh-progress mt-2"><div class="rh-progress-bar bg-primary" style="@ObtenerEstiloBarraHorizontal(item.PorcentajePlantilla)"></div></div>
+                                                </td>
+                                                <td class="text-end fw-semibold">@item.TotalEmpleados</td>
+                                                <td class="text-end">@item.PorcentajePlantilla.ToString("0.#")%</td>
+                                                <td class="text-end">@item.EmpleadosConImss</td>
+                                                <td class="text-end">@item.EmpleadosConInfonavit</td>
+                                                <td class="text-end">@item.EmpleadosSemanales</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-5">
+                @if (_puedeVerNominas)
+                {
+                    <div class="card border-0 shadow-sm mb-3">
+                        <div class="card-header bg-warning text-dark py-2 d-flex justify-content-between align-items-center">
+                            <span>% de bonos por área</span>
+                            <span class="badge bg-light text-dark">@bonosPorArea.Count área(s)</span>
+                        </div>
+                        <div class="card-body">
+                            @if (bonosPorArea.Count == 0)
+                            {
+                                <div class="text-muted small">No hay bonos distribuidos en el rango seleccionado.</div>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-column gap-3">
+                                    @foreach (var item in bonosPorArea)
+                                    {
+                                        <div>
+                                            <div class="d-flex justify-content-between align-items-center small mb-1">
+                                                <div>
+                                                    <span class="fw-semibold">@item.Area</span>
+                                                    <span class="text-muted"> · @item.Empleados empleado(s)</span>
+                                                </div>
+                                                <div class="text-end">
+                                                    <strong>@item.Porcentaje.ToString("0.#")%</strong>
+                                                    <span class="text-muted ms-1">@item.TotalBonos.ToString("C0")</span>
+                                                </div>
+                                            </div>
+                                            <div class="rh-progress"><div class="rh-progress-bar bg-warning" style="@ObtenerEstiloBarraHorizontal(item.Porcentaje)"></div></div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-secondary text-white py-2">Composición de plantilla</div>
+                    <div class="card-body">
+                        <div class="row g-3 small mb-3">
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted text-uppercase small">Con IMSS</div>
+                                    <div class="fs-5 fw-semibold">@resumen.EmpleadosConImss</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted text-uppercase small">Con Infonavit</div>
+                                    <div class="fs-5 fw-semibold">@resumen.EmpleadosConInfonavit</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted text-uppercase small">Sin departamento</div>
+                                    <div class="fs-5 fw-semibold">@resumen.EmpleadosSinDepartamento</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted text-uppercase small">Agentes activos</div>
+                                    <div class="fs-5 fw-semibold">@resumen.AgentesActivos</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Periodicidad</th>
+                                        <th class="text-end">Empleados</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in periodicidades)
+                                    {
+                                        <tr>
+                                            <td>@item.Nombre</td>
+                                            <td class="text-end fw-semibold">@item.TotalEmpleados</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-warning-subtle py-2">Alertas operativas</div>
+                    <div class="card-body">
+                        @if (alertas.Count == 0)
+                        {
+                            <div class="text-muted small mb-0">Sin alertas críticas en el rango seleccionado.</div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-column gap-2 small">
+                                @foreach (var alerta in alertas)
+                                {
+                                    <div class="border rounded px-3 py-2 @alerta.CssClass">
+                                        <div class="fw-semibold">@alerta.Titulo</div>
+                                        <div>@alerta.Descripcion</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-xl-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-dark text-white py-2">Operación RH</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                                <tr>
+                                    <th class="ps-3">Faltas</th>
+                                    <td class="text-end pe-3">@resumen.FaltasPeriodo</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Retardos</th>
+                                    <td class="text-end pe-3">@resumen.RetardosPeriodo</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Asistencias con revisión</th>
+                                    <td class="text-end pe-3">@resumen.AsistenciasPorRevisar</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Horas banco en rango</th>
+                                    <td class="text-end pe-3">@resumen.HorasBancoPeriodo.ToString("0.##") hrs</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Saldo banco actual</th>
+                                    <td class="text-end pe-3">@resumen.HorasBancoSaldoActual.ToString("0.##") hrs</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Agentes con error</th>
+                                    <td class="text-end pe-3">@resumen.AgentesConError</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-success text-white py-2">Nómina y prenómina</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                                <tr>
+                                    <th class="ps-3">Prenóminas cerradas</th>
+                                    <td class="text-end pe-3">@resumen.PrenominasCerradas</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Prenóminas aplicadas</th>
+                                    <td class="text-end pe-3">@resumen.PrenominasAplicadas</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Nóminas borrador</th>
+                                    <td class="text-end pe-3">@resumen.NominasBorrador</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Nóminas pagadas</th>
+                                    <td class="text-end pe-3">@resumen.NominasPagadas</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Última nómina</th>
+                                    <td class="text-end pe-3">@resumen.UltimaNominaPeriodo</td>
+                                </tr>
+                                <tr>
+                                    <th class="ps-3">Monto última nómina</th>
+                                    <td class="text-end pe-3">@resumen.TotalUltimaNomina.ToString("C2")</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Nóminas recientes del rango</h6>
+                <span class="badge text-bg-light">@nominasRecientes.Count registro(s)</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Folio</th>
+                                <th>Periodo</th>
+                                <th>Fechas</th>
+                                <th class="text-center">Estatus</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (nominasRecientes.Count == 0)
+                            {
+                                <tr><td colspan="5" class="text-center text-muted py-3">No hay nóminas en el rango seleccionado.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in nominasRecientes)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@item.Folio</td>
+                                        <td>@item.Periodo</td>
+                                        <td>@item.RangoFechas</td>
+                                        <td class="text-center"><span class="badge @ObtenerBadgeNomina(item.Estatus)">@item.Estatus</span></td>
+                                        <td class="text-end fw-semibold">@item.Total.ToString("C2")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly DateTime _hoy = DateTime.Today;
+    private DateTime filtroDesde;
+    private DateTime filtroHasta;
+    private string? error;
+    private bool cargando;
+    private bool _puedeVer;
+    private bool _puedeVerEmpleados;
+    private bool _puedeVerNominas;
+    private Guid _empresaId;
+    private string empresaEtiqueta = "Empresa actual";
+    private DashboardResumenVm resumen = new();
+    private DashboardComparativoVm comparativo = new();
+    private List<DepartamentoResumenVm> departamentos = [];
+    private List<PeriodicidadResumenVm> periodicidades = [];
+    private List<NominaResumenVm> nominasRecientes = [];
+    private List<NominaPagadaSemanaVm> nominasPagadasPorSemana = [];
+    private List<BonoAreaVm> bonosPorArea = [];
+    private List<DashboardAlertaVm> alertas = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        filtroDesde = new DateTime(_hoy.Year, _hoy.Month, 1);
+        filtroHasta = _hoy;
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVerEmpleados = state.User.HasClaim("Capacidad", "empleados.ver");
+        _puedeVerNominas = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeVer = _puedeVerEmpleados || _puedeVerNominas;
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+        empresaEtiqueta = state.User.FindFirst("Empresa")?.Value ?? state.User.FindFirst("EmpresaNombre")?.Value ?? "Empresa actual";
+    }
+
+    private async Task RestablecerPeriodoAsync()
+    {
+        filtroDesde = new DateTime(_hoy.Year, _hoy.Month, 1);
+        filtroHasta = _hoy;
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        if (!_puedeVer || _empresaId == Guid.Empty)
+        {
+            return;
+        }
+
+        error = null;
+        cargando = true;
+
+        try
+        {
+            if (filtroHasta.Date < filtroDesde.Date)
+            {
+                (filtroDesde, filtroHasta) = (filtroHasta.Date, filtroDesde.Date);
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var fechaDesde = DateOnly.FromDateTime(filtroDesde.Date);
+            var fechaHasta = DateOnly.FromDateTime(filtroHasta.Date);
+
+            var empleadosActivos = await db.Empleados
+                .AsNoTracking()
+                .Where(e => e.EmpresaId == _empresaId && e.IsActive)
+                .Select(e => new EmpleadoResumenRaw
+                {
+                    Departamento = e.Departamento,
+                    AplicaImss = e.AplicaImss,
+                    AplicaInfonavit = e.AplicaInfonavit,
+                    PeriodicidadPago = e.PeriodicidadPago
+                })
+                .ToListAsync();
+
+            var asistencias = await db.RrhhAsistencias
+                .AsNoTracking()
+                .Where(a => a.EmpresaId == _empresaId && a.Fecha >= fechaDesde && a.Fecha <= fechaHasta)
+                .Select(a => new AsistenciaResumenRaw
+                {
+                    Estatus = a.Estatus,
+                    RequiereRevision = a.RequiereRevision,
+                    MinutosRetardo = a.MinutosRetardo,
+                    MinutosExtraAutorizadosPago = a.MinutosExtraAutorizadosPago,
+                    MinutosExtraAutorizadosBanco = a.MinutosExtraAutorizadosBanco
+                })
+                .ToListAsync();
+
+            var ausencias = await db.RrhhAusencias
+                .AsNoTracking()
+                .Where(a => a.EmpresaId == _empresaId && a.FechaInicio <= fechaHasta && a.FechaFin >= fechaDesde)
+                .Select(a => new AusenciaResumenRaw
+                {
+                    Estatus = a.Estatus
+                })
+                .ToListAsync();
+
+            var agentes = await db.RrhhEstadosAgente
+                .AsNoTracking()
+                .Where(a => a.EmpresaId == _empresaId)
+                .Select(a => new AgenteResumenRaw
+                {
+                    UltimoHeartbeatUtc = a.UltimoHeartbeatUtc,
+                    UltimoError = a.UltimoError
+                })
+                .ToListAsync();
+
+            var nominas = await db.Nominas
+                .AsNoTracking()
+                .Include(n => n.Detalles)
+                .Where(n => n.EmpresaId == _empresaId && n.FechaInicio.Date <= filtroHasta.Date && n.FechaFin.Date >= filtroDesde.Date)
+                .OrderByDescending(n => n.FechaInicio)
+                .ToListAsync();
+
+            var prenominas = await db.Prenominas
+                .AsNoTracking()
+                .Where(p => p.EmpresaId == _empresaId && p.FechaInicio.Date <= filtroHasta.Date && p.FechaFin.Date >= filtroDesde.Date)
+                .ToListAsync();
+
+            var movimientosBancoPeriodo = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.EmpresaId == _empresaId && m.Fecha >= fechaDesde && m.Fecha <= fechaHasta)
+                .Select(m => new MovimientoBancoResumenRaw
+                {
+                    TipoMovimiento = m.TipoMovimiento,
+                    Horas = m.Horas
+                })
+                .ToListAsync();
+
+            var movimientosBancoTotales = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.EmpresaId == _empresaId)
+                .Select(m => new MovimientoBancoResumenRaw
+                {
+                    TipoMovimiento = m.TipoMovimiento,
+                    Horas = m.Horas
+                })
+                .ToListAsync();
+
+            var diasPeriodo = Math.Max(1, (filtroHasta.Date - filtroDesde.Date).Days + 1);
+            var previoHasta = filtroDesde.Date.AddDays(-1);
+            var previoDesde = previoHasta.AddDays(-(diasPeriodo - 1));
+
+            var detallesNomina = _puedeVerNominas
+                ? await db.NominaDetalles
+                    .AsNoTracking()
+                    .Include(d => d.Nomina)
+                    .Include(d => d.Empleado)
+                    .Where(d => d.Nomina.EmpresaId == _empresaId && d.Nomina.FechaInicio.Date <= filtroHasta.Date && d.Nomina.FechaFin.Date >= filtroDesde.Date)
+                    .ToListAsync()
+                : [];
+
+            var nominasPrevias = _puedeVerNominas
+                ? await db.Nominas
+                    .AsNoTracking()
+                    .Include(n => n.Detalles)
+                    .Where(n => n.EmpresaId == _empresaId && n.FechaInicio.Date <= previoHasta && n.FechaFin.Date >= previoDesde)
+                    .ToListAsync()
+                : [];
+
+            var detallesNominaPrevios = _puedeVerNominas
+                ? await db.NominaDetalles
+                    .AsNoTracking()
+                    .Include(d => d.Nomina)
+                    .Where(d => d.Nomina.EmpresaId == _empresaId && d.Nomina.FechaInicio.Date <= previoHasta && d.Nomina.FechaFin.Date >= previoDesde)
+                    .ToListAsync()
+                : [];
+
+            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void ConstruirResumen(
+        List<EmpleadoResumenRaw> empleadosActivos,
+        List<AsistenciaResumenRaw> asistencias,
+        List<AusenciaResumenRaw> ausencias,
+        List<AgenteResumenRaw> agentes,
+        List<Nomina> nominas,
+        List<Prenomina> prenominas,
+        List<MovimientoBancoResumenRaw> movimientosBancoPeriodo,
+        List<MovimientoBancoResumenRaw> movimientosBancoTotales,
+        List<NominaDetalle> detallesNomina,
+        List<Nomina> nominasPrevias,
+        List<NominaDetalle> detallesNominaPrevios)
+    {
+        var totalEmpleados = empleadosActivos.Count;
+        var heartbeatLimite = DateTime.UtcNow.AddHours(-12);
+        var ultimaNomina = nominas.FirstOrDefault();
+        var totalBonos = detallesNomina.Sum(d => d.MontoBono);
+        var totalHorasExtraMonto = detallesNomina.Sum(d => d.MontoHorasExtra);
+        var totalDeduccionesMonto = detallesNomina.Sum(d => d.Deducciones + d.CuotaImssObrera + d.MontoInfonavit);
+        var totalNominaAnterior = nominasPrevias.Sum(n => n.TotalNomina);
+        var totalBonosAnterior = detallesNominaPrevios.Sum(d => d.MontoBono);
+        var totalHorasExtraAnterior = detallesNominaPrevios.Sum(d => d.MontoHorasExtra);
+        var nominasPagadas = detallesNomina
+            .Where(d => d.Nomina.Estatus == EstatusNomina.Pagada)
+            .GroupBy(d => ObtenerInicioSemana((d.Nomina.FechaPago ?? d.Nomina.FechaFin).Date))
+            .Select(g => new NominaPagadaSemanaVm
+            {
+                InicioSemana = g.Key,
+                Etiqueta = $"{ObtenerNumeroSemana(g.Key):00} · {g.Key:dd MMM}",
+                TotalPagado = g.Sum(d => d.TotalPagar),
+                TotalHorasExtra = g.Sum(d => d.MontoHorasExtra),
+                TotalBonos = g.Sum(d => d.MontoBono),
+                TotalDeducciones = g.Sum(d => d.Deducciones + d.CuotaImssObrera + d.MontoInfonavit),
+                Nominas = g.Select(d => d.NominaId).Distinct().Count()
+            })
+            .OrderBy(g => g.InicioSemana)
+            .ToList();
+
+        nominasPagadasPorSemana = nominasPagadas;
+        bonosPorArea = totalBonos <= 0m
+            ? []
+            : detallesNomina
+                .GroupBy(d => string.IsNullOrWhiteSpace(d.Empleado.Departamento) ? "Sin departamento" : d.Empleado.Departamento.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new BonoAreaVm
+                {
+                    Area = g.Key,
+                    TotalBonos = g.Sum(d => d.MontoBono),
+                    Porcentaje = totalBonos <= 0m ? 0m : Math.Round(g.Sum(d => d.MontoBono) * 100m / totalBonos, 1),
+                    Empleados = g.Select(d => d.EmpleadoId).Distinct().Count()
+                })
+                .Where(g => g.TotalBonos > 0m)
+                .OrderByDescending(g => g.TotalBonos)
+                .ThenBy(g => g.Area)
+                .ToList();
+
+        comparativo = new DashboardComparativoVm
+        {
+            NominaAnterior = totalNominaAnterior,
+            HorasExtraAnterior = totalHorasExtraAnterior,
+            BonosAnterior = totalBonosAnterior,
+            NominaVariacionPorcentaje = CalcularVariacionPorcentaje(nominas.Sum(n => n.TotalNomina), totalNominaAnterior),
+            HorasExtraVariacionPorcentaje = CalcularVariacionPorcentaje(totalHorasExtraMonto, totalHorasExtraAnterior),
+            BonosVariacionPorcentaje = CalcularVariacionPorcentaje(totalBonos, totalBonosAnterior),
+            NominaProgresoVisual = CalcularRatioVisual(nominas.Sum(n => n.TotalNomina), totalNominaAnterior),
+            HorasExtraProgresoVisual = CalcularRatioVisual(totalHorasExtraMonto, totalHorasExtraAnterior),
+            BonosProgresoVisual = CalcularRatioVisual(totalBonos, totalBonosAnterior)
+        };
+
+        departamentos = empleadosActivos
+            .GroupBy(e => string.IsNullOrWhiteSpace(e.Departamento) ? "Sin departamento" : e.Departamento.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DepartamentoResumenVm
+            {
+                Nombre = g.Key,
+                TotalEmpleados = g.Count(),
+                EmpleadosConImss = g.Count(e => e.AplicaImss),
+                EmpleadosConInfonavit = g.Count(e => e.AplicaInfonavit),
+                EmpleadosSemanales = g.Count(e => e.PeriodicidadPago == PeriodicidadPago.Semanal),
+                PorcentajePlantilla = totalEmpleados == 0 ? 0m : Math.Round((decimal)g.Count() * 100m / totalEmpleados, 1)
+            })
+            .OrderByDescending(d => d.TotalEmpleados)
+            .ThenBy(d => d.Nombre)
+            .ToList();
+
+        periodicidades = Enum.GetValues<PeriodicidadPago>()
+            .Select(periodicidad => new PeriodicidadResumenVm
+            {
+                Nombre = periodicidad.ToString(),
+                TotalEmpleados = empleadosActivos.Count(e => e.PeriodicidadPago == periodicidad)
+            })
+            .ToList();
+
+        nominasRecientes = nominas
+            .Take(6)
+            .Select(n => new NominaResumenVm
+            {
+                Folio = string.IsNullOrWhiteSpace(n.Folio) ? "—" : n.Folio,
+                Periodo = n.Periodo,
+                RangoFechas = $"{n.FechaInicio:dd/MM/yyyy} - {n.FechaFin:dd/MM/yyyy}",
+                Estatus = n.Estatus,
+                Total = n.TotalNomina
+            })
+            .ToList();
+
+        resumen = new DashboardResumenVm
+        {
+            EmpleadosActivos = totalEmpleados,
+            EmpleadosConImss = empleadosActivos.Count(e => e.AplicaImss),
+            EmpleadosConInfonavit = empleadosActivos.Count(e => e.AplicaInfonavit),
+            EmpleadosSinDepartamento = empleadosActivos.Count(e => string.IsNullOrWhiteSpace(e.Departamento)),
+            DepartamentosActivos = departamentos.Count,
+            AsistenciasPeriodo = asistencias.Count,
+            RetardosPeriodo = asistencias.Count(a => a.MinutosRetardo > 0 || a.Estatus == RrhhAsistenciaEstatus.Retardo),
+            AsistenciasPorRevisar = asistencias.Count(a => a.RequiereRevision || a.Estatus == RrhhAsistenciaEstatus.Pendiente || a.Estatus == RrhhAsistenciaEstatus.Incompleta || a.Estatus == RrhhAsistenciaEstatus.MarcaNoReconocida),
+            AsistenciasIncompletas = asistencias.Count(a => a.Estatus == RrhhAsistenciaEstatus.Incompleta || a.Estatus == RrhhAsistenciaEstatus.MarcaNoReconocida),
+            FaltasPeriodo = asistencias.Count(a => a.Estatus == RrhhAsistenciaEstatus.Falta),
+            AusenciasActivas = ausencias.Count(a => a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada),
+            AusenciasPendientes = ausencias.Count(a => a.Estatus == EstatusAusenciaRrhh.Solicitada),
+            HorasExtraPeriodo = Math.Round(asistencias.Sum(a => a.MinutosExtraAutorizadosPago + a.MinutosExtraAutorizadosBanco) / 60m, 2),
+            HorasBancoPeriodo = CalcularHorasBanco(movimientosBancoPeriodo),
+            HorasBancoSaldoActual = CalcularHorasBanco(movimientosBancoTotales),
+            PrenominasCerradas = prenominas.Count(p => p.Estatus == EstatusPrenomina.Cerrada),
+            PrenominasAplicadas = prenominas.Count(p => p.Estatus == EstatusPrenomina.Aplicada),
+            NominasPeriodo = nominas.Count,
+            NominasBorrador = nominas.Count(n => n.Estatus == EstatusNomina.Borrador),
+            NominasPagadas = nominas.Count(n => n.Estatus == EstatusNomina.Pagada),
+            TotalNominaPeriodo = nominas.Sum(n => n.TotalNomina),
+            TotalBonosPeriodo = totalBonos,
+            TotalHorasExtraMontoPeriodo = totalHorasExtraMonto,
+            TotalDeduccionesMontoPeriodo = totalDeduccionesMonto,
+            PorcentajeBonosSobreNomina = CalcularPorcentaje(totalBonos, nominas.Sum(n => n.TotalNomina)),
+            PorcentajeHorasExtraSobreNomina = CalcularPorcentaje(totalHorasExtraMonto, nominas.Sum(n => n.TotalNomina)),
+            PorcentajeDeduccionesSobreNomina = CalcularPorcentaje(totalDeduccionesMonto, nominas.Sum(n => n.TotalNomina)),
+            UltimaNominaPeriodo = string.IsNullOrWhiteSpace(ultimaNomina?.Periodo) ? "—" : ultimaNomina.Periodo,
+            TotalUltimaNomina = ultimaNomina?.TotalNomina ?? 0m,
+            AgentesActivos = agentes.Count(a => a.UltimoHeartbeatUtc.HasValue && a.UltimoHeartbeatUtc.Value >= heartbeatLimite),
+            AgentesConError = agentes.Count(a => !string.IsNullOrWhiteSpace(a.UltimoError))
+        };
+
+        alertas = [];
+        if (resumen.AsistenciasPorRevisar > 0)
+        {
+            alertas.Add(new DashboardAlertaVm
+            {
+                Titulo = "Asistencias pendientes de revisión",
+                Descripcion = $"Hay {resumen.AsistenciasPorRevisar} asistencia(s) en el rango que requieren intervención manual.",
+                CssClass = "bg-warning-subtle"
+            });
+        }
+
+        if (resumen.AgentesConError > 0)
+        {
+            alertas.Add(new DashboardAlertaVm
+            {
+                Titulo = "Agentes con error",
+                Descripcion = $"Se detectaron {resumen.AgentesConError} agente(s) con error reportado.",
+                CssClass = "bg-danger-subtle"
+            });
+        }
+
+        if (resumen.NominasBorrador > 0)
+        {
+            alertas.Add(new DashboardAlertaVm
+            {
+                Titulo = "Nóminas pendientes de cierre",
+                Descripcion = $"Hay {resumen.NominasBorrador} nómina(s) en borrador dentro del rango seleccionado.",
+                CssClass = "bg-info-subtle"
+            });
+        }
+
+        if (resumen.EmpleadosSinDepartamento > 0)
+        {
+            alertas.Add(new DashboardAlertaVm
+            {
+                Titulo = "Empleados sin departamento",
+                Descripcion = $"Hay {resumen.EmpleadosSinDepartamento} empleado(s) activos sin departamento asignado.",
+                CssClass = "bg-light"
+            });
+        }
+    }
+
+    private static decimal CalcularHorasBanco(IEnumerable<MovimientoBancoResumenRaw> movimientos)
+        => Math.Round(movimientos.Sum(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo ? -m.Horas : m.Horas), 2);
+
+    private decimal MaxTotalNominaSemanal => nominasPagadasPorSemana.Count == 0 ? 0m : nominasPagadasPorSemana.Max(n => n.TotalPagado);
+
+    private static decimal CalcularPorcentaje(decimal parcial, decimal total)
+        => total <= 0m ? 0m : Math.Round((parcial * 100m) / total, 1);
+
+    private static decimal CalcularVariacionPorcentaje(decimal actual, decimal anterior)
+    {
+        if (anterior == 0m)
+        {
+            return actual == 0m ? 0m : 100m;
+        }
+
+        return Math.Round(((actual - anterior) * 100m) / anterior, 1);
+    }
+
+    private static decimal CalcularRatioVisual(decimal actual, decimal anterior)
+    {
+        if (actual <= 0m && anterior <= 0m)
+        {
+            return 0m;
+        }
+
+        var baseComparacion = Math.Max(actual, anterior);
+        if (baseComparacion <= 0m)
+        {
+            return 0m;
+        }
+
+        return Math.Round((actual * 100m) / baseComparacion, 1);
+    }
+
+    private static DateTime ObtenerInicioSemana(DateTime fecha)
+    {
+        var diferencia = ((int)fecha.DayOfWeek + 6) % 7;
+        return fecha.Date.AddDays(-diferencia);
+    }
+
+    private static int ObtenerNumeroSemana(DateTime fecha)
+        => CultureInfo.GetCultureInfo("es-MX").Calendar.GetWeekOfYear(fecha, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+
+    private static string ObtenerEstiloBarraVertical(decimal valor, decimal maximo)
+    {
+        var altura = maximo <= 0m ? 18m : Math.Max(18m, Math.Round((valor / maximo) * 180m, 0));
+        return $"height:{altura.ToString("0", CultureInfo.InvariantCulture)}px;";
+    }
+
+    private static string ObtenerEstiloBarraHorizontal(decimal porcentaje)
+    {
+        var ancho = Math.Min(100m, Math.Max(0m, porcentaje));
+        return $"width:{ancho.ToString("0.##", CultureInfo.InvariantCulture)}%;";
+    }
+
+    private static string FormatoVariacion(decimal valor)
+        => $"{(valor >= 0 ? "+" : string.Empty)}{valor.ToString("0.#", CultureInfo.InvariantCulture)}%";
+
+    private static string ObtenerBadgeTendencia(decimal variacion)
+        => variacion switch
+        {
+            > 0 => "bg-success-subtle text-success-emphasis",
+            < 0 => "bg-danger-subtle text-danger-emphasis",
+            _ => "bg-secondary-subtle text-secondary-emphasis"
+        };
+
+    private static string ObtenerBadgeNomina(EstatusNomina estatus) => estatus switch
+    {
+        EstatusNomina.Borrador => "bg-secondary",
+        EstatusNomina.Aprobada => "bg-info text-dark",
+        EstatusNomina.Pagada => "bg-success",
+        EstatusNomina.Cancelada => "bg-danger",
+        _ => "bg-light text-dark"
+    };
+
+    private sealed class DashboardResumenVm
+    {
+        public int EmpleadosActivos { get; set; }
+        public int EmpleadosConImss { get; set; }
+        public int EmpleadosConInfonavit { get; set; }
+        public int EmpleadosSinDepartamento { get; set; }
+        public int DepartamentosActivos { get; set; }
+        public int AsistenciasPeriodo { get; set; }
+        public int RetardosPeriodo { get; set; }
+        public int AsistenciasPorRevisar { get; set; }
+        public int AsistenciasIncompletas { get; set; }
+        public int FaltasPeriodo { get; set; }
+        public int AusenciasActivas { get; set; }
+        public int AusenciasPendientes { get; set; }
+        public decimal HorasExtraPeriodo { get; set; }
+        public decimal HorasBancoPeriodo { get; set; }
+        public decimal HorasBancoSaldoActual { get; set; }
+        public int PrenominasCerradas { get; set; }
+        public int PrenominasAplicadas { get; set; }
+        public int NominasPeriodo { get; set; }
+        public int NominasBorrador { get; set; }
+        public int NominasPagadas { get; set; }
+        public decimal TotalNominaPeriodo { get; set; }
+        public decimal TotalBonosPeriodo { get; set; }
+        public decimal TotalHorasExtraMontoPeriodo { get; set; }
+        public decimal TotalDeduccionesMontoPeriodo { get; set; }
+        public decimal PorcentajeBonosSobreNomina { get; set; }
+        public decimal PorcentajeHorasExtraSobreNomina { get; set; }
+        public decimal PorcentajeDeduccionesSobreNomina { get; set; }
+        public string UltimaNominaPeriodo { get; set; } = "—";
+        public decimal TotalUltimaNomina { get; set; }
+        public int AgentesActivos { get; set; }
+        public int AgentesConError { get; set; }
+    }
+
+    private sealed class DashboardComparativoVm
+    {
+        public decimal NominaAnterior { get; set; }
+        public decimal HorasExtraAnterior { get; set; }
+        public decimal BonosAnterior { get; set; }
+        public decimal NominaVariacionPorcentaje { get; set; }
+        public decimal HorasExtraVariacionPorcentaje { get; set; }
+        public decimal BonosVariacionPorcentaje { get; set; }
+        public decimal NominaProgresoVisual { get; set; }
+        public decimal HorasExtraProgresoVisual { get; set; }
+        public decimal BonosProgresoVisual { get; set; }
+    }
+
+    private sealed class DepartamentoResumenVm
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public int TotalEmpleados { get; set; }
+        public int EmpleadosConImss { get; set; }
+        public int EmpleadosConInfonavit { get; set; }
+        public int EmpleadosSemanales { get; set; }
+        public decimal PorcentajePlantilla { get; set; }
+    }
+
+    private sealed class PeriodicidadResumenVm
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public int TotalEmpleados { get; set; }
+    }
+
+    private sealed class NominaResumenVm
+    {
+        public string Folio { get; set; } = string.Empty;
+        public string Periodo { get; set; } = string.Empty;
+        public string RangoFechas { get; set; } = string.Empty;
+        public EstatusNomina Estatus { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    private sealed class NominaPagadaSemanaVm
+    {
+        public DateTime InicioSemana { get; set; }
+        public string Etiqueta { get; set; } = string.Empty;
+        public decimal TotalPagado { get; set; }
+        public decimal TotalHorasExtra { get; set; }
+        public decimal TotalBonos { get; set; }
+        public decimal TotalDeducciones { get; set; }
+        public int Nominas { get; set; }
+    }
+
+    private sealed class BonoAreaVm
+    {
+        public string Area { get; set; } = string.Empty;
+        public decimal TotalBonos { get; set; }
+        public decimal Porcentaje { get; set; }
+        public int Empleados { get; set; }
+    }
+
+    private sealed class DashboardAlertaVm
+    {
+        public string Titulo { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public string CssClass { get; set; } = string.Empty;
+    }
+
+    private sealed class EmpleadoResumenRaw
+    {
+        public string? Departamento { get; set; }
+        public bool AplicaImss { get; set; }
+        public bool AplicaInfonavit { get; set; }
+        public PeriodicidadPago PeriodicidadPago { get; set; }
+    }
+
+    private sealed class AsistenciaResumenRaw
+    {
+        public RrhhAsistenciaEstatus Estatus { get; set; }
+        public bool RequiereRevision { get; set; }
+        public int MinutosRetardo { get; set; }
+        public int MinutosExtraAutorizadosPago { get; set; }
+        public int MinutosExtraAutorizadosBanco { get; set; }
+    }
+
+    private sealed class AusenciaResumenRaw
+    {
+        public EstatusAusenciaRrhh Estatus { get; set; }
+    }
+
+    private sealed class MovimientoBancoResumenRaw
+    {
+        public TipoMovimientoBancoHorasRrhh TipoMovimiento { get; set; }
+        public decimal Horas { get; set; }
+    }
+
+    private sealed class AgenteResumenRaw
+    {
+        public DateTime? UltimoHeartbeatUtc { get; set; }
+        public string? UltimoError { get; set; }
+    }
+}

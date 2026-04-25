@@ -1,0 +1,675 @@
+@page "/rrhh/asistencias"
+@using System.Text
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IConfiguration Configuration
+@inject IRrhhAsistenciaProcessor RrhhAsistenciaProcessor
+@inject IRrhhTiempoExtraResolutionService TiempoExtraResolutionService
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Asistencias</PageTitle>
+
+<style>
+    .asis-table th {
+        font-size: .74rem;
+        white-space: nowrap;
+    }
+
+    .asis-cell-title {
+        font-size: .86rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .asis-cell-subtitle {
+        font-size: .74rem;
+        color: #6b7280;
+        line-height: 1.35;
+    }
+
+    .asis-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .18rem .55rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .asis-chip--muted {
+        background: #f3f4f6;
+        color: #4b5563;
+    }
+
+    .asis-chip--warn {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .asis-chip--danger {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .asis-chip--success {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .asis-chip--info {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .asis-chip--resolved {
+        background: #ede9fe;
+        color: #6d28d9;
+    }
+
+    .asis-chip--dark {
+        background: #e2e8f0;
+        color: #1e293b;
+    }
+
+    .asis-help-button {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,.45);
+        background: rgba(255,255,255,.14);
+        color: #fff;
+    }
+
+    .asis-help-list {
+        display: flex;
+        flex-direction: column;
+        gap: .6rem;
+        margin: 0;
+        padding-left: 1rem;
+    }
+
+    .asis-stack {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+    }
+
+    .asis-meta-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem;
+    }
+
+    .asis-note {
+        font-size: .74rem;
+        line-height: 1.4;
+        color: #475569;
+    }
+
+    .asis-note--muted {
+        color: #94a3b8;
+    }
+
+    .asis-break-card {
+        border: 1px solid #e5e7eb;
+        border-radius: .75rem;
+        padding: .55rem .65rem;
+        background: #fff;
+    }
+
+    .asis-break-card--success {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+    }
+
+    .asis-break-card--warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+    }
+
+    .asis-break-card--info {
+        border-color: #bfdbfe;
+        background: #eff6ff;
+    }
+
+    .asis-break-card--muted {
+        background: #f8fafc;
+    }
+
+    .asis-modal-tabs .nav-link {
+        padding: .55rem .8rem;
+        font-size: .82rem;
+        color: #475569;
+    }
+
+    .asis-modal-tabs .nav-link.active {
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    .asis-summary-strip {
+        background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    }
+
+    .asis-mini-stat {
+        border: 1px solid #e2e8f0;
+        border-radius: .8rem;
+        background: #fff;
+        padding: .7rem .8rem;
+        height: 100%;
+    }
+
+    .asis-mini-stat__label {
+        font-size: .72rem;
+        color: #64748b;
+        margin-bottom: .2rem;
+    }
+
+    .asis-mini-stat__value {
+        font-size: .92rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+
+    .asis-section-title {
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .02em;
+        text-transform: uppercase;
+        color: #475569;
+        margin-bottom: .75rem;
+    }
+
+    .asis-advisor-card {
+        border: 1px solid #e2e8f0;
+        border-radius: .9rem;
+        background: #fff;
+        padding: .95rem 1rem;
+    }
+
+    .asis-advisor-card__title {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+
+    .asis-advisor-card__text {
+        font-size: .82rem;
+        color: #475569;
+        line-height: 1.45;
+    }
+
+    .asis-timeline {
+        display: flex;
+        align-items: stretch;
+        width: 100%;
+        min-height: 1.1rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e2e8f0;
+        box-shadow: inset 0 0 0 1px #cbd5e1;
+    }
+
+    .asis-timeline__segment {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: .5rem;
+        transition: width .2s ease;
+    }
+
+    .asis-timeline__segment--worked {
+        background: #16a34a;
+    }
+
+    .asis-timeline__segment--break {
+        background: #facc15;
+    }
+
+    .asis-timeline__segment--permission {
+        background: #38bdf8;
+    }
+
+    .asis-timeline__segment--missing {
+        background: #ef4444;
+    }
+
+    .asis-timeline__segment--extra {
+        background: #8b5cf6;
+    }
+
+    .asis-timeline__segment--neutral {
+        background: #94a3b8;
+    }
+
+    .asis-timeline-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+    }
+
+    .asis-timeline-legend__item {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        font-size: .74rem;
+        color: #475569;
+    }
+
+    .asis-timeline-legend__dot {
+        width: .7rem;
+        height: .7rem;
+        border-radius: 999px;
+        display: inline-block;
+    }
+
+    .asis-timeline-legend__dot--worked {
+        background: #16a34a;
+    }
+
+    .asis-timeline-legend__dot--break {
+        background: #facc15;
+    }
+
+    .asis-timeline-legend__dot--permission {
+        background: #38bdf8;
+    }
+
+    .asis-timeline-legend__dot--missing {
+        background: #ef4444;
+    }
+
+    .asis-timeline-legend__dot--extra {
+        background: #8b5cf6;
+    }
+
+    .asis-tab-suggestion {
+        font-size: .64rem;
+        font-weight: 700;
+        margin-left: .35rem;
+        padding: .15rem .4rem;
+        border-radius: 999px;
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .asis-table td {
+        font-size: .78rem;
+    }
+
+    .asis-date-label {
+        font-size: .7rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #94a3b8;
+    }
+
+    .asis-inline-icon {
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: .55rem;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #64748b;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .asis-time-row {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+    }
+
+    .asis-time-row + .asis-time-row {
+        margin-top: .25rem;
+    }
+
+    .asis-kpi-chip {
+        min-width: 4.9rem;
+        justify-content: center;
+    }
+
+    .asis-detail-trigger {
+        cursor: help;
+    }
+
+    .asis-truncate {
+        display: block;
+        max-width: 17rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .asis-summary-chip {
+        font-size: .68rem;
+        padding-inline: .45rem;
+    }
+</style>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver asistencias.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-start justify-content-between mb-3 gap-3 flex-wrap">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-calendar-check me-2"></i>Asistencias</h1>
+                <p class="text-muted mb-0">Consulta asistencias calculadas, incidencias y registros que requieren revisión manual.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-info" href="/configuracion/asistencia"><i class="bi bi-sliders me-1"></i>Reglas descansos</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/control-tiempo"><i class="bi bi-stopwatch me-1"></i>Control de tiempos</a>
+                <a class="btn btn-outline-success" href="/rrhh/asistencias-semanal"><i class="bi bi-calendar-week me-1"></i>Resumen semanal</a>
+                @if (_puedeReprocesar)
+                {
+                    <button class="btn btn-outline-primary" @onclick="AlternarReproceso" disabled="@cargando"><i class="bi bi-arrow-clockwise me-1"></i>@(mostrarReproceso ? "Ocultar reproceso" : "Reprocesar")</button>
+                }
+                <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>Actualizar</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (_puedeReprocesar && mostrarReproceso)
+        {
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-primary text-white">Reproceso de asistencias</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-2">
+                            <label class="form-label">Desde</label>
+                            <InputDate class="form-control" @bind-Value="reprocesoDesde" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Hasta</label>
+                            <InputDate class="form-control" @bind-Value="reprocesoHasta" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Empleado</label>
+                            <InputSelect class="form-select" @bind-Value="reprocesoEmpleadoIdTexto">
+                                <option value="">Todos</option>
+                                @foreach (var empleado in empleadosReproceso)
+                                {
+                                    <option value="@empleado.Id.ToString()">@empleado.NombreCompleto (@empleado.NumeroEmpleado)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Motivo</label>
+                            <InputText class="form-control" @bind-Value="reprocesoMotivo" placeholder="Ej. alta tardía de empleados o corrección de turno" />
+                        </div>
+                        <div class="col-12 d-flex gap-2 flex-wrap">
+                            <button class="btn btn-primary" @onclick="EjecutarReprocesoAsync" disabled="@reprocesando">
+                                <i class="bi bi-arrow-repeat me-1"></i>@(reprocesando ? "Reprocesando..." : "Ejecutar reproceso")
+                            </button>
+                            <button class="btn btn-outline-secondary" @onclick="AlternarReproceso" disabled="@reprocesando">Cancelar</button>
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">El reproceso vuelve a intentar ligar marcaciones sin empleado usando `CodigoChecador` y luego recalcula la asistencia del rango seleccionado.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Mostradas</div><div class="fs-4 fw-bold">@lista.Count</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Con revisión</div><div class="fs-4 fw-bold">@lista.Count(a => a.RequiereRevision)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Retardos</div><div class="fs-4 fw-bold">@lista.Count(a => a.MinutosRetardo > 0)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Sin turno</div><div class="fs-4 fw-bold">@lista.Count(a => a.TurnoBaseId == null)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Trabajo neto</div><div class="fs-4 fw-bold">@FormatearMinutos(lista.Sum(a => a.MinutosTrabajadosNetos))</div></div></div></div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white">Filtros</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label">Desde</label>
+                        <InputDate class="form-control" @bind-Value="filtroDesde" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Hasta</label>
+                        <InputDate class="form-control" @bind-Value="filtroHasta" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Turno</label>
+                        <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto">
+                            <option value="">Todos</option>
+                            @foreach (var turno in turnos)
+                            {
+                                <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Estatus</label>
+                        <InputSelect class="form-select" @bind-Value="filtroEstatus">
+                            <option value="todos">Todos</option>
+                            @foreach (var estatus in estatusDisponibles)
+                            {
+                                <option value="@((int)estatus).ToString()">@ObtenerTextoEstatus(estatus)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Empleado</label>
+                        <InputText class="form-control" @bind-Value="filtroEmpleado" placeholder="Nombre, número o código" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Revisión</label>
+                        <InputSelect class="form-select" @bind-Value="filtroRevision">
+                            <option value="todos">Todos</option>
+                            <option value="si">Con revisión</option>
+                            <option value="no">Sin revisión</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-12 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar filtros</button>
+                        <button class="btn btn-outline-secondary" @onclick="LimpiarFiltros" disabled="@cargando">Limpiar</button>
+                        <button class="btn btn-outline-success" @onclick="ExportarCsvAsync" disabled="@(cargando || exportandoCsv)"><i class="bi bi-filetype-csv me-1"></i>@(exportandoCsv ? "Exportando..." : "Exportar CSV")</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0 align-middle asis-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Empleado</th>
+                                <th>Turno</th>
+                                <th>Entrada</th>
+                                <th>Salida</th>
+                                <th>Trabajado</th>
+                                <th title="Retardo">Ret.</th>
+                                <th title="Salida anticipada">S. ant.</th>
+                                <th>Extra</th>
+                                <th title="Ajuste operativo del día: permiso, banco, pago o cobertura">Ajuste</th>
+                                <th>Estatus</th>
+                                <th>Descansos</th>
+                                <th>Aus.</th>
+                                <th>Notas</th>
+                                @if (_puedeReprocesar)
+                                {
+                                    <th>Acciones</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (lista.Count == 0)
+                            {
+                                <tr><td colspan="@(_puedeReprocesar ? 15 : 14)" class="text-center text-muted py-4">No hay asistencias para los filtros seleccionados.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in lista)
+                                {
+                                    var revisionVisual = ObtenerVisualRevision(item);
+                                    var descansoVisual = ObtenerVisualDescansos(item);
+                                    var resolucionVisual = ObtenerVisualResolucion(item);
+                                    var ausenciaVisual = ObtenerVisualAusencia(item);
+                                    var observacionPrincipal = ObtenerObservacionPrincipal(item);
+                                    var observacionSecundaria = ObtenerObservacionSecundaria(item);
+                                    var observacionesTooltip = ObtenerTooltipObservaciones(item);
+
+                                    <tr>
+                                        <td>
+                                            <div class="asis-stack">
+                                                <div class="asis-cell-title">@item.Fecha.ToString("dd/MM/yyyy")</div>
+                                                <div class="asis-date-label">@ObtenerDiaSemanaCorto(item.Fecha)</div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex align-items-start gap-2">
+                                                <span class="asis-inline-icon"><i class="bi bi-person"></i></span>
+                                                <div class="asis-stack">
+                                                    <div class="asis-cell-title">@item.Empleado.NombreCompleto</div>
+                                                    <div class="asis-cell-subtitle">@(string.IsNullOrWhiteSpace(item.Empleado.NumeroEmpleado) ? (item.Empleado.CodigoChecador ?? "Sin código") : item.Empleado.NumeroEmpleado)</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="asis-stack">
+                                                <div class="asis-cell-title">@(item.TurnoBase?.Nombre ?? "Sin turno")</div>
+                                                <div class="asis-meta-list" title="@revisionVisual.Tooltip">
+                                                    <span class="asis-chip @revisionVisual.BadgeClass asis-detail-trigger"><i class="bi @revisionVisual.Icono"></i>@revisionVisual.Titulo</span>
+                                                    @if (revisionVisual.Resuelta)
+                                                    {
+                                                        <span class="asis-chip asis-chip--muted asis-summary-chip" title="@resolucionVisual.Tooltip"><i class="bi bi-check2-all"></i>aplicada</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="asis-stack">
+                                                <div class="asis-time-row" title="Entrada programada">
+                                                    <span class="asis-inline-icon"><i class="bi bi-box-arrow-in-right"></i></span>
+                                                    <div>
+                                                        <div class="asis-cell-subtitle">Prog</div>
+                                                        <div class="asis-cell-title">@FormatearHoraCompacta(item.HoraEntradaProgramada)</div>
+                                                    </div>
+                                                </div>
+                                                <div class="asis-time-row" title="Entrada real">
+                                                    <span class="asis-inline-icon"><i class="bi bi-fingerprint"></i></span>
+                                                    <div>
+                                                        <div class="asis-cell-subtitle">Real</div>
+                                                        <div class="asis-cell-title">@FormatearHoraCompacta(item.HoraEntradaReal)</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="asis-stack">
+                                                <div class="asis-time-row" title="Salida programada">
+                                                    <span class="asis-inline-icon"><i class="bi bi-box-arrow-right"></i></span>
+                                                    <div>
+                                                        <div class="asis-cell-subtitle">Prog</div>
+                                                        <div class="asis-cell-title">@FormatearHoraCompacta(item.HoraSalidaProgramada)</div>
+                                                    </div>
+                                                </div>
+                                                <div class="asis-time-row" title="Salida real">
+                                                    <span class="asis-inline-icon"><i class="bi bi-door-open"></i></span>
+                                                    <div>
+                                                        <div class="asis-cell-subtitle">Real</div>
+                                                        <div class="asis-cell-title">@FormatearHoraCompacta(item.HoraSalidaReal)</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="asis-stack">
+                                                <div class="asis-cell-title">@FormatearMinutos(item.MinutosTrabajadosNetos)</div>
+                                                <div class="asis-cell-subtitle" title="Tiempo bruto detectado"><i class="bi bi-hourglass me-1"></i>@FormatearMinutos(item.MinutosTrabajadosBrutos)</div>
+                                                <div class="asis-cell-subtitle" title="Jornada neta programada"><i class="bi bi-calendar-range me-1"></i>@FormatearMinutos(item.MinutosJornadaNetaProgramada)</div>
+                                            </div>
+                                        </td>
+                                        <td class="text-end"><span class="asis-chip asis-kpi-chip @ObtenerClaseMetricaIncidencia(item.MinutosRetardo)" title="Retardo"><i class="bi bi-alarm"></i>@FormatearMinutosCortos(item.MinutosRetardo)</span></td>
+                                        <td class="text-end"><span class="asis-chip asis-kpi-chip @ObtenerClaseMetricaIncidencia(item.MinutosSalidaAnticipada)" title="Salida anticipada"><i class="bi bi-box-arrow-left"></i>@FormatearMinutosCortos(item.MinutosSalidaAnticipada)</span></td>
+                                        <td class="text-end"><span class="asis-chip asis-kpi-chip @ObtenerClaseMetricaExtra(item.MinutosExtra)" title="Tiempo extra detectado"><i class="bi bi-lightning-charge"></i>@FormatearMinutosCortos(item.MinutosExtra)</span></td>
+                                        <td>
+                                            <div class="asis-meta-list" title="@resolucionVisual.Tooltip">
+                                                <span class="asis-chip @resolucionVisual.BadgeClass asis-detail-trigger"><i class="bi @resolucionVisual.Icono"></i>@resolucionVisual.Titulo</span>
+                                                <span class="asis-chip asis-chip--muted asis-summary-chip asis-detail-trigger">@resolucionVisual.ResumenCorto</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge @ObtenerClaseEstatus(item)" title="@ObtenerTextoEstatus(item.Estatus)">@ObtenerTextoEstatusCorto(item.Estatus)</span>
+                                        </td>
+                                        <td>
+                                            <div class="asis-break-card @descansoVisual.CardClass" title="@descansoVisual.Tooltip">
+                                                <div class="asis-meta-list">
+                                                    <span class="asis-chip @descansoVisual.BadgeClass asis-detail-trigger"><i class="bi @descansoVisual.Icono"></i>@descansoVisual.Titulo</span>
+                                                    <span class="asis-chip asis-chip--muted asis-summary-chip asis-detail-trigger">@descansoVisual.ResumenMinutos</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="asis-chip @ausenciaVisual.BadgeClass" title="@ausenciaVisual.Tooltip"><i class="bi @ausenciaVisual.Icono"></i>@ausenciaVisual.Titulo</span>
+                                        </td>
+                                        <td>
+                                            <div class="asis-stack" title="@observacionesTooltip">
+                                                <div class="asis-note asis-truncate">@TruncarTexto(observacionPrincipal, 68)</div>
+                                                @if (!string.IsNullOrWhiteSpace(observacionSecundaria))
+                                                {
+                                                    <div class="asis-note asis-note--muted asis-truncate">@TruncarTexto(observacionSecundaria, 64)</div>
+                                                }
+                                            </div>
+                                        </td>
+                                        @if (_puedeReprocesar)
+                                        {
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => AbrirCorreccionDiaAsync(item)" title="Corregir día"><i class="bi bi-pencil-square"></i></button>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <AsistenciasCorreccionModal
+            Visible="@(_puedeReprocesar && mostrarCorreccionDia && asistenciaSeleccionada != null)"
+            Asistencia="asistenciaSeleccionada"
+            Turnos="turnos"
+            PuedeReprocesar="_puedeReprocesar"
+            PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
+            OnClose="CerrarCorreccionDia"
+            OnUpdated="RecargarListadoAsync" />
+    }
+</div>

@@ -1,0 +1,783 @@
+@page "/login"
+@layout MundoVs.Components.Layout.LoginLayout
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<Login> Logger
+
+<PageTitle>Iniciar Sesión</PageTitle>
+
+<style>
+    .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1.25rem;
+        background:
+            radial-gradient(ellipse at 0% 0%, rgba(241, 199, 104, 0.08) 0%, transparent 50%),
+            radial-gradient(ellipse at 100% 100%, rgba(184, 131, 47, 0.08) 0%, transparent 50%),
+            radial-gradient(ellipse at 100% 0%, rgba(252, 232, 162, 0.06) 0%, transparent 40%),
+            #f8fafc;
+    }
+
+    .login-card {
+        display: grid;
+        grid-template-columns: 1fr 420px;
+        width: min(980px, 100%);
+        border-radius: 28px;
+        overflow: hidden;
+        box-shadow:
+            0 4px 6px rgba(0,0,0,.04),
+            0 20px 50px rgba(15, 23, 42, 0.12),
+            0 0 0 1px rgba(255,255,255,.7);
+        animation: login-card-in 0.9s cubic-bezier(.22,1,.36,1) 2.3s both;
+    }
+
+    @@keyframes login-card-in {
+        from { opacity: 0; transform: translateY(22px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* ── PANEL IZQUIERDO: ART ── */
+    .login-art-panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 2.5rem 2.25rem;
+        color: #fff;
+        overflow: hidden;
+        background: linear-gradient(155deg, #0f172a 0%, #1e293b 45%, #b8832f 85%, #f1c768 100%);
+        background-size: 220% 220%;
+        background-position: 0% 50%;
+        animation: art-bg-shift 22s ease-in-out infinite;
+        min-height: 560px;
+    }
+
+    .login-art-panel::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 80% 10%, rgba(255,255,255,.18) 0%, transparent 45%),
+            radial-gradient(circle at 10% 90%, rgba(255,255,255,.12) 0%, transparent 40%);
+        pointer-events: none;
+    }
+
+    .login-art-panel::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 0);
+        background-size: 22px 22px;
+        mix-blend-mode: overlay;
+        opacity: 0.55;
+        pointer-events: none;
+    }
+
+    @@keyframes art-bg-shift {
+        0%, 100% { background-position: 0% 50%; }
+        50%      { background-position: 100% 50%; }
+    }
+
+    .login-art-glow {
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+        filter: blur(48px);
+    }
+
+    .login-art-glow--a {
+        top: -4rem;
+        right: -3rem;
+        width: 260px;
+        height: 260px;
+        background: rgba(241, 199, 104, 0.20);
+        animation: login-float 9s ease-in-out infinite;
+    }
+
+    .login-art-glow--b {
+        bottom: 2rem;
+        left: -3rem;
+        width: 220px;
+        height: 220px;
+        background: rgba(184, 131, 47, 0.25);
+        animation: login-float 12s ease-in-out infinite reverse;
+    }
+
+    .login-art-orbit {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,.22);
+        pointer-events: none;
+    }
+
+    .login-art-orbit--a {
+        top: 50%;
+        left: 50%;
+        width: 320px;
+        height: 320px;
+        transform: translate(-50%, -50%);
+        animation: login-spin 22s linear infinite;
+    }
+
+    .login-art-orbit--b {
+        top: 50%;
+        left: 50%;
+        width: 200px;
+        height: 200px;
+        transform: translate(-50%, -50%);
+        animation: login-spin 14s linear infinite reverse;
+    }
+
+    .login-art-orbit-dot {
+        position: absolute;
+        top: -5px;
+        left: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 0 12px rgba(255,255,255,.7);
+        transform: translateX(-50%);
+    }
+
+    .login-art-body {
+        position: relative;
+        z-index: 2;
+    }
+
+    .login-art-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,.15);
+        border: 1px solid rgba(255,255,255,.22);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 1.25rem;
+    }
+
+    .login-art-title {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.8rem, 2.8vw, 2.5rem);
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: -0.04em;
+    }
+
+    .login-art-subtitle {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+        line-height: 1.65;
+        color: rgba(255,255,255,.82);
+        max-width: 300px;
+    }
+
+    .login-art-rotator {
+        position: relative;
+        min-height: 170px;
+        margin-bottom: 1rem;
+    }
+
+    .login-art-msg {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+    }
+
+    .login-art-msg .login-art-title { margin-bottom: 0.75rem; }
+    .login-art-msg .login-art-subtitle { margin-bottom: 0; }
+
+    .login-art-msg--1 { animation: art-msg-1 18s ease-in-out infinite; }
+    .login-art-msg--2 { animation: art-msg-2 18s ease-in-out infinite; }
+    .login-art-msg--3 { animation: art-msg-3 18s ease-in-out infinite; }
+
+    @@keyframes art-msg-1 {
+        0%, 2%   { opacity: 0; transform: translateY(8px); }
+        5%, 30%  { opacity: 1; transform: translateY(0); }
+        33%, 100%{ opacity: 0; transform: translateY(-8px); }
+    }
+    @@keyframes art-msg-2 {
+        0%, 35%  { opacity: 0; transform: translateY(8px); }
+        38%, 63% { opacity: 1; transform: translateY(0); }
+        66%, 100%{ opacity: 0; transform: translateY(-8px); }
+    }
+    @@keyframes art-msg-3 {
+        0%, 68%  { opacity: 0; transform: translateY(8px); }
+        71%, 96% { opacity: 1; transform: translateY(0); }
+        100%     { opacity: 0; transform: translateY(-8px); }
+    }
+
+    .login-art-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .login-art-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.18);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: rgba(255,255,255,.9);
+        backdrop-filter: blur(4px);
+        transition: transform .2s, background .2s, border-color .2s;
+        cursor: default;
+    }
+
+    .login-art-chip:hover {
+        transform: translateY(-2px);
+        background: rgba(255,255,255,.22);
+        border-color: rgba(255,255,255,.38);
+    }
+
+    /* ── PANEL DERECHO: FORM ── */
+    .login-form-panel {
+        background: #fff;
+        padding: 2.5rem 2.25rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .login-logo-wrap {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+    }
+
+    .login-logo-box {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 150px;
+        height: 48px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 0.4rem 0.75rem;
+        flex-shrink: 0;
+        transition: transform .2s, box-shadow .2s, border-color .2s;
+    }
+
+    .login-logo-box:hover {
+        transform: translateY(-1px);
+        border-color: #fdebaf;
+        box-shadow: 0 10px 22px rgba(184, 131, 47, 0.18);
+    }
+
+    .login-logo-box img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+
+    .login-brand-meta {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+
+    .login-brand-meta strong {
+        display: block;
+        color: #334155;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    .login-heading {
+        margin: 0 0 0.4rem;
+        font-size: 1.75rem;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        line-height: 1.1;
+        background: linear-gradient(120deg, #0f172a 0%, #334155 65%, #b8832f 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: #0f172a;
+    }
+
+    .login-subheading {
+        margin: 0 0 1.75rem;
+        font-size: 0.88rem;
+        color: #64748b;
+        line-height: 1.6;
+    }
+
+    .login-field {
+        margin-bottom: 1rem;
+    }
+
+    .login-field-label {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #374151;
+        letter-spacing: 0.02em;
+    }
+
+    .login-input-wrap {
+        position: relative;
+    }
+
+    .login-input-icon {
+        position: absolute;
+        left: 0.9rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #B8832F;
+        font-size: 0.95rem;
+        pointer-events: none;
+        transition: color .18s;
+    }
+
+    .login-input {
+        width: 100%;
+        padding: 0.72rem 1rem 0.72rem 2.6rem;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        color: #0f172a;
+        background: #f8fafc;
+        transition: border-color .18s, box-shadow .18s, background .18s;
+    }
+
+    .login-input::placeholder {
+        color: #cbd5e1;
+    }
+
+    .login-input:focus {
+        outline: none;
+        border-color: #F1C768;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(241, 199, 104, 0.16);
+    }
+
+    .login-input-wrap:focus-within .login-input-icon {
+        color: #F1C768;
+    }
+
+    .login-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 0.5rem 0 1.25rem;
+    }
+
+    .login-secure {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.78rem;
+        color: #64748b;
+        font-weight: 600;
+    }
+
+    .login-secure i {
+        color: #22c55e;
+    }
+
+    .login-link {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #B8832F;
+        text-decoration: none;
+        transition: color .15s;
+    }
+
+    .login-link:hover {
+        color: #111827;
+    }
+
+    .login-btn {
+        width: 100%;
+        padding: 0.82rem 1rem;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #FCE8A2 0%, #F1C768 55%, #B8832F 100%);
+        background-size: 200% 200%;
+        background-position: 0% 50%;
+        color: #111827;
+        font-size: 0.92rem;
+        font-weight: 700;
+        cursor: pointer;
+        letter-spacing: 0.01em;
+        transition: background-position .4s ease, transform .15s, box-shadow .15s, opacity .15s;
+        box-shadow: 0 10px 24px rgba(184, 131, 47, 0.30);
+    }
+
+    .login-btn:hover:not(:disabled) {
+        background-position: 100% 50%;
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px rgba(184, 131, 47, 0.38);
+    }
+
+    .login-btn:disabled {
+        opacity: .55;
+        cursor: not-allowed;
+    }
+
+    .login-error {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        background: #fef2f2;
+        border: 1.5px solid #fecaca;
+        color: #dc2626;
+        border-radius: 12px;
+        padding: 0.75rem 0.9rem;
+        font-size: 0.84rem;
+        margin-bottom: 1rem;
+    }
+
+    .login-footnote {
+        margin-top: 1.25rem;
+        text-align: center;
+        font-size: 0.75rem;
+        color: #cbd5e1;
+    }
+
+    .login-footnote strong {
+        color: #94a3b8;
+        font-weight: 600;
+    }
+
+    @@keyframes login-float {
+        0%, 100% { transform: translateY(0); }
+        50%       { transform: translateY(16px); }
+    }
+
+    @@keyframes login-spin {
+        from { transform: translate(-50%, -50%) rotate(0deg); }
+        to   { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    @@media (max-width: 860px) {
+        .login-card {
+            grid-template-columns: 1fr;
+        }
+
+        .login-art-panel {
+            min-height: 260px;
+            padding: 2rem 1.75rem;
+        }
+
+        .login-art-orbit--a, .login-art-orbit--b {
+            display: none;
+        }
+    }
+
+    @@media (max-width: 540px) {
+        .login-form-panel {
+            padding: 2rem 1.25rem;
+        }
+
+        .login-art-panel {
+            padding: 1.5rem 1.25rem;
+            min-height: 220px;
+        }
+
+        .login-heading {
+            font-size: 1.45rem;
+        }
+    }
+
+    /* ── ECLIPSE INTRO: anillo que se abre con arco dorado ── */
+    .login-eclipse {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        overflow: hidden;
+        pointer-events: none;
+        animation: eclipse-fade 0.4s ease-out 2.6s forwards;
+    }
+
+    .login-eclipse-logo {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 210px;
+        height: 210px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: translate(-50%, -50%) scale(0.82);
+        opacity: 0;
+        background: radial-gradient(circle, rgba(252, 232, 162, 0.16) 0%, rgba(241, 199, 104, 0.05) 55%, transparent 72%);
+        z-index: 2;
+        animation: eclipse-logo 2.4s ease-out forwards;
+    }
+
+    .login-eclipse-logo img {
+        width: 150px;
+        height: auto;
+        border-radius: 12px;
+        filter: drop-shadow(0 0 22px rgba(241, 199, 104, 0.85));
+    }
+
+    .login-eclipse-hole {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        border: 3px solid rgba(241, 199, 104, 0);
+        box-shadow:
+            0 0 0 100vmax #0b0a1a,
+            0 0 0 0 rgba(241, 199, 104, 0),
+            inset 0 0 0 0 rgba(241, 199, 104, 0);
+        animation: eclipse-open 2.6s cubic-bezier(.55, 0, .25, 1) forwards;
+    }
+
+    @@keyframes eclipse-logo {
+        0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+        15%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        45%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        65%  { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+        100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); }
+    }
+
+    @@keyframes eclipse-open {
+        0% {
+            width: 0; height: 0;
+            border-color: rgba(241, 199, 104, 0);
+            box-shadow:
+                0 0 0 100vmax #0b0a1a,
+                0 0 0 0 rgba(241, 199, 104, 0),
+                inset 0 0 0 0 rgba(241, 199, 104, 0);
+        }
+        35% {
+            width: 240px; height: 240px;
+            border-color: rgba(252, 232, 162, 0.95);
+            box-shadow:
+                0 0 0 100vmax #0b0a1a,
+                0 0 70px 22px rgba(241, 199, 104, 0.70),
+                inset 0 0 50px 14px rgba(252, 232, 162, 0.35);
+        }
+        55% {
+            width: 720px; height: 720px;
+            border-color: rgba(252, 232, 162, 0.65);
+            box-shadow:
+                0 0 0 100vmax #0b0a1a,
+                0 0 50px 16px rgba(241, 199, 104, 0.42),
+                inset 0 0 30px 8px rgba(252, 232, 162, 0.2);
+        }
+        80% {
+            width: 180vmax; height: 180vmax;
+            border-color: rgba(252, 232, 162, 0.22);
+            box-shadow:
+                0 0 0 100vmax rgba(11, 10, 26, 0.5),
+                0 0 24px 6px rgba(241, 199, 104, 0.12),
+                inset 0 0 0 0 rgba(252, 232, 162, 0);
+        }
+        100% {
+            width: 260vmax; height: 260vmax;
+            border-color: rgba(252, 232, 162, 0);
+            box-shadow:
+                0 0 0 100vmax rgba(11, 10, 26, 0),
+                0 0 0 0 rgba(241, 199, 104, 0),
+                inset 0 0 0 0 rgba(252, 232, 162, 0);
+        }
+    }
+
+    @@keyframes eclipse-fade {
+        to { opacity: 0; }
+    }
+</style>
+
+<!-- Intro: eclipse que se abre con arco dorado -->
+<div class="login-eclipse" id="loginEclipse" aria-hidden="true">
+    <div class="login-eclipse-logo">
+        <img src="/branding/zenith-logo-white.png" alt="Zenith" />
+    </div>
+    <div class="login-eclipse-hole"></div>
+</div>
+
+<div class="login-wrap">
+<div class="login-card">
+
+    <!-- ── Panel izquierdo: visual ── -->
+    <div class="login-art-panel">
+        <div class="login-art-glow login-art-glow--a"></div>
+        <div class="login-art-glow login-art-glow--b"></div>
+
+        <span class="login-art-orbit login-art-orbit--a"><span class="login-art-orbit-dot"></span></span>
+        <span class="login-art-orbit login-art-orbit--b"><span class="login-art-orbit-dot"></span></span>
+
+        <div class="login-art-body">
+            <div class="login-art-badge"><i class="bi bi-stars"></i> ERP Empresarial</div>
+
+            <div class="login-art-rotator" aria-hidden="true">
+                <div class="login-art-msg login-art-msg--1">
+                    <h2 class="login-art-title">Gestión inteligente<br>para tu empresa</h2>
+                    <p class="login-art-subtitle">Una plataforma unificada para ventas, producción, nómina e inventario.</p>
+                </div>
+                <div class="login-art-msg login-art-msg--2">
+                    <h2 class="login-art-title">Opera con claridad<br>desde un solo lugar</h2>
+                    <p class="login-art-subtitle">Datos en tiempo real para decisiones informadas todos los días.</p>
+                </div>
+                <div class="login-art-msg login-art-msg--3">
+                    <h2 class="login-art-title">Crece con procesos<br>que se adaptan a ti</h2>
+                    <p class="login-art-subtitle">Flujos flexibles para manufactura, ventas y gestión de personal.</p>
+                </div>
+            </div>
+
+            <div class="login-art-chips">
+                <span class="login-art-chip"><i class="bi bi-graph-up-arrow"></i> Ventas</span>
+                <span class="login-art-chip"><i class="bi bi-boxes"></i> Inventario</span>
+                <span class="login-art-chip"><i class="bi bi-people-fill"></i> RRHH</span>
+                <span class="login-art-chip"><i class="bi bi-receipt"></i> Nómina</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Panel derecho: formulario ── -->
+    <div class="login-form-panel">
+        <div class="login-logo-wrap">
+            <div class="login-logo-box">
+                <img src="/branding/zenith-logo-black.png" alt="Zenith" />
+            </div>
+            <div class="login-brand-meta">
+                <strong>@companyName</strong>
+                ERP by @developerName
+            </div>
+        </div>
+
+        <h1 class="login-heading">Bienvenido de vuelta</h1>
+        <p class="login-subheading">Ingresa tus credenciales para continuar.</p>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="login-error">
+                <i class="bi bi-exclamation-circle-fill"></i>
+                <span>@error</span>
+            </div>
+        }
+
+        <EditForm Model="model" OnValidSubmit="HandleLogin">
+            <div class="login-field">
+                <label class="login-field-label" for="login-email">Correo electrónico</label>
+                <div class="login-input-wrap">
+                    <i class="bi bi-envelope login-input-icon"></i>
+                    <InputText id="login-email" class="login-input" @bind-Value="model.Email"
+                               placeholder="usuario@empresa.com" autocomplete="username" />
+                </div>
+            </div>
+
+            <div class="login-field">
+                <label class="login-field-label" for="login-password">Contraseña</label>
+                <div class="login-input-wrap">
+                    <i class="bi bi-lock login-input-icon"></i>
+                    <InputText id="login-password" class="login-input" @bind-Value="model.Password"
+                               type="password" placeholder="••••••••" autocomplete="current-password" />
+                </div>
+            </div>
+
+            <div class="login-actions">
+                <span class="login-secure"><i class="bi bi-shield-check-fill"></i> Conexión segura</span>
+                <a href="/auth/recuperar-password" class="login-link">¿Olvidaste tu contraseña?</a>
+            </div>
+
+            <button type="submit" class="login-btn" disabled="@cargando">
+                @if (cargando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                    <span>Ingresando...</span>
+                }
+                else
+                {
+                    <i class="bi bi-box-arrow-in-right me-1"></i>
+                    <span>Iniciar Sesión</span>
+                }
+            </button>
+        </EditForm>
+
+        <p class="login-footnote">Desarrollado por <strong>@developerName</strong></p>
+    </div>
+
+</div>
+</div>
+
+
+@code {
+    private LoginModel model = new();
+    private string? error;
+    private bool cargando;
+    private string companyName = "Zenith";
+    private string developerName = "Arzmec";
+
+    private async Task HandleLogin()
+    {
+        if (cargando)
+            return;
+
+        error = null;
+        cargando = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password))
+            {
+                error = BuildMissingFieldsMessage();
+                cargando = false;
+                return;
+            }
+
+            var loginResult = await AuthStateProvider.LoginAsync(model.Email.Trim(), model.Password);
+            if (!loginResult.Succeeded)
+            {
+                error = loginResult.Error ?? "No fue posible iniciar sesión.";
+                cargando = false;
+                return;
+            }
+
+            var destino = string.IsNullOrWhiteSpace(loginResult.RedirectUrl) ? "/" : loginResult.RedirectUrl;
+            Logger.LogInformation("Login completado. Redirigiendo a {Destino}", destino);
+            Navigation.NavigateTo(destino, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error inesperado durante login para {Email}", model.Email);
+            error = "Ocurrió un error inesperado al iniciar sesión.";
+            cargando = false;
+        }
+    }
+
+    private string BuildMissingFieldsMessage()
+    {
+        var missingFields = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(model.Email))
+            missingFields.Add("correo electrónico");
+
+        if (string.IsNullOrWhiteSpace(model.Password))
+            missingFields.Add("contraseña");
+
+        return $"Completa los campos requeridos: {string.Join(", ", missingFields)}.";
+    }
+
+    private class LoginModel
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,319 @@
+@page "/rrhh/banco-horas"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Banco de Horas</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver banco de horas.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-hourglass-split me-2"></i>Banco de Horas</h1>
+                <p class="text-muted mb-0">Consulta saldo por empleado y registra ajustes o consumos manuales.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Saldo total</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.SaldoActual))</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Con saldo</div><div class="fs-4 fw-bold">@resumenes.Count(r => r.SaldoActual > 0)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Acumulado automático</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.AcumuladoAutomatico))</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Consumido</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.Consumido))</div></div></div></div>
+        </div>
+
+        @if (_puedeEditar)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white"><strong>Registrar movimiento manual</strong></div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Empleado</label>
+                            <InputSelect class="form-select" @bind-Value="empleadoCapturaId">
+                                <option value="">Seleccione...</option>
+                                @foreach (var empleado in empleados)
+                                {
+                                    <option value="@empleado.Id">@empleado.NombreCompleto</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Movimiento</label>
+                            <InputSelect class="form-select" @bind-Value="tipoMovimientoCaptura">
+                                <option value="@TipoMovimientoBancoHorasRrhh.AjusteManual">Ajuste</option>
+                                <option value="@TipoMovimientoBancoHorasRrhh.Consumo">Consumo</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Fecha</label>
+                            <InputDate class="form-control" @bind-Value="fechaCaptura" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Horas</label>
+                            <InputNumber class="form-control" @bind-Value="horasCaptura" />
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-success w-100" @onclick="GuardarMovimientoManual" disabled="@guardando">
+                                <i class="bi bi-save me-1"></i>Guardar
+                            </button>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notas</label>
+                            <InputText class="form-control" @bind-Value="observacionesCaptura" />
+                            <div class="form-text">En ajustes puedes capturar horas positivas o negativas. En consumo, el sistema las registra como salida del saldo.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Empleado</th>
+                            <th class="text-end">Saldo</th>
+                            <th class="text-end">Automático</th>
+                            <th class="text-end">Manual</th>
+                            <th class="text-end">Consumido</th>
+                            <th class="text-center">Movs.</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (resumenes.Count == 0)
+                        {
+                            <tr><td colspan="7" class="text-center text-muted py-4">No hay movimientos de banco de horas todavía.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in resumenes)
+                            {
+                                <tr class="@(empleadoHistorialId == item.EmpleadoId ? "table-active" : string.Empty)">
+                                    <td class="fw-semibold">@item.NombreEmpleado</td>
+                                    <td class="text-end fw-bold">@FormatearHoras(item.SaldoActual)</td>
+                                    <td class="text-end">@FormatearHoras(item.AcumuladoAutomatico)</td>
+                                    <td class="text-end">@FormatearHoras(item.AjustesManuales)</td>
+                                    <td class="text-end">@FormatearHoras(item.Consumido)</td>
+                                    <td class="text-center">@item.TotalMovimientos</td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => SeleccionarHistorial(item.EmpleadoId)"><i class="bi bi-clock-history"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @if (empleadoHistorialId.HasValue)
+        {
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>Historial de movimientos</strong>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => empleadoHistorialId = null">Cerrar</button>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-striped mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th class="text-end">Horas</th>
+                                <th>Referencia</th>
+                                <th>Notas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var movimiento in MovimientosHistorial)
+                            {
+                                <tr>
+                                    <td>@movimiento.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td>@movimiento.TipoMovimiento</td>
+                                    <td class="text-end @(movimiento.Horas < 0 ? "text-danger" : "text-success")">@FormatearHoras(movimiento.Horas)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(movimiento.ReferenciaTipo) ? "—" : movimiento.ReferenciaTipo)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? "—" : movimiento.Observaciones)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<Empleado> empleados = [];
+    private List<RrhhBancoHorasMovimiento> movimientos = [];
+    private List<BancoHorasResumenVm> resumenes = [];
+    private Guid? empleadoCapturaId;
+    private Guid? empleadoHistorialId;
+    private TipoMovimientoBancoHorasRrhh tipoMovimientoCaptura = TipoMovimientoBancoHorasRrhh.AjusteManual;
+    private DateTime fechaCaptura = DateTime.Today;
+    private decimal horasCaptura;
+    private string? observacionesCaptura;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool guardando;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+
+    private IEnumerable<RrhhBancoHorasMovimiento> MovimientosHistorial => empleadoHistorialId.HasValue
+        ? movimientos.Where(m => m.EmpleadoId == empleadoHistorialId.Value).OrderByDescending(m => m.Fecha).ThenByDescending(m => m.CreatedAt)
+        : Enumerable.Empty<RrhhBancoHorasMovimiento>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        empleados = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+
+        movimientos = await db.RrhhBancoHorasMovimientos
+            .AsNoTracking()
+            .Include(m => m.Empleado)
+            .Where(m => m.EmpresaId == _empresaId && m.IsActive)
+            .OrderByDescending(m => m.Fecha)
+            .ThenByDescending(m => m.CreatedAt)
+            .ToListAsync();
+
+        resumenes = movimientos
+            .GroupBy(m => new { m.EmpleadoId, m.Empleado.NombreCompleto })
+            .Select(g => new BancoHorasResumenVm
+            {
+                EmpleadoId = g.Key.EmpleadoId,
+                NombreEmpleado = g.Key.NombreCompleto,
+                SaldoActual = g.Sum(x => x.Horas),
+                AcumuladoAutomatico = g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra).Sum(x => x.Horas),
+                AjustesManuales = g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.AjusteManual).Sum(x => x.Horas),
+                Consumido = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo).Sum(x => x.Horas)),
+                TotalMovimientos = g.Count()
+            })
+            .OrderByDescending(r => r.SaldoActual)
+            .ThenBy(r => r.NombreEmpleado)
+            .ToList();
+    }
+
+    private async Task GuardarMovimientoManual()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para editar banco de horas.";
+                return;
+            }
+
+            if (!empleadoCapturaId.HasValue || empleadoCapturaId == Guid.Empty)
+            {
+                error = "Selecciona un empleado.";
+                return;
+            }
+
+            if (horasCaptura == 0)
+            {
+                error = "Captura un valor de horas distinto de cero.";
+                return;
+            }
+
+            var horasMovimiento = tipoMovimientoCaptura == TipoMovimientoBancoHorasRrhh.Consumo
+                ? -Math.Abs(horasCaptura)
+                : horasCaptura;
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                EmpleadoId = empleadoCapturaId.Value,
+                Fecha = DateOnly.FromDateTime(fechaCaptura.Date),
+                TipoMovimiento = tipoMovimientoCaptura,
+                Horas = horasMovimiento,
+                ReferenciaTipo = tipoMovimientoCaptura == TipoMovimientoBancoHorasRrhh.Consumo ? "Consumo manual" : "Ajuste manual",
+                Observaciones = string.IsNullOrWhiteSpace(observacionesCaptura) ? null : observacionesCaptura.Trim(),
+                EsAutomatico = false,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+
+            await db.SaveChangesAsync();
+            horasCaptura = 0;
+            observacionesCaptura = null;
+            ok = "Movimiento de banco de horas guardado.";
+            await CargarAsync();
+            empleadoHistorialId = empleadoCapturaId;
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void SeleccionarHistorial(Guid empleadoId)
+    {
+        empleadoHistorialId = empleadoId;
+    }
+
+    private static string FormatearHoras(decimal horas)
+        => $"{horas:0.##} h";
+
+    private sealed class BancoHorasResumenVm
+    {
+        public Guid EmpleadoId { get; set; }
+        public string NombreEmpleado { get; set; } = string.Empty;
+        public decimal SaldoActual { get; set; }
+        public decimal AcumuladoAutomatico { get; set; }
+        public decimal AjustesManuales { get; set; }
+        public decimal Consumido { get; set; }
+        public int TotalMovimientos { get; set; }
+    }
+}

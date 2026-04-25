@@ -1,0 +1,923 @@
+@page "/rrhh/vales-destajo"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Vales de Destajo</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver vales de destajo.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h1 class="display-6 fw-bold"><i class="bi bi-receipt me-2"></i>Vales de Destajo</h1>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo Vale</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+    @if (!string.IsNullOrEmpty(ok)) { <div class="alert alert-success">@ok</div> }
+
+    @* Filtros *@
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small mb-0">Empleado</label>
+                    <select class="form-select form-select-sm" @bind="filtroEmpleadoId" @bind:after="Cargar">
+                        <option value="">Todos</option>
+                        @foreach (var emp in empleados)
+                        {
+                            <option value="@emp.Id">@emp.Nombre @emp.ApellidoPaterno</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Desde</label>
+                    <input type="date" class="form-control form-control-sm" @bind="filtroDesde" @bind:after="Cargar" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Hasta</label>
+                    <input type="date" class="form-control form-control-sm" @bind="filtroHasta" @bind:after="Cargar" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-0">Estatus</label>
+                    <select class="form-select form-select-sm" @bind="filtroEstatus" @bind:after="Cargar">
+                        <option value="">Todos</option>
+                        <option value="@EstatusValeDestajo.Borrador">Borrador</option>
+                        <option value="@EstatusValeDestajo.Aprobado">Aprobado</option>
+                        <option value="@EstatusValeDestajo.EnNomina">En Nómina</option>
+                        <option value="@EstatusValeDestajo.Pagado">Pagado</option>
+                        <option value="@EstatusValeDestajo.Cancelado">Cancelado</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (mostrarForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">@(editandoId == Guid.Empty ? "Nuevo Vale" : $"Vale {editandoFolio}")</h5>
+                @if (editandoEstatus != EstatusValeDestajo.Borrador)
+                {
+                    <span class="badge @EstatusBadge(editandoEstatus)">@EstatusLabel(editandoEstatus)</span>
+                }
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Empleado</label>
+                        <select class="form-select" @bind="editandoEmpleadoId" @bind:after="OnEmpleadoChanged" disabled="@(editandoEstatus != EstatusValeDestajo.Borrador)">
+                            <option value="">Seleccione...</option>
+                            @foreach (var emp in empleados.Where(e => e.IsActive))
+                            {
+                                <option value="@emp.Id">@emp.Nombre @emp.ApellidoPaterno — @(ObtenerNombrePosicion(emp))</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Fecha</label>
+                        <input type="date" class="form-control" @bind="editandoFecha" @bind:after="OnFechaValeChanged" disabled="@(editandoEstatus != EstatusValeDestajo.Borrador)" />
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Esquema activo</label>
+                        <input type="text" class="form-control" value="@esquemaActivoNombre" disabled />
+                    </div>
+                </div>
+
+                @if (editandoEstatus == EstatusValeDestajo.Borrador)
+                {
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        <button type="button" class="btn btn-outline-primary"
+                                @onclick="AutocargarDesdeProduccion"
+                                disabled="@(!editandoEmpleadoId.HasValue || editandoEmpleadoId == Guid.Empty || guardando)">
+                            <i class="bi bi-magic me-1"></i>Autocargar desde producción
+                        </button>
+
+                        @if (registrosPendientesProduccion > 0)
+                        {
+                            <span class="badge bg-info text-dark">@registrosPendientesProduccion registro(s) pendientes</span>
+                        }
+                    </div>
+                }
+
+                @if (editandoEstatus == EstatusValeDestajo.Borrador)
+                {
+                    <h6 class="text-muted">Detalle de producción</h6>
+                    <table class="table table-sm table-bordered align-middle mb-2">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Proceso</th><th>Pedido</th><th class="text-end">Piezas</th>
+                                <th class="text-end">Tarifa</th><th class="text-end">Importe</th><th style="width:50px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in detallesEditando)
+                            {
+                                <tr>
+                                    <td>
+                                        <select class="form-select form-select-sm"
+                                                value="@(d.TipoProcesoId == Guid.Empty ? "" : d.TipoProcesoId.ToString())"
+                                                @onchange="e => OnProcesoChanged(d, e)">
+                                            <option value="">Seleccione...</option>
+                                            @foreach (var p in procesos)
+                                            {
+                                                <option value="@p.Id">@p.Nombre</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="form-select form-select-sm"
+                                                value="@(d.PedidoId.HasValue ? d.PedidoId.Value.ToString() : "")"
+                                                @onchange="e => OnPedidoChanged(d, e)">
+                                            <option value="">(libre)</option>
+                                            @foreach (var ped in pedidosActivos)
+                                            {
+                                                <option value="@ped.Id">@ped.NumeroPedido — @(ped.Cliente?.RazonSocial ?? "—") (@ped.FechaPedido.ToString("dd/MM/yy"))</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td><input type="number" class="form-control form-control-sm text-end" @bind="d.Cantidad" @bind:after="() => RecalcularLinea(d)" /></td>
+                                    <td class="text-end">
+                                        <div>@d.TarifaAplicada.ToString("C2")</div>
+                                        @if (!string.IsNullOrWhiteSpace(d.TarifaOrigen))
+                                        {
+                                            <div class="small text-muted">@d.TarifaOrigen</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(d.AdvertenciaTarifa))
+                                        {
+                                            <div class="small text-warning">@d.AdvertenciaTarifa</div>
+                                        }
+                                        @if (d.RegistroOrigenIds.Count > 0)
+                                        {
+                                            <div class="small text-info">@d.RegistroOrigenIds.Count registro(s) consolidados</div>
+                                        }
+                                    </td>
+                                    <td class="text-end fw-semibold">@((d.Cantidad * d.TarifaAplicada).ToString("C2"))</td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => detallesEditando.Remove(d)"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold">
+                                <td colspan="2" class="text-end">Total</td>
+                                <td class="text-end">@detallesEditando.Sum(d => d.Cantidad)</td>
+                                <td></td>
+                                <td class="text-end">@detallesEditando.Sum(d => d.Cantidad * d.TarifaAplicada).ToString("C2")</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" @onclick="AgregarDetalle"><i class="bi bi-plus me-1"></i>Agregar línea</button>
+                }
+                else
+                {
+                    <h6 class="text-muted">Detalle de producción</h6>
+                    <table class="table table-sm table-bordered align-middle mb-2">
+                        <thead class="table-light">
+                            <tr><th>Proceso</th><th>Pedido</th><th class="text-end">Piezas</th><th class="text-end">Tarifa</th><th class="text-end">Importe</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in detallesEditando)
+                            {
+                                <tr>
+                                    <td>@ObtenerNombreProceso(d.TipoProcesoId)</td>
+                                    <td>@ObtenerNumeroPedido(d.PedidoId)</td>
+                                    <td class="text-end">@d.Cantidad</td>
+                                    <td class="text-end">@d.TarifaAplicada.ToString("C2")</td>
+                                    <td class="text-end fw-semibold">@((d.Cantidad * d.TarifaAplicada).ToString("C2"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold">
+                                <td colspan="2" class="text-end">Total</td>
+                                <td class="text-end">@detallesEditando.Sum(d => d.Cantidad)</td>
+                                <td></td>
+                                <td class="text-end">@detallesEditando.Sum(d => d.Cantidad * d.TarifaAplicada).ToString("C2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label">Observaciones</label>
+                        <textarea class="form-control" rows="2" @bind="editandoObservaciones" disabled="@(editandoEstatus != EstatusValeDestajo.Borrador)"></textarea>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        @if (editandoEstatus == EstatusValeDestajo.Borrador && _puedeEditar)
+                        {
+                            <button class="btn btn-success" @onclick="GuardarBorrador" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar borrador</button>
+                            <button class="btn btn-primary" @onclick="AprobarVale" disabled="@guardando"><i class="bi bi-check-circle me-1"></i>Aprobar vale</button>
+                        }
+                        @if (editandoEstatus == EstatusValeDestajo.Aprobado && _puedeEditar)
+                        {
+                            <button class="btn btn-outline-danger" @onclick="CancelarVale" disabled="@guardando"><i class="bi bi-x-circle me-1"></i>Cancelar vale</button>
+                        }
+                        <button class="btn btn-outline-secondary" @onclick="() => mostrarForm = false">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Folio</th><th>Empleado</th><th>Fecha</th>
+                        <th class="text-end">Piezas</th><th class="text-end">Importe</th><th>Estatus</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in lista)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@v.Folio</td>
+                            <td>@v.Empleado.Nombre @v.Empleado.ApellidoPaterno</td>
+                            <td>@v.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td class="text-end">@v.Detalles.Sum(d => d.Cantidad)</td>
+                            <td class="text-end">@v.Detalles.Sum(d => d.Importe).ToString("C2")</td>
+                            <td><span class="badge @EstatusBadge(v.Estatus)">@EstatusLabel(v.Estatus)</span></td>
+                            <td class="text-end">
+                                @if (_puedeEditar && v.Estatus == EstatusValeDestajo.Borrador)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(v)"><i class="bi bi-pencil"></i></button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ver(v)"><i class="bi bi-eye"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+</div>
+
+@code {
+    private List<ValeDestajo> lista = [];
+    private List<Empleado> empleados = [];
+    private List<TipoProceso> procesos = [];
+    private List<Posicion> posiciones = [];
+    private List<Pedido> pedidosActivos = [];
+    private List<EsquemaPagoTarifa> tarifasEsquemaActivo = [];
+    private NominaConfiguracion configuracionNomina = new();
+
+    // Filtros
+    private Guid? filtroEmpleadoId;
+    private DateTime? filtroDesde;
+    private DateTime? filtroHasta;
+    private EstatusValeDestajo? filtroEstatus;
+
+    // Form
+    private Guid editandoId = Guid.Empty;
+    private Guid? editandoEmpleadoId;
+    private DateTime editandoFecha = DateTime.Today;
+    private string editandoFolio = "";
+    private EstatusValeDestajo editandoEstatus = EstatusValeDestajo.Borrador;
+    private Guid? esquemaActivoId;
+    private string esquemaActivoNombre = "(sin esquema)";
+    private decimal? sueldoBaseOverrideActivo;
+    private string? editandoObservaciones;
+    private List<DetalleEditable> detallesEditando = [];
+    private int registrosPendientesProduccion;
+
+    private bool mostrarForm, guardando;
+    private string? error, ok;
+    private bool _puedeVer, _puedeEditar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+        {
+            await CargarCatalogos();
+            filtroDesde = DateTime.Today.AddDays(-7);
+            filtroHasta = DateTime.Today;
+            await Cargar();
+        }
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "nominas.editar");
+    }
+
+    private async Task CargarCatalogos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        empleados = await db.Empleados.AsNoTracking().OrderBy(e => e.Nombre).ToListAsync();
+        procesos = await db.TiposProceso.AsNoTracking().Where(t => t.Activo).OrderBy(t => t.Orden).ThenBy(t => t.Nombre).ToListAsync();
+        posiciones = await db.Posiciones.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Orden).ToListAsync();
+        pedidosActivos = await db.Pedidos.AsNoTracking()
+            .Include(p => p.Cliente)
+            .Include(p => p.Detalles)
+                .ThenInclude(d => d.CotizacionSerigrafia)
+                    .ThenInclude(c => c.Detalles)
+            .Where(p => p.Estado != EstadoPedidoEnum.Cancelado)
+            .OrderByDescending(p => p.FechaPedido)
+            .ToListAsync();
+
+        var configValues = await db.AppConfigs.AsNoTracking()
+            .Where(c => c.Clave == ClavesConfiguracionNomina.FactorHoraExtra
+                || c.Clave == ClavesConfiguracionNomina.DiasBaseSemanal
+                || c.Clave == ClavesConfiguracionNomina.DiasBaseQuincenal
+                || c.Clave == ClavesConfiguracionNomina.DiasBaseMensual
+                || c.Clave == ClavesConfiguracionNomina.HorasBaseSemanal
+                || c.Clave == ClavesConfiguracionNomina.HorasBaseQuincenal
+                || c.Clave == ClavesConfiguracionNomina.HorasBaseMensual)
+            .ToDictionaryAsync(c => c.Clave, c => c.Valor ?? string.Empty);
+
+        configuracionNomina = new NominaConfiguracion
+        {
+            FactorHoraExtra = ObtenerDecimalConfig(configValues, ClavesConfiguracionNomina.FactorHoraExtra, 2m),
+            DiasBaseSemanal = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.DiasBaseSemanal, 7),
+            DiasBaseQuincenal = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.DiasBaseQuincenal, 15),
+            DiasBaseMensual = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.DiasBaseMensual, 30),
+            HorasBaseSemanal = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.HorasBaseSemanal, 48),
+            HorasBaseQuincenal = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.HorasBaseQuincenal, 96),
+            HorasBaseMensual = ObtenerEnteroConfig(configValues, ClavesConfiguracionNomina.HorasBaseMensual, 208)
+        };
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var query = db.ValesDestajo
+            .Include(v => v.Empleado)
+            .Include(v => v.Detalles)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (filtroEmpleadoId.HasValue && filtroEmpleadoId.Value != Guid.Empty)
+            query = query.Where(v => v.EmpleadoId == filtroEmpleadoId.Value);
+        if (filtroDesde.HasValue)
+            query = query.Where(v => v.Fecha >= filtroDesde.Value);
+        if (filtroHasta.HasValue)
+            query = query.Where(v => v.Fecha <= filtroHasta.Value);
+        if (filtroEstatus.HasValue)
+            query = query.Where(v => v.Estatus == filtroEstatus.Value);
+
+        lista = await query.OrderByDescending(v => v.Fecha).ThenByDescending(v => v.Folio).ToListAsync();
+    }
+
+    private async Task Nuevo()
+    {
+        if (!_puedeEditar) { error = "No tienes permisos."; return; }
+        error = ok = null;
+        editandoId = Guid.Empty;
+        editandoEmpleadoId = null;
+        editandoFecha = DateTime.Today;
+        editandoEstatus = EstatusValeDestajo.Borrador;
+        editandoFolio = await GenerarFolio();
+        editandoObservaciones = null;
+        esquemaActivoId = null;
+        esquemaActivoNombre = "(sin esquema)";
+        sueldoBaseOverrideActivo = null;
+        tarifasEsquemaActivo = [];
+        detallesEditando = [];
+        registrosPendientesProduccion = 0;
+        mostrarForm = true;
+    }
+
+    private async Task Editar(ValeDestajo v) => await CargarValeEnForm(v);
+    private async Task Ver(ValeDestajo v) => await CargarValeEnForm(v);
+
+    private async Task CargarValeEnForm(ValeDestajo v)
+    {
+        error = ok = null;
+        editandoId = v.Id;
+        editandoEmpleadoId = v.EmpleadoId;
+        editandoFecha = v.Fecha;
+        editandoFolio = v.Folio;
+        editandoEstatus = v.Estatus;
+        editandoObservaciones = v.Observaciones;
+        esquemaActivoId = v.EsquemaPagoId;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var detalleIds = v.Detalles.Select(d => d.Id).ToList();
+        var registrosPorDetalle = detalleIds.Count == 0
+            ? new Dictionary<Guid, List<Guid>>()
+            : await db.RegistrosDestajoProceso
+                .AsNoTracking()
+                .Where(r => r.ValeDestajoDetalleId.HasValue && detalleIds.Contains(r.ValeDestajoDetalleId.Value))
+                .GroupBy(r => r.ValeDestajoDetalleId!.Value)
+                .ToDictionaryAsync(g => g.Key, g => g.Select(r => r.Id).ToList());
+
+        detallesEditando = v.Detalles.Select(d => new DetalleEditable
+        {
+            Id = d.Id, TipoProcesoId = d.TipoProcesoId, PedidoId = d.PedidoId,
+            Cantidad = d.Cantidad,
+            TarifaAplicada = d.TarifaAplicada,
+            TiempoMinutos = d.TiempoMinutos,
+            EsquemaPagoTarifaId = d.EsquemaPagoTarifaId,
+            RegistroOrigenIds = registrosPorDetalle.TryGetValue(d.Id, out var registros) ? registros : []
+        }).ToList();
+
+        await CargarEsquemaEmpleado();
+        await ActualizarRegistrosPendientesProduccionAsync();
+        mostrarForm = true;
+    }
+
+    private async Task OnEmpleadoChanged()
+    {
+        tarifasEsquemaActivo = [];
+        esquemaActivoId = null;
+        esquemaActivoNombre = "(sin esquema)";
+        sueldoBaseOverrideActivo = null;
+        await CargarEsquemaEmpleado();
+        // Recalcular tarifas en detalles existentes
+        foreach (var d in detallesEditando)
+            if (d.RegistroOrigenIds.Count == 0)
+                AplicarTarifa(d);
+
+        await ActualizarRegistrosPendientesProduccionAsync();
+    }
+
+    private async Task OnFechaValeChanged()
+    {
+        await CargarEsquemaEmpleado();
+        await ActualizarRegistrosPendientesProduccionAsync();
+    }
+
+    private async Task CargarEsquemaEmpleado()
+    {
+        sueldoBaseOverrideActivo = null;
+        if (!editandoEmpleadoId.HasValue || editandoEmpleadoId.Value == Guid.Empty) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var hoy = editandoFecha;
+        var asignacion = await db.EmpleadosEsquemaPago
+            .Include(a => a.EsquemaPago)
+            .AsNoTracking()
+            .Where(a => a.EmpleadoId == editandoEmpleadoId.Value
+                && a.VigenteDesde <= hoy
+                && (a.VigenteHasta == null || a.VigenteHasta >= hoy))
+            .OrderByDescending(a => a.VigenteDesde)
+            .FirstOrDefaultAsync();
+
+        if (asignacion != null)
+        {
+            esquemaActivoId = asignacion.EsquemaPagoId;
+            esquemaActivoNombre = asignacion.EsquemaPago.Nombre;
+            sueldoBaseOverrideActivo = asignacion.SueldoBaseOverride;
+            tarifasEsquemaActivo = await db.EsquemasPagoTarifa
+                .AsNoTracking()
+                .Where(t => t.EsquemaPagoId == asignacion.EsquemaPagoId)
+                .ToListAsync();
+        }
+        else
+        {
+            esquemaActivoId = null;
+            esquemaActivoNombre = "(sin esquema asignado)";
+            tarifasEsquemaActivo = [];
+        }
+    }
+
+    private void OnProcesoChanged(DetalleEditable d, ChangeEventArgs e)
+    {
+        d.TipoProcesoId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : Guid.Empty;
+        AplicarTarifa(d);
+    }
+
+    private void OnPedidoChanged(DetalleEditable d, ChangeEventArgs e)
+    {
+        d.PedidoId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        AplicarTarifa(d);
+    }
+
+    private void AplicarTarifa(DetalleEditable d)
+    {
+        var resultado = ResolverTarifa(d);
+        d.TarifaAplicada = resultado.Tarifa;
+        d.TiempoMinutos = resultado.TiempoMinutos;
+        d.TarifaOrigen = resultado.Origen;
+        d.AdvertenciaTarifa = resultado.Advertencia;
+    }
+
+    private ResultadoTarifa ResolverTarifa(DetalleEditable d)
+    {
+        if (!editandoEmpleadoId.HasValue || editandoEmpleadoId.Value == Guid.Empty)
+            return new ResultadoTarifa { Origen = "Seleccione un empleado." };
+        if (d.TipoProcesoId == Guid.Empty)
+            return new ResultadoTarifa { Origen = "Seleccione un proceso." };
+        if (!d.PedidoId.HasValue || d.PedidoId.Value == Guid.Empty)
+            return new ResultadoTarifa { Origen = "Seleccione un pedido." };
+
+        var empleado = empleados.FirstOrDefault(e => e.Id == editandoEmpleadoId);
+        if (empleado == null)
+            return new ResultadoTarifa { Origen = "Empleado no encontrado." };
+
+        var pedido = pedidosActivos.FirstOrDefault(p => p.Id == d.PedidoId.Value);
+        if (pedido == null)
+            return new ResultadoTarifa { Origen = "Pedido no encontrado." };
+
+        var minutosPorPieza = ObtenerMinutosEstandarPorPieza(pedido, d.TipoProcesoId);
+        if (minutosPorPieza <= 0)
+            return new ResultadoTarifa { Origen = "Sin tiempo estándar en la cotización del pedido." };
+
+        var proceso = procesos.FirstOrDefault(p => p.Id == d.TipoProcesoId);
+        if (proceso == null)
+            return new ResultadoTarifa { Origen = "Proceso no encontrado." };
+
+        var resultadoTarifa = ResolverTarifaOperacion(proceso, empleado, minutosPorPieza);
+        if (resultadoTarifa.Tarifa <= 0)
+            return resultadoTarifa;
+
+        var advertencia = ObtenerAdvertenciaOperacion(empleado, proceso);
+
+        return new ResultadoTarifa
+        {
+            Tarifa = resultadoTarifa.Tarifa,
+            TiempoMinutos = (int)Math.Ceiling(minutosPorPieza * Math.Max(0, d.Cantidad)),
+            Origen = resultadoTarifa.Origen,
+            EsquemaPagoTarifaId = resultadoTarifa.EsquemaPagoTarifaId,
+            Advertencia = advertencia
+        };
+    }
+
+    private void RecalcularLinea(DetalleEditable d)
+    {
+        AplicarTarifa(d);
+    }
+
+    private void AgregarDetalle()
+    {
+        detallesEditando.Add(new DetalleEditable());
+    }
+
+    private async Task GuardarBorrador() => await GuardarVale(EstatusValeDestajo.Borrador);
+    private async Task AprobarVale() => await GuardarVale(EstatusValeDestajo.Aprobado);
+
+    private async Task GuardarVale(EstatusValeDestajo estatus)
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos."; return; }
+            if (!editandoEmpleadoId.HasValue || editandoEmpleadoId.Value == Guid.Empty) { error = "Seleccione un empleado."; return; }
+            if (detallesEditando.Count == 0) { error = "Agregue al menos una línea."; return; }
+            if (detallesEditando.Any(d => d.TipoProcesoId == Guid.Empty)) { error = "Seleccione el proceso en todas las líneas."; return; }
+            if (detallesEditando.Any(d => d.Cantidad <= 0)) { error = "La cantidad debe ser mayor a cero en todas las líneas."; return; }
+
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId);
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            if (editandoId == Guid.Empty)
+            {
+                var vale = new ValeDestajo
+                {
+                    EmpresaId = empresaId, Folio = editandoFolio,
+                    EmpleadoId = editandoEmpleadoId.Value, Fecha = editandoFecha,
+                    Estatus = estatus, EsquemaPagoId = esquemaActivoId,
+                    Observaciones = editandoObservaciones?.Trim()
+                };
+                foreach (var d in detallesEditando)
+                {
+                    var detalleId = Guid.NewGuid();
+                    vale.Detalles.Add(new ValeDestajoDetalle
+                    {
+                        Id = detalleId,
+                        TipoProcesoId = d.TipoProcesoId,
+                        PedidoId = d.PedidoId.HasValue && d.PedidoId.Value != Guid.Empty ? d.PedidoId : null,
+                        Cantidad = d.Cantidad,
+                        TarifaAplicada = d.TarifaAplicada,
+                        EsquemaPagoTarifaId = d.EsquemaPagoTarifaId,
+                        TiempoMinutos = d.TiempoMinutos,
+                        Importe = d.Cantidad * d.TarifaAplicada
+                    });
+                }
+                db.ValesDestajo.Add(vale);
+                await VincularRegistrosOrigenAsync(db, vale.Detalles, detallesEditando);
+            }
+            else
+            {
+                var vale = await db.ValesDestajo.Include(v => v.Detalles).FirstOrDefaultAsync(v => v.Id == editandoId);
+                if (vale == null) return;
+                if (vale.Estatus != EstatusValeDestajo.Borrador) { error = "Solo se pueden editar vales en borrador."; return; }
+                var nuevosDetalles = new List<ValeDestajoDetalle>();
+
+                vale.EmpleadoId = editandoEmpleadoId.Value;
+                vale.Fecha = editandoFecha;
+                vale.Estatus = estatus;
+                vale.EsquemaPagoId = esquemaActivoId;
+                vale.Observaciones = editandoObservaciones?.Trim();
+                vale.UpdatedAt = DateTime.UtcNow;
+
+                // Sync detalles
+                await LiberarRegistrosOrigenAsync(db, vale.Detalles.Select(d => d.Id).ToList());
+                db.ValesDestajoDetalle.RemoveRange(vale.Detalles);
+                vale.Detalles.Clear();
+                foreach (var d in detallesEditando)
+                {
+                    var detalleId = Guid.NewGuid();
+                    var detalleNuevo = new ValeDestajoDetalle
+                    {
+                        Id = detalleId,
+                        ValeDestajoId = vale.Id,
+                        TipoProcesoId = d.TipoProcesoId,
+                        PedidoId = d.PedidoId.HasValue && d.PedidoId.Value != Guid.Empty ? d.PedidoId : null,
+                        Cantidad = d.Cantidad,
+                        TarifaAplicada = d.TarifaAplicada,
+                        EsquemaPagoTarifaId = d.EsquemaPagoTarifaId,
+                        TiempoMinutos = d.TiempoMinutos,
+                        Importe = d.Cantidad * d.TarifaAplicada
+                    };
+                    vale.Detalles.Add(detalleNuevo);
+                    nuevosDetalles.Add(detalleNuevo);
+                }
+
+                await VincularRegistrosOrigenAsync(db, nuevosDetalles, detallesEditando);
+            }
+
+            await db.SaveChangesAsync();
+            editandoEstatus = estatus;
+            ok = estatus == EstatusValeDestajo.Aprobado ? "Vale aprobado." : "Borrador guardado.";
+            mostrarForm = false; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task CancelarVale()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos."; return; }
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var vale = await db.ValesDestajo.Include(v => v.Detalles).FirstOrDefaultAsync(v => v.Id == editandoId);
+            if (vale == null) return;
+            if (vale.Estatus != EstatusValeDestajo.Aprobado) { error = "Solo se pueden cancelar vales aprobados."; return; }
+
+            await LiberarRegistrosOrigenAsync(db, vale.Detalles.Select(d => d.Id).ToList());
+            vale.Estatus = EstatusValeDestajo.Cancelado;
+            vale.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            ok = "Vale cancelado."; mostrarForm = false; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task<string> GenerarFolio()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var ultimo = await db.ValesDestajo.OrderByDescending(v => v.Folio).Select(v => v.Folio).FirstOrDefaultAsync();
+        if (string.IsNullOrEmpty(ultimo) || !ultimo.StartsWith("VD-")) return "VD-0001";
+        var num = int.TryParse(ultimo[3..], out var n) ? n + 1 : 1;
+        return $"VD-{num:D4}";
+    }
+
+    private string ObtenerNombrePosicion(Empleado emp)
+        => posiciones.FirstOrDefault(p => p.Id == emp.PosicionId)?.Nombre ?? emp.Puesto ?? "—";
+
+    private string ObtenerNombreProceso(Guid procesoId)
+        => procesos.FirstOrDefault(p => p.Id == procesoId)?.Nombre ?? "—";
+
+    private string ObtenerNumeroPedido(Guid? pedidoId)
+    {
+        if (!pedidoId.HasValue) return "(libre)";
+        var ped = pedidosActivos.FirstOrDefault(p => p.Id == pedidoId.Value);
+        if (ped == null) return "—";
+        return $"{ped.NumeroPedido} — {ped.Cliente?.RazonSocial ?? "—"}";
+    }
+
+    private async Task AutocargarDesdeProduccion()
+    {
+        error = ok = null;
+        if (!editandoEmpleadoId.HasValue || editandoEmpleadoId == Guid.Empty)
+        {
+            error = "Seleccione un empleado para autocargar registros.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var detalleActualIds = editandoId == Guid.Empty
+            ? []
+            : await db.ValesDestajoDetalle
+                .Where(d => d.ValeDestajoId == editandoId)
+                .Select(d => d.Id)
+                .ToListAsync();
+
+        var desde = editandoFecha.Date;
+        var hasta = desde.AddDays(1);
+
+        var registros = await db.RegistrosDestajoProceso
+            .Include(r => r.PedidoSerigrafia)
+                .ThenInclude(ps => ps.PedidoDetalle)
+            .AsNoTracking()
+            .Where(r => r.IsActive
+                && r.EmpleadoId == editandoEmpleadoId.Value
+                && r.Fecha >= desde
+                && r.Fecha < hasta
+                && (!r.ValeDestajoDetalleId.HasValue || detalleActualIds.Contains(r.ValeDestajoDetalleId.Value)))
+            .OrderBy(r => r.Fecha)
+            .ThenBy(r => r.CreatedAt)
+            .ToListAsync();
+
+        if (!registros.Any())
+        {
+            error = "No hay registros de producción pendientes para el empleado y fecha seleccionados.";
+            detallesEditando = [];
+            registrosPendientesProduccion = 0;
+            return;
+        }
+
+        detallesEditando = registros
+            .GroupBy(r => new { r.TipoProcesoId, r.PedidoSerigrafiaId, r.TarifaUnitario })
+            .Select(g => new DetalleEditable
+            {
+                TipoProcesoId = g.Key.TipoProcesoId,
+                PedidoId = g.Select(r => r.PedidoSerigrafia.PedidoDetalle.PedidoId).FirstOrDefault(),
+                Cantidad = g.Sum(r => Math.Max(0, r.CantidadProcesada)),
+                TarifaAplicada = g.Key.TarifaUnitario,
+                TiempoMinutos = g.Sum(r => r.TiempoMinutos ?? 0),
+                TarifaOrigen = "Autocargado desde seguimiento de producción.",
+                RegistroOrigenIds = g.Select(r => r.Id).ToList()
+            })
+            .OrderBy(d => ObtenerNombreProceso(d.TipoProcesoId))
+            .ThenBy(d => ObtenerNumeroPedido(d.PedidoId))
+            .ToList();
+
+        ok = $"Se cargaron {registros.Count} registro(s) de producción en {detallesEditando.Count} línea(s).";
+        await ActualizarRegistrosPendientesProduccionAsync();
+    }
+
+    private ResultadoTarifa ResolverTarifaOperacion(TipoProceso proceso, Empleado empleado, decimal minutosPorPieza)
+    {
+        var resultado = DestajoTarifaResolver.Resolver(proceso, empleado.PosicionId, minutosPorPieza, tarifasEsquemaActivo);
+        return new ResultadoTarifa
+        {
+            Tarifa = resultado.Tarifa,
+            EsquemaPagoTarifaId = resultado.EsquemaPagoTarifaId,
+            Origen = resultado.Origen
+        };
+    }
+
+    private async Task ActualizarRegistrosPendientesProduccionAsync()
+    {
+        registrosPendientesProduccion = 0;
+        if (!editandoEmpleadoId.HasValue || editandoEmpleadoId == Guid.Empty)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var desde = editandoFecha.Date;
+        var hasta = desde.AddDays(1);
+        registrosPendientesProduccion = await db.RegistrosDestajoProceso
+            .AsNoTracking()
+            .CountAsync(r => r.IsActive
+                && r.EmpleadoId == editandoEmpleadoId.Value
+                && r.Fecha >= desde
+                && r.Fecha < hasta
+                && !r.ValeDestajoDetalleId.HasValue);
+    }
+
+    private static async Task LiberarRegistrosOrigenAsync(CrmDbContext db, List<Guid> detalleIds)
+    {
+        if (detalleIds.Count == 0)
+        {
+            return;
+        }
+
+        var registros = await db.RegistrosDestajoProceso
+            .Where(r => r.ValeDestajoDetalleId.HasValue && detalleIds.Contains(r.ValeDestajoDetalleId.Value))
+            .ToListAsync();
+
+        foreach (var registro in registros)
+        {
+            registro.ValeDestajoDetalleId = null;
+            registro.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static async Task VincularRegistrosOrigenAsync(CrmDbContext db, ICollection<ValeDestajoDetalle> detallesGuardados, IEnumerable<DetalleEditable> detallesEditables)
+    {
+        var mapaDetalles = detallesGuardados
+            .Zip(detallesEditables, (guardado, editable) => new { guardado.Id, editable.RegistroOrigenIds })
+            .Where(x => x.RegistroOrigenIds.Count > 0)
+            .ToList();
+
+        foreach (var item in mapaDetalles)
+        {
+            var registros = await db.RegistrosDestajoProceso
+                .Where(r => item.RegistroOrigenIds.Contains(r.Id))
+                .ToListAsync();
+
+            foreach (var registro in registros)
+            {
+                registro.ValeDestajoDetalleId = item.Id;
+                registro.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+    }
+
+    private decimal ObtenerMinutosEstandarPorPieza(Pedido pedido, Guid tipoProcesoId)
+    {
+        var detallesCotizados = pedido.Detalles
+            .Where(d => d.IsActive && d.Cantidad > 0 && d.CotizacionSerigrafia != null)
+            .Select(d => new
+            {
+                d.Cantidad,
+                Minutos = d.CotizacionSerigrafia!.Detalles
+                    .Where(cd => cd.IsActive && cd.Categoria == CotizacionCategoria.ManoObra && cd.TipoProcesoId == tipoProcesoId && cd.Tiempo.HasValue)
+                    .Sum(cd => cd.Tiempo ?? 0m)
+            })
+            .Where(x => x.Minutos > 0)
+            .ToList();
+
+        var totalPiezas = detallesCotizados.Sum(x => x.Cantidad);
+        var totalMinutos = detallesCotizados.Sum(x => x.Minutos);
+        return totalPiezas > 0 ? totalMinutos / totalPiezas : 0m;
+    }
+
+    private string? ObtenerAdvertenciaOperacion(Empleado empleado, TipoProceso? proceso)
+    {
+        if (proceso?.PosicionId == null || empleado.PosicionId == proceso.PosicionId)
+        {
+            return null;
+        }
+
+        var nombrePosicionProceso = posiciones.FirstOrDefault(p => p.Id == proceso.PosicionId.Value)?.Nombre ?? "otra posición";
+        return $"Aviso: no es su operación natural ({nombrePosicionProceso}).";
+    }
+
+    private static int ObtenerEnteroConfig(Dictionary<string, string> values, string clave, int defaultValue)
+        => values.TryGetValue(clave, out var value) && int.TryParse(value, out var result) ? result : defaultValue;
+
+    private static decimal ObtenerDecimalConfig(Dictionary<string, string> values, string clave, decimal defaultValue)
+        => values.TryGetValue(clave, out var value)
+            && decimal.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var result)
+                ? result
+                : defaultValue;
+
+    private static string EstatusBadge(EstatusValeDestajo estatus) => estatus switch
+    {
+        EstatusValeDestajo.Borrador => "bg-secondary",
+        EstatusValeDestajo.Aprobado => "bg-success",
+        EstatusValeDestajo.EnNomina => "bg-info text-dark",
+        EstatusValeDestajo.Pagado => "bg-primary",
+        EstatusValeDestajo.Cancelado => "bg-danger",
+        _ => "bg-dark"
+    };
+
+    private static string EstatusLabel(EstatusValeDestajo estatus) => estatus switch
+    {
+        EstatusValeDestajo.Borrador => "Borrador",
+        EstatusValeDestajo.Aprobado => "Aprobado",
+        EstatusValeDestajo.EnNomina => "En Nómina",
+        EstatusValeDestajo.Pagado => "Pagado",
+        EstatusValeDestajo.Cancelado => "Cancelado",
+        _ => estatus.ToString()
+    };
+
+    private class DetalleEditable
+    {
+        public Guid Id { get; set; }
+        public Guid TipoProcesoId { get; set; }
+        public Guid? PedidoId { get; set; }
+        public int Cantidad { get; set; }
+        public decimal TarifaAplicada { get; set; }
+        public Guid? EsquemaPagoTarifaId { get; set; }
+        public int? TiempoMinutos { get; set; }
+        public string? TarifaOrigen { get; set; }
+        public string? AdvertenciaTarifa { get; set; }
+        public List<Guid> RegistroOrigenIds { get; set; } = [];
+    }
+
+    private class ResultadoTarifa
+    {
+        public decimal Tarifa { get; set; }
+        public Guid? EsquemaPagoTarifaId { get; set; }
+        public int? TiempoMinutos { get; set; }
+        public string? Origen { get; set; }
+        public string? Advertencia { get; set; }
+    }
+}

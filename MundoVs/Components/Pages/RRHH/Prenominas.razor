@@ -1,0 +1,1957 @@
+@page "/rrhh/prenominas"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject CodigoNegocioService CodigoNegocio
+@inject AuthenticationStateProvider AuthStateProvider
+@inject INominaLegalPolicyService NominaLegalPolicy
+@inject IRrhhPrenominaSnapshotService PrenominaSnapshotService
+@rendermode InteractiveServer
+
+<PageTitle>Prenóminas</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver prenóminas.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-calendar2-week me-2"></i>Prenóminas</h1>
+                <p class="text-muted mb-0">Consolida días trabajados, vacaciones, horas extra y otras incidencias antes de cerrar la nómina.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="NuevaPrenomina"><i class="bi bi-plus-circle me-1"></i>Nueva Prenómina</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (mostrarForm)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">@(editandoId == Guid.Empty ? "Nueva Prenómina" : $"Prenómina {editando.Periodo}")</h5>
+                    <span class="badge bg-light text-primary">@editando.Estatus</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Periodicidad</label>
+                            <InputSelect class="form-select" @bind-Value="editando.PeriodicidadPago" @bind-Value:after="OnPeriodicidadPrenominaChangedAsync" disabled="@(editandoId != Guid.Empty || !PuedeModificarPrenominaActual)">
+                                @foreach (var periodicidad in PeriodicidadesDisponibles)
+                                {
+                                    <option value="@periodicidad">@periodicidad</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha de referencia</label>
+                            <InputDate class="form-control" @bind-Value="fechaReferenciaPrenomina" @bind-Value:after="OnFechaReferenciaPrenominaChangedAsync" disabled="@(editandoId != Guid.Empty || !PuedeModificarPrenominaActual)" />
+                            <div class="form-text">@ObtenerAyudaFechaReferencia(editando.PeriodicidadPago)</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Folio</label>
+                            <InputText class="form-control" @bind-Value="editando.Folio" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Periodo</label>
+                            <InputText class="form-control" @bind-Value="editando.Periodo" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Ciclo</label>
+                            <input class="form-control" value="@ObtenerClavePeriodo(editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo)" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha inicio</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaInicio" disabled="true" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha fin</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaFin" disabled="true" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Estatus</label>
+                            <InputSelect class="form-select" @bind-Value="editando.Estatus" disabled="true">
+                                @foreach (var estatus in Enum.GetValues<EstatusPrenomina>())
+                                {
+                                    <option value="@estatus">@estatus</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notas</label>
+                            <InputTextArea class="form-control" @bind-Value="editando.Notas" rows="2" disabled="@(!PuedeModificarPrenominaActual)" />
+                        </div>
+                    </div>
+
+                    @if (festivosPeriodo.Count > 0)
+                    {
+                        <div class="alert alert-info py-2 small">
+                            <strong>Festivos en el período:</strong>
+                            @string.Join(", ", festivosPeriodo.OrderBy(f => f.Fecha).Select(f => $"{f.Fecha:dd/MM} {f.Nombre}"))
+                        </div>
+                    }
+
+                    @if (EstaBloqueadaPorNominaProcesada)
+                    {
+                        <div class="alert alert-warning py-2 small">
+                            <strong>Edición bloqueada:</strong> @ObtenerMensajeBloqueoPrenomina()
+                        </div>
+                    }
+
+                    @if (TieneNominaBorradorLigada)
+                    {
+                        <div class="alert alert-warning py-2 small">
+                            <strong>Nómina en borrador ligada:</strong> puedes ajustar esta prenómina, pero después debes recalcular la nómina para reflejar los cambios.
+                        </div>
+                    }
+
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        @if (_puedeEditar)
+                        {
+                            <button class="btn btn-outline-primary" @onclick="CargarEmpleadosPeriodo" disabled="@(guardando || !PuedeModificarPrenominaActual)">
+                                <i class="bi bi-people me-1"></i>Cargar empleados
+                            </button>
+                            <button class="btn btn-success" @onclick="GuardarPrenomina" disabled="@(guardando || !PuedeModificarPrenominaActual)">
+                                <i class="bi bi-save me-1"></i>Guardar prenómina
+                            </button>
+                            @if (editando.Estatus == EstatusPrenomina.Abierta)
+                            {
+                                <button class="btn btn-primary" @onclick="CerrarPrenomina" disabled="@(guardando || detallesEditando.Count == 0 || !PuedeModificarPrenominaActual)">
+                                    <i class="bi bi-check2-circle me-1"></i>Cerrar prenómina
+                                </button>
+                            }
+                            else if (editando.Estatus is EstatusPrenomina.Cerrada or EstatusPrenomina.Aplicada)
+                            {
+                                <button class="btn btn-outline-warning" @onclick="ReabrirPrenominaAsync" disabled="@(guardando || !PuedeModificarPrenominaActual)">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir
+                                </button>
+                            }
+                        }
+                        <button class="btn btn-outline-secondary" @onclick="CerrarFormulario">Cerrar</button>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 small mb-3">
+                        <span class="badge text-bg-light">Empleados: @detallesEditando.Count</span>
+                        <span class="badge text-bg-light">Días trabajados: @detallesEditando.Sum(d => d.DiasTrabajados)</span>
+                        <span class="badge text-bg-light">Vacaciones: @detallesEditando.Sum(d => d.DiasVacaciones)</span>
+                        <span class="badge text-bg-light">Domingos: @detallesEditando.Sum(d => d.DiasDomingoTrabajado)</span>
+                        <span class="badge text-bg-light">Horas extra pagables: @detallesEditando.Sum(d => d.HorasExtra).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Extra base: @detallesEditando.Sum(d => d.HorasExtraBase).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Min. retardo: @detallesEditando.Sum(d => d.MinutosRetardo)</span>
+                        <span class="badge text-bg-light">Min. salida ant.: @detallesEditando.Sum(d => d.MinutosSalidaAnticipada)</span>
+                        <span class="badge text-bg-light">Min. desc. manual: @detallesEditando.Sum(d => d.MinutosDescuentoManual)</span>
+                        <span class="badge text-bg-light">Banco +: @detallesEditando.Sum(d => d.HorasBancoAcumuladas).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Banco -: @detallesEditando.Sum(d => d.HorasBancoConsumidas).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Descansos: @detallesEditando.Sum(d => d.HorasDescansoTomado).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Destajo informativo: @detallesEditando.Sum(d => d.MontoDestajoInformativo).ToString("C2")</span>
+                        <span class="badge text-bg-light">Bonos rápidos: @detallesEditando.Sum(d => d.TotalBonosRapidos).ToString("C2")</span>
+                        <span class="badge text-bg-light">Percepciones rápidas: @detallesEditando.Sum(d => d.TotalPercepcionesRapidas).ToString("C2")</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Empleado</th>
+                                    <th class="text-center">Trab.</th>
+                                    <th class="text-center">Pag.</th>
+                                    <th class="text-center">Vac.</th>
+                                    <th>Incidencias</th>
+                                    <th>Tiempo</th>
+                                    <th class="text-end">Destajo</th>
+                                    <th class="text-end">Comp. mín.</th>
+                                    <th class="text-center">IMSS</th>
+                                    <th class="text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var detalle in detallesEditando.OrderBy(d => d.NombreEmpleado))
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">@detalle.NombreEmpleado</div>
+                                            <div class="small text-muted">@detalle.PeriodicidadPago · Checadas @detalle.DiasConMarcacion</div>
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                @if (TieneFestivosAplicados(detalle.EmpleadoId))
+                                                {
+                                                    <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(detalle.EmpleadoId)">
+                                                        <i class="bi bi-info-circle me-1"></i>Festivos
+                                                    </span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(detalle.Notas))
+                                                {
+                                                    <span class="badge text-bg-light">Notas</span>
+                                                }
+                                                @if (detalle.TotalBonosRapidos > 0)
+                                                {
+                                                    <span class="badge text-bg-light">Bonos @detalle.TotalBonosRapidos.ToString("C0")</span>
+                                                }
+                                                @if (detalle.TotalPercepcionesRapidas > 0)
+                                                {
+                                                    <span class="badge text-bg-light">Percep. @detalle.TotalPercepcionesRapidas.ToString("C0")</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td class="text-center fw-semibold">@detalle.DiasTrabajados</td>
+                                        <td class="text-center fw-semibold">@detalle.DiasPagados</td>
+                                        <td class="text-center">@detalle.DiasVacaciones</td>
+                                        <td class="small">
+                                            <div>FJ @detalle.DiasFaltaJustificada · FI @detalle.DiasFaltaInjustificada</div>
+                                            <div>Inc @detalle.DiasIncapacidad · Desc @detalle.DiasDescansoTrabajado</div>
+                                            <div>Dom @detalle.DiasDomingoTrabajado · Fest @detalle.DiasFestivoTrabajado</div>
+                                        </td>
+                                        <td class="small">
+                                            <div>Extra @FormatearHorasResumen(detalle.HorasExtra)</div>
+                                            <div>Base @FormatearHorasResumen(detalle.HorasExtraBase)</div>
+                                            <div>Min desc. @ObtenerMinutosDescuentoTotal(detalle)</div>
+                                        </td>
+                                        <td class="text-end">@detalle.MontoDestajoInformativo.ToString("C2")</td>
+                                        <td class="text-end">@detalle.ComplementoSalarioMinimoSugerido.ToString("C2")</td>
+                                        <td class="text-center"><span class="badge @(detalle.AplicaImss ? "bg-success" : "bg-secondary")">@(detalle.AplicaImss ? "Sí" : "No")</span></td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirDetalleEmpleado(detalle)">
+                                                <i class="bi bi-pencil-square me-1"></i>Detalle
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (detalleModalSeleccionado != null)
+                    {
+                        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,.45);" @onclick="CerrarDetalleEmpleado">
+                            <div class="modal-dialog modal-xl modal-dialog-scrollable" @onclick:stopPropagation="true">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <div>
+                                            <h5 class="modal-title mb-1">@detalleModalSeleccionado.NombreEmpleado</h5>
+                                            <div class="small text-muted">@detalleModalSeleccionado.PeriodicidadPago · Checadas @detalleModalSeleccionado.DiasConMarcacion · Factor extra @detalleModalSeleccionado.FactorPagoTiempoExtra.ToString("0.##")</div>
+                                        </div>
+                                        <button type="button" class="btn-close" aria-label="Close" @onclick="CerrarDetalleEmpleado"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="d-flex flex-wrap gap-2 small mb-3">
+                                            <span class="badge text-bg-light">Trab. @detalleModalSeleccionado.DiasTrabajados</span>
+                                            <span class="badge text-bg-light">Pag. @detalleModalSeleccionado.DiasPagados</span>
+                                            <span class="badge text-bg-light">Vac. @detalleModalSeleccionado.DiasVacaciones</span>
+                                            <span class="badge text-bg-light">Extra @FormatearHorasResumen(detalleModalSeleccionado.HorasExtra)</span>
+                                            <span class="badge text-bg-light">Destajo @detalleModalSeleccionado.MontoDestajoInformativo.ToString("C2")</span>
+                                            <span class="badge text-bg-light">Comp. mín. @detalleModalSeleccionado.ComplementoSalarioMinimoSugerido.ToString("C2")</span>
+                                            @if (TieneFestivosAplicados(detalleModalSeleccionado.EmpleadoId))
+                                            {
+                                                <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(detalleModalSeleccionado.EmpleadoId)">
+                                                    <i class="bi bi-info-circle me-1"></i>Festivos
+                                                </span>
+                                            }
+                                        </div>
+
+                                        <div class="row g-3">
+                                            <div class="col-lg-6">
+                                                <div class="card h-100">
+                                                    <div class="card-header fw-semibold">Incidencias</div>
+                                                    <div class="card-body">
+                                                        <div class="row g-2">
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Días trabajados</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasTrabajados" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Días pagados</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasPagados" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Vacaciones</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasVacaciones" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Falta justificada</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasFaltaJustificada" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Falta injustificada</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasFaltaInjustificada" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Incapacidad</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasIncapacidad" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Descanso trabajado</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasDescansoTrabajado" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Domingo trabajado</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasDomingoTrabajado" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Festivo trabajado</label>
+                                                                <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasFestivoTrabajado" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <div class="card h-100">
+                                                    <div class="card-header fw-semibold">Tiempo y ajustes</div>
+                                                    <div class="card-body">
+                                                        <div class="row g-2">
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Horas extra pagables</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtra" disabled="@(!PuedeModificarPrenominaActual || !reglasPrenomina.PermitirHorasExtraManual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Horas extra base</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBase" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Banco acumulado</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasBancoAcumuladas" disabled="true" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Banco consumido</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasBancoConsumidas" disabled="true" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Retardo (min)</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosRetardo" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Salida ant. (min)</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosSalidaAnticipada" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Desc. manual (min)</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosDescuentoManual" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Descanso tomado</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasDescansoTomado" disabled="true" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Comp. mín.</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.ComplementoSalarioMinimoSugerido" disabled="true" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-12">
+                                                <div class="card">
+                                                    <div class="card-header fw-semibold">Notas</div>
+                                                    <div class="card-body">
+                                                        <InputTextArea class="form-control form-control-sm" @bind-Value="detalleModalSeleccionado.Notas" rows="2" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <div class="card h-100">
+                                                    <div class="card-header fw-semibold">Bonos rápidos</div>
+                                                    <div class="card-body">
+                                                        @if (rubrosBono.Count == 0)
+                                                        {
+                                                            <div class="small text-muted">Configura rubros de bono en <a href="/configuracion/bonos">Bonos de Nómina</a>.</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="mb-3">
+                                                                <label class="form-label small mb-1">Agregar bono</label>
+                                                                <input class="form-control form-control-sm"
+                                                                       value="@filtroBonoRapido"
+                                                                       @oninput="OnFiltroBonoRapidoInput"
+                                                                       @onkeydown="@(args => OnFiltroBonoRapidoKeyDown(args, detalleModalSeleccionado))"
+                                                                       placeholder="Buscar rubro de bono..."
+                                                                       disabled="@(!PuedeModificarPrenominaActual)" />
+                                                            @if (PuedeModificarPrenominaActual)
+                                                                {
+                                                                    var bonosDisponibles = ObtenerBonosDisponiblesParaAgregar(detalleModalSeleccionado).ToList();
+                                                                    @if (bonosDisponibles.Count > 0)
+                                                                    {
+                                                                        <div class="border rounded mt-2 p-2 bg-light-subtle" style="max-height: 180px; overflow-y: auto;">
+                                                                            <div class="small text-muted mb-2">Escribe para filtrar y presiona <strong>Enter</strong> para agregar el primer resultado.</div>
+                                                                            <div class="d-flex flex-column gap-1">
+                                                                                @for (var i = 0; i < bonosDisponibles.Count; i++)
+                                                                                {
+                                                                                    var bonoDisponible = bonosDisponibles[i];
+                                                                                    <button type="button" class="btn btn-sm text-start @(i == indiceBonoRapido ? "btn-primary" : "btn-outline-primary")" @onclick="() => AgregarBonoRapido(detalleModalSeleccionado, bonoDisponible.BonoRubroRrhhId)">
+                                                                                        <i class="bi bi-plus-circle me-1"></i>@bonoDisponible.Nombre
+                                                                                    </button>
+                                                                                }
+                                                                            </div>
+                                                                        </div>
+                                                                    }
+                                                                }
+                                                            </div>
+
+                                                            var bonosSeleccionados = detalleModalSeleccionado.BonosRapidos.Where(x => x.IsSelected).OrderBy(x => x.Orden).ThenBy(x => x.Nombre).ToList();
+                                                            @if (bonosSeleccionados.Count == 0)
+                                                            {
+                                                                <div class="small text-muted">No hay bonos agregados para este empleado.</div>
+                                                            }
+                                                            else
+                                                            {
+                                                                <div class="table-responsive">
+                                                                    <table class="table table-sm align-middle mb-0">
+                                                                        <thead class="table-light">
+                                                                            <tr>
+                                                                                <th>Rubro</th>
+                                                                                <th class="text-end">Importe</th>
+                                                                                <th class="text-end"></th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            @foreach (var bono in bonosSeleccionados)
+                                                                            {
+                                                                                <tr>
+                                                                                    <td class="fw-semibold">@bono.Nombre</td>
+                                                                                    <td class="text-end" style="max-width:140px">
+                                                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="bono.Importe" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                                                    </td>
+                                                                                    <td class="text-end">
+                                                                                        @if (PuedeModificarPrenominaActual)
+                                                                                        {
+                                                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarBonoRapido(detalleModalSeleccionado, bono)" disabled="@(!PuedeModificarPrenominaActual)"><i class="bi bi-trash"></i></button>
+                                                                                        }
+                                                                                    </td>
+                                                                                </tr>
+                                                                            }
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            }
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <div class="card h-100">
+                                                    <div class="card-header fw-semibold">Percepciones adicionales</div>
+                                                    <div class="card-body">
+                                                        @if (tiposPercepcion.Count == 0)
+                                                        {
+                                                            <div class="small text-muted">Configura tipos de percepción en <a href="/configuracion/nomina">Configuración de Nómina</a>.</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @if (PuedeModificarPrenominaActual)
+                                                            {
+                                                                <div class="row g-2 mb-3">
+                                                                    <div class="col-md-8">
+                                                                        <label class="form-label small mb-1">Agregar percepción</label>
+                                                                        <InputSelect class="form-select form-select-sm" @bind-Value="tipoPercepcionRapidaSeleccionadoId">
+                                                                            <option value="">Seleccionar tipo...</option>
+                                                                            @foreach (var tipo in ObtenerPercepcionesDisponibles(detalleModalSeleccionado))
+                                                                            {
+                                                                                <option value="@tipo.TipoPercepcionId.ToString()">@tipo.Nombre</option>
+                                                                            }
+                                                                        </InputSelect>
+                                                                    </div>
+                                                                    <div class="col-md-4 d-flex align-items-end">
+                                                                        <button type="button" class="btn btn-sm btn-outline-success w-100" @onclick="() => AgregarPercepcionRapidaSeleccionada(detalleModalSeleccionado)" disabled="@(!PuedeModificarPrenominaActual || string.IsNullOrWhiteSpace(tipoPercepcionRapidaSeleccionadoId))">
+                                                                            <i class="bi bi-plus-circle me-1"></i>Agregar
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            }
+
+                                                            var percepcionesSeleccionadas = detalleModalSeleccionado.PercepcionesRapidas.Where(x => x.IsSelected).OrderBy(x => x.Orden).ThenBy(x => x.Nombre).ToList();
+                                                            @if (percepcionesSeleccionadas.Count == 0)
+                                                            {
+                                                                <div class="small text-muted">No hay percepciones capturadas para este empleado.</div>
+                                                            }
+                                                            else
+                                                            {
+                                                                <div class="table-responsive">
+                                                                    <table class="table table-sm align-middle mb-0">
+                                                                        <thead class="table-light">
+                                                                            <tr>
+                                                                                <th>Concepto</th>
+                                                                                <th class="text-end">Importe</th>
+                                                                                <th>Referencia</th>
+                                                                                <th class="text-end"></th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            @foreach (var percepcion in percepcionesSeleccionadas)
+                                                                            {
+                                                                                <tr>
+                                                                                    <td class="fw-semibold">@percepcion.Nombre</td>
+                                                                                    <td class="text-end" style="max-width:140px">
+                                                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="percepcion.Importe" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                                                    </td>
+                                                                                    <td style="max-width:220px">
+                                                                                        <InputText class="form-control form-control-sm" @bind-Value="percepcion.Referencia" placeholder="Referencia" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                                                    </td>
+                                                                                    <td class="text-end">
+                                                                                        @if (PuedeModificarPrenominaActual)
+                                                                                        {
+                                                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarPercepcionRapida(detalleModalSeleccionado, percepcion)" disabled="@(!PuedeModificarPrenominaActual)"><i class="bi bi-trash"></i></button>
+                                                                                        }
+                                                                                    </td>
+                                                                                </tr>
+                                                                            }
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            }
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <div class="small text-muted me-auto">Los cambios del empleado se guardan con <strong>Guardar prenómina</strong>.</div>
+                                        <button type="button" class="btn btn-outline-secondary" @onclick="CerrarDetalleEmpleado">Cerrar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Folio</th>
+                            <th>Ciclo</th>
+                            <th>Periodo</th>
+                            <th>Inicio</th>
+                            <th>Fin</th>
+                            <th class="text-center">Estatus</th>
+                            <th class="text-center">Empleados</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var prenomina in lista)
+                        {
+                            <tr>
+                                <td class="fw-semibold">@(string.IsNullOrWhiteSpace(prenomina.Folio) ? "—" : prenomina.Folio)</td>
+                                <td><span class="badge text-bg-light">@ObtenerClavePeriodo(prenomina.PeriodicidadPago, prenomina.AnioPeriodo, prenomina.NumeroPeriodo)</span></td>
+                                <td class="fw-semibold">@prenomina.Periodo</td>
+                                <td>@prenomina.FechaInicio.ToString("dd/MM/yyyy")</td>
+                                <td>@prenomina.FechaFin.ToString("dd/MM/yyyy")</td>
+                                <td class="text-center"><span class="badge @BadgePrenomina(prenomina.Estatus)">@prenomina.Estatus</span></td>
+                                <td class="text-center">@prenomina.Detalles.Count</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarPrenomina(prenomina)">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Prenomina> lista = [];
+    private List<Empleado> empleados = [];
+    private List<BonoRubroRrhh> rubrosBono = [];
+    private List<NominaPercepcionTipo> tiposPercepcion = [];
+    private List<PrenominaDetalleEditable> detallesEditando = [];
+    private Dictionary<Guid, EmpleadoEsquemaPago> esquemaPagoPeriodoPorEmpleado = [];
+    private Dictionary<Guid, List<FestivoAplicadoVm>> festivosAplicadosPorEmpleado = [];
+    private PrenominaDetalleEditable? detalleModalSeleccionado;
+    private string filtroBonoRapido = string.Empty;
+    private string tipoPercepcionRapidaSeleccionadoId = string.Empty;
+    private int indiceBonoRapido = 0;
+    private PrenominaModalTab tabModalPrenominaActiva = PrenominaModalTab.Resumen;
+    private Prenomina editando = new();
+    private NominaConfiguracion configuracionNomina = new();
+    private ReglasPrenominaConfiguracion reglasPrenomina = new();
+    private NominaCorteRrhh corteSemanal = new() { PeriodicidadPago = PeriodicidadPago.Semanal, DiaCorteSemana = DayOfWeek.Sunday, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteQuincenal = new() { PeriodicidadPago = PeriodicidadPago.Quincenal, DiaCorteMes = 15, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteMensual = new() { PeriodicidadPago = PeriodicidadPago.Mensual, DiaCorteMes = 31, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private DateTime fechaReferenciaPrenomina = DateTime.Today;
+    private List<FestivoRrhh> festivosPeriodo = [];
+    private Guid editandoId = Guid.Empty;
+    private bool mostrarForm;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+    private Nomina? _nominaBloqueantePrenomina;
+
+    private bool _puedeEditarCerrada;
+    private bool TieneNominaBorradorLigada => _nominaBloqueantePrenomina?.Estatus == EstatusNomina.Borrador;
+    private bool PuedeEditarActual => _puedeEditar
+        && (editando.Estatus == EstatusPrenomina.Abierta
+            || ((editando.Estatus == EstatusPrenomina.Cerrada || editando.Estatus == EstatusPrenomina.Aplicada) && (_puedeEditarCerrada || TieneNominaBorradorLigada)));
+    private bool EstaBloqueadaPorNominaProcesada => _nominaBloqueantePrenomina is not null && _nominaBloqueantePrenomina.Estatus is not (EstatusNomina.Cancelada or EstatusNomina.Borrador);
+    private bool PuedeModificarPrenominaActual => PuedeEditarActual && !EstaBloqueadaPorNominaProcesada;
+    private static IReadOnlyList<PeriodicidadPago> PeriodicidadesDisponibles { get; } = [PeriodicidadPago.Semanal, PeriodicidadPago.Quincenal, PeriodicidadPago.Mensual];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarConfiguracionAsync();
+            await CargarCatalogosAsync();
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        _puedeVer = esSuperAdmin || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = esSuperAdmin || state.User.HasClaim("Capacidad", "nominas.editar");
+        _puedeEditarCerrada = esSuperAdmin
+            || state.User.HasClaim("Capacidad", "nominas.editar.cerrada")
+            || state.User.HasClaim("Capacidad", "prenominas.reabrir")
+            || _puedeEditar;
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarCatalogosAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        empleados = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+
+        rubrosBono = await db.BonosRubrosRrhh
+            .AsNoTracking()
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Nombre)
+            .ToListAsync();
+
+        tiposPercepcion = await db.NominasPercepcionesTipos
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Nombre)
+            .ToListAsync();
+    }
+
+    private async Task CargarConfiguracionAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracionNomina = await NominaConfiguracionLoader.LoadAsync(db);
+        reglasPrenomina = configuracionNomina.ObtenerReglasPrenomina();
+
+        corteSemanal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Semanal, 31);
+        corteQuincenal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Quincenal, 15);
+        corteMensual = await CargarCortePeriodoAsync(db, PeriodicidadPago.Mensual, 31);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        lista = await db.Prenominas
+            .Include(p => p.Detalles)
+            .AsNoTracking()
+            .OrderByDescending(p => p.FechaInicio)
+            .ToListAsync();
+    }
+
+    private async Task NuevaPrenomina()
+    {
+        error = ok = null;
+        editandoId = Guid.Empty;
+        _nominaBloqueantePrenomina = null;
+        editando = new Prenomina
+        {
+            Folio = null,
+            PeriodicidadPago = PeriodicidadPago.Semanal,
+            Estatus = EstatusPrenomina.Abierta
+        };
+        fechaReferenciaPrenomina = DateTime.Today;
+        detallesEditando = [];
+        await AplicarPeriodoPrenominaAsync(editando.PeriodicidadPago, fechaReferenciaPrenomina);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existente = await BuscarPrenominaExistenteAsync(db, editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo);
+        if (existente != null)
+        {
+            await EditarPrenomina(existente);
+            ok = $"Ya existe una prenómina activa para el ciclo {ObtenerClavePeriodo(existente.PeriodicidadPago, existente.AnioPeriodo, existente.NumeroPeriodo)}. Se abrió el registro actual.";
+            return;
+        }
+
+        mostrarForm = true;
+    }
+
+    private async Task EditarPrenomina(Prenomina prenomina)
+    {
+        error = ok = null;
+        editandoId = prenomina.Id;
+        editando = new Prenomina
+        {
+            Id = prenomina.Id,
+            EmpresaId = prenomina.EmpresaId,
+            Folio = prenomina.Folio,
+            PeriodicidadPago = prenomina.PeriodicidadPago,
+            AnioPeriodo = prenomina.AnioPeriodo,
+            NumeroPeriodo = prenomina.NumeroPeriodo,
+            Periodo = prenomina.Periodo,
+            FechaInicio = prenomina.FechaInicio,
+            FechaFin = prenomina.FechaFin,
+            Estatus = prenomina.Estatus,
+            Notas = prenomina.Notas,
+            CreatedAt = prenomina.CreatedAt,
+            UpdatedAt = prenomina.UpdatedAt,
+            IsActive = prenomina.IsActive
+        };
+        fechaReferenciaPrenomina = prenomina.FechaFin.Date;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var detalles = await db.PrenominaDetalles
+            .Include(d => d.Empleado)
+            .Include(d => d.BonosRapidos)
+                .ThenInclude(b => b.BonoRubroRrhh)
+            .Include(d => d.PercepcionesRapidas)
+                .ThenInclude(p => p.TipoPercepcion)
+            .Where(d => d.PrenominaId == prenomina.Id)
+            .AsNoTracking()
+            .OrderBy(d => d.Empleado.Nombre)
+            .ThenBy(d => d.Empleado.ApellidoPaterno)
+            .ToListAsync();
+
+        esquemaPagoPeriodoPorEmpleado = await PrenominaSnapshotService.ObtenerEsquemasPagoPeriodoAsync(db, editando.FechaInicio, editando.FechaFin, detalles.Select(d => d.EmpleadoId).ToList());
+
+        detallesEditando = detalles.Select(d => new PrenominaDetalleEditable
+        {
+            Id = d.Id,
+            EmpleadoId = d.EmpleadoId,
+            NombreEmpleado = d.Empleado.NombreCompleto,
+            PeriodicidadPago = d.Empleado.PeriodicidadPago,
+            DiasTrabajados = d.DiasTrabajados,
+            DiasPagados = d.DiasPagados,
+            DiasVacaciones = d.DiasVacaciones,
+            DiasFaltaJustificada = d.DiasFaltaJustificada,
+            DiasFaltaInjustificada = d.DiasFaltaInjustificada,
+            DiasIncapacidad = d.DiasIncapacidad,
+            DiasDescansoTrabajado = d.DiasDescansoTrabajado,
+            DiasConMarcacion = d.DiasConMarcacion,
+            DiasDomingoTrabajado = d.DiasDomingoTrabajado,
+            DiasFestivoTrabajado = d.DiasFestivoTrabajado,
+            HorasExtraBase = d.HorasExtraBase,
+            HorasExtra = d.HorasExtra,
+            HorasBancoAcumuladas = d.HorasBancoAcumuladas,
+            HorasBancoConsumidas = d.HorasBancoConsumidas,
+            HorasDescansoTomado = d.HorasDescansoTomado,
+            HorasDescansoPagado = d.HorasDescansoPagado,
+            HorasDescansoNoPagado = d.HorasDescansoNoPagado,
+            MinutosRetardo = d.MinutosRetardo,
+            MinutosSalidaAnticipada = d.MinutosSalidaAnticipada,
+            MinutosDescuentoManual = d.MinutosDescuentoManual,
+            FactorPagoTiempoExtra = d.FactorPagoTiempoExtra,
+            MontoDestajoInformativo = d.MontoDestajoInformativo,
+            DiasVacacionesDisponibles = d.DiasVacacionesDisponibles,
+            DiasVacacionesRestantes = d.DiasVacacionesRestantes,
+            ComplementoSalarioMinimoSugerido = d.ComplementoSalarioMinimoSugerido,
+            AplicaImss = d.AplicaImss,
+            Notas = d.Notas,
+            RubrosBonoPermitidosIds = ObtenerRubrosBonoPermitidosIds(d.Empleado, d.BonosRapidos),
+            BonosRapidos = ConstruirBonosRapidosDesdeEntidades(ObtenerRubrosBonoPermitidosIds(d.Empleado, d.BonosRapidos), d.BonosRapidos),
+            PercepcionesRapidas = ConstruirPercepcionesRapidasDesdeEntidades(d.PercepcionesRapidas)
+        }).ToList();
+
+        await CargarFestivosPeriodoAsync(editando.FechaInicio, editando.FechaFin);
+        await CargarFestivosAplicadosAsync(editando.FechaInicio, editando.FechaFin, detallesEditando.Select(d => d.EmpleadoId));
+        await CargarBloqueoPrenominaAsync(editando.Id);
+        SincronizarDetalleModalSeleccionado();
+
+        mostrarForm = true;
+    }
+
+    private async Task OnPeriodicidadPrenominaChangedAsync()
+    {
+        if (editandoId != Guid.Empty)
+            return;
+
+        await AplicarPeriodoPrenominaAsync(editando.PeriodicidadPago, fechaReferenciaPrenomina);
+    }
+
+    private async Task OnFechaReferenciaPrenominaChangedAsync()
+    {
+        if (editandoId != Guid.Empty)
+            return;
+
+        await AplicarPeriodoPrenominaAsync(editando.PeriodicidadPago, fechaReferenciaPrenomina);
+    }
+
+    private async Task CargarFestivosPeriodoAsync(DateTime inicio, DateTime fin)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        festivosPeriodo = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive && f.Fecha >= inicio.Date && f.Fecha <= fin.Date)
+            .OrderBy(f => f.Fecha)
+            .ToListAsync();
+    }
+
+    private async Task CargarBloqueoPrenominaAsync(Guid prenominaId)
+    {
+        if (prenominaId == Guid.Empty)
+        {
+            _nominaBloqueantePrenomina = null;
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _nominaBloqueantePrenomina = await ObtenerNominaActivaPorPrenominaAsync(db, prenominaId);
+    }
+
+    private static Task<Nomina?> ObtenerNominaActivaPorPrenominaAsync(CrmDbContext db, Guid prenominaId)
+        => db.Nominas
+            .AsNoTracking()
+            .OrderByDescending(n => n.CreatedAt)
+            .FirstOrDefaultAsync(n => n.PrenominaId == prenominaId && n.Estatus != EstatusNomina.Cancelada);
+
+    private string ObtenerMensajeBloqueoPrenomina()
+    {
+        if (_nominaBloqueantePrenomina == null)
+            return string.Empty;
+
+        var identificador = !string.IsNullOrWhiteSpace(_nominaBloqueantePrenomina.NumeroNomina)
+            ? _nominaBloqueantePrenomina.NumeroNomina
+            : !string.IsNullOrWhiteSpace(_nominaBloqueantePrenomina.Folio)
+                ? _nominaBloqueantePrenomina.Folio
+                : _nominaBloqueantePrenomina.Periodo;
+
+        return $"La prenómina está ligada a la nómina {identificador} ({_nominaBloqueantePrenomina.Estatus}) y ya no puede modificarse.";
+    }
+
+    private async Task CargarFestivosAplicadosAsync(DateTime inicio, DateTime fin, IEnumerable<Guid> empleadoIds)
+    {
+        var ids = empleadoIds.Distinct().Where(id => id != Guid.Empty).ToList();
+        if (ids.Count == 0)
+        {
+            festivosAplicadosPorEmpleado = [];
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var festivosPorFecha = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive && f.Fecha >= inicio.Date && f.Fecha <= fin.Date && f.AplicaPrimaEspecial)
+            .GroupBy(f => DateOnly.FromDateTime(f.Fecha.Date))
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.OrderByDescending(f => f.FactorPago).First());
+
+        if (festivosPorFecha.Count == 0)
+        {
+            festivosAplicadosPorEmpleado = [];
+            return;
+        }
+
+        var fechasFestivas = festivosPorFecha.Keys.ToHashSet();
+        var asistencias = await db.RrhhAsistencias
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.EmpleadoId)
+                && a.Fecha >= DateOnly.FromDateTime(inicio)
+                && a.Fecha <= DateOnly.FromDateTime(fin)
+                && fechasFestivas.Contains(a.Fecha)
+                && (a.Estatus == RrhhAsistenciaEstatus.AsistenciaNormal
+                    || a.Estatus == RrhhAsistenciaEstatus.Retardo
+                    || a.Estatus == RrhhAsistenciaEstatus.Incompleta
+                    || a.Estatus == RrhhAsistenciaEstatus.DescansoTrabajado))
+            .Select(a => new { a.EmpleadoId, a.Fecha })
+            .ToListAsync();
+
+        festivosAplicadosPorEmpleado = asistencias
+            .GroupBy(a => a.EmpleadoId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(a => a.Fecha)
+                    .Select(a =>
+                    {
+                        var festivo = festivosPorFecha[a.Fecha];
+                        var usaFallback = festivo.FactorPago <= 0m;
+                        return new FestivoAplicadoVm
+                        {
+                            Fecha = a.Fecha,
+                            Nombre = festivo.Nombre,
+                            Factor = configuracionNomina.ObtenerFactorFestivoTrabajado(festivo.FactorPago),
+                            UsaFallback = usaFallback
+                        };
+                    })
+                    .ToList());
+    }
+
+    private async Task CargarEmpleadosPeriodo()
+    {
+        error = ok = null;
+        if (!PuedeModificarPrenominaActual)
+        {
+            error = EstaBloqueadaPorNominaProcesada ? ObtenerMensajeBloqueoPrenomina() : "No tienes permisos para modificar esta prenómina.";
+            return;
+        }
+
+        await CargarConfiguracionAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var inicio = editando.FechaInicio.Date;
+        var fin = editando.FechaFin.Date;
+        var snapshots = (await PrenominaSnapshotService.ConstruirSnapshotPeriodoAsync(db, inicio, fin, configuracionNomina))
+            .Where(s => s.Empleado.PeriodicidadPago == editando.PeriodicidadPago)
+            .ToList();
+        esquemaPagoPeriodoPorEmpleado = snapshots
+            .Where(s => s.AsignacionEsquema != null)
+            .ToDictionary(s => s.Empleado.Id, s => s.AsignacionEsquema!);
+
+        var existentes = detallesEditando
+            .Where(d => d.PeriodicidadPago == editando.PeriodicidadPago)
+            .ToDictionary(d => d.EmpleadoId, d => d);
+
+        foreach (var snapshot in snapshots)
+        {
+            var empleado = snapshot.Empleado;
+
+            var detalle = existentes.TryGetValue(empleado.Id, out var actual)
+                ? actual
+                : CrearDetalleInicial(
+                    empleado,
+                    snapshot);
+
+            detalle.NombreEmpleado = empleado.NombreCompleto;
+            detalle.PeriodicidadPago = empleado.PeriodicidadPago;
+            detalle.AplicaImss = snapshot.AplicaImss;
+            detalle.MontoDestajoInformativo = snapshot.MontoDestajoInformativo;
+            detalle.DiasTrabajados = snapshot.DiasTrabajados;
+            detalle.DiasPagados = snapshot.DiasPagados;
+            detalle.DiasVacaciones = snapshot.DiasVacaciones;
+            detalle.DiasFaltaJustificada = snapshot.DiasFaltaJustificada;
+            detalle.DiasFaltaInjustificada = snapshot.DiasFaltaInjustificada;
+            detalle.DiasDescansoTrabajado = snapshot.DiasDescansoTrabajado;
+            detalle.DiasConMarcacion = snapshot.DiasConMarcacion;
+            detalle.DiasDomingoTrabajado = snapshot.DiasDomingoTrabajado;
+            detalle.DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado;
+            detalle.HorasExtraBase = snapshot.HorasExtraBase;
+            detalle.HorasExtra = snapshot.HorasExtra;
+            detalle.HorasBancoAcumuladas = snapshot.HorasBancoAcumuladas;
+            detalle.HorasBancoConsumidas = snapshot.HorasBancoConsumidas;
+            detalle.HorasDescansoTomado = snapshot.HorasDescansoTomado;
+            detalle.HorasDescansoPagado = snapshot.HorasDescansoPagado;
+            detalle.HorasDescansoNoPagado = snapshot.HorasDescansoNoPagado;
+            detalle.MinutosRetardo = snapshot.MinutosRetardo;
+            detalle.MinutosSalidaAnticipada = snapshot.MinutosSalidaAnticipada;
+            detalle.DiasVacacionesDisponibles = snapshot.DiasVacacionesDisponibles;
+            detalle.DiasVacacionesRestantes = Math.Max(0, detalle.DiasVacacionesDisponibles - detalle.DiasVacaciones);
+            detalle.ComplementoSalarioMinimoSugerido = snapshot.ComplementoSalarioMinimoSugerido;
+            detalle.Notas = snapshot.Notas;
+            detalle.FactorPagoTiempoExtra = snapshot.FactorPagoTiempoExtra;
+            detalle.RubrosBonoPermitidosIds = ObtenerRubrosBonoPermitidosIds(empleado, []);
+            AsegurarCapturasRapidas(detalle);
+            existentes[empleado.Id] = detalle;
+        }
+
+        detallesEditando = existentes.Values
+            .OrderBy(d => d.NombreEmpleado)
+            .ToList();
+
+        SincronizarDetalleModalSeleccionado();
+
+        ok = $"Se cargaron {detallesEditando.Count} empleado(s) en la prenómina.";
+    }
+
+    private PrenominaDetalleEditable CrearDetalleInicial(Empleado empleado, RrhhPrenominaSnapshotItem snapshot)
+        => new()
+        {
+            EmpleadoId = empleado.Id,
+            NombreEmpleado = empleado.NombreCompleto,
+            PeriodicidadPago = empleado.PeriodicidadPago,
+            DiasTrabajados = snapshot.DiasTrabajados,
+            DiasPagados = snapshot.DiasPagados,
+            DiasVacaciones = snapshot.DiasVacaciones,
+            DiasFaltaJustificada = snapshot.DiasFaltaJustificada,
+            DiasFaltaInjustificada = snapshot.DiasFaltaInjustificada,
+            DiasIncapacidad = snapshot.DiasIncapacidad,
+            DiasDescansoTrabajado = snapshot.DiasDescansoTrabajado,
+            DiasConMarcacion = snapshot.DiasConMarcacion,
+            DiasDomingoTrabajado = snapshot.DiasDomingoTrabajado,
+            DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado,
+            HorasExtraBase = snapshot.HorasExtraBase,
+            HorasExtra = snapshot.HorasExtra,
+            HorasBancoAcumuladas = snapshot.HorasBancoAcumuladas,
+            HorasBancoConsumidas = snapshot.HorasBancoConsumidas,
+            HorasDescansoTomado = snapshot.HorasDescansoTomado,
+            HorasDescansoPagado = snapshot.HorasDescansoPagado,
+            HorasDescansoNoPagado = snapshot.HorasDescansoNoPagado,
+            MinutosRetardo = snapshot.MinutosRetardo,
+            MinutosSalidaAnticipada = snapshot.MinutosSalidaAnticipada,
+            MinutosDescuentoManual = snapshot.MinutosDescuentoManual,
+            FactorPagoTiempoExtra = snapshot.FactorPagoTiempoExtra,
+            MontoDestajoInformativo = snapshot.MontoDestajoInformativo,
+            DiasVacacionesDisponibles = snapshot.DiasVacacionesDisponibles,
+            DiasVacacionesRestantes = snapshot.DiasVacacionesRestantes,
+            ComplementoSalarioMinimoSugerido = snapshot.ComplementoSalarioMinimoSugerido,
+            AplicaImss = snapshot.AplicaImss,
+            Notas = snapshot.Notas,
+            RubrosBonoPermitidosIds = ObtenerRubrosBonoPermitidosIds(empleado, []),
+            BonosRapidos = ConstruirBonosRapidosDesdeEntidades(ObtenerRubrosBonoPermitidosIds(empleado, []), Array.Empty<PrenominaBono>()),
+            PercepcionesRapidas = ConstruirPercepcionesRapidasDesdeEntidades(Array.Empty<PrenominaPercepcion>())
+        };
+
+    private static string? CombinarNotas(params string?[] notas)
+    {
+        var valores = notas.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).ToList();
+        return valores.Count == 0 ? null : string.Join(" | ", valores);
+    }
+
+    private static string FormatearHorasResumen(decimal horas)
+        => $"{horas:0.##} h";
+
+    private void CambiarTabModalPrenomina(PrenominaModalTab tab)
+        => tabModalPrenominaActiva = tab;
+
+    private string ObtenerClaseTabModalPrenomina(PrenominaModalTab tab)
+        => tabModalPrenominaActiva == tab ? "active" : "text-body";
+
+    private void AbrirDetalleEmpleado(PrenominaDetalleEditable detalle)
+    {
+        detalleModalSeleccionado = detalle;
+        filtroBonoRapido = string.Empty;
+        tipoPercepcionRapidaSeleccionadoId = string.Empty;
+        indiceBonoRapido = 0;
+        tabModalPrenominaActiva = PrenominaModalTab.Resumen;
+    }
+
+    private void CerrarDetalleEmpleado()
+    {
+        detalleModalSeleccionado = null;
+        filtroBonoRapido = string.Empty;
+        tipoPercepcionRapidaSeleccionadoId = string.Empty;
+        indiceBonoRapido = 0;
+        tabModalPrenominaActiva = PrenominaModalTab.Resumen;
+    }
+
+    private void SincronizarDetalleModalSeleccionado()
+    {
+        if (detalleModalSeleccionado == null)
+            return;
+
+        detalleModalSeleccionado = detallesEditando.FirstOrDefault(d => d.EmpleadoId == detalleModalSeleccionado.EmpleadoId);
+    }
+
+    private bool TieneFestivosAplicados(Guid empleadoId)
+        => festivosAplicadosPorEmpleado.TryGetValue(empleadoId, out var festivos) && festivos.Count > 0;
+
+    private string ObtenerTextoFestivosAplicados(Guid empleadoId)
+        => !festivosAplicadosPorEmpleado.TryGetValue(empleadoId, out var festivos) || festivos.Count == 0
+            ? "—"
+            : string.Join(", ", festivos.Select(f => $"{f.Fecha:dd/MM} {f.Nombre} x{f.Factor:0.##}{(f.UsaFallback ? " (global)" : string.Empty)}"));
+
+    private static int ObtenerMinutosDescuentoTotal(PrenominaDetalleEditable detalle)
+        => Math.Max(0, detalle.MinutosRetardo) + Math.Max(0, detalle.MinutosSalidaAnticipada) + Math.Max(0, detalle.MinutosDescuentoManual);
+
+
+    private async Task GuardarPrenomina()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar prenóminas.";
+                return;
+            }
+
+            if (editandoId != Guid.Empty)
+            {
+                await using var dbBloqueo = await DbFactory.CreateDbContextAsync();
+                _nominaBloqueantePrenomina = await ObtenerNominaActivaPorPrenominaAsync(dbBloqueo, editandoId);
+                if (EstaBloqueadaPorNominaProcesada)
+                {
+                    error = ObtenerMensajeBloqueoPrenomina();
+                    return;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(editando.Periodo))
+            {
+                error = "El periodo es requerido.";
+                return;
+            }
+
+            var empresaId = _empresaId;
+            if (empresaId == Guid.Empty)
+            {
+                error = "No hay empresa activa.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var periodoActual = NominaPeriodoHelper.ObtenerPeriodo(editando.PeriodicidadPago, editando.FechaFin, ObtenerCortePeriodo(editando.PeriodicidadPago));
+            editando.Periodo = periodoActual.Periodo;
+            editando.FechaInicio = periodoActual.Inicio;
+            editando.FechaFin = periodoActual.Fin;
+            editando.AnioPeriodo = periodoActual.AnioPeriodo;
+            editando.NumeroPeriodo = periodoActual.NumeroPeriodo;
+
+            if (await db.Prenominas.AnyAsync(p => p.EmpresaId == empresaId
+                && p.Id != editandoId
+                && p.PeriodicidadPago == editando.PeriodicidadPago
+                && p.AnioPeriodo == editando.AnioPeriodo
+                && p.NumeroPeriodo == editando.NumeroPeriodo
+                && p.Estatus != EstatusPrenomina.Cancelada))
+            {
+                error = "Ya existe una prenómina para ese período calendario y periodicidad.";
+                return;
+            }
+
+            if (await db.Prenominas.AnyAsync(p => p.EmpresaId == empresaId
+                && p.Id != editandoId
+                && p.FechaInicio == editando.FechaInicio
+                && p.FechaFin == editando.FechaFin))
+            {
+                error = "Ya existe una prenómina para ese rango de fechas. Abre la existente o cambia el período.";
+                return;
+            }
+
+            Prenomina prenomina;
+            if (editandoId == Guid.Empty)
+            {
+                editando.Folio = string.IsNullOrWhiteSpace(editando.Folio)
+                    ? await CodigoNegocio.GetNextPeriodFolioAsync(empresaId, "PRE", "Consecutivo:Prenomina", editando.FechaInicio)
+                    : editando.Folio.Trim();
+                prenomina = new Prenomina
+                {
+                    EmpresaId = empresaId,
+                    Folio = editando.Folio,
+                    PeriodicidadPago = editando.PeriodicidadPago,
+                    AnioPeriodo = editando.AnioPeriodo,
+                    NumeroPeriodo = editando.NumeroPeriodo,
+                    Periodo = editando.Periodo.Trim(),
+                    FechaInicio = editando.FechaInicio,
+                    FechaFin = editando.FechaFin,
+                    Estatus = editando.Estatus,
+                    Notas = editando.Notas?.Trim()
+                };
+                db.Prenominas.Add(prenomina);
+                await db.SaveChangesAsync();
+                editandoId = prenomina.Id;
+                editando.Id = prenomina.Id;
+            }
+            else
+            {
+                prenomina = await db.Prenominas.FirstAsync(p => p.Id == editandoId);
+                prenomina.Folio = string.IsNullOrWhiteSpace(editando.Folio) ? prenomina.Folio : editando.Folio.Trim();
+                prenomina.PeriodicidadPago = editando.PeriodicidadPago;
+                prenomina.AnioPeriodo = editando.AnioPeriodo;
+                prenomina.NumeroPeriodo = editando.NumeroPeriodo;
+                prenomina.Periodo = editando.Periodo.Trim();
+                prenomina.FechaInicio = editando.FechaInicio;
+                prenomina.FechaFin = editando.FechaFin;
+                prenomina.Estatus = editando.Estatus;
+                prenomina.Notas = editando.Notas?.Trim();
+                prenomina.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            if (editando.Estatus == EstatusPrenomina.Abierta)
+            {
+                prenomina.FechaCierre = null;
+                prenomina.CerradaPor = null;
+            }
+            else if (editando.Estatus == EstatusPrenomina.Cerrada)
+            {
+                prenomina.FechaCierre ??= DateTime.UtcNow;
+                prenomina.CerradaPor = string.IsNullOrWhiteSpace(prenomina.CerradaPor) ? usuarioActual : prenomina.CerradaPor;
+            }
+
+            var existentes = await db.PrenominaDetalles.Where(d => d.PrenominaId == prenomina.Id).ToListAsync();
+            var entidadesPorEmpleado = new Dictionary<Guid, PrenominaDetalle>();
+            var idsEditando = detallesEditando.Where(d => d.Id != Guid.Empty).Select(d => d.Id).ToHashSet();
+            var eliminar = existentes.Where(d => !idsEditando.Contains(d.Id)).ToList();
+            if (eliminar.Count > 0)
+            {
+                db.PrenominaDetalles.RemoveRange(eliminar);
+            }
+
+            foreach (var detalle in detallesEditando)
+            {
+                detalle.DiasVacacionesRestantes = Math.Max(0, detalle.DiasVacacionesDisponibles - detalle.DiasVacaciones);
+                var empleado = empleados.FirstOrDefault(e => e.Id == detalle.EmpleadoId);
+                if (empleado != null)
+                {
+            detalle.ComplementoSalarioMinimoSugerido = NominaLegalPolicy.CalcularComplementoSalarioMinimo(empleado, esquemaPagoPeriodoPorEmpleado.GetValueOrDefault(empleado.Id), detalle.DiasPagados, detalle.MontoDestajoInformativo, configuracionNomina);
+                }
+                var entity = detalle.Id == Guid.Empty
+                    ? null
+                    : existentes.FirstOrDefault(d => d.Id == detalle.Id);
+
+                if (entity == null)
+                {
+                    entity = new PrenominaDetalle
+                    {
+                        PrenominaId = prenomina.Id,
+                        EmpleadoId = detalle.EmpleadoId
+                    };
+                    db.PrenominaDetalles.Add(entity);
+                    detalle.Id = entity.Id;
+                }
+
+                entity.DiasTrabajados = detalle.DiasTrabajados;
+                entity.DiasPagados = detalle.DiasPagados;
+                entity.DiasVacaciones = detalle.DiasVacaciones;
+                entity.DiasFaltaJustificada = detalle.DiasFaltaJustificada;
+                entity.DiasFaltaInjustificada = detalle.DiasFaltaInjustificada;
+                entity.DiasIncapacidad = detalle.DiasIncapacidad;
+                entity.DiasDescansoTrabajado = detalle.DiasDescansoTrabajado;
+                entity.DiasConMarcacion = detalle.DiasConMarcacion;
+                entity.DiasDomingoTrabajado = detalle.DiasDomingoTrabajado;
+                entity.DiasFestivoTrabajado = detalle.DiasFestivoTrabajado;
+                entity.HorasExtraBase = detalle.HorasExtraBase;
+                entity.HorasExtra = detalle.HorasExtra;
+                entity.HorasBancoAcumuladas = detalle.HorasBancoAcumuladas;
+                entity.HorasBancoConsumidas = detalle.HorasBancoConsumidas;
+                entity.HorasDescansoTomado = detalle.HorasDescansoTomado;
+                entity.HorasDescansoPagado = detalle.HorasDescansoPagado;
+                entity.HorasDescansoNoPagado = detalle.HorasDescansoNoPagado;
+                entity.MinutosRetardo = detalle.MinutosRetardo;
+                entity.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
+                entity.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
+                entity.FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra;
+                entity.MontoDestajoInformativo = detalle.MontoDestajoInformativo;
+                entity.DiasVacacionesDisponibles = detalle.DiasVacacionesDisponibles;
+                entity.DiasVacacionesRestantes = detalle.DiasVacacionesRestantes;
+                entity.ComplementoSalarioMinimoSugerido = detalle.ComplementoSalarioMinimoSugerido;
+                entity.AplicaImss = detalle.AplicaImss;
+                entity.Notas = detalle.Notas?.Trim();
+                entity.UpdatedAt = DateTime.UtcNow;
+                entidadesPorEmpleado[detalle.EmpleadoId] = entity;
+            }
+
+            await db.SaveChangesAsync();
+
+            var detalleIds = entidadesPorEmpleado.Values.Select(e => e.Id).ToList();
+            var bonosExistentes = detalleIds.Count == 0
+                ? []
+                : await db.PrenominasBonos.Where(b => detalleIds.Contains(b.PrenominaDetalleId)).ToListAsync();
+            var percepcionesExistentes = detalleIds.Count == 0
+                ? []
+                : await db.PrenominasPercepciones.Where(p => detalleIds.Contains(p.PrenominaDetalleId)).ToListAsync();
+
+            foreach (var detalle in detallesEditando)
+            {
+                if (!entidadesPorEmpleado.TryGetValue(detalle.EmpleadoId, out var entity))
+                    continue;
+
+                SincronizarBonosRapidos(db, bonosExistentes, entity.Id, detalle.BonosRapidos);
+                SincronizarPercepcionesRapidas(db, percepcionesExistentes, entity.Id, detalle.PercepcionesRapidas);
+            }
+
+            await db.SaveChangesAsync();
+            await CargarBloqueoPrenominaAsync(prenomina.Id);
+            ok = TieneNominaBorradorLigada
+                ? "Prenómina guardada. Recalcula la nómina en borrador ligada para reflejar los cambios."
+                : "Prenómina guardada.";
+            await CargarAsync();
+        }
+        catch (DbUpdateException ex) when (EsDuplicadoPrenominaPorRango(ex))
+        {
+            error = "Ya existe una prenómina para ese rango de fechas. Abre la existente o cambia el período.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static bool EsDuplicadoPrenominaPorRango(DbUpdateException ex)
+    {
+        var mensaje = ex.InnerException?.Message ?? ex.Message;
+        return mensaje.Contains("IX_Prenominas_EmpresaId_FechaInicio_FechaFin", StringComparison.OrdinalIgnoreCase)
+            || mensaje.Contains("Duplicate entry", StringComparison.OrdinalIgnoreCase)
+                && mensaje.Contains("Prenominas", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task CerrarPrenomina()
+    {
+        editando.Estatus = EstatusPrenomina.Cerrada;
+        await GuardarPrenomina();
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            ok = "Prenómina cerrada.";
+        }
+    }
+
+    private async Task ReabrirPrenominaAsync()
+    {
+        error = null;
+        ok = null;
+
+        if (!PuedeModificarPrenominaActual)
+        {
+            error = EstaBloqueadaPorNominaProcesada ? ObtenerMensajeBloqueoPrenomina() : "No tienes permisos para reabrir esta prenómina.";
+            return;
+        }
+
+        if (editandoId != Guid.Empty)
+        {
+            await CargarBloqueoPrenominaAsync(editandoId);
+            if (EstaBloqueadaPorNominaProcesada)
+            {
+                error = ObtenerMensajeBloqueoPrenomina();
+                ok = null;
+                return;
+            }
+        }
+
+        editando.Estatus = EstatusPrenomina.Abierta;
+        await GuardarPrenomina();
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            ok = "Prenómina reabierta.";
+        }
+    }
+
+    private async Task<string?> ObtenerUsuarioActualAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name
+            ?? state.User.FindFirst("name")?.Value
+            ?? state.User.FindFirst("email")?.Value
+            ?? state.User.FindFirst("preferred_username")?.Value;
+    }
+
+    private void CerrarFormulario()
+    {
+        mostrarForm = false;
+        detallesEditando = [];
+        detalleModalSeleccionado = null;
+        festivosPeriodo = [];
+        festivosAplicadosPorEmpleado = [];
+        _nominaBloqueantePrenomina = null;
+        error = ok = null;
+    }
+
+    private async Task AplicarPeriodoPrenominaAsync(PeriodicidadPago periodicidad, DateTime? fechaReferencia = null)
+    {
+        var referencia = (fechaReferencia ?? fechaReferenciaPrenomina).Date;
+        if (referencia == default)
+            referencia = DateTime.Today;
+
+        var periodo = NominaPeriodoHelper.ObtenerPeriodo(periodicidad, referencia, ObtenerCortePeriodo(periodicidad));
+        fechaReferenciaPrenomina = referencia;
+        editando.PeriodicidadPago = periodo.PeriodicidadPago;
+        editando.AnioPeriodo = periodo.AnioPeriodo;
+        editando.NumeroPeriodo = periodo.NumeroPeriodo;
+        editando.Periodo = periodo.Periodo;
+        editando.FechaInicio = periodo.Inicio;
+        editando.FechaFin = periodo.Fin;
+        await CargarFestivosPeriodoAsync(periodo.Inicio, periodo.Fin);
+        await CargarFestivosAplicadosAsync(periodo.Inicio, periodo.Fin, detallesEditando.Select(d => d.EmpleadoId));
+        SincronizarDetalleModalSeleccionado();
+    }
+
+    private NominaCorteRrhh ObtenerCortePeriodo(PeriodicidadPago periodicidad)
+        => periodicidad switch
+        {
+            PeriodicidadPago.Quincenal => corteQuincenal,
+            PeriodicidadPago.Mensual => corteMensual,
+            _ => corteSemanal
+        };
+
+    private async Task<NominaCorteRrhh> CargarCortePeriodoAsync(CrmDbContext db, PeriodicidadPago periodicidad, int diaCorteMesDefault)
+        => await db.NominaCortesRrhh
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == periodicidad && c.IsActive)
+            ?? new NominaCorteRrhh
+            {
+                EmpresaId = _empresaId,
+                PeriodicidadPago = periodicidad,
+                DiaCorteSemana = DayOfWeek.Sunday,
+                DiaCorteMes = diaCorteMesDefault,
+                DiaPagoSugerido = DayOfWeek.Friday,
+                IsActive = true
+            };
+
+    private Task<Prenomina?> BuscarPrenominaExistenteAsync(CrmDbContext db, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => db.Prenominas
+            .Include(p => p.Detalles)
+            .AsNoTracking()
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(p => p.EmpresaId == _empresaId
+                && p.PeriodicidadPago == periodicidadPago
+                && p.AnioPeriodo == anioPeriodo
+                && p.NumeroPeriodo == numeroPeriodo
+                && p.Estatus != EstatusPrenomina.Cancelada);
+
+    private static string ObtenerClavePeriodo(PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => $"{ObtenerPrefijoPeriodicidad(periodicidadPago)} {anioPeriodo}-{numeroPeriodo:00}";
+
+    private static string ObtenerPrefijoPeriodicidad(PeriodicidadPago periodicidadPago)
+        => periodicidadPago switch
+        {
+            PeriodicidadPago.Quincenal => "QNA",
+            PeriodicidadPago.Mensual => "MES",
+            _ => "SEM"
+        };
+
+    private static string ObtenerAyudaFechaReferencia(PeriodicidadPago periodicidadPago)
+        => periodicidadPago switch
+        {
+            PeriodicidadPago.Quincenal => "Elige cualquier fecha dentro de la quincena que quieres trabajar.",
+            PeriodicidadPago.Mensual => "Elige cualquier fecha dentro del mes o período mensual deseado.",
+            _ => "Elige cualquier fecha dentro de la semana que quieres trabajar."
+        };
+
+    private RenderFragment RenderEntero(PrenominaDetalleEditable detalle, string campo) => builder =>
+    {
+        if (!PuedeModificarPrenominaActual)
+        {
+            builder.AddContent(0, campo switch
+            {
+                nameof(PrenominaDetalleEditable.DiasTrabajados) => detalle.DiasTrabajados,
+                nameof(PrenominaDetalleEditable.DiasPagados) => detalle.DiasPagados,
+                nameof(PrenominaDetalleEditable.DiasVacaciones) => detalle.DiasVacaciones,
+                nameof(PrenominaDetalleEditable.DiasFaltaJustificada) => detalle.DiasFaltaJustificada,
+                nameof(PrenominaDetalleEditable.DiasFaltaInjustificada) => detalle.DiasFaltaInjustificada,
+                nameof(PrenominaDetalleEditable.DiasIncapacidad) => detalle.DiasIncapacidad,
+                nameof(PrenominaDetalleEditable.DiasDescansoTrabajado) => detalle.DiasDescansoTrabajado,
+                nameof(PrenominaDetalleEditable.DiasDomingoTrabajado) => detalle.DiasDomingoTrabajado,
+                nameof(PrenominaDetalleEditable.DiasFestivoTrabajado) => detalle.DiasFestivoTrabajado,
+                _ => 0
+            });
+            return;
+        }
+
+        builder.OpenElement(1, "input");
+        builder.AddAttribute(2, "type", "number");
+        builder.AddAttribute(3, "class", "form-control form-control-sm text-center");
+        builder.AddAttribute(4, "value", campo switch
+        {
+            nameof(PrenominaDetalleEditable.DiasTrabajados) => BindConverter.FormatValue(detalle.DiasTrabajados),
+            nameof(PrenominaDetalleEditable.DiasPagados) => BindConverter.FormatValue(detalle.DiasPagados),
+            nameof(PrenominaDetalleEditable.DiasVacaciones) => BindConverter.FormatValue(detalle.DiasVacaciones),
+            nameof(PrenominaDetalleEditable.DiasFaltaJustificada) => BindConverter.FormatValue(detalle.DiasFaltaJustificada),
+            nameof(PrenominaDetalleEditable.DiasFaltaInjustificada) => BindConverter.FormatValue(detalle.DiasFaltaInjustificada),
+            nameof(PrenominaDetalleEditable.DiasIncapacidad) => BindConverter.FormatValue(detalle.DiasIncapacidad),
+            nameof(PrenominaDetalleEditable.DiasDescansoTrabajado) => BindConverter.FormatValue(detalle.DiasDescansoTrabajado),
+            nameof(PrenominaDetalleEditable.DiasDomingoTrabajado) => BindConverter.FormatValue(detalle.DiasDomingoTrabajado),
+            nameof(PrenominaDetalleEditable.DiasFestivoTrabajado) => BindConverter.FormatValue(detalle.DiasFestivoTrabajado),
+            _ => "0"
+        });
+        builder.AddAttribute(5, "onchange", EventCallback.Factory.CreateBinder<string>(this, value => ActualizarEntero(detalle, campo, value), "0"));
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderDecimal(PrenominaDetalleEditable detalle, string campo) => builder =>
+    {
+        if (!PuedeModificarPrenominaActual || (campo == nameof(PrenominaDetalleEditable.HorasExtra) && !reglasPrenomina.PermitirHorasExtraManual))
+        {
+            builder.AddContent(0, detalle.HorasExtra.ToString("0.##"));
+            return;
+        }
+
+        builder.OpenElement(1, "input");
+        builder.AddAttribute(2, "type", "number");
+        builder.AddAttribute(3, "step", "0.25");
+        builder.AddAttribute(4, "class", "form-control form-control-sm text-end");
+        builder.AddAttribute(5, "value", BindConverter.FormatValue(detalle.HorasExtra));
+        builder.AddAttribute(6, "onchange", EventCallback.Factory.CreateBinder<string>(this, value => ActualizarDecimal(detalle, campo, value), "0"));
+        builder.CloseElement();
+    };
+
+    private void ActualizarEntero(PrenominaDetalleEditable detalle, string campo, string? valor)
+    {
+        var numero = int.TryParse(valor, out var resultado) ? Math.Max(0, resultado) : 0;
+        switch (campo)
+        {
+            case nameof(PrenominaDetalleEditable.DiasTrabajados): detalle.DiasTrabajados = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasPagados): detalle.DiasPagados = AjustarDiasPagados(numero); break;
+            case nameof(PrenominaDetalleEditable.DiasVacaciones): detalle.DiasVacaciones = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasFaltaJustificada): detalle.DiasFaltaJustificada = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasFaltaInjustificada): detalle.DiasFaltaInjustificada = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasIncapacidad): detalle.DiasIncapacidad = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasDescansoTrabajado): detalle.DiasDescansoTrabajado = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasDomingoTrabajado): detalle.DiasDomingoTrabajado = numero; break;
+            case nameof(PrenominaDetalleEditable.DiasFestivoTrabajado): detalle.DiasFestivoTrabajado = numero; break;
+        }
+
+        detalle.DiasVacacionesRestantes = Math.Max(0, detalle.DiasVacacionesDisponibles - detalle.DiasVacaciones);
+        var empleado = empleados.FirstOrDefault(e => e.Id == detalle.EmpleadoId);
+        if (empleado != null)
+        {
+            detalle.ComplementoSalarioMinimoSugerido = NominaLegalPolicy.CalcularComplementoSalarioMinimo(empleado, esquemaPagoPeriodoPorEmpleado.GetValueOrDefault(empleado.Id), detalle.DiasPagados, detalle.MontoDestajoInformativo, configuracionNomina);
+        }
+    }
+
+    private void ActualizarDecimal(PrenominaDetalleEditable detalle, string campo, string? valor)
+    {
+        var numero = decimal.TryParse(valor, out var resultado) ? Math.Max(0m, resultado) : 0m;
+        if (campo == nameof(PrenominaDetalleEditable.HorasExtra))
+        {
+            if (!reglasPrenomina.PermitirHorasExtraManual)
+                return;
+
+            detalle.HorasExtra = numero;
+        }
+    }
+
+    private void OnBonoRapidoSeleccionado(PrenominaDetalleEditable detalle, PrenominaBonoEditable bono, bool selected)
+    {
+        bono.IsSelected = selected;
+        if (!selected)
+            bono.Importe = 0m;
+    }
+
+    private IEnumerable<PrenominaBonoEditable> ObtenerBonosDisponiblesParaAgregar(PrenominaDetalleEditable detalle)
+    {
+        var filtro = filtroBonoRapido.Trim();
+        return detalle.BonosRapidos
+            .Where(x => !x.IsSelected)
+            .Where(x => string.IsNullOrWhiteSpace(filtro) || x.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.Nombre)
+            .Take(12);
+    }
+
+    private void OnFiltroBonoRapidoInput(ChangeEventArgs args)
+    {
+        filtroBonoRapido = args.Value?.ToString() ?? string.Empty;
+        indiceBonoRapido = 0;
+    }
+
+    private void OnFiltroBonoRapidoKeyDown(KeyboardEventArgs args, PrenominaDetalleEditable? detalle)
+    {
+        if (!PuedeModificarPrenominaActual)
+            return;
+
+        if (detalle == null)
+            return;
+
+        var bonosDisponibles = ObtenerBonosDisponiblesParaAgregar(detalle).ToList();
+        if (bonosDisponibles.Count == 0)
+            return;
+
+        if (string.Equals(args.Key, "ArrowDown", StringComparison.OrdinalIgnoreCase))
+        {
+            indiceBonoRapido = (indiceBonoRapido + 1) % bonosDisponibles.Count;
+            return;
+        }
+
+        if (string.Equals(args.Key, "ArrowUp", StringComparison.OrdinalIgnoreCase))
+        {
+            indiceBonoRapido = (indiceBonoRapido - 1 + bonosDisponibles.Count) % bonosDisponibles.Count;
+            return;
+        }
+
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            indiceBonoRapido = Math.Clamp(indiceBonoRapido, 0, bonosDisponibles.Count - 1);
+            AgregarBonoRapido(detalle, bonosDisponibles[indiceBonoRapido].BonoRubroRrhhId);
+        }
+    }
+
+    private void AgregarBonoRapido(PrenominaDetalleEditable detalle, Guid rubroId)
+    {
+        if (!PuedeModificarPrenominaActual)
+            return;
+
+        var bono = detalle.BonosRapidos.FirstOrDefault(x => x.BonoRubroRrhhId == rubroId);
+        if (bono == null)
+            return;
+
+        bono.IsSelected = true;
+        if (bono.Importe < 0)
+            bono.Importe = 0m;
+
+        filtroBonoRapido = string.Empty;
+        indiceBonoRapido = 0;
+    }
+
+    private static void QuitarBonoRapido(PrenominaDetalleEditable detalle, PrenominaBonoEditable bono)
+    {
+        if (detalle is null)
+            return;
+
+        bono.IsSelected = false;
+        bono.Importe = 0m;
+        bono.Observaciones = null;
+    }
+
+    private IEnumerable<PrenominaPercepcionEditable> ObtenerPercepcionesDisponibles(PrenominaDetalleEditable detalle)
+        => detalle.PercepcionesRapidas
+            .Where(x => !x.IsSelected)
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.Nombre);
+
+    private void AgregarPercepcionRapidaSeleccionada(PrenominaDetalleEditable detalle)
+    {
+        if (!PuedeModificarPrenominaActual)
+            return;
+
+        if (!Guid.TryParse(tipoPercepcionRapidaSeleccionadoId, out var tipoPercepcionId))
+            return;
+
+        AgregarPercepcionRapida(detalle, tipoPercepcionId);
+    }
+
+    private void AgregarPercepcionRapida(PrenominaDetalleEditable detalle, Guid tipoPercepcionId)
+    {
+        if (!PuedeModificarPrenominaActual)
+            return;
+
+        var percepcion = detalle.PercepcionesRapidas.FirstOrDefault(x => x.TipoPercepcionId == tipoPercepcionId);
+        if (percepcion == null)
+            return;
+
+        percepcion.IsSelected = true;
+        if (percepcion.Importe < 0)
+            percepcion.Importe = 0m;
+
+        tipoPercepcionRapidaSeleccionadoId = string.Empty;
+    }
+
+    private static void QuitarPercepcionRapida(PrenominaDetalleEditable detalle, PrenominaPercepcionEditable percepcion)
+    {
+        if (detalle is null)
+            return;
+
+        percepcion.IsSelected = false;
+        percepcion.Importe = 0m;
+        percepcion.Referencia = null;
+        percepcion.Observaciones = null;
+    }
+
+    private void AsegurarCapturasRapidas(PrenominaDetalleEditable detalle)
+    {
+        detalle.BonosRapidos = ConstruirBonosRapidosDesdeEditables(detalle.RubrosBonoPermitidosIds, detalle.BonosRapidos.Where(x => x.IsSelected && x.Importe > 0));
+        detalle.PercepcionesRapidas = ConstruirPercepcionesRapidasDesdeEditables(detalle.PercepcionesRapidas.Where(x => x.IsSelected && x.Importe > 0));
+    }
+
+    private HashSet<Guid> ObtenerRubrosBonoPermitidosIds(Empleado empleado, IEnumerable<PrenominaBono> bonosExistentes)
+    {
+        var ids = empleado.Posicion?.BonoEstructuraRrhh?.Detalles
+            .Where(d => d.IsActive && d.BonoRubroRrhh.IsActive)
+            .OrderBy(d => d.Orden)
+            .Select(d => d.BonoRubroRrhhId)
+            .ToHashSet() ?? [];
+
+        foreach (var rubroId in bonosExistentes.Where(b => b.IsActive && b.Importe > 0).Select(b => b.BonoRubroRrhhId))
+            ids.Add(rubroId);
+
+        return ids;
+    }
+
+    private List<PrenominaBonoEditable> ConstruirBonosRapidosDesdeEntidades(IReadOnlyCollection<Guid> rubrosPermitidosIds, IEnumerable<PrenominaBono> bonos)
+    {
+        var bonosExistentes = bonos.ToDictionary(b => b.BonoRubroRrhhId, b => b);
+        return rubrosBono.Where(r => rubrosPermitidosIds.Contains(r.Id)).Select(rubro =>
+        {
+            var existente = bonosExistentes.GetValueOrDefault(rubro.Id);
+            return new PrenominaBonoEditable
+            {
+                Id = existente?.Id ?? Guid.Empty,
+                BonoRubroRrhhId = rubro.Id,
+                Nombre = rubro.Nombre,
+                Orden = rubro.Orden,
+                Importe = existente?.Importe ?? 0m,
+                Observaciones = existente?.Observaciones,
+                IsSelected = existente is not null && existente.Importe > 0
+            };
+        }).ToList();
+    }
+
+    private List<PrenominaBonoEditable> ConstruirBonosRapidosDesdeEditables(IReadOnlyCollection<Guid> rubrosPermitidosIds, IEnumerable<PrenominaBonoEditable> bonos)
+    {
+        var bonosExistentes = bonos.ToDictionary(b => b.BonoRubroRrhhId, b => b);
+        return rubrosBono.Where(r => rubrosPermitidosIds.Contains(r.Id)).Select(rubro =>
+        {
+            var existente = bonosExistentes.GetValueOrDefault(rubro.Id);
+            return new PrenominaBonoEditable
+            {
+                Id = existente?.Id ?? Guid.Empty,
+                BonoRubroRrhhId = rubro.Id,
+                Nombre = rubro.Nombre,
+                Orden = rubro.Orden,
+                Importe = existente?.Importe ?? 0m,
+                Observaciones = existente?.Observaciones,
+                IsSelected = existente?.IsSelected ?? false
+            };
+        }).ToList();
+    }
+
+    private List<PrenominaPercepcionEditable> ConstruirPercepcionesRapidasDesdeEntidades(IEnumerable<PrenominaPercepcion> percepciones)
+    {
+        var percepcionesExistentes = percepciones.ToDictionary(p => p.TipoPercepcionId, p => p);
+        return tiposPercepcion.Select(tipo =>
+        {
+            var existente = percepcionesExistentes.GetValueOrDefault(tipo.Id);
+            return new PrenominaPercepcionEditable
+            {
+                Id = existente?.Id ?? Guid.Empty,
+                TipoPercepcionId = tipo.Id,
+                Nombre = tipo.Nombre,
+                Orden = tipo.Orden,
+                Importe = existente?.Importe ?? 0m,
+                Referencia = existente?.Referencia,
+                Observaciones = existente?.Observaciones,
+                IsSelected = existente is not null && existente.Importe > 0
+            };
+        }).ToList();
+    }
+
+    private List<PrenominaPercepcionEditable> ConstruirPercepcionesRapidasDesdeEditables(IEnumerable<PrenominaPercepcionEditable> percepciones)
+    {
+        var percepcionesExistentes = percepciones.ToDictionary(p => p.TipoPercepcionId, p => p);
+        return tiposPercepcion.Select(tipo =>
+        {
+            var existente = percepcionesExistentes.GetValueOrDefault(tipo.Id);
+            return new PrenominaPercepcionEditable
+            {
+                Id = existente?.Id ?? Guid.Empty,
+                TipoPercepcionId = tipo.Id,
+                Nombre = tipo.Nombre,
+                Orden = tipo.Orden,
+                Importe = existente?.Importe ?? 0m,
+                Referencia = existente?.Referencia,
+                Observaciones = existente?.Observaciones,
+                IsSelected = existente?.IsSelected ?? false
+            };
+        }).ToList();
+    }
+
+    private static void SincronizarBonosRapidos(CrmDbContext db, List<PrenominaBono> existentes, Guid prenominaDetalleId, IReadOnlyCollection<PrenominaBonoEditable> bonos)
+    {
+        var existentesDetalle = existentes.Where(b => b.PrenominaDetalleId == prenominaDetalleId).ToDictionary(b => b.BonoRubroRrhhId, b => b);
+        var seleccionados = bonos.Where(b => b.IsSelected && b.Importe > 0).ToList();
+
+        foreach (var eliminar in existentesDetalle.Values.Where(b => seleccionados.All(x => x.BonoRubroRrhhId != b.BonoRubroRrhhId)).ToList())
+            db.PrenominasBonos.Remove(eliminar);
+
+        foreach (var bono in seleccionados)
+        {
+            if (!existentesDetalle.TryGetValue(bono.BonoRubroRrhhId, out var actual))
+            {
+                db.PrenominasBonos.Add(new PrenominaBono
+                {
+                    Id = Guid.NewGuid(),
+                    PrenominaDetalleId = prenominaDetalleId,
+                    BonoRubroRrhhId = bono.BonoRubroRrhhId,
+                    Importe = bono.Importe,
+                    Observaciones = string.IsNullOrWhiteSpace(bono.Observaciones) ? null : bono.Observaciones.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+                continue;
+            }
+
+            actual.Importe = bono.Importe;
+            actual.Observaciones = string.IsNullOrWhiteSpace(bono.Observaciones) ? null : bono.Observaciones.Trim();
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static void SincronizarPercepcionesRapidas(CrmDbContext db, List<PrenominaPercepcion> existentes, Guid prenominaDetalleId, IReadOnlyCollection<PrenominaPercepcionEditable> percepciones)
+    {
+        var existentesDetalle = existentes.Where(p => p.PrenominaDetalleId == prenominaDetalleId).ToDictionary(p => p.TipoPercepcionId, p => p);
+        var seleccionadas = percepciones.Where(p => p.IsSelected && p.Importe > 0).ToList();
+
+        foreach (var eliminar in existentesDetalle.Values.Where(p => seleccionadas.All(x => x.TipoPercepcionId != p.TipoPercepcionId)).ToList())
+            db.PrenominasPercepciones.Remove(eliminar);
+
+        foreach (var percepcion in seleccionadas)
+        {
+            if (!existentesDetalle.TryGetValue(percepcion.TipoPercepcionId, out var actual))
+            {
+                db.PrenominasPercepciones.Add(new PrenominaPercepcion
+                {
+                    Id = Guid.NewGuid(),
+                    PrenominaDetalleId = prenominaDetalleId,
+                    TipoPercepcionId = percepcion.TipoPercepcionId,
+                    Importe = percepcion.Importe,
+                    Referencia = string.IsNullOrWhiteSpace(percepcion.Referencia) ? null : percepcion.Referencia.Trim(),
+                    Observaciones = string.IsNullOrWhiteSpace(percepcion.Observaciones) ? null : percepcion.Observaciones.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+                continue;
+            }
+
+            actual.Importe = percepcion.Importe;
+            actual.Referencia = string.IsNullOrWhiteSpace(percepcion.Referencia) ? null : percepcion.Referencia.Trim();
+            actual.Observaciones = string.IsNullOrWhiteSpace(percepcion.Observaciones) ? null : percepcion.Observaciones.Trim();
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static string BadgePrenomina(EstatusPrenomina estatus) => estatus switch
+    {
+        EstatusPrenomina.Abierta => "bg-secondary",
+        EstatusPrenomina.Cerrada => "bg-success",
+        EstatusPrenomina.Aplicada => "bg-primary",
+        EstatusPrenomina.Cancelada => "bg-danger",
+        _ => "bg-dark"
+    };
+
+    private static int ObtenerEntero(IReadOnlyDictionary<string, string> values, string clave, int defaultValue)
+        => values.TryGetValue(clave, out var value) && int.TryParse(value, out var result) ? result : defaultValue;
+
+    private static decimal ObtenerDecimal(IReadOnlyDictionary<string, string> values, string clave, decimal defaultValue)
+        => values.TryGetValue(clave, out var value)
+            && decimal.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var result)
+                ? result
+                : defaultValue;
+
+    private static string ObtenerTexto(IReadOnlyDictionary<string, string> values, string clave, string defaultValue)
+        => values.TryGetValue(clave, out var value) && !string.IsNullOrWhiteSpace(value) ? value : defaultValue;
+
+    private static bool ObtenerBooleano(IReadOnlyDictionary<string, string> values, string clave, bool defaultValue)
+        => values.TryGetValue(clave, out var value) && bool.TryParse(value, out var result) ? result : defaultValue;
+
+    private int AjustarDiasPagados(int diasPagados)
+    {
+        if (!reglasPrenomina.ValidarDiasPagadosContraPeriodo)
+            return diasPagados;
+
+        return Math.Min(diasPagados, ObtenerDiasPeriodoActual());
+    }
+
+    private int ObtenerDiasPeriodoActual()
+        => Math.Max(1, (editando.FechaFin.Date - editando.FechaInicio.Date).Days + 1);
+
+    private void AplicarReglasPrenomina(PrenominaDetalleEditable detalle)
+    {
+        detalle.DiasPagados = AjustarDiasPagados(Math.Max(0, detalle.DiasPagados));
+
+        if (!reglasPrenomina.PermitirHorasExtraManual)
+            detalle.HorasExtra = Math.Max(0m, detalle.HorasExtra);
+    }
+
+    private sealed class PrenominaDetalleEditable
+    {
+        public Guid Id { get; set; }
+        public Guid EmpleadoId { get; set; }
+        public string NombreEmpleado { get; set; } = string.Empty;
+        public PeriodicidadPago PeriodicidadPago { get; set; }
+        public int DiasTrabajados { get; set; }
+        public int DiasPagados { get; set; }
+        public int DiasVacaciones { get; set; }
+        public int DiasFaltaJustificada { get; set; }
+        public int DiasFaltaInjustificada { get; set; }
+        public int DiasIncapacidad { get; set; }
+        public int DiasDescansoTrabajado { get; set; }
+        public int DiasConMarcacion { get; set; }
+        public int DiasDomingoTrabajado { get; set; }
+        public int DiasFestivoTrabajado { get; set; }
+        public decimal HorasExtraBase { get; set; }
+        public decimal HorasExtra { get; set; }
+        public decimal HorasBancoAcumuladas { get; set; }
+        public decimal HorasBancoConsumidas { get; set; }
+        public decimal HorasDescansoTomado { get; set; }
+        public decimal HorasDescansoPagado { get; set; }
+        public decimal HorasDescansoNoPagado { get; set; }
+        public int MinutosRetardo { get; set; }
+        public int MinutosSalidaAnticipada { get; set; }
+        public int MinutosDescuentoManual { get; set; }
+        public decimal FactorPagoTiempoExtra { get; set; }
+        public decimal MontoDestajoInformativo { get; set; }
+        public decimal DiasVacacionesDisponibles { get; set; }
+        public decimal DiasVacacionesRestantes { get; set; }
+        public decimal ComplementoSalarioMinimoSugerido { get; set; }
+        public bool AplicaImss { get; set; }
+        public string? Notas { get; set; }
+        public HashSet<Guid> RubrosBonoPermitidosIds { get; set; } = [];
+        public List<PrenominaBonoEditable> BonosRapidos { get; set; } = [];
+        public List<PrenominaPercepcionEditable> PercepcionesRapidas { get; set; } = [];
+        public decimal TotalBonosRapidos => BonosRapidos.Where(x => x.IsSelected).Sum(x => x.Importe);
+        public decimal TotalPercepcionesRapidas => PercepcionesRapidas.Where(x => x.IsSelected).Sum(x => x.Importe);
+    }
+
+    private sealed class PrenominaBonoEditable
+    {
+        public Guid Id { get; set; }
+        public Guid BonoRubroRrhhId { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+        public string? Observaciones { get; set; }
+        public int Orden { get; set; }
+        public bool IsSelected { get; set; }
+    }
+
+    private sealed class PrenominaPercepcionEditable
+    {
+        public Guid Id { get; set; }
+        public Guid TipoPercepcionId { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+        public string? Referencia { get; set; }
+        public string? Observaciones { get; set; }
+        public int Orden { get; set; }
+        public bool IsSelected { get; set; }
+    }
+
+    private sealed class ResumenAsistenciaPrenominaVm
+    {
+        public bool TieneAsistencias { get; set; }
+        public int DiasTrabajados { get; set; }
+        public int DiasFaltaInjustificada { get; set; }
+        public int DiasDescansoTrabajado { get; set; }
+        public int DiasDomingoTrabajado { get; set; }
+        public int DiasFestivoTrabajado { get; set; }
+        public decimal HorasExtraBase { get; set; }
+        public decimal HorasExtra { get; set; }
+        public decimal HorasBancoAcumuladas { get; set; }
+        public decimal HorasBancoConsumidas { get; set; }
+        public decimal HorasDescansoTomado { get; set; }
+        public decimal HorasDescansoPagado { get; set; }
+        public decimal HorasDescansoNoPagado { get; set; }
+        public string? NotasRevision { get; set; }
+    }
+
+    private sealed class FestivoAplicadoVm
+    {
+        public DateOnly Fecha { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Factor { get; set; }
+        public bool UsaFallback { get; set; }
+    }
+
+    private enum PrenominaModalTab
+    {
+        Resumen,
+        Incidencias,
+        Bonos,
+        Percepciones,
+        Notas
+    }
+}

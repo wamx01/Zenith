@@ -1,0 +1,886 @@
+@page "/contabilidad/estado-resultados"
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject CrmDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Estado de Resultados</PageTitle>
+
+<div class="er-page">
+    @if (cargando)
+    {
+        <div class="d-flex align-items-center justify-content-center" style="height:60vh">
+            <div class="spinner-border text-primary me-2" role="status" style="width:1.6rem;height:1.6rem;"></div>
+            <span class="text-muted">Cargando estado de resultados...</span>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div>
+                <h1 class="er-title"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Estado de Resultados</h1>
+                <p class="text-muted mb-0" style="font-size:.78rem">Conforme a NIF B-3 y normativa SAT vigente · Cifras en MXN</p>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <select class="er-select" @onchange="OnPeriodoChanged">
+                    <option value="mes" selected="@(periodo == "mes")">Este mes</option>
+                    <option value="trimestre" selected="@(periodo == "trimestre")">Último trimestre</option>
+                    <option value="semestre" selected="@(periodo == "semestre")">Último semestre</option>
+                    <option value="anio" selected="@(periodo == "anio")">Ejercicio fiscal @DateTime.Now.Year</option>
+                    <option value="todo" selected="@(periodo == "todo")">Todo el historial</option>
+                </select>
+                <button class="btn er-btn-print" @onclick="() => { }">
+                    <i class="bi bi-printer me-1"></i> Imprimir
+                </button>
+            </div>
+        </div>
+
+        <!-- Empresa Info -->
+        <div class="er-empresa-bar">
+            <div class="d-flex align-items-center gap-3">
+                @if (!string.IsNullOrEmpty(logoEmpresa))
+                {
+                    <img src="@logoEmpresa" alt="Logo" style="height:36px;max-width:120px;object-fit:contain;border-radius:4px;" />
+                }
+                <div>
+                    <strong>@nombreEmpresa</strong>
+                    @if (!string.IsNullOrEmpty(rfcEmpresa))
+                    {
+                        <span class="er-rfc">RFC: @rfcEmpresa</span>
+                    }
+                </div>
+            </div>
+            <div class="er-periodo-label">
+                Periodo: <strong>@etiquetaPeriodo</strong>
+            </div>
+        </div>
+
+        <!-- KPIs Financieros -->
+        <div class="er-kpi-row">
+            <div class="er-kpi er-kpi-blue">
+                <div class="er-kpi-icon"><i class="bi bi-cash-coin"></i></div>
+                <div class="er-kpi-body">
+                    <div class="er-kpi-value">@ingresosBrutos.ToString("C2")</div>
+                    <div class="er-kpi-label">Ingresos Brutos</div>
+                </div>
+            </div>
+            <div class="er-kpi er-kpi-teal">
+                <div class="er-kpi-icon"><i class="bi bi-graph-up"></i></div>
+                <div class="er-kpi-body">
+                    <div class="er-kpi-value">@utilidadBruta.ToString("C2")</div>
+                    <div class="er-kpi-label">Utilidad Bruta</div>
+                </div>
+            </div>
+            <div class="er-kpi @(utilidadNeta >= 0 ? "er-kpi-green" : "er-kpi-red")">
+                <div class="er-kpi-icon"><i class="bi bi-trophy"></i></div>
+                <div class="er-kpi-body">
+                    <div class="er-kpi-value">@utilidadNeta.ToString("C2")</div>
+                    <div class="er-kpi-label">Utilidad Neta</div>
+                </div>
+            </div>
+            <div class="er-kpi er-kpi-purple">
+                <div class="er-kpi-icon"><i class="bi bi-percent"></i></div>
+                <div class="er-kpi-body">
+                    <div class="er-kpi-value">@margenNeto.ToString("F1")%</div>
+                    <div class="er-kpi-label">Margen Neto</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estado de Resultados - Tabla principal -->
+        <div class="er-card mb-4">
+            <div class="er-card-header">
+                <span><i class="bi bi-journal-text me-2"></i>Estado de Resultados — NIF B-3</span>
+                <span class="er-card-sub">Expresado en Pesos Mexicanos (MXN)</span>
+            </div>
+            <div class="er-card-body p-0">
+                <table class="er-table">
+                    <thead>
+                        <tr>
+                            <th style="width:50%">Concepto</th>
+                            <th class="text-end" style="width:25%">Parcial</th>
+                            <th class="text-end" style="width:25%">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- ═══ INGRESOS ═══ -->
+                        <tr class="er-section-header">
+                            <td colspan="3"><i class="bi bi-arrow-down-circle me-1"></i> INGRESOS</td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Ventas brutas</td>
+                            <td class="text-end">@ingresosBrutos.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">(-) Devoluciones y descuentos</td>
+                            <td class="text-end er-neg">(@descuentos.ToString("C2"))</td>
+                            <td></td>
+                        </tr>
+                        <tr class="er-subtotal">
+                            <td>Ingresos netos</td>
+                            <td></td>
+                            <td class="text-end">@ingresosNetos.ToString("C2")</td>
+                        </tr>
+
+                        <!-- ═══ COSTO DE VENTAS ═══ -->
+                        <tr class="er-section-header">
+                            <td colspan="3"><i class="bi bi-box-seam me-1"></i> COSTO DE VENTAS</td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Materia prima (tintas / materiales)</td>
+                            <td class="text-end">@costoMateriaPrima.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Insumos básicos</td>
+                            <td class="text-end">@costoInsumosBasicos.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Insumos diversos</td>
+                            <td class="text-end">@costoInsumosDiversos.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Mano de obra directa</td>
+                            <td class="text-end">@costoManoObra.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">Gastos indirectos de fabricación</td>
+                            <td class="text-end">@costoGIF.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr class="er-subtotal er-neg-row">
+                            <td>(-) Costo de ventas total</td>
+                            <td></td>
+                            <td class="text-end">(@costoVentasTotal.ToString("C2"))</td>
+                        </tr>
+
+                        <!-- ═══ UTILIDAD BRUTA ═══ -->
+                        <tr class="er-total-row">
+                            <td><strong>UTILIDAD BRUTA</strong></td>
+                            <td></td>
+                            <td class="text-end"><strong>@utilidadBruta.ToString("C2")</strong></td>
+                        </tr>
+
+                        <!-- ═══ GASTOS DE OPERACIÓN ═══ -->
+                        <tr class="er-section-header">
+                            <td colspan="3"><i class="bi bi-building me-1"></i> GASTOS DE OPERACIÓN</td>
+                        </tr>
+                        @if (detalleGastosFijos.Any())
+                        {
+                            @foreach (var gf in detalleGastosFijos)
+                            {
+                                <tr>
+                                    <td class="er-indent-1">@gf.Concepto</td>
+                                    <td class="text-end">@gf.Monto.ToString("C2")</td>
+                                    <td></td>
+                                </tr>
+                            }
+                        }
+                        else
+                        {
+                            <tr>
+                                <td class="er-indent-1 text-muted">Sin gastos fijos configurados</td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+                        }
+                        <tr class="er-subtotal er-neg-row">
+                            <td>(-) Gastos de operación totales</td>
+                            <td></td>
+                            <td class="text-end">(@gastosOperacion.ToString("C2"))</td>
+                        </tr>
+
+                        <!-- ═══ UTILIDAD DE OPERACIÓN ═══ -->
+                        <tr class="er-total-row">
+                            <td><strong>UTILIDAD DE OPERACIÓN (EBIT)</strong></td>
+                            <td></td>
+                            <td class="text-end"><strong>@utilidadOperacion.ToString("C2")</strong></td>
+                        </tr>
+
+                        <!-- ═══ IMPUESTOS ═══ -->
+                        <tr class="er-section-header">
+                            <td colspan="3"><i class="bi bi-bank me-1"></i> IMPUESTOS Y PARTICIPACIONES</td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">IVA trasladado (16%)</td>
+                            <td class="text-end">@ivaTrasladado.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">(-) IVA acreditable estimado</td>
+                            <td class="text-end er-neg">(@ivaAcreditable.ToString("C2"))</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1"><strong>IVA por pagar</strong></td>
+                            <td class="text-end">@ivaPorPagar.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr class="er-separator"><td colspan="3"></td></tr>
+                        <tr>
+                            <td class="er-indent-1">ISR causado estimado (30% s/ utilidad fiscal)</td>
+                            <td class="text-end">@isrEstimado.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="er-indent-1">PTU (10% s/ base gravable — Art. 123 LFT)</td>
+                            <td class="text-end">@ptuEstimada.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                        <tr class="er-subtotal er-neg-row">
+                            <td>(-) Total ISR + PTU</td>
+                            <td></td>
+                            <td class="text-end">(@(isrEstimado + ptuEstimada).ToString("C2"))</td>
+                        </tr>
+
+                        <!-- ═══ UTILIDAD NETA ═══ -->
+                        <tr class="er-grand-total">
+                            <td><i class="bi bi-star-fill me-1"></i> UTILIDAD NETA DEL EJERCICIO</td>
+                            <td></td>
+                            <td class="text-end">@utilidadNeta.ToString("C2")</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Desglose por producto -->
+        <div class="er-card mb-4">
+            <div class="er-card-header">
+                <span><i class="bi bi-grid-3x3 me-2"></i>Desglose por Producto</span>
+                <span class="er-card-sub">Contribución al resultado</span>
+            </div>
+            <div class="er-card-body p-0">
+                @if (!desgloseProductos.Any())
+                {
+                    <div class="er-empty">Sin datos de productos en este periodo</div>
+                }
+                else
+                {
+                    <table class="er-table er-table-striped">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th class="text-center">Piezas</th>
+                                <th class="text-end">Ingreso</th>
+                                <th class="text-end">Costo</th>
+                                <th class="text-end">Utilidad</th>
+                                <th class="text-center">Margen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in desgloseProductos)
+                            {
+                                var mColor = p.Margen >= 30 ? "#10b981" : p.Margen >= 15 ? "#f59e0b" : "#ef4444";
+                                <tr>
+                                    <td class="fw-semibold">@p.Nombre</td>
+                                    <td class="text-center">@p.Piezas.ToString("N0")</td>
+                                    <td class="text-end">@p.Ingreso.ToString("C2")</td>
+                                    <td class="text-end" style="color:#6b7280">@p.Costo.ToString("C2")</td>
+                                    <td class="text-end fw-semibold" style="color:@mColor">@p.Utilidad.ToString("C2")</td>
+                                    <td class="text-center fw-bold" style="color:@mColor">@p.Margen.ToString("F1")%</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="er-foot-total">
+                                <td><strong>TOTAL</strong></td>
+                                <td class="text-center"><strong>@desgloseProductos.Sum(p => p.Piezas).ToString("N0")</strong></td>
+                                <td class="text-end"><strong>@desgloseProductos.Sum(p => p.Ingreso).ToString("C2")</strong></td>
+                                <td class="text-end"><strong>@desgloseProductos.Sum(p => p.Costo).ToString("C2")</strong></td>
+                                <td class="text-end"><strong>@desgloseProductos.Sum(p => p.Utilidad).ToString("C2")</strong></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+            </div>
+        </div>
+
+        <!-- Resumen Fiscal -->
+        <div class="row g-3 mb-4">
+            <div class="col-lg-6">
+                <div class="er-card h-100">
+                    <div class="er-card-header">
+                        <span><i class="bi bi-bank2 me-2"></i>Obligaciones Fiscales Estimadas</span>
+                    </div>
+                    <div class="er-card-body">
+                        <div class="er-fiscal-row">
+                            <span class="er-fiscal-label">IVA por pagar</span>
+                            <span class="er-fiscal-val">@ivaPorPagar.ToString("C2")</span>
+                        </div>
+                        <div class="er-fiscal-row">
+                            <span class="er-fiscal-label">ISR provisional (30%)</span>
+                            <span class="er-fiscal-val">@isrEstimado.ToString("C2")</span>
+                        </div>
+                        <div class="er-fiscal-row">
+                            <span class="er-fiscal-label">PTU (10%)</span>
+                            <span class="er-fiscal-val">@ptuEstimada.ToString("C2")</span>
+                        </div>
+                        <hr />
+                        <div class="er-fiscal-row er-fiscal-total">
+                            <span class="er-fiscal-label">Total obligaciones estimadas</span>
+                            <span class="er-fiscal-val">@(ivaPorPagar + isrEstimado + ptuEstimada).ToString("C2")</span>
+                        </div>
+                        <p class="er-fiscal-note mt-2">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Cálculos estimados con base en LISR Art. 9, LIVA Art. 1 (tasa 16%) y LFT Art. 123.
+                            Las cifras reales pueden variar por deducciones autorizadas, acreditamientos y pagos provisionales.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="er-card h-100">
+                    <div class="er-card-header">
+                        <span><i class="bi bi-pie-chart me-2"></i>Composición del Costo</span>
+                    </div>
+                    <div class="er-card-body">
+                        @if (costoVentasTotal > 0)
+                        {
+                            var items = new (string Label, decimal Monto, string Color)[]
+                            {
+                                ("Materia prima", costoMateriaPrima, "#3b82f6"),
+                                ("Insumos básicos", costoInsumosBasicos, "#10b981"),
+                                ("Insumos diversos", costoInsumosDiversos, "#8b5cf6"),
+                                ("Mano de obra", costoManoObra, "#f59e0b"),
+                                ("Gastos de fabricación", costoGIF, "#ef4444"),
+                            };
+                            @foreach (var item in items.Where(i => i.Monto > 0))
+                            {
+                                var pct = (int)Math.Round((double)item.Monto / (double)costoVentasTotal * 100);
+                                <div class="er-cost-row">
+                                    <span class="er-cost-dot" style="background:@item.Color"></span>
+                                    <span class="er-cost-label">@item.Label</span>
+                                    <div class="er-cost-bar-wrap">
+                                        <div class="er-cost-bar" style="width:@pct%;background:@item.Color"></div>
+                                    </div>
+                                    <span class="er-cost-pct">@pct%</span>
+                                    <span class="er-cost-amount">@item.Monto.ToString("C2")</span>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="er-empty">Sin costos registrados</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cobranza -->
+        <div class="row g-3 mb-4">
+            <div class="col-12">
+                <div class="er-card">
+                    <div class="er-card-header">
+                        <span><i class="bi bi-wallet2 me-2"></i>Flujo de Cobranza</span>
+                        <span class="er-card-sub">Pagos recibidos vs facturado</span>
+                    </div>
+                    <div class="er-card-body">
+                        @{
+                            var totalFacturado = ingresosBrutos + ivaTrasladado;
+                            var pctCobrado = totalFacturado > 0 ? Math.Min(100, (int)Math.Round((double)totalCobrado / (double)totalFacturado * 100)) : 0;
+                            var cobranzaColor = pctCobrado >= 100 ? "#10b981" : pctCobrado >= 50 ? "#f59e0b" : "#ef4444";
+                        }
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex gap-4">
+                                <div>
+                                    <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Total facturado (c/IVA)</span>
+                                    <div style="font-size:1.1rem;font-weight:700;color:#1e3a5f">@totalFacturado.ToString("C2")</div>
+                                </div>
+                                <div>
+                                    <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Cobrado</span>
+                                    <div style="font-size:1.1rem;font-weight:700;color:#10b981">@totalCobrado.ToString("C2")</div>
+                                </div>
+                                <div>
+                                    <span style="font-size:.68rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Pendiente de cobro</span>
+                                    <div style="font-size:1.1rem;font-weight:700;color:@cobranzaColor">@totalPendienteCobro.ToString("C2")</div>
+                                </div>
+                            </div>
+                            <span style="background:@cobranzaColor;color:#fff;font-size:.72rem;padding:.25rem .65rem;border-radius:20px;font-weight:600">@pctCobrado% cobrado</span>
+                        </div>
+                        <div style="height:8px;background:#f0f2f5;border-radius:99px;overflow:hidden">
+                            <div style="height:100%;width:@(pctCobrado)%;background:@cobranzaColor;border-radius:99px;transition:width .3s"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nota -->
+        <div class="er-nota">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            <strong>Aviso:</strong> Este estado de resultados es una herramienta de gestión interna. No sustituye la contabilidad formal
+            requerida por el SAT ni los dictámenes de un Contador Público Certificado. Las tasas de ISR (30%), IVA (16%) y PTU (10%)
+            son las vigentes de acuerdo con la LISR, LIVA y LFT respectivamente. Para efectos de declaraciones fiscales, consulte a su contador.
+        </div>
+    }
+</div>
+
+<style>
+    /* ── Page ──────────────────────────────────────────── */
+    .er-page { padding: 1.25rem 1rem; max-width: 1200px; margin: 0 auto; }
+    @@media (min-width: 768px) { .er-page { padding: 1.5rem 2rem; } }
+
+    .er-title { font-size: clamp(1.2rem, 3vw, 1.6rem); font-weight: 700; color: #1e3a5f; margin-bottom: .25rem; }
+
+    .er-select { font-size: .78rem; border: 1px solid #d1d9e0; border-radius: 6px; padding: .35rem .65rem; background: #fff; color: #374151; cursor: pointer; }
+    .er-select:focus { outline: none; border-color: #4a6fa5; }
+    .er-btn-print { font-size: .78rem; border: 1px solid #d1d9e0; border-radius: 6px; padding: .35rem .75rem; background: #fff; color: #374151; }
+    .er-btn-print:hover { background: #f0f4fa; }
+
+    /* ── Empresa bar ──────────────────────────────────── */
+    .er-empresa-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; background: #1e3a5f; color: #d9e4f0; padding: .6rem 1.1rem; border-radius: 8px; font-size: .8rem; margin-bottom: 1rem; }
+    .er-empresa-bar strong { color: #fff; }
+    .er-rfc { margin-left: .75rem; font-size: .72rem; opacity: .75; }
+    .er-periodo-label { font-size: .75rem; }
+
+    /* ── KPIs ──────────────────────────────────────────── */
+    .er-kpi-row { display: grid; grid-template-columns: repeat(4,1fr); gap: .75rem; margin-bottom: 1.25rem; }
+    @@media (max-width:991px) { .er-kpi-row { grid-template-columns: repeat(2,1fr); } }
+    @@media (max-width:575px) { .er-kpi-row { grid-template-columns: 1fr; } }
+    .er-kpi { background: #fff; border-radius: 10px; padding: .8rem 1rem; display: flex; align-items: center; gap: .7rem; box-shadow: 0 1px 4px rgba(0,0,0,.05); border-left: 4px solid transparent; }
+    .er-kpi-blue   { border-left-color: #3b82f6; }
+    .er-kpi-teal   { border-left-color: #14b8a6; }
+    .er-kpi-green  { border-left-color: #10b981; }
+    .er-kpi-red    { border-left-color: #ef4444; }
+    .er-kpi-purple { border-left-color: #8b5cf6; }
+    .er-kpi-icon { font-size: 1.4rem; opacity: .22; flex-shrink: 0; }
+    .er-kpi-body { flex: 1; min-width: 0; }
+    .er-kpi-value { font-size: 1.15rem; font-weight: 800; color: #1e3a5f; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .er-kpi-label { font-size: .65rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+
+    /* ── Card ──────────────────────────────────────────── */
+    .er-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.04); overflow: hidden; }
+    .er-card-header { display: flex; align-items: center; justify-content: space-between; padding: .55rem 1rem; background: #f8f9fb; border-bottom: 1px solid #e8edf5; font-size: .8rem; font-weight: 700; color: #1e3a5f; }
+    .er-card-sub { font-size: .68rem; font-weight: 400; color: #6b7280; }
+    .er-card-body { padding: .85rem 1rem; }
+    .er-empty { font-size: .78rem; color: #9ca3af; text-align: center; padding: 1.5rem 0; }
+
+    /* ── Main Table ────────────────────────────────────── */
+    .er-table { width: 100%; border-collapse: collapse; }
+    .er-table thead th { background: #1e3a5f; color: #d9e4f0; padding: .5rem .85rem; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+    .er-table tbody td { padding: .48rem .85rem; font-size: .8rem; color: #374151; border-bottom: 1px solid #f5f5f5; }
+    .er-table tbody tr:last-child td { border-bottom: none; }
+
+    .er-section-header td { background: #f0f4fa; font-weight: 700; font-size: .72rem; color: #1e3a5f; letter-spacing: .04em; text-transform: uppercase; padding: .5rem .85rem !important; border-bottom: 2px solid #d1d9e0 !important; }
+    .er-indent-1 { padding-left: 2rem !important; }
+    .er-neg { color: #dc2626; }
+    .er-neg-row td { color: #dc2626; }
+
+    .er-subtotal td { background: #fafbfc; font-weight: 600; border-top: 1px solid #e2e8f0; border-bottom: 2px solid #e2e8f0 !important; }
+    .er-total-row td { background: #eef4fb; font-weight: 700; font-size: .85rem; color: #1e3a5f; border-top: 2px solid #4a6fa5; border-bottom: 2px solid #4a6fa5 !important; }
+    .er-grand-total td { background: #1e3a5f; color: #fff !important; font-weight: 800; font-size: .9rem; border: none !important; padding: .7rem .85rem; }
+    .er-separator td { padding: .15rem 0 !important; border: none !important; }
+
+    /* Striped variant */
+    .er-table-striped tbody tr:nth-child(even) td { background: #fafbfc; }
+    .er-table-striped tbody tr:hover td { background: #f0f4fa; }
+    .er-foot-total td { background: #1e3a5f !important; color: #fff !important; font-size: .8rem; padding: .55rem .85rem; }
+
+    /* ── Fiscal ────────────────────────────────────────── */
+    .er-fiscal-row { display: flex; align-items: center; justify-content: space-between; padding: .4rem 0; border-bottom: 1px solid #f0f2f5; }
+    .er-fiscal-row:last-of-type { border-bottom: none; }
+    .er-fiscal-label { font-size: .8rem; color: #374151; }
+    .er-fiscal-val { font-size: .8rem; font-weight: 700; color: #1e3a5f; }
+    .er-fiscal-total .er-fiscal-label { font-weight: 700; color: #1e3a5f; font-size: .85rem; }
+    .er-fiscal-total .er-fiscal-val { font-size: .9rem; color: #1e3a5f; }
+    .er-fiscal-note { font-size: .68rem; color: #9ca3af; line-height: 1.4; }
+
+    /* ── Composición Costo ─────────────────────────────── */
+    .er-cost-row { display: flex; align-items: center; gap: .5rem; padding: .35rem 0; }
+    .er-cost-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .er-cost-label { font-size: .75rem; color: #374151; min-width: 120px; }
+    .er-cost-bar-wrap { flex: 1; height: 8px; background: #f0f2f5; border-radius: 99px; overflow: hidden; }
+    .er-cost-bar { height: 100%; border-radius: 99px; transition: width .3s; }
+    .er-cost-pct { font-size: .7rem; font-weight: 700; color: #6b7280; min-width: 32px; text-align: right; }
+    .er-cost-amount { font-size: .7rem; color: #374151; min-width: 90px; text-align: right; }
+
+    /* ── Nota ──────────────────────────────────────────── */
+    .er-nota { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: .65rem 1rem; font-size: .72rem; color: #92400e; line-height: 1.5; }
+
+    @@media print {
+        .er-page { padding: 0; max-width: none; }
+        .er-btn-print, .er-select { display: none; }
+        .er-kpi-row { grid-template-columns: repeat(4,1fr); }
+        .er-card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+    }
+</style>
+
+@code {
+    private bool cargando = true;
+    private string periodo = "mes";
+    private string nombreEmpresa = "MundoVs";
+    private string rfcEmpresa = "";
+    private string logoEmpresa = "";
+    private string etiquetaPeriodo = "";
+
+    // Estado de Resultados
+    private decimal ingresosBrutos;
+    private decimal descuentos;
+    private decimal ingresosNetos;
+
+    // Costo de Ventas (desglosado)
+    private decimal costoMateriaPrima;
+    private decimal costoInsumosBasicos;
+    private decimal costoInsumosDiversos;
+    private decimal costoManoObra;
+    private decimal costoGIF; // Gastos indirectos de fabricación
+    private decimal costoVentasTotal;
+
+    private decimal utilidadBruta;
+
+    // Gastos de operación
+    private decimal gastosOperacion;
+    private List<GastoFijoItem> detalleGastosFijos = [];
+
+    private decimal utilidadOperacion;
+
+    // Impuestos
+    private decimal ivaTrasladado;
+    private decimal ivaAcreditable;
+    private decimal ivaPorPagar;
+    private decimal isrEstimado;
+    private decimal ptuEstimada;
+
+    private decimal utilidadNeta;
+    private decimal margenNeto;
+
+    // Cobranza
+    private decimal totalCobrado;
+    private decimal totalPendienteCobro;
+
+    // Desglose
+    private List<ProductoDesglose> desgloseProductos = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+        cargando = false;
+    }
+
+    private async Task OnPeriodoChanged(ChangeEventArgs e)
+    {
+        periodo = e.Value?.ToString() ?? "mes";
+        cargando = true;
+        StateHasChanged();
+        await CargarDatos();
+        cargando = false;
+    }
+
+    private DateTime GetFechaInicio()
+    {
+        var now = DateTime.UtcNow;
+        return periodo switch
+        {
+            "mes" => new DateTime(now.Year, now.Month, 1),
+            "trimestre" => now.AddMonths(-3),
+            "semestre" => now.AddMonths(-6),
+            "anio" => new DateTime(now.Year, 1, 1),
+            _ => DateTime.MinValue
+        };
+    }
+
+    private string GetEtiquetaPeriodo()
+    {
+        var now = DateTime.Now;
+        return periodo switch
+        {
+            "mes" => $"Del 1 al {DateTime.DaysInMonth(now.Year, now.Month)} de {now:MMMM yyyy}",
+            "trimestre" => $"Últimos 3 meses (al {now:dd/MM/yyyy})",
+            "semestre" => $"Últimos 6 meses (al {now:dd/MM/yyyy})",
+            "anio" => $"Ejercicio fiscal {now.Year} (al {now:dd/MM/yyyy})",
+            _ => "Todo el historial"
+        };
+    }
+
+    private async Task CargarDatos()
+    {
+        var desde = GetFechaInicio();
+        etiquetaPeriodo = GetEtiquetaPeriodo();
+
+        // Config empresa
+        var configNombre = await DbContext.AppConfigs.FirstOrDefaultAsync(c => c.Clave == "CompanyName");
+        if (configNombre != null) nombreEmpresa = configNombre.Valor;
+
+        var configLogo = await DbContext.AppConfigs.FirstOrDefaultAsync(c => c.Clave == "CompanyLogo");
+        if (configLogo != null) logoEmpresa = configLogo.Valor;
+
+        // Pedidos del periodo (excluir cancelados)
+        var pedidos = await DbContext.Pedidos
+            .AsNoTracking()
+            .Include(p => p.Cliente)
+            .Include(p => p.Detalles).ThenInclude(d => d.Producto)
+            .Include(p => p.Detalles).ThenInclude(d => d.CotizacionSerigrafia).ThenInclude(c => c.Detalles)
+            .Include(p => p.Conceptos)
+            .Where(p => p.FechaPedido >= desde && p.Estado != EstadoPedidoEnum.Cancelado)
+            .ToListAsync();
+
+        var pedidoIds = pedidos.Select(p => p.Id).ToList();
+
+        // Serigrafías para piezas
+        var serigrafias = await DbContext.PedidosSerigrafia
+            .AsNoTracking()
+            .Include(ps => ps.Tallas)
+            .Include(ps => ps.PedidoDetalle)
+            .Where(ps => pedidoIds.Contains(ps.PedidoDetalle.PedidoId))
+            .ToListAsync();
+
+        // Cotizaciones de respaldo para detalles sin cotización ligada
+        var cotizaciones = await DbContext.CotizacionesSerigrafia
+            .AsNoTracking()
+            .Include(c => c.Detalles)
+            .Include(c => c.Producto)
+            .Where(c => c.IsActive)
+            .ToListAsync();
+
+        var cotizDict = cotizaciones
+            .GroupBy(c => c.ProductoId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.CreatedAt).First());
+
+        var lineasProducto = pedidos
+            .SelectMany(p => p.Detalles.Select(d => ConstruirLineaProducto(p, d, serigrafias, cotizDict)))
+            .ToList();
+
+        var lineasServicio = pedidos
+            .SelectMany(p => p.Conceptos.Where(c => c.IsActive).Select(c => new LineaResultado
+            {
+                PedidoId = p.Id,
+                ProductoId = null,
+                Nombre = c.Descripcion,
+                Piezas = Math.Max(0, c.Cantidad),
+                IngresoBruto = Math.Max(0, c.Total),
+                Descuento = 0,
+                IngresoNeto = Math.Max(0, c.Total),
+                CostoMateriaPrima = 0,
+                CostoInsumosBasicos = 0,
+                CostoInsumosDiversos = 0,
+                CostoManoObra = 0,
+                CostoGIF = 0,
+                EsServicio = true
+            }))
+            .ToList();
+
+        var lineasResultado = lineasProducto.Concat(lineasServicio).ToList();
+
+        var pedidoTotales = lineasResultado
+            .GroupBy(l => l.PedidoId)
+            .ToDictionary(
+                g => g.Key,
+                g => new PedidoTotalCalculado
+                {
+                    PedidoId = g.Key,
+                    Subtotal = Math.Round(g.Sum(x => x.IngresoNeto), 2),
+                    Impuestos = Math.Round(g.Sum(x => x.IngresoNeto) * 0.16m, 2)
+                });
+
+        // ═══ INGRESOS ═══
+        ingresosBrutos = Math.Round(lineasResultado.Sum(l => l.IngresoBruto), 2);
+        descuentos = Math.Round(lineasResultado.Sum(l => l.Descuento), 2);
+        ingresosNetos = Math.Round(lineasResultado.Sum(l => l.IngresoNeto), 2);
+
+        // ═══ COSTO DE VENTAS ═══
+        costoMateriaPrima = Math.Round(lineasProducto.Sum(l => l.CostoMateriaPrima), 2);
+        costoInsumosBasicos = Math.Round(lineasProducto.Sum(l => l.CostoInsumosBasicos), 2);
+        costoInsumosDiversos = Math.Round(lineasProducto.Sum(l => l.CostoInsumosDiversos), 2);
+        var costoManoObraEstimado = Math.Round(lineasProducto.Sum(l => l.CostoManoObra), 2);
+        costoGIF = Math.Round(lineasProducto.Sum(l => l.CostoGIF), 2);
+
+        var valesPeriodo = await DbContext.ValesDestajo
+            .AsNoTracking()
+            .Include(v => v.Detalles)
+            .Where(v => v.IsActive
+                && v.Fecha >= desde
+                && (v.Estatus == EstatusValeDestajo.Aprobado
+                    || v.Estatus == EstatusValeDestajo.EnNomina
+                    || v.Estatus == EstatusValeDestajo.Pagado))
+            .ToListAsync();
+
+        var costoManoObraReal = Math.Round(valesPeriodo.Sum(v => v.Detalles.Where(d => d.IsActive).Sum(d => d.Importe)), 2);
+        costoManoObra = costoManoObraReal > 0 ? costoManoObraReal : costoManoObraEstimado;
+
+        costoVentasTotal = costoMateriaPrima + costoInsumosBasicos + costoInsumosDiversos + costoManoObra + costoGIF;
+
+        // ═══ UTILIDAD BRUTA ═══
+        utilidadBruta = ingresosNetos - costoVentasTotal;
+
+        // ═══ GASTOS DE OPERACIÓN (Gastos Fijos mensuales prorrateados al periodo) ═══
+        var gastosFijos = await DbContext.GastosFijos.AsNoTracking().Where(g => g.IsActive).OrderBy(g => g.Orden).ToListAsync();
+        var mesesPeriodo = periodo switch
+        {
+            "mes" => 1m,
+            "trimestre" => 3m,
+            "semestre" => 6m,
+            "anio" => (decimal)DateTime.Now.Month,
+            _ => Math.Max(1m, (decimal)(DateTime.UtcNow - desde).TotalDays / 30m)
+        };
+
+        detalleGastosFijos = gastosFijos.Select(g => new GastoFijoItem
+        {
+            Concepto = g.Concepto,
+            Monto = Math.Round(g.CostoMensual * mesesPeriodo, 2)
+        }).ToList();
+
+        gastosOperacion = detalleGastosFijos.Sum(g => g.Monto);
+
+        // ═══ UTILIDAD DE OPERACIÓN ═══
+        utilidadOperacion = utilidadBruta - gastosOperacion;
+
+        // ═══ IVA (Art. 1 LIVA — 16%) ═══
+        ivaTrasladado = Math.Round(pedidoTotales.Sum(p => p.Value.Impuestos), 2);
+        // IVA acreditable estimado: 16% sobre costos + gastos que generan IVA
+        ivaAcreditable = Math.Round((costoVentasTotal + gastosOperacion) * 0.16m, 2);
+        ivaPorPagar = Math.Max(0, ivaTrasladado - ivaAcreditable);
+
+        // ═══ ISR (Art. 9 LISR — 30% sobre utilidad fiscal) ═══
+        var baseGravable = Math.Max(0, utilidadOperacion);
+        isrEstimado = Math.Round(baseGravable * 0.30m, 2);
+
+        // ═══ PTU (Art. 123 Constitucional / Art. 120-127 LFT — 10%) ═══
+        ptuEstimada = Math.Round(baseGravable * 0.10m, 2);
+
+        // ═══ UTILIDAD NETA ═══
+        utilidadNeta = utilidadOperacion - isrEstimado - ptuEstimada;
+        margenNeto = ingresosNetos > 0 ? Math.Round(utilidadNeta / ingresosNetos * 100m, 1) : 0;
+
+        // ═══ COBRANZA ═══
+        var pagos = await DbContext.PagosPedido
+            .AsNoTracking()
+            .Where(p => p.IsActive && pedidoIds.Contains(p.PedidoId))
+            .ToListAsync();
+        totalCobrado = pagos.Sum(p => p.Monto);
+        totalPendienteCobro = pedidoTotales.Sum(p => p.Value.Total) - totalCobrado;
+        if (totalPendienteCobro < 0) totalPendienteCobro = 0;
+
+        // ═══ DESGLOSE POR PRODUCTO ═══
+        desgloseProductos = lineasProducto
+            .GroupBy(l => new { l.ProductoId, l.Nombre })
+            .Select(g =>
+            {
+                var ingreso = Math.Round(g.Sum(l => l.IngresoNeto), 2);
+                var piezas = g.Sum(l => l.Piezas);
+                var costo = Math.Round(g.Sum(l => l.CostoTotal), 2);
+                var utilidad = ingreso - costo;
+                var margen = ingreso > 0 ? Math.Round(utilidad / ingreso * 100m, 1) : 0;
+                return new ProductoDesglose
+                {
+                    Nombre = g.Key.Nombre,
+                    Piezas = piezas,
+                    Ingreso = ingreso,
+                    Costo = costo,
+                    Utilidad = utilidad,
+                    Margen = margen
+                };
+            })
+            .OrderByDescending(p => p.Utilidad)
+            .ToList();
+    }
+
+    private LineaResultado ConstruirLineaProducto(
+        Pedido pedido,
+        PedidoDetalle detalle,
+        List<PedidoSerigrafia> serigrafias,
+        Dictionary<Guid, CotizacionSerigrafia> cotizDict)
+    {
+        var piezas = ObtenerCantidadDetalle(pedido.Id, detalle, serigrafias);
+        var cotizacion = detalle.CotizacionSerigrafia ?? cotizDict.GetValueOrDefault(detalle.ProductoId);
+        var subtotal = ObtenerSubtotalDetalle(detalle, piezas, cotizacion);
+        var descuento = Math.Max(0, detalle.Descuento);
+
+        var costoMateriaPrimaLinea = 0m;
+        var costoInsumosBasicosLinea = 0m;
+        var costoInsumosDiversosLinea = 0m;
+        var costoManoObraLinea = 0m;
+        var costoGifLinea = 0m;
+
+        if (cotizacion != null)
+        {
+            var factor = ObtenerFactorCotizacion(cotizacion, piezas);
+            costoMateriaPrimaLinea = cotizacion.TotalTintas * factor;
+            costoInsumosBasicosLinea = cotizacion.TotalInsumosBasicos * factor;
+            costoInsumosDiversosLinea = cotizacion.TotalInsumosDiversos * factor;
+            costoManoObraLinea = cotizacion.TotalManoObra * factor;
+            costoGifLinea = cotizacion.TotalGastosFijos * factor;
+        }
+
+        return new LineaResultado
+        {
+            PedidoId = pedido.Id,
+            ProductoId = detalle.ProductoId,
+            Nombre = detalle.Producto?.Nombre ?? "—",
+            Piezas = piezas,
+            IngresoBruto = Math.Round(subtotal + descuento, 2),
+            Descuento = Math.Round(descuento, 2),
+            IngresoNeto = Math.Round(subtotal, 2),
+            CostoMateriaPrima = Math.Round(costoMateriaPrimaLinea, 2),
+            CostoInsumosBasicos = Math.Round(costoInsumosBasicosLinea, 2),
+            CostoInsumosDiversos = Math.Round(costoInsumosDiversosLinea, 2),
+            CostoManoObra = Math.Round(costoManoObraLinea, 2),
+            CostoGIF = Math.Round(costoGifLinea, 2)
+        };
+    }
+
+    private static decimal ObtenerFactorCotizacion(CotizacionSerigrafia cotizacion, int piezas)
+    {
+        var paresLam = cotizacion.ParesPorLamina > 0 ? cotizacion.ParesPorLamina : 1;
+        return Math.Max(0, piezas) / paresLam;
+    }
+
+    private static decimal ObtenerSubtotalDetalle(PedidoDetalle detalle, int piezas, CotizacionSerigrafia? cotizacion)
+    {
+        if (detalle.Total > 0)
+        {
+            return detalle.Total;
+        }
+
+        var precioUnitario = detalle.PrecioUnitario > 0
+            ? detalle.PrecioUnitario
+            : cotizacion?.PrecioFinalContado ?? 0m;
+
+        return Math.Round(precioUnitario * Math.Max(0, piezas), 2);
+    }
+
+    private static int ObtenerCantidadDetalle(Guid pedidoId, PedidoDetalle detalle, List<PedidoSerigrafia> serigrafias)
+    {
+        var piezasPedido = serigrafias
+            .Where(s => s.PedidoDetalle.PedidoId == pedidoId && s.PedidoDetalleId == detalle.Id)
+            .SelectMany(s => s.Tallas)
+            .Sum(t => t.Cantidad);
+
+        if (piezasPedido > 0)
+        {
+            return piezasPedido;
+        }
+
+        return Math.Max(0, detalle.Cantidad);
+    }
+
+    private class GastoFijoItem { public string Concepto = ""; public decimal Monto; }
+    private class ProductoDesglose { public string Nombre = ""; public int Piezas; public decimal Ingreso; public decimal Costo; public decimal Utilidad; public decimal Margen; }
+    private class PedidoTotalCalculado { public Guid PedidoId { get; set; } public decimal Subtotal { get; set; } public decimal Impuestos { get; set; } public decimal Total => Subtotal + Impuestos; }
+    private class LineaResultado
+    {
+        public Guid PedidoId { get; set; }
+        public Guid? ProductoId { get; set; }
+        public string Nombre { get; set; } = "";
+        public int Piezas { get; set; }
+        public decimal IngresoBruto { get; set; }
+        public decimal Descuento { get; set; }
+        public decimal IngresoNeto { get; set; }
+        public decimal CostoMateriaPrima { get; set; }
+        public decimal CostoInsumosBasicos { get; set; }
+        public decimal CostoInsumosDiversos { get; set; }
+        public decimal CostoManoObra { get; set; }
+        public decimal CostoGIF { get; set; }
+        public bool EsServicio { get; set; }
+        public decimal CostoTotal => CostoMateriaPrima + CostoInsumosBasicos + CostoInsumosDiversos + CostoManoObra + CostoGIF;
+    }
+}

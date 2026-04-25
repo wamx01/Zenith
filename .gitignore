@@ -1,0 +1,32 @@
+# Build artifacts
+**/bin/
+**/obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local workspace artifacts
+.temp/
+.tmpdbdiag/
+BenchmarkDotNet.Artifacts/
+
+# Logs and diagnostics
+*.log
+*.tmp
+*.cache
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker overrides
+docker-compose.override.yml
+
+# OS files
+Thumbs.db
+.DS_Store

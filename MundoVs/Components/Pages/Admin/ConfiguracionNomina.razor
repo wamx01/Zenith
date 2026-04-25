@@ -1,0 +1,1796 @@
+@page "/configuracion/nomina"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IAppConfigRepository AppConfig
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Configuración de Nómina</PageTitle>
+
+<style>
+    .nom-toolbar {
+        border: 0;
+        border-radius: 1rem;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #fff;
+    }
+
+    .nom-toolbar .text-muted {
+        color: rgba(255,255,255,.74) !important;
+    }
+
+    .nom-kpi-card,
+    .nom-config-card {
+        border: 0;
+        border-radius: 1rem;
+        box-shadow: 0 .4rem 1.2rem rgba(15, 23, 42, .08);
+    }
+
+    .nom-kpi-card .card-body {
+        padding: .85rem 1rem;
+    }
+
+    .nom-kpi-label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #64748b;
+        font-weight: 700;
+        margin-bottom: .2rem;
+    }
+
+    .nom-kpi-value {
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.1;
+    }
+
+    .nom-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: .25rem;
+        margin-bottom: .25rem;
+    }
+
+    .nom-section-title {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0;
+    }
+
+    .nom-section-subtitle {
+        font-size: .8rem;
+        color: #64748b;
+        margin: 0;
+    }
+
+    .nom-config-card .card-header {
+        padding: .85rem 1rem;
+        font-weight: 700;
+    }
+
+    .nom-config-card .card-body {
+        padding: .95rem 1rem;
+    }
+
+    .nom-form-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: .9rem;
+    }
+
+    .nom-form-row {
+        display: grid;
+        grid-template-columns: minmax(0, 160px) minmax(0, 1fr) minmax(0, 1fr);
+        gap: .85rem;
+        align-items: start;
+        padding: .75rem 0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .nom-form-row:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    .nom-form-row:first-child {
+        padding-top: 0;
+    }
+
+    .nom-form-group {
+        min-width: 0;
+    }
+
+    .nom-form-group .form-label {
+        margin-bottom: .3rem;
+        font-size: .8rem;
+        font-weight: 700;
+    }
+
+    .nom-form-group .form-text,
+    .nom-help-text {
+        font-size: .74rem;
+        line-height: 1.35;
+    }
+
+    .nom-row-title {
+        font-size: .88rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+
+    .nom-row-subtitle {
+        font-size: .75rem;
+        color: #64748b;
+        line-height: 1.4;
+        margin-top: .2rem;
+    }
+
+    .nom-inline-note {
+        padding: .7rem .8rem;
+        border-radius: .85rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        font-size: .78rem;
+        color: #475569;
+    }
+
+    .nom-json-preview {
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 0;
+    }
+
+    @@media (max-width: 991.98px) {
+        .nom-form-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver la configuración de nómina.</div>
+    }
+    else
+    {
+        <div class="card nom-toolbar mb-4">
+            <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-3 py-3">
+                <div>
+                    <h1 class="display-6 fw-bold mb-1"><i class="bi bi-sliders me-2"></i>Configuración de Nómina</h1>
+                    <p class="text-muted mb-0">Ordena reglas base, incidencias, cumplimiento fiscal y catálogos operativos en una sola vista compacta.</p>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-light" type="submit" form="form-config-nomina" disabled="@guardando"><i class="bi bi-save me-1"></i>@(guardando ? "Guardando..." : "Guardar cambios")</button>
+                    <a class="btn btn-outline-light" href="/configuracion">Volver</a>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm id="form-config-nomina" Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-3 mb-4">
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-kpi-card h-100">
+                        <div class="card-body">
+                            <div class="nom-kpi-label">Periodicidades</div>
+                            <div class="nom-kpi-value">3</div>
+                            <div class="small text-muted">Semanal, quincenal y mensual.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-kpi-card h-100">
+                        <div class="card-body">
+                            <div class="nom-kpi-label">Festivos</div>
+                            <div class="nom-kpi-value">@festivos.Count</div>
+                            <div class="small text-muted">Fechas especiales capturadas en calendario.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-kpi-card h-100">
+                        <div class="card-body">
+                            <div class="nom-kpi-label">Percepciones</div>
+                            <div class="nom-kpi-value">@tiposPercepcion.Count</div>
+                            <div class="small text-muted">Tipos disponibles para captura manual.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-kpi-card h-100">
+                        <div class="card-body">
+                            <div class="nom-kpi-label">Deducciones</div>
+                            <div class="nom-kpi-value">@tiposDeduccion.Count</div>
+                            <div class="small text-muted">Tipos activos para descuentos y recibo.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="nom-section-header">
+                        <div>
+                            <h2 class="nom-section-title">Base de cálculo y periodos</h2>
+                            <p class="nom-section-subtitle">Primero define cómo se prorratea el sueldo y cómo se cortan los periodos de pago.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xxl-7 col-xl-12">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header bg-white">Bases por periodicidad</div>
+                        <div class="card-body">
+                            <div class="nom-form-grid">
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Semanal</div>
+                                        <div class="nom-row-subtitle">Base principal para empleados semanales y cálculo por hora.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Días base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.DiasBaseSemanal" />
+                                        <div class="form-text">Usados para prorratear sueldo base.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Horas base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.HorasBaseSemanal" />
+                                        <div class="form-text">Referencia para sueldo por hora y horas extra.</div>
+                                    </div>
+                                </div>
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Quincenal</div>
+                                        <div class="nom-row-subtitle">Parámetros para personal pagado por quincena.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Días base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.DiasBaseQuincenal" />
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Horas base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.HorasBaseQuincenal" />
+                                    </div>
+                                </div>
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Mensual</div>
+                                        <div class="nom-row-subtitle">Referencia para esquemas de pago mensual.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Días base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.DiasBaseMensual" />
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Horas base</label>
+                                        <InputNumber class="form-control" @bind-Value="configuracion.HorasBaseMensual" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xxl-5 col-xl-12">
+                    <div class="card nom-config-card h-100 border-primary">
+                        <div class="card-header bg-primary text-white">Cortes del periodo</div>
+                        <div class="card-body">
+                            <div class="nom-form-grid">
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Semanal</div>
+                                        <div class="nom-row-subtitle">El día de corte se toma como fin del periodo.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Día de corte</label>
+                                        <InputSelect class="form-select" @bind-Value="corteSemanal.DiaCorteSemana">
+                                            @foreach (var dia in DiasSemanaDisponibles)
+                                            {
+                                                <option value="@dia">@ObtenerNombreDia(dia)</option>
+                                            }
+                                        </InputSelect>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Pago sugerido</label>
+                                        <InputSelect class="form-select" @bind-Value="corteSemanal.DiaPagoSugerido">
+                                            @foreach (var dia in DiasSemanaDisponibles)
+                                            {
+                                                <option value="@dia">@ObtenerNombreDia(dia)</option>
+                                            }
+                                        </InputSelect>
+                                    </div>
+                                </div>
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Quincenal</div>
+                                        <div class="nom-row-subtitle">Ejemplo: 15 genera periodos del 1 al 15 y del 16 al cierre.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Día de corte</label>
+                                        <InputNumber class="form-control" @bind-Value="corteQuincenal.DiaCorteMes" />
+                                    </div>
+                                    <div class="nom-inline-note">La primera quincena cierra en este día y la segunda al último día del mes.</div>
+                                </div>
+                                <div class="nom-form-row">
+                                    <div>
+                                        <div class="nom-row-title">Mensual</div>
+                                        <div class="nom-row-subtitle">Usa 31 para mes calendario o un día fijo para cortes desplazados.</div>
+                                    </div>
+                                    <div class="nom-form-group">
+                                        <label class="form-label">Día de corte</label>
+                                        <InputNumber class="form-control" @bind-Value="corteMensual.DiaCorteMes" />
+                                    </div>
+                                    <div class="nom-inline-note">Ejemplo: 25 genera periodos del 26 al 25 del siguiente mes.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header bg-white">Reglas base de prenómina</div>
+                        <div class="card-body">
+                            <div class="row g-3 align-items-start">
+                                <div class="col-xl-4 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <InputCheckbox class="form-check-input" @bind-Value="reglasPrenomina.PermitirHorasExtraManual" />
+                                        <label class="form-check-label">Permitir captura manual de horas extra</label>
+                                    </div>
+                                </div>
+                                <div class="col-xl-4 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <InputCheckbox class="form-check-input" @bind-Value="reglasPrenomina.ValidarDiasPagadosContraPeriodo" />
+                                        <label class="form-check-label">Validar días pagados contra el período</label>
+                                    </div>
+                                </div>
+                                <div class="col-xl-4 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <InputCheckbox class="form-check-input" @bind-Value="reglasPrenomina.RequierePrenominaCerradaParaNomina" />
+                                        <label class="form-check-label">Requerir prenómina cerrada para generar nómina</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Vista JSON</label>
+                                    <textarea class="form-control font-monospace nom-json-preview" rows="5" readonly>@ObtenerReglasPrenominaJsonPreview()</textarea>
+                                    <div class="form-text">La vista JSON se genera automáticamente con las banderas operativas activas.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="nom-section-header">
+                        <div>
+                            <h2 class="nom-section-title">Incidencias y tiempo</h2>
+                            <p class="nom-section-subtitle">Agrupa los factores que afectan descansos trabajados, festivos, tiempo extra y banco de horas.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100 border-warning">
+                        <div class="card-header bg-warning-subtle">Festivo trabajado</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Factor general de pago</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.FactorFestivoTrabajado" />
+                                <div class="form-text">Fallback cuando la fecha no define factor específico o está en `0`.</div>
+                            </div>
+                            <div class="nom-help-text text-muted">Ejemplo: <strong>2</strong> paga doble el festivo trabajado.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100 border-warning">
+                        <div class="card-header bg-warning-subtle">Descanso trabajado</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Factor de pago</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.FactorDescansoTrabajado" />
+                                <div class="form-text">Se aplica al sueldo diario por cada día registrado como descanso trabajado.</div>
+                            </div>
+                            <div class="nom-help-text text-muted">La prima dominical se calcula aparte cuando corresponda.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100 border-primary">
+                        <div class="card-header bg-primary text-white">Horas extra</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Factor de pago</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.FactorHoraExtra" />
+                                <div class="form-text">Ejemplo: 2 = doble, 1.5 = tiempo y medio.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Factor extra triple</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.FactorHoraExtraTriple" />
+                            </div>
+                            <div class="nom-help-text text-muted">Primeras 9 horas extra semanales = doble; excedente = triple.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100 border-info">
+                        <div class="card-header bg-info-subtle">Banco de horas</div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <InputCheckbox class="form-check-input" @bind-Value="configuracion.BancoHorasHabilitado" />
+                                <label class="form-check-label">Habilitar banco de horas</label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Factor acumulación</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.BancoHorasFactorAcumulacion" />
+                            </div>
+                            <div>
+                                <label class="form-label">Tope de saldo en horas</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.BancoHorasTopeHoras" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="nom-section-header">
+                        <div>
+                            <h2 class="nom-section-title">Cumplimiento y cálculo legal</h2>
+                            <p class="nom-section-subtitle">Mantén visibles los parámetros fiscales, seguridad social y prestaciones mínimas.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header bg-white">Parámetros normativos</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">UMA diaria</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.UmaDiaria" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Salario mínimo general</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.SalarioMinimoGeneral" />
+                            </div>
+                            <div>
+                                <label class="form-label">Salario mínimo frontera</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.SalarioMinimoFrontera" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header bg-white">IMSS</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Tasa obrera</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.TasaImssObrera" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Tasa patronal</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.TasaImssPatronal" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Prima riesgo trabajo</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.PrimaRiesgoTrabajo" />
+                            </div>
+                            <div>
+                                <label class="form-label">Tope SBC en UMA</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.TopeSbcEnUma" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100 border-success">
+                        <div class="card-header bg-success-subtle">ISR y subsidio</div>
+                        <div class="card-body d-flex flex-column gap-3">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="configuracion.RetencionIsrHabilitada" />
+                                <label class="form-check-label">Habilitar retención ISR</label>
+                            </div>
+                            <div class="nom-help-text text-muted">Las tablas de ISR y subsidio son configuración maestra global. Aquí solo decides si la empresa las aplica.</div>
+                            @if (_esSuperAdmin)
+                            {
+                                <div>
+                                    <a class="btn btn-sm btn-outline-primary" href="/superadmin/configuracion-nomina">Editar tablas globales</a>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-md-6">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header bg-white">Vacaciones y aguinaldo</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Prima vacacional mínima</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.PrimaVacacionalMinima" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Días aguinaldo mínimo</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.DiasAguinaldoMinimo" />
+                            </div>
+                            <div>
+                                <label class="form-label">Tabla vacaciones JSON</label>
+                                <InputTextArea class="form-control font-monospace" @bind-Value="configuracion.TablaVacacionesJson" rows="5" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="nom-section-header">
+                        <div>
+                            <h2 class="nom-section-title">Calendario y catálogos</h2>
+                            <p class="nom-section-subtitle">Concentra festivos, bonos y tipos de captura en un bloque operativo más fácil de escanear.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-8 col-lg-12">
+                    <div class="card nom-config-card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                            <span>Festivos del calendario</span>
+                            @if (_puedeEditar)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="PrepararNuevoFestivo">
+                                    <i class="bi bi-plus-circle me-1"></i>Nuevo festivo
+                                </button>
+                            }
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">Fecha</label>
+                                    <InputDate class="form-control" @bind-Value="festivoEnCaptura.Fecha" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Nombre</label>
+                                    <InputText class="form-control" @bind-Value="festivoEnCaptura.Nombre" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Tipo</label>
+                                    <InputSelect class="form-select" @bind-Value="festivoEnCaptura.Tipo">
+                                        @foreach (var tipo in Enum.GetValues<FestivoTipoRrhh>())
+                                        {
+                                            <option value="@tipo">@tipo</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Factor pago</label>
+                                    <InputNumber class="form-control" @bind-Value="festivoEnCaptura.FactorPago" />
+                                    <div class="form-text">Captura `0` para usar el factor general.</div>
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button type="button" class="btn btn-success w-100" @onclick="AgregarOActualizarFestivo">
+                                        <i class="bi bi-save me-1"></i>@(festivoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="festivoEnCaptura.AplicaPrimaEspecial" />
+                                        <label class="form-check-label">Aplica pago especial</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-check mt-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="festivoEnCaptura.EsOficial" />
+                                        <label class="form-check-label">Es oficial</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Fecha</th>
+                                            <th>Nombre</th>
+                                            <th>Tipo</th>
+                                            <th class="text-center">Especial</th>
+                                            <th class="text-end">Factor</th>
+                                            <th class="text-center">Oficial</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (festivos.Count == 0)
+                                        {
+                                            <tr><td colspan="7" class="text-center text-muted py-3">No hay festivos configurados.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var festivo in festivos.OrderBy(f => f.Fecha))
+                                            {
+                                                <tr>
+                                                    <td>@festivo.Fecha.ToString("dd/MM/yyyy")</td>
+                                                    <td class="fw-semibold">@festivo.Nombre</td>
+                                                    <td>@festivo.Tipo</td>
+                                                    <td class="text-center">@(festivo.AplicaPrimaEspecial ? "Sí" : "No")</td>
+                                                    <td class="text-end">@ObtenerTextoFactorFestivo(festivo)</td>
+                                                    <td class="text-center">@(festivo.EsOficial ? "Sí" : "No")</td>
+                                                    <td class="text-end">
+                                                        <div class="d-flex justify-content-end gap-1">
+                                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarFestivo(festivo)"><i class="bi bi-pencil"></i></button>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFestivo(festivo)"><i class="bi bi-trash"></i></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-12">
+                    <div class="card nom-config-card h-100 border-warning">
+                        <div class="card-header bg-warning-subtle">Bonos de nómina</div>
+                        <div class="card-body d-flex flex-column justify-content-between gap-3">
+                            <div>
+                                <p class="mb-2">Administra desde su pantalla dedicada:</p>
+                                <ul class="small text-muted mb-0 ps-3">
+                                    <li>rubros de bono</li>
+                                    <li>estructuras por tipo de captura</li>
+                                    <li>asignación maestra por posición</li>
+                                    <li>captura operativa distribuida</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <a class="btn btn-warning" href="/configuracion/bonos">
+                                    <i class="bi bi-gift me-1"></i>Administrar bonos
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-6 col-lg-12">
+                    <div class="card nom-config-card h-100 border-success">
+                        <div class="card-header bg-success-subtle">Tipos de percepción</div>
+                        <div class="card-body">
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Clave</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="tipoPercepcionEnCaptura.Clave" />
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label">Nombre</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="tipoPercepcionEnCaptura.Nombre" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Orden</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="tipoPercepcionEnCaptura.Orden" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Categoría</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="tipoPercepcionEnCaptura.Categoria">
+                                        @foreach (var categoria in Enum.GetValues<CategoriaPercepcionNomina>())
+                                        {
+                                            <option value="@categoria">@categoria</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="tipoPercepcionEnCaptura.AfectaBaseImss" /><label class="form-check-label">IMSS</label></div></div>
+                                <div class="col-md-3 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="tipoPercepcionEnCaptura.AfectaBaseIsr" /><label class="form-check-label">ISR</label></div></div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-success" @onclick="AgregarOActualizarTipoPercepcion">@(tipoPercepcionEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoTipoPercepcion">Limpiar</button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead class="table-light"><tr><th>Clave</th><th>Nombre</th><th>Categoría</th><th></th></tr></thead>
+                                    <tbody>
+                                        @if (tiposPercepcion.Count == 0)
+                                        {
+                                            <tr><td colspan="4" class="text-center text-muted py-3">No hay tipos configurados.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var tipo in tiposPercepcion.OrderBy(t => t.Orden).ThenBy(t => t.Nombre))
+                                            {
+                                                <tr>
+                                                    <td>@tipo.Clave</td>
+                                                    <td class="fw-semibold">@tipo.Nombre</td>
+                                                    <td>@tipo.Categoria</td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarTipoPercepcion(tipo)"><i class="bi bi-pencil"></i></button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarTipoPercepcion(tipo)"><i class="bi bi-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-6 col-lg-12">
+                    <div class="card nom-config-card h-100 border-danger">
+                        <div class="card-header bg-danger-subtle">Tipos de deducción</div>
+                        <div class="card-body">
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Clave</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="tipoDeduccionEnCaptura.Clave" />
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label">Nombre</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="tipoDeduccionEnCaptura.Nombre" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Orden</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="tipoDeduccionEnCaptura.Orden" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Descripción</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="tipoDeduccionEnCaptura.Descripcion" />
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="tipoDeduccionEnCaptura.EsLegal" /><label class="form-check-label">Legal</label></div></div>
+                                <div class="col-md-4 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="tipoDeduccionEnCaptura.AfectaRecibo" /><label class="form-check-label">Afecta recibo</label></div></div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-danger" @onclick="AgregarOActualizarTipoDeduccion">@(tipoDeduccionEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoTipoDeduccion">Limpiar</button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead class="table-light"><tr><th>Clave</th><th>Nombre</th><th class="text-center">Legal</th><th></th></tr></thead>
+                                    <tbody>
+                                        @if (tiposDeduccion.Count == 0)
+                                        {
+                                            <tr><td colspan="4" class="text-center text-muted py-3">No hay tipos configurados.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var tipo in tiposDeduccion.OrderBy(t => t.Orden).ThenBy(t => t.Nombre))
+                                            {
+                                                <tr>
+                                                    <td>@tipo.Clave</td>
+                                                    <td class="fw-semibold">@tipo.Nombre</td>
+                                                    <td class="text-center">@(tipo.EsLegal ? "Sí" : "No")</td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarTipoDeduccion(tipo)"><i class="bi bi-pencil"></i></button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarTipoDeduccion(tipo)"><i class="bi bi-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 d-flex gap-2 pt-2">
+                    <button class="btn btn-primary" type="submit" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar configuración</button>
+                    <a class="btn btn-outline-secondary" href="/configuracion">Volver</a>
+                </div>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private NominaConfiguracion configuracion = new();
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _esSuperAdmin;
+    private bool guardando;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+    private NominaConfiguracionGlobal? configuracionGlobal;
+    private NominaCorteRrhh corteSemanal = new();
+    private NominaCorteRrhh corteQuincenal = new();
+    private NominaCorteRrhh corteMensual = new();
+    private List<FestivoRrhh> festivos = [];
+    private FestivoRrhh festivoEnCaptura = CrearFestivoVacio();
+    private HashSet<Guid> festivosEliminados = [];
+    private List<BonoRubroRrhh> rubrosBono = [];
+    private BonoRubroRrhh rubroBonoEnCaptura = CrearRubroBonoVacio();
+    private HashSet<Guid> rubrosBonoEliminados = [];
+    private List<BonoEstructuraRrhh> esquemasBono = [];
+    private BonoEstructuraRrhh esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+    private HashSet<Guid> esquemasBonoEliminados = [];
+    private HashSet<Guid> rubrosEsquemaSeleccionados = [];
+    private Dictionary<Guid, decimal> porcentajesRubrosEsquema = [];
+    private List<Posicion> posiciones = [];
+    private List<NominaPercepcionTipo> tiposPercepcion = [];
+    private NominaPercepcionTipo tipoPercepcionEnCaptura = CrearTipoPercepcionVacio();
+    private HashSet<Guid> tiposPercepcionEliminados = [];
+    private List<DeduccionTipoRrhh> tiposDeduccion = [];
+    private DeduccionTipoRrhh tipoDeduccionEnCaptura = CrearTipoDeduccionVacio();
+    private HashSet<Guid> tiposDeduccionEliminados = [];
+    private ReglasPrenominaConfiguracion reglasPrenomina = new();
+    private static IReadOnlyList<DayOfWeek> DiasSemanaDisponibles { get; } = Enum.GetValues<DayOfWeek>();
+    private decimal TotalPorcentajeEsquema => rubrosEsquemaSeleccionados.Sum(id => ObtenerPorcentajeRubroEsquema(id));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarConfiguracionAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        _puedeVer = state.User.HasClaim("Capacidad", "configuracion.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "configuracion.ver") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarConfiguracionAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracionGlobal = await NominaConfiguracionLoader.LoadGlobalAsync(db);
+        configuracion = await NominaConfiguracionLoader.LoadAsync(db, _empresaId);
+        reglasPrenomina = configuracion.ObtenerReglasPrenomina();
+
+        corteSemanal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Semanal, 31);
+        corteQuincenal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Quincenal, 15);
+        corteMensual = await CargarCortePeriodoAsync(db, PeriodicidadPago.Mensual, 31);
+
+        festivos = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive)
+            .OrderBy(f => f.Fecha)
+            .ToListAsync();
+
+        rubrosBono = await db.BonosRubrosRrhh
+            .AsNoTracking()
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Nombre)
+            .ToListAsync();
+
+        esquemasBono = await db.BonosEstructurasRrhh
+            .AsNoTracking()
+            .Include(e => e.Detalles.OrderBy(d => d.Orden))
+                .ThenInclude(d => d.BonoRubroRrhh)
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ToListAsync();
+
+        posiciones = await db.Posiciones
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Orden)
+            .ThenBy(p => p.Nombre)
+            .ToListAsync();
+
+        tiposPercepcion = await db.NominasPercepcionesTipos
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Nombre)
+            .ToListAsync();
+
+        tiposDeduccion = await db.DeduccionesTiposRrhh
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Nombre)
+            .ToListAsync();
+
+        festivoEnCaptura = CrearFestivoVacio();
+        festivosEliminados = [];
+        rubroBonoEnCaptura = CrearRubroBonoVacio();
+        rubrosBonoEliminados = [];
+        esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+        esquemasBonoEliminados = [];
+        rubrosEsquemaSeleccionados = [];
+        porcentajesRubrosEsquema = [];
+        tipoPercepcionEnCaptura = CrearTipoPercepcionVacio();
+        tiposPercepcionEliminados = [];
+        tipoDeduccionEnCaptura = CrearTipoDeduccionVacio();
+        tiposDeduccionEliminados = [];
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar la configuración de nómina.";
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            SincronizarReglasPrenominaJson();
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorHoraExtra, configuracion.FactorHoraExtra.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para calcular horas extra.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorHoraExtraTriple, configuracion.FactorHoraExtraTriple.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para calcular horas extra triples conforme al límite legal semanal.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, Math.Max(0, configuracion.MinutosMinimosTiempoExtra).ToString(), "Minutos mínimos antes o después del turno para contar tiempo laboral y tiempo extra.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorFestivoTrabajado, configuracion.FactorFestivoTrabajado.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor general usado para pagar festivos trabajados cuando la fecha no define uno específico.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorDescansoTrabajado, configuracion.FactorDescansoTrabajado.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para pagar días de descanso trabajado.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.BancoHorasHabilitado, configuracion.BancoHorasHabilitado.ToString(), "Indica si la empresa usa banco de horas a partir de horas extra.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, configuracion.BancoHorasFactorAcumulacion.ToString(System.Globalization.CultureInfo.InvariantCulture), "Horas que se acumulan al banco por cada hora extra capturada en nómina.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.BancoHorasTopeHoras, configuracion.BancoHorasTopeHoras.ToString(System.Globalization.CultureInfo.InvariantCulture), "Saldo máximo permitido de banco de horas por empleado.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiasBaseSemanal, configuracion.DiasBaseSemanal.ToString(), "Días base para sueldo semanal.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiasBaseQuincenal, configuracion.DiasBaseQuincenal.ToString(), "Días base para sueldo quincenal.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiasBaseMensual, configuracion.DiasBaseMensual.ToString(), "Días base para sueldo mensual.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.HorasBaseSemanal, configuracion.HorasBaseSemanal.ToString(), "Horas base para sueldo semanal.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.HorasBaseQuincenal, configuracion.HorasBaseQuincenal.ToString(), "Horas base para sueldo quincenal.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.HorasBaseMensual, configuracion.HorasBaseMensual.ToString(), "Horas base para sueldo mensual.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TasaImssObrera, configuracion.TasaImssObrera.ToString(System.Globalization.CultureInfo.InvariantCulture), "Tasa base de cuota obrera IMSS.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TasaImssPatronal, configuracion.TasaImssPatronal.ToString(System.Globalization.CultureInfo.InvariantCulture), "Tasa base de cuota patronal IMSS.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.PrimaRiesgoTrabajo, configuracion.PrimaRiesgoTrabajo.ToString(System.Globalization.CultureInfo.InvariantCulture), "Prima de riesgo de trabajo IMSS.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.PrimaVacacionalMinima, configuracion.PrimaVacacionalMinima.ToString(System.Globalization.CultureInfo.InvariantCulture), "Prima vacacional mínima.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiasAguinaldoMinimo, configuracion.DiasAguinaldoMinimo.ToString(), "Días mínimos de aguinaldo.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TopeSbcEnUma, configuracion.TopeSbcEnUma.ToString(System.Globalization.CultureInfo.InvariantCulture), "Tope de SBC expresado en UMA.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.RetencionIsrHabilitada, configuracion.RetencionIsrHabilitada.ToString(), "Indica si la empresa retiene ISR en nómina.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TablaVacacionesJson, configuracion.TablaVacacionesJson, "Tabla de vacaciones por antigüedad en JSON.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.ReglasPrenominaJson, configuracion.ReglasPrenominaJson, "Reglas base de prenómina en JSON.");
+
+            await GuardarConfiguracionPeriodoAsync();
+            ok = "Configuración de nómina guardada.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task<int> ObtenerEnteroAsync(string clave, int valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return int.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private async Task<decimal> ObtenerDecimalAsync(string clave, decimal valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var resultado)
+            ? resultado
+            : valorDefault;
+    }
+
+    private async Task<string> ObtenerTextoAsync(string clave, string valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return string.IsNullOrWhiteSpace(valor) ? valorDefault : valor;
+    }
+
+    private async Task<bool> ObtenerBooleanoAsync(string clave, bool valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return bool.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private void SincronizarReglasPrenominaJson()
+        => configuracion.ReglasPrenominaJson = System.Text.Json.JsonSerializer.Serialize(reglasPrenomina);
+
+    private string ObtenerReglasPrenominaJsonPreview()
+        => System.Text.Json.JsonSerializer.Serialize(reglasPrenomina);
+
+    private async Task GuardarConfiguracionPeriodoAsync()
+    {
+        if (_empresaId == Guid.Empty)
+            throw new InvalidOperationException("No hay empresa activa para guardar corte y festivos.");
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        await GuardarCortePeriodoAsync(db, corteSemanal, 31);
+        await GuardarCortePeriodoAsync(db, corteQuincenal, 15);
+        await GuardarCortePeriodoAsync(db, corteMensual, 31);
+
+        if (festivosEliminados.Count > 0)
+        {
+            var eliminados = await db.FestivosRrhh.Where(f => festivosEliminados.Contains(f.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.FestivosRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var festivo in festivos)
+        {
+            if (festivo.Id == Guid.Empty)
+            {
+                db.FestivosRrhh.Add(new FestivoRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Fecha = festivo.Fecha.Date,
+                    Nombre = festivo.Nombre.Trim(),
+                    Tipo = festivo.Tipo,
+                    AplicaPrimaEspecial = festivo.AplicaPrimaEspecial,
+                    FactorPago = Math.Max(0m, festivo.FactorPago),
+                    EsOficial = festivo.EsOficial,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                var actual = await db.FestivosRrhh.FirstOrDefaultAsync(f => f.Id == festivo.Id);
+                if (actual == null)
+                    continue;
+
+                actual.Fecha = festivo.Fecha.Date;
+                actual.Nombre = festivo.Nombre.Trim();
+                actual.Tipo = festivo.Tipo;
+                actual.AplicaPrimaEspecial = festivo.AplicaPrimaEspecial;
+                actual.FactorPago = Math.Max(0m, festivo.FactorPago);
+                actual.EsOficial = festivo.EsOficial;
+                actual.IsActive = true;
+                actual.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await GuardarRubrosBonoAsync(db);
+        await GuardarEsquemasBonoAsync(db);
+        await GuardarAsignacionesEsquemaPorPosicionAsync(db);
+        await GuardarTiposPercepcionAsync(db);
+        await GuardarTiposDeduccionAsync(db);
+
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<NominaCorteRrhh> CargarCortePeriodoAsync(CrmDbContext db, PeriodicidadPago periodicidad, int diaCorteMesDefault)
+        => await db.NominaCortesRrhh
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == periodicidad && c.IsActive)
+            ?? new NominaCorteRrhh
+            {
+                EmpresaId = _empresaId,
+                PeriodicidadPago = periodicidad,
+                DiaCorteSemana = DayOfWeek.Sunday,
+                DiaCorteMes = diaCorteMesDefault,
+                DiaPagoSugerido = DayOfWeek.Friday,
+                IsActive = true
+            };
+
+    private async Task GuardarCortePeriodoAsync(CrmDbContext db, NominaCorteRrhh corte, int diaCorteMesDefault)
+    {
+        var corteActual = await db.NominaCortesRrhh
+            .FirstOrDefaultAsync(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == corte.PeriodicidadPago);
+
+        if (corteActual == null)
+        {
+            db.NominaCortesRrhh.Add(new NominaCorteRrhh
+            {
+                EmpresaId = _empresaId,
+                PeriodicidadPago = corte.PeriodicidadPago,
+                DiaCorteSemana = corte.DiaCorteSemana,
+                DiaCorteMes = NormalizarDiaCorteMes(corte.PeriodicidadPago, corte.DiaCorteMes, diaCorteMesDefault),
+                DiaPagoSugerido = corte.DiaPagoSugerido,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            return;
+        }
+
+        corteActual.DiaCorteSemana = corte.DiaCorteSemana;
+        corteActual.DiaCorteMes = NormalizarDiaCorteMes(corte.PeriodicidadPago, corte.DiaCorteMes, diaCorteMesDefault);
+        corteActual.DiaPagoSugerido = corte.DiaPagoSugerido;
+        corteActual.IsActive = true;
+        corteActual.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private static int NormalizarDiaCorteMes(PeriodicidadPago periodicidad, int valor, int valorDefault)
+        => periodicidad == PeriodicidadPago.Quincenal
+            ? Math.Clamp(valor <= 0 ? valorDefault : valor, 1, 27)
+            : Math.Clamp(valor <= 0 ? valorDefault : valor, 1, 31);
+
+    private async Task GuardarEsquemasBonoAsync(CrmDbContext db)
+    {
+        if (esquemasBonoEliminados.Count > 0)
+        {
+            var eliminados = await db.BonosEstructurasRrhh.Where(e => esquemasBonoEliminados.Contains(e.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.BonosEstructurasRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var esquema in esquemasBono)
+        {
+            if (esquema.Id == Guid.Empty)
+            {
+                var nueva = new BonoEstructuraRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Nombre = esquema.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(esquema.Descripcion) ? null : esquema.Descripcion.Trim(),
+                    TipoCaptura = esquema.TipoCaptura,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                db.BonosEstructurasRrhh.Add(nueva);
+
+                var detalleOrden = 1;
+                foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
+                {
+                    db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        BonoEstructuraRrhh = nueva,
+                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        Orden = detalleOrden++,
+                        Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+
+                continue;
+            }
+
+            var actual = await db.BonosEstructurasRrhh
+                .Include(e => e.Detalles)
+                .FirstOrDefaultAsync(e => e.Id == esquema.Id);
+            if (actual == null)
+                continue;
+
+            actual.Nombre = esquema.Nombre.Trim();
+            actual.Descripcion = string.IsNullOrWhiteSpace(esquema.Descripcion) ? null : esquema.Descripcion.Trim();
+            actual.TipoCaptura = esquema.TipoCaptura;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+
+            var rubrosDeseados = esquema.Detalles.Select(d => d.BonoRubroRrhhId).ToHashSet();
+            var eliminarDetalle = actual.Detalles.Where(d => !rubrosDeseados.Contains(d.BonoRubroRrhhId)).ToList();
+            if (eliminarDetalle.Count > 0)
+                db.BonosEstructurasDetalleRrhh.RemoveRange(eliminarDetalle);
+
+            var existentes = actual.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
+            var orden = 1;
+            foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
+            {
+                if (!existentes.TryGetValue(detalle.BonoRubroRrhhId, out var actualDetalle))
+                {
+                    db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        BonoEstructuraRrhhId = actual.Id,
+                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        Orden = orden++,
+                        Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    continue;
+                }
+
+                actualDetalle.Orden = orden++;
+                actualDetalle.Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m;
+                actualDetalle.IsActive = true;
+                actualDetalle.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+    }
+
+    private async Task GuardarAsignacionesEsquemaPorPosicionAsync(CrmDbContext db)
+    {
+        foreach (var posicion in posiciones)
+        {
+            var actual = await db.Posiciones.FirstOrDefaultAsync(p => p.Id == posicion.Id);
+            if (actual == null)
+                continue;
+
+            actual.BonoEstructuraRrhhId = posicion.BonoEstructuraRrhhId;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task GuardarRubrosBonoAsync(CrmDbContext db)
+    {
+        if (rubrosBonoEliminados.Count > 0)
+        {
+            var eliminados = await db.BonosRubrosRrhh.Where(r => rubrosBonoEliminados.Contains(r.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.BonosRubrosRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var rubro in rubrosBono)
+        {
+            if (rubro.Id == Guid.Empty)
+            {
+                db.BonosRubrosRrhh.Add(new BonoRubroRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Clave = rubro.Clave.Trim().ToUpperInvariant(),
+                    Nombre = rubro.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(rubro.Descripcion) ? null : rubro.Descripcion.Trim(),
+                    Orden = rubro.Orden,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                continue;
+            }
+
+            var actual = await db.BonosRubrosRrhh.FirstOrDefaultAsync(r => r.Id == rubro.Id);
+            if (actual == null)
+                continue;
+
+            actual.Clave = rubro.Clave.Trim().ToUpperInvariant();
+            actual.Nombre = rubro.Nombre.Trim();
+            actual.Descripcion = string.IsNullOrWhiteSpace(rubro.Descripcion) ? null : rubro.Descripcion.Trim();
+            actual.Orden = rubro.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task GuardarTiposPercepcionAsync(CrmDbContext db)
+    {
+        if (tiposPercepcionEliminados.Count > 0)
+        {
+            var eliminados = await db.NominasPercepcionesTipos.Where(t => tiposPercepcionEliminados.Contains(t.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.NominasPercepcionesTipos.RemoveRange(eliminados);
+        }
+
+        foreach (var tipo in tiposPercepcion)
+        {
+            if (tipo.Id == Guid.Empty)
+            {
+                db.NominasPercepcionesTipos.Add(new NominaPercepcionTipo
+                {
+                    Id = Guid.NewGuid(),
+                    Clave = tipo.Clave.Trim().ToUpperInvariant(),
+                    Nombre = tipo.Nombre.Trim(),
+                    Categoria = tipo.Categoria,
+                    AfectaBaseImss = tipo.AfectaBaseImss,
+                    AfectaBaseIsr = tipo.AfectaBaseIsr,
+                    Orden = tipo.Orden,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                continue;
+            }
+
+            var actual = await db.NominasPercepcionesTipos.FirstOrDefaultAsync(t => t.Id == tipo.Id);
+            if (actual == null)
+                continue;
+
+            actual.Clave = tipo.Clave.Trim().ToUpperInvariant();
+            actual.Nombre = tipo.Nombre.Trim();
+            actual.Categoria = tipo.Categoria;
+            actual.AfectaBaseImss = tipo.AfectaBaseImss;
+            actual.AfectaBaseIsr = tipo.AfectaBaseIsr;
+            actual.Orden = tipo.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task GuardarTiposDeduccionAsync(CrmDbContext db)
+    {
+        if (tiposDeduccionEliminados.Count > 0)
+        {
+            var eliminados = await db.DeduccionesTiposRrhh.Where(t => tiposDeduccionEliminados.Contains(t.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.DeduccionesTiposRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var tipo in tiposDeduccion)
+        {
+            if (tipo.Id == Guid.Empty)
+            {
+                db.DeduccionesTiposRrhh.Add(new DeduccionTipoRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    Clave = tipo.Clave.Trim().ToUpperInvariant(),
+                    Nombre = tipo.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(tipo.Descripcion) ? null : tipo.Descripcion.Trim(),
+                    EsLegal = tipo.EsLegal,
+                    AfectaRecibo = tipo.AfectaRecibo,
+                    Orden = tipo.Orden,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                continue;
+            }
+
+            var actual = await db.DeduccionesTiposRrhh.FirstOrDefaultAsync(t => t.Id == tipo.Id);
+            if (actual == null)
+                continue;
+
+            actual.Clave = tipo.Clave.Trim().ToUpperInvariant();
+            actual.Nombre = tipo.Nombre.Trim();
+            actual.Descripcion = string.IsNullOrWhiteSpace(tipo.Descripcion) ? null : tipo.Descripcion.Trim();
+            actual.EsLegal = tipo.EsLegal;
+            actual.AfectaRecibo = tipo.AfectaRecibo;
+            actual.Orden = tipo.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private void PrepararNuevoFestivo()
+    {
+        festivoEnCaptura = CrearFestivoVacio();
+        error = ok = null;
+    }
+
+    private void AgregarOActualizarFestivo()
+    {
+        error = ok = null;
+
+        if (festivoEnCaptura.Fecha == default)
+        {
+            error = "La fecha del festivo es requerida.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(festivoEnCaptura.Nombre))
+        {
+            error = "El nombre del festivo es requerido.";
+            return;
+        }
+
+        if (festivoEnCaptura.FactorPago < 0)
+        {
+            error = "El factor del festivo no puede ser negativo.";
+            return;
+        }
+
+        var fecha = festivoEnCaptura.Fecha.Date;
+        var duplicado = festivos.Any(f => f.Id != festivoEnCaptura.Id && f.Fecha.Date == fecha);
+        if (duplicado)
+        {
+            error = "Ya existe un festivo configurado para esa fecha.";
+            return;
+        }
+
+        if (festivoEnCaptura.Id == Guid.Empty)
+        {
+            festivos.Add(new FestivoRrhh
+            {
+                Id = Guid.Empty,
+                Fecha = fecha,
+                Nombre = festivoEnCaptura.Nombre.Trim(),
+                Tipo = festivoEnCaptura.Tipo,
+                AplicaPrimaEspecial = festivoEnCaptura.AplicaPrimaEspecial,
+                FactorPago = Math.Max(0m, festivoEnCaptura.FactorPago),
+                EsOficial = festivoEnCaptura.EsOficial,
+                IsActive = true
+            });
+        }
+        else
+        {
+            var actual = festivos.FirstOrDefault(f => f.Id == festivoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Fecha = fecha;
+            actual.Nombre = festivoEnCaptura.Nombre.Trim();
+            actual.Tipo = festivoEnCaptura.Tipo;
+            actual.AplicaPrimaEspecial = festivoEnCaptura.AplicaPrimaEspecial;
+            actual.FactorPago = Math.Max(0m, festivoEnCaptura.FactorPago);
+            actual.EsOficial = festivoEnCaptura.EsOficial;
+        }
+
+        festivos = festivos.OrderBy(f => f.Fecha).ToList();
+        festivoEnCaptura = CrearFestivoVacio();
+    }
+
+    private void EditarFestivo(FestivoRrhh festivo)
+    {
+        festivoEnCaptura = new FestivoRrhh
+        {
+            Id = festivo.Id,
+            Fecha = festivo.Fecha,
+            Nombre = festivo.Nombre,
+            Tipo = festivo.Tipo,
+            AplicaPrimaEspecial = festivo.AplicaPrimaEspecial,
+            FactorPago = festivo.FactorPago,
+            EsOficial = festivo.EsOficial,
+            IsActive = festivo.IsActive
+        };
+        error = ok = null;
+    }
+
+    private void EliminarFestivo(FestivoRrhh festivo)
+    {
+        festivos.RemoveAll(f => f == festivo || (festivo.Id != Guid.Empty && f.Id == festivo.Id));
+        if (festivo.Id != Guid.Empty)
+            festivosEliminados.Add(festivo.Id);
+
+        if (festivoEnCaptura.Id == festivo.Id)
+            festivoEnCaptura = CrearFestivoVacio();
+    }
+
+    private void PrepararNuevoRubroBono()
+    {
+        rubroBonoEnCaptura = CrearRubroBonoVacio();
+        error = ok = null;
+    }
+
+    private void PrepararNuevoEsquemaBono()
+    {
+        esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+        rubrosEsquemaSeleccionados = [];
+        porcentajesRubrosEsquema = [];
+        error = ok = null;
+    }
+
+    private void AlternarRubroEsquema(Guid rubroId, bool selected)
+    {
+        if (selected)
+        {
+            rubrosEsquemaSeleccionados.Add(rubroId);
+            porcentajesRubrosEsquema.TryAdd(rubroId, 0m);
+            return;
+        }
+
+        rubrosEsquemaSeleccionados.Remove(rubroId);
+        porcentajesRubrosEsquema.Remove(rubroId);
+    }
+
+    private Task OnTipoCapturaEsquemaBonoChangedAsync()
+    {
+        if (esquemaBonoEnCaptura.TipoCaptura != TipoCapturaBonoNomina.TotalDistribuido)
+        {
+            foreach (var rubroId in rubrosEsquemaSeleccionados)
+                porcentajesRubrosEsquema[rubroId] = 0m;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private decimal ObtenerPorcentajeRubroEsquema(Guid rubroId)
+        => porcentajesRubrosEsquema.TryGetValue(rubroId, out var porcentaje) ? porcentaje : 0m;
+
+    private void ActualizarPorcentajeRubroEsquema(Guid rubroId, string? valor)
+        => porcentajesRubrosEsquema[rubroId] = decimal.TryParse(valor, out var porcentaje) ? Math.Max(0m, porcentaje) : 0m;
+
+    private void AgregarOActualizarEsquemaBono()
+    {
+        if (string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Nombre))
+        {
+            error = "El nombre de la estructura es requerido.";
+            return;
+        }
+
+        if (rubrosEsquemaSeleccionados.Count == 0)
+        {
+            error = "Selecciona al menos un rubro para la estructura.";
+            return;
+        }
+
+        if (esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido && Math.Round(TotalPorcentajeEsquema, 2) != 100m)
+        {
+            error = "La estructura de bono distribuida debe sumar 100%.";
+            return;
+        }
+
+        var nombre = esquemaBonoEnCaptura.Nombre.Trim();
+        if (esquemasBono.Any(e => e.Id != esquemaBonoEnCaptura.Id && string.Equals(e.Nombre, nombre, StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "Ya existe una estructura con ese nombre.";
+            return;
+        }
+
+        var detalles = rubrosBono
+            .Where(r => rubrosEsquemaSeleccionados.Contains(r.Id))
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Nombre)
+            .Select((r, index) => new BonoEstructuraDetalleRrhh
+            {
+                Id = Guid.Empty,
+                BonoRubroRrhhId = r.Id,
+                BonoRubroRrhh = r,
+                Orden = index + 1,
+                Porcentaje = esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? ObtenerPorcentajeRubroEsquema(r.Id) : 0m,
+                IsActive = true
+            })
+            .ToList();
+
+        if (esquemaBonoEnCaptura.Id == Guid.Empty)
+        {
+            esquemasBono.Add(new BonoEstructuraRrhh
+            {
+                Id = Guid.Empty,
+                Nombre = nombre,
+                Descripcion = string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Descripcion) ? null : esquemaBonoEnCaptura.Descripcion.Trim(),
+                TipoCaptura = esquemaBonoEnCaptura.TipoCaptura,
+                Detalles = detalles,
+                IsActive = true
+            });
+        }
+        else
+        {
+            var actual = esquemasBono.FirstOrDefault(e => e.Id == esquemaBonoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Nombre = nombre;
+            actual.Descripcion = string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Descripcion) ? null : esquemaBonoEnCaptura.Descripcion.Trim();
+            actual.TipoCaptura = esquemaBonoEnCaptura.TipoCaptura;
+            actual.Detalles = detalles;
+        }
+
+        esquemasBono = esquemasBono.OrderBy(e => e.Nombre).ToList();
+        PrepararNuevoEsquemaBono();
+    }
+
+    private void EditarEsquemaBono(BonoEstructuraRrhh esquema)
+    {
+        esquemaBonoEnCaptura = new BonoEstructuraRrhh
+        {
+            Id = esquema.Id,
+            Nombre = esquema.Nombre,
+            Descripcion = esquema.Descripcion,
+            TipoCaptura = esquema.TipoCaptura,
+            IsActive = esquema.IsActive
+        };
+        rubrosEsquemaSeleccionados = esquema.Detalles.Select(d => d.BonoRubroRrhhId).ToHashSet();
+        porcentajesRubrosEsquema = esquema.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d.Porcentaje);
+        error = ok = null;
+    }
+
+    private void EliminarEsquemaBono(BonoEstructuraRrhh esquema)
+    {
+        esquemasBono.RemoveAll(e => e == esquema || (esquema.Id != Guid.Empty && e.Id == esquema.Id));
+        if (esquema.Id != Guid.Empty)
+            esquemasBonoEliminados.Add(esquema.Id);
+
+        foreach (var posicion in posiciones.Where(p => p.BonoEstructuraRrhhId == esquema.Id))
+            posicion.BonoEstructuraRrhhId = null;
+
+        if (esquemaBonoEnCaptura.Id == esquema.Id)
+            PrepararNuevoEsquemaBono();
+    }
+
+    private void AgregarOActualizarRubroBono()
+    {
+        if (string.IsNullOrWhiteSpace(rubroBonoEnCaptura.Clave) || string.IsNullOrWhiteSpace(rubroBonoEnCaptura.Nombre))
+        {
+            error = "La clave y el nombre del rubro son requeridos.";
+            return;
+        }
+
+        var clave = rubroBonoEnCaptura.Clave.Trim().ToUpperInvariant();
+        if (rubrosBono.Any(r => r.Id != rubroBonoEnCaptura.Id && r.Clave == clave))
+        {
+            error = "Ya existe un rubro con esa clave.";
+            return;
+        }
+
+        if (rubroBonoEnCaptura.Id == Guid.Empty)
+        {
+            rubrosBono.Add(new BonoRubroRrhh { Id = Guid.Empty, Clave = clave, Nombre = rubroBonoEnCaptura.Nombre.Trim(), Descripcion = rubroBonoEnCaptura.Descripcion?.Trim(), Orden = rubroBonoEnCaptura.Orden, IsActive = true });
+        }
+        else
+        {
+            var actual = rubrosBono.FirstOrDefault(r => r.Id == rubroBonoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Clave = clave;
+            actual.Nombre = rubroBonoEnCaptura.Nombre.Trim();
+            actual.Descripcion = rubroBonoEnCaptura.Descripcion?.Trim();
+            actual.Orden = rubroBonoEnCaptura.Orden;
+        }
+
+        rubrosBono = rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre).ToList();
+        PrepararNuevoRubroBono();
+    }
+
+    private void EditarRubroBono(BonoRubroRrhh rubro)
+        => rubroBonoEnCaptura = new BonoRubroRrhh { Id = rubro.Id, Clave = rubro.Clave, Nombre = rubro.Nombre, Descripcion = rubro.Descripcion, Orden = rubro.Orden, IsActive = rubro.IsActive };
+
+    private void EliminarRubroBono(BonoRubroRrhh rubro)
+    {
+        rubrosBono.RemoveAll(r => r == rubro || (rubro.Id != Guid.Empty && r.Id == rubro.Id));
+        if (rubro.Id != Guid.Empty)
+            rubrosBonoEliminados.Add(rubro.Id);
+
+        rubrosEsquemaSeleccionados.Remove(rubro.Id);
+        foreach (var esquema in esquemasBono)
+            esquema.Detalles = esquema.Detalles.Where(d => d.BonoRubroRrhhId != rubro.Id).ToList();
+
+        if (rubroBonoEnCaptura.Id == rubro.Id)
+            PrepararNuevoRubroBono();
+    }
+
+    private void PrepararNuevoTipoPercepcion()
+    {
+        tipoPercepcionEnCaptura = CrearTipoPercepcionVacio();
+        error = ok = null;
+    }
+
+    private void AgregarOActualizarTipoPercepcion()
+    {
+        if (string.IsNullOrWhiteSpace(tipoPercepcionEnCaptura.Clave) || string.IsNullOrWhiteSpace(tipoPercepcionEnCaptura.Nombre))
+        {
+            error = "La clave y el nombre del tipo de percepción son requeridos.";
+            return;
+        }
+
+        var clave = tipoPercepcionEnCaptura.Clave.Trim().ToUpperInvariant();
+        if (tiposPercepcion.Any(t => t.Id != tipoPercepcionEnCaptura.Id && t.Clave == clave))
+        {
+            error = "Ya existe un tipo de percepción con esa clave.";
+            return;
+        }
+
+        if (tipoPercepcionEnCaptura.Id == Guid.Empty)
+        {
+            tiposPercepcion.Add(new NominaPercepcionTipo { Id = Guid.Empty, Clave = clave, Nombre = tipoPercepcionEnCaptura.Nombre.Trim(), Categoria = tipoPercepcionEnCaptura.Categoria, AfectaBaseImss = tipoPercepcionEnCaptura.AfectaBaseImss, AfectaBaseIsr = tipoPercepcionEnCaptura.AfectaBaseIsr, Orden = tipoPercepcionEnCaptura.Orden, IsActive = true });
+        }
+        else
+        {
+            var actual = tiposPercepcion.FirstOrDefault(t => t.Id == tipoPercepcionEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Clave = clave;
+            actual.Nombre = tipoPercepcionEnCaptura.Nombre.Trim();
+            actual.Categoria = tipoPercepcionEnCaptura.Categoria;
+            actual.AfectaBaseImss = tipoPercepcionEnCaptura.AfectaBaseImss;
+            actual.AfectaBaseIsr = tipoPercepcionEnCaptura.AfectaBaseIsr;
+            actual.Orden = tipoPercepcionEnCaptura.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+
+        tiposPercepcion = tiposPercepcion.OrderBy(t => t.Orden).ThenBy(t => t.Nombre).ToList();
+        PrepararNuevoTipoPercepcion();
+    }
+
+    private void EditarTipoPercepcion(NominaPercepcionTipo tipo)
+        => tipoPercepcionEnCaptura = new NominaPercepcionTipo { Id = tipo.Id, Clave = tipo.Clave, Nombre = tipo.Nombre, Categoria = tipo.Categoria, AfectaBaseImss = tipo.AfectaBaseImss, AfectaBaseIsr = tipo.AfectaBaseIsr, Orden = tipo.Orden, IsActive = tipo.IsActive };
+
+    private void EliminarTipoPercepcion(NominaPercepcionTipo tipo)
+    {
+        tiposPercepcion.RemoveAll(t => t == tipo || (tipo.Id != Guid.Empty && t.Id == tipo.Id));
+        if (tipo.Id != Guid.Empty)
+            tiposPercepcionEliminados.Add(tipo.Id);
+
+        if (tipoPercepcionEnCaptura.Id == tipo.Id)
+            PrepararNuevoTipoPercepcion();
+    }
+
+    private void PrepararNuevoTipoDeduccion()
+    {
+        tipoDeduccionEnCaptura = CrearTipoDeduccionVacio();
+        error = ok = null;
+    }
+
+    private void AgregarOActualizarTipoDeduccion()
+    {
+        if (string.IsNullOrWhiteSpace(tipoDeduccionEnCaptura.Clave) || string.IsNullOrWhiteSpace(tipoDeduccionEnCaptura.Nombre))
+        {
+            error = "La clave y el nombre del tipo de deducción son requeridos.";
+            return;
+        }
+
+        var clave = tipoDeduccionEnCaptura.Clave.Trim().ToUpperInvariant();
+        if (tiposDeduccion.Any(t => t.Id != tipoDeduccionEnCaptura.Id && t.Clave == clave))
+        {
+            error = "Ya existe un tipo de deducción con esa clave.";
+            return;
+        }
+
+        if (tipoDeduccionEnCaptura.Id == Guid.Empty)
+        {
+            tiposDeduccion.Add(new DeduccionTipoRrhh { Id = Guid.Empty, Clave = clave, Nombre = tipoDeduccionEnCaptura.Nombre.Trim(), Descripcion = tipoDeduccionEnCaptura.Descripcion?.Trim(), EsLegal = tipoDeduccionEnCaptura.EsLegal, AfectaRecibo = tipoDeduccionEnCaptura.AfectaRecibo, Orden = tipoDeduccionEnCaptura.Orden, IsActive = true });
+        }
+        else
+        {
+            var actual = tiposDeduccion.FirstOrDefault(t => t.Id == tipoDeduccionEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Clave = clave;
+            actual.Nombre = tipoDeduccionEnCaptura.Nombre.Trim();
+            actual.Descripcion = tipoDeduccionEnCaptura.Descripcion?.Trim();
+            actual.EsLegal = tipoDeduccionEnCaptura.EsLegal;
+            actual.AfectaRecibo = tipoDeduccionEnCaptura.AfectaRecibo;
+            actual.Orden = tipoDeduccionEnCaptura.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+
+        tiposDeduccion = tiposDeduccion.OrderBy(t => t.Orden).ThenBy(t => t.Nombre).ToList();
+        PrepararNuevoTipoDeduccion();
+    }
+
+    private void EditarTipoDeduccion(DeduccionTipoRrhh tipo)
+        => tipoDeduccionEnCaptura = new DeduccionTipoRrhh { Id = tipo.Id, Clave = tipo.Clave, Nombre = tipo.Nombre, Descripcion = tipo.Descripcion, EsLegal = tipo.EsLegal, AfectaRecibo = tipo.AfectaRecibo, Orden = tipo.Orden, IsActive = tipo.IsActive };
+
+    private void EliminarTipoDeduccion(DeduccionTipoRrhh tipo)
+    {
+        tiposDeduccion.RemoveAll(t => t == tipo || (tipo.Id != Guid.Empty && t.Id == tipo.Id));
+        if (tipo.Id != Guid.Empty)
+            tiposDeduccionEliminados.Add(tipo.Id);
+
+        if (tipoDeduccionEnCaptura.Id == tipo.Id)
+            PrepararNuevoTipoDeduccion();
+    }
+
+    private string ObtenerTextoFactorFestivo(FestivoRrhh festivo)
+        => festivo.FactorPago > 0m
+            ? festivo.FactorPago.ToString("0.##")
+            : $"Global ({configuracion.ObtenerFactorFestivoTrabajado():0.##})";
+
+    private static FestivoRrhh CrearFestivoVacio()
+        => new()
+        {
+            Fecha = DateTime.Today,
+            Tipo = FestivoTipoRrhh.Oficial,
+            FactorPago = 0m,
+            AplicaPrimaEspecial = true,
+            EsOficial = true,
+            IsActive = true
+        };
+
+    private static BonoRubroRrhh CrearRubroBonoVacio()
+        => new() { Orden = 1, IsActive = true };
+
+    private static BonoEstructuraRrhh CrearEsquemaBonoVacio()
+        => new() { IsActive = true, TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte };
+
+    private static NominaPercepcionTipo CrearTipoPercepcionVacio()
+        => new() { Categoria = CategoriaPercepcionNomina.OtroIngreso, AfectaBaseImss = true, AfectaBaseIsr = true, Orden = 1, IsActive = true };
+
+    private static DeduccionTipoRrhh CrearTipoDeduccionVacio()
+        => new() { EsLegal = false, AfectaRecibo = true, Orden = 1, IsActive = true };
+
+    private static string ObtenerNombreDia(DayOfWeek dia)
+        => dia switch
+        {
+            DayOfWeek.Monday => "Lunes",
+            DayOfWeek.Tuesday => "Martes",
+            DayOfWeek.Wednesday => "Miércoles",
+            DayOfWeek.Thursday => "Jueves",
+            DayOfWeek.Friday => "Viernes",
+            DayOfWeek.Saturday => "Sábado",
+            DayOfWeek.Sunday => "Domingo",
+            _ => dia.ToString()
+        };
+}

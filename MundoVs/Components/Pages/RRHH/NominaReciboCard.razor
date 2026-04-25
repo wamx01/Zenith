@@ -1,0 +1,325 @@
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Services
+
+<style>
+    .nomina-recibo-sheet {
+        border: 1px solid #d7dce5;
+        background: #fff;
+        padding: 1.25rem;
+        color: #0f172a;
+        page-break-inside: avoid;
+        box-sizing: border-box;
+    }
+
+    .nomina-recibo-header-grid {
+        display: grid;
+        grid-template-columns: 1.15fr .95fr 1.05fr;
+        gap: 1rem;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+
+    .nomina-recibo-title {
+        background: #0b2a68;
+        color: #fff;
+        padding: 1rem 1.25rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        text-align: center;
+        min-height: 92px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .nomina-recibo-company {
+        font-size: .82rem;
+        line-height: 1.35;
+    }
+
+    .nomina-recibo-company-panel {
+        min-height: 92px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .nomina-recibo-company-name {
+        font-size: 1.7rem;
+        font-weight: 800;
+        letter-spacing: .02em;
+        text-align: center;
+    }
+
+    .nomina-recibo-brand {
+        width: 92px;
+        height: 92px;
+        margin: 0 auto .5rem;
+        border: 3px solid #0b2a68;
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0b2a68;
+        font-size: 2rem;
+        font-weight: 800;
+    }
+
+    .nomina-recibo-label {
+        font-size: .72rem;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        font-weight: 700;
+    }
+
+    .nomina-recibo-value {
+        font-size: .9rem;
+        font-weight: 600;
+    }
+
+    .nomina-recibo-meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .nomina-recibo-fields-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: .5rem .75rem;
+    }
+
+    .nomina-recibo-span-3 { grid-column: span 3; }
+    .nomina-recibo-span-4 { grid-column: span 4; }
+    .nomina-recibo-span-6 { grid-column: span 6; }
+    .nomina-recibo-span-8 { grid-column: span 8; }
+
+    .nomina-recibo-bar {
+        background: #0b2a68;
+        color: #fff;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        padding: .35rem .75rem;
+        font-size: .82rem;
+    }
+
+    .nomina-recibo-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .nomina-recibo-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .9rem;
+    }
+
+    .nomina-recibo-table td {
+        padding: .24rem .25rem;
+        vertical-align: top;
+    }
+
+    .nomina-recibo-code {
+        width: 62px;
+        color: #0b2a68;
+        font-weight: 700;
+    }
+
+    .nomina-recibo-amount {
+        width: 140px;
+        text-align: right;
+        font-weight: 700;
+    }
+
+    .nomina-recibo-summary {
+        border-top: 2px solid #a5b4fc;
+        margin-top: 1rem;
+        padding-top: .75rem;
+        font-size: .92rem;
+    }
+
+    .nomina-recibo-summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: .18rem 0;
+    }
+
+    .nomina-recibo-summary-row strong {
+        font-weight: 800;
+    }
+
+    .nomina-recibo-signature {
+        border-top: 1px solid #1e293b;
+        margin-top: 2.75rem;
+        padding-top: .35rem;
+        text-align: center;
+        font-weight: 600;
+    }
+
+    .nomina-recibo-footer-grid {
+        display: grid;
+        grid-template-columns: 1.1fr .9fr;
+        gap: 1rem;
+        align-items: end;
+    }
+
+    @@media print {
+        .nomina-recibo-sheet {
+            border-color: #d7dce5;
+            box-shadow: none;
+            margin: 0;
+        }
+
+        .nomina-recibo-sheet,
+        .nomina-recibo-sheet * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .nomina-recibo-header-grid,
+        .nomina-recibo-meta-grid,
+        .nomina-recibo-columns,
+        .nomina-recibo-footer-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .nomina-recibo-span-3,
+        .nomina-recibo-span-4,
+        .nomina-recibo-span-6,
+        .nomina-recibo-span-8 {
+            grid-column: span 12;
+        }
+    }
+</style>
+
+<div class="nomina-recibo-sheet @CssClass">
+    <div class="nomina-recibo-header-grid">
+        <div class="nomina-recibo-company nomina-recibo-company-panel">
+            <div class="fw-bold">@NombreEmpresa</div>
+            <div>RFC: @(string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.Rfc) ? "—" : Detalle.Nomina.Empresa.Rfc)</div>
+            <div>Código empresa: @(string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.Codigo) ? "—" : Detalle.Nomina.Empresa.Codigo)</div>
+            <div>Régimen trabajador: @Detalle.TipoPago</div>
+        </div>
+        <div class="text-center">
+            <div class="nomina-recibo-brand">@InicialesEmpresa</div>
+            <div class="nomina-recibo-company-name">@NombreEmpresa.ToUpperInvariant()</div>
+            @if (!string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.Slogan))
+            {
+                <div class="small text-muted">@Detalle.Nomina.Empresa.Slogan</div>
+            }
+        </div>
+        <div>
+            <div class="nomina-recibo-title">Recibo de Nómina</div>
+        </div>
+    </div>
+
+    <div class="nomina-recibo-meta-grid">
+        <div>
+            <div class="nomina-recibo-fields-grid">
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">No. Trab.</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Empleado.NumeroEmpleado) ? "—" : Detalle.Empleado.NumeroEmpleado)</div></div>
+                <div class="nomina-recibo-span-8"><div class="nomina-recibo-label">Nombre</div><div class="nomina-recibo-value">@Detalle.Empleado.NombreCompleto</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">CURP</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Empleado.Curp) ? "—" : Detalle.Empleado.Curp)</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">RFC</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.Rfc) ? "—" : Detalle.Nomina.Empresa.Rfc)</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">R. IMSS</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Empleado.Nss) ? "—" : Detalle.Empleado.Nss)</div></div>
+            </div>
+        </div>
+        <div>
+            <div class="nomina-recibo-fields-grid">
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Depto.</div><div class="nomina-recibo-value">@DepartamentoEmpleado</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Puesto</div><div class="nomina-recibo-value">@PuestoEmpleado</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">No. Nómina</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Nomina.NumeroNomina) ? "—" : Detalle.Nomina.NumeroNomina)</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Folio</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Nomina.Folio) ? "—" : Detalle.Nomina.Folio)</div></div>
+                <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Período</div><div class="nomina-recibo-value">@Detalle.Nomina.FechaInicio.ToString("dd/MM/yyyy") al @Detalle.Nomina.FechaFin.ToString("dd/MM/yyyy")</div></div>
+                <div class="nomina-recibo-span-3"><div class="nomina-recibo-label">Días trab.</div><div class="nomina-recibo-value">@Detalle.DiasTrabajados</div></div>
+                <div class="nomina-recibo-span-3"><div class="nomina-recibo-label">Faltas</div><div class="nomina-recibo-value">@Detalle.DiasFaltaInjustificada</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nomina-recibo-columns">
+        <div>
+            <div class="nomina-recibo-bar">Percepciones</div>
+            <table class="nomina-recibo-table">
+                <tbody>
+                    @for (var i = 0; i < Recibo.Percepciones.Count; i++)
+                    {
+                        var concepto = Recibo.Percepciones[i];
+                        <tr>
+                            <td class="nomina-recibo-code">@concepto.Codigo</td>
+                            <td>@concepto.Concepto</td>
+                            <td class="nomina-recibo-amount">@concepto.Importe.ToString("C2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <div class="nomina-recibo-bar">Deducciones</div>
+            <table class="nomina-recibo-table">
+                <tbody>
+                    @for (var i = 0; i < Recibo.Deducciones.Count; i++)
+                    {
+                        var concepto = Recibo.Deducciones[i];
+                        <tr>
+                            <td class="nomina-recibo-code">@concepto.Codigo</td>
+                            <td>@concepto.Concepto</td>
+                            <td class="nomina-recibo-amount">@concepto.Importe.ToString("C2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="nomina-recibo-footer-grid">
+        <div>
+            <div class="nomina-recibo-summary">
+                <div class="nomina-recibo-summary-row"><span>Total percepciones</span><strong>@Recibo.TotalPercepciones.ToString("C2")</strong></div>
+                <div class="nomina-recibo-summary-row"><span>Total deducciones</span><strong>@Recibo.TotalDeducciones.ToString("C2")</strong></div>
+                <div class="nomina-recibo-summary-row"><span>Neto pagado</span><strong>@Recibo.NetoPagar.ToString("C2")</strong></div>
+                <div class="nomina-recibo-summary-row"><span>Total en efectivo</span><strong>@Recibo.NetoPagar.ToString("C2")</strong></div>
+            </div>
+        </div>
+        <div>
+            <div class="nomina-recibo-signature">Firma</div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Detalle.Notas))
+    {
+        <div class="mt-3 small text-muted">Observaciones: @Detalle.Notas</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required NominaDetalle Detalle { get; set; }
+    [Parameter, EditorRequired] public required NominaReciboResult Recibo { get; set; }
+    [Parameter] public string CssClass { get; set; } = string.Empty;
+
+    private string NombreEmpresa => string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.NombreComercial)
+        ? Detalle.Nomina.Empresa.RazonSocial
+        : Detalle.Nomina.Empresa.NombreComercial!;
+
+    private string InicialesEmpresa => string.Join(string.Empty,
+        NombreEmpresa
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(p => char.ToUpperInvariant(p[0])));
+
+    private string PuestoEmpleado => !string.IsNullOrWhiteSpace(Detalle.Empleado.Puesto)
+        ? Detalle.Empleado.Puesto
+        : Detalle.Empleado.Posicion?.Nombre ?? "—";
+
+    private string DepartamentoEmpleado => string.IsNullOrWhiteSpace(Detalle.Empleado.Departamento)
+        ? "—"
+        : Detalle.Empleado.Departamento;
+}

@@ -1,0 +1,1229 @@
+@page "/inventario"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Inventario
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IAppConfigRepository AppConfigRepository
+@rendermode InteractiveServer
+
+<PageTitle>Inventario</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver el módulo de inventario.</div>
+    }
+    else
+    {
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <h2 class="mb-1"><i class="bi bi-boxes"></i> Inventario</h2>
+                <p class="text-muted mb-0">Consulta unificada, altas rápidas, movimientos y reportes de inventario.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                @if (_puedeEditar)
+                {
+                    <button class="btn btn-primary" @onclick="() => PrepararNuevoItemAsync(OrigenMateriaPrima)">
+                        <i class="bi bi-droplet-fill me-1"></i>Nueva Materia Prima
+                    </button>
+                    <button class="btn btn-success" @onclick="() => PrepararNuevoItemAsync(OrigenInsumo)">
+                        <i class="bi bi-box-seam me-1"></i>Nuevo Insumo
+                    </button>
+                }
+                @if (_puedeMovimientos)
+                {
+                    <button class="btn btn-dark" @onclick="PrepararMovimiento">
+                        <i class="bi bi-arrow-left-right me-1"></i>Movimiento Manual
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrEmpty(success))
+        {
+            <div class="alert alert-success">@success</div>
+        }
+
+        @if (_puedeReportes)
+        {
+            <div class="row g-3 mb-4">
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-secondary bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-archive fs-4 text-secondary"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Registros</div>
+                                <div class="fs-2 fw-bold lh-1">@itemsFiltrados.Count</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-danger bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-exclamation-triangle fs-4 text-danger"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Stock bajo</div>
+                                <div class="fs-2 fw-bold lh-1 text-danger">@itemsFiltrados.Count(i => i.EstaBajoMinimo)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-primary bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-currency-dollar fs-4 text-primary"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Costo inventario</div>
+                                <div class="fs-2 fw-bold lh-1 text-primary">$@CostoInventarioFiltrado.ToString("N2")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-success bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-arrow-left-right fs-4 text-success"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Movimientos</div>
+                                <div class="fs-2 fw-bold lh-1 text-success">@movimientosFiltrados.Count</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-info bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-shield-check fs-4 text-info"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Activos</div>
+                                <div class="fs-2 fw-bold lh-1 text-info">@itemsFiltrados.Count(i => i.IsActive)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-secondary bg-opacity-10 p-3 flex-shrink-0">
+                                <i class="bi bi-archive fs-4 text-secondary"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Inactivos</div>
+                                <div class="fs-2 fw-bold lh-1 text-secondary">@itemsFiltrados.Count(i => !i.IsActive)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</span>
+                    <button class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltrosExistencias">Limpiar</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Origen</label>
+                        <select class="form-select" @bind="filtroOrigen" @bind:after="AplicarFiltros">
+                            <option value="">Todos</option>
+                            <option value="@OrigenMateriaPrima">Materia Prima</option>
+                            <option value="@OrigenInsumo">Insumo</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <label class="form-label">Tipo</label>
+                        <select class="form-select" @bind="filtroTipo" @bind:after="AplicarFiltros">
+                            <option value="">Todos</option>
+                            @foreach (var tipo in tiposDisponibles)
+                            {
+                                <option value="@tipo">@tipo</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" @bind="filtroEstadoExistencia" @bind:after="AplicarFiltros">
+                            <option value="activos">Activos</option>
+                            <option value="inactivos">Inactivos</option>
+                            <option value="todos">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-3 col-md-8">
+                        <label class="form-label">Buscar</label>
+                        <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltros" placeholder="Código, nombre o tipo" />
+                    </div>
+                    <div class="col-lg-2 col-md-4">
+                        <div class="form-check form-switch mt-4 pt-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="soloStockBajo" @bind="soloStockBajo" @bind:after="AplicarFiltros" />
+                            <label class="form-check-label" for="soloStockBajo">Solo stock bajo</label>
+                        </div>
+                    </div>
+                    <div class="col-lg-2 col-md-4">
+                        <div class="form-check form-switch mt-4 pt-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="soloSinExistencia" @bind="soloSinExistencia" @bind:after="AplicarFiltros" />
+                            <label class="form-check-label" for="soloSinExistencia">Sin existencia</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_puedeEditar && mostrarFormularioItem)
+        {
+            <div class="card mb-4 border-0 shadow">
+                <div class="card-header @(nuevoItem.Origen == OrigenMateriaPrima ? "bg-primary text-white" : "bg-success text-white")">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi @(nuevoItem.Origen == OrigenMateriaPrima ? "bi-droplet-fill" : "bi-box-seam")"></i>
+                        <strong>@(nuevoItem.Origen == OrigenMateriaPrima ? "Nueva Materia Prima" : "Nuevo Insumo")</strong>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Origen</label>
+                            <select class="form-select" @bind="nuevoItem.Origen" @bind:after="OnNuevoItemOrigenChangedAsync">
+                                <option value="@OrigenMateriaPrima">Materia Prima</option>
+                                <option value="@OrigenInsumo">Insumo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Código</label>
+                            <input class="form-control" @bind="nuevoItem.Codigo" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nombre</label>
+                            <input class="form-control" @bind="nuevoItem.Nombre" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Tipo</label>
+                            <select class="form-select" @bind="nuevoItem.TipoInventarioId">
+                                <option value="">Seleccione...</option>
+                                @foreach (var tipo in ObtenerTiposPorOrigen(nuevoItem.Origen))
+                                {
+                                    <option value="@tipo.Id">@tipo.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">Unidad</label>
+                            <select class="form-select" @bind="nuevoItem.UnidadMedida">
+                                <option value="kg">kg</option>
+                                <option value="lt">lt</option>
+                                <option value="ml">ml</option>
+                                <option value="gr">gr</option>
+                                <option value="pza">pza</option>
+                                <option value="mt">mt</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Precio Unitario</label>
+                            <input type="number" step="0.0001" class="form-control" @bind="nuevoItem.PrecioUnitario" />
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Existencia inicial</label>
+                            <input type="number" step="0.01" class="form-control" @bind="nuevoItem.Cantidad" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Stock mínimo</label>
+                            <input type="number" step="0.01" class="form-control" @bind="nuevoItem.StockMinimo" />
+                        </div>
+                        <div class="col-md-8 d-flex align-items-end">
+                            <div class="alert alert-info mb-0 w-100 py-2">
+                                <i class="bi bi-info-circle me-1"></i>Si necesitas atributos específicos, como Pantone o color, puedes completarlos desde el catálogo correspondiente.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success" @onclick="GuardarNuevoItemAsync"><i class="bi bi-save"></i> Guardar</button>
+                        <button class="btn btn-secondary" @onclick="CancelarNuevoItem"><i class="bi bi-x-circle"></i> Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_puedeMovimientos && mostrarFormularioMovimiento)
+        {
+            <div class="card mb-4 border-0 shadow" id="form-movimiento">
+                <div class="card-header @ClaseHeaderMovimiento">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi @IconoTipoMovimiento fs-5"></i>
+                        <strong>@TituloMovimiento</strong>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (movimientoItemSeleccionado is not null)
+                    {
+                        <div class="alert @(movimientoItemSeleccionado.Origen == OrigenMateriaPrima ? "alert-primary" : "alert-success") py-2 mb-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-box-seam flex-shrink-0"></i>
+                            <div>
+                                <strong>@movimientoItemSeleccionado.Codigo</strong> — @movimientoItemSeleccionado.Nombre
+                                <span class="badge @(movimientoItemSeleccionado.Origen == OrigenMateriaPrima ? "bg-primary" : "bg-success") ms-2">@movimientoItemSeleccionado.Origen</span>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Origen</label>
+                            <select class="form-select" @bind="movimiento.Origen" @bind:after="OnMovimientoOrigenChanged" disabled="@movimientoDirectoPorItem">
+                                <option value="@OrigenMateriaPrima">Materia Prima</option>
+                                <option value="@OrigenInsumo">Insumo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Item</label>
+                            <select class="form-select" @bind="movimiento.ItemId" @bind:after="OnMovimientoItemChanged" disabled="@movimientoDirectoPorItem">
+                                <option value="">Seleccione...</option>
+                                @foreach (var item in ObtenerItemsPorOrigen(movimiento.Origen))
+                                {
+                                    <option value="@item.Id">@item.Codigo - @item.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Movimiento</label>
+                            <select class="form-select" @bind="movimiento.TipoMovimiento">
+                                <option value="@MovimientoInventarioTipoEnum.Entrada">Entrada</option>
+                                <option value="@MovimientoInventarioTipoEnum.Salida">Salida</option>
+                                <option value="@MovimientoInventarioTipoEnum.Ajuste">Ajuste</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">@EtiquetaCantidadMovimiento</label>
+                            <input type="number" step="0.01" class="form-control" @bind="movimiento.Cantidad" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Costo Unitario</label>
+                            <input type="number" step="0.0001" class="form-control" @bind="movimiento.CostoUnitario" />
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Referencia</label>
+                            <input class="form-control" @bind="movimiento.Referencia" placeholder="Factura, ajuste, nota" />
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label">Observaciones</label>
+                            <input class="form-control" @bind="movimiento.Observaciones" />
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            @if (movimientoItemSeleccionado is not null)
+                            {
+                                <div class="w-100">
+                                    <div class="small text-muted">Antes: <strong>@movimientoItemSeleccionado.Cantidad.ToString("N2")</strong></div>
+                                    @if (ExistenciaPreview.HasValue)
+                                    {
+                                        <div class="small fw-bold @(ExistenciaPreview.Value < 0 ? "text-danger" : ExistenciaPreview.Value <= movimientoItemSeleccionado.StockMinimo ? "text-warning" : "text-success")">
+                                            Después: @ExistenciaPreview.Value.ToString("N2")
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success" @onclick="GuardarMovimientoAsync"><i class="bi bi-check2-circle"></i> Aplicar movimiento</button>
+                        <button class="btn btn-secondary" @onclick="CancelarMovimiento"><i class="bi bi-x-circle"></i> Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card border-0 shadow mb-4">
+            <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+                <h5 class="mb-0"><i class="bi bi-table me-2 text-muted"></i>Existencias actuales</h5>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="RefrescarAsync" title="Actualizar">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                @if (cargando)
+                {
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <div class="text-muted mt-2 small">Cargando inventario…</div>
+                    </div>
+                }
+                else if (!itemsFiltrados.Any())
+                {
+                    <div class="alert alert-info mb-0">No hay registros de inventario con los filtros actuales.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    @if (_puedeMovimientos)
+                                    {
+                                        <th>Acciones</th>
+                                    }
+                                    <th>Registro</th>
+                                    <th>Origen</th>
+                                    <th>Código</th>
+                                    <th>Nombre</th>
+                                    <th>Tipo</th>
+                                    <th>Unidad</th>
+                                    <th>Existencia</th>
+                                    <th>Stock Mín.</th>
+                                    <th>Precio Unit.</th>
+                                    <th>Costo total</th>
+                                    <th>Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in itemsFiltrados)
+                                {
+                                    <tr class="@((item.EstaBajoMinimo ? "table-warning " : string.Empty) + (!item.IsActive ? "opacity-75" : string.Empty))">
+                                        @if (_puedeMovimientos)
+                                        {
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button class="btn btn-outline-success" title="Registrar entrada"
+                                                            @onclick="() => AbrirMovimientoParaItem(item, MovimientoInventarioTipoEnum.Entrada)">
+                                                        <i class="bi bi-box-arrow-in-down"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-danger" title="Registrar salida"
+                                                            @onclick="() => AbrirMovimientoParaItem(item, MovimientoInventarioTipoEnum.Salida)">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-secondary" title="Ajustar existencia"
+                                                            @onclick="() => AbrirMovimientoParaItem(item, MovimientoInventarioTipoEnum.Ajuste)">
+                                                        <i class="bi bi-sliders"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        }
+                                        <td>
+                                            <span class="badge @(item.IsActive ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(item.IsActive ? "Activo" : "Inactivo")</span>
+                                        </td>
+                                        <td><span class="badge @(item.Origen == OrigenMateriaPrima ? "bg-primary" : "bg-success")">@item.Origen</span></td>
+                                        <td><strong>@item.Codigo</strong></td>
+                                        <td>@item.Nombre</td>
+                                        <td><span class="badge bg-secondary">@item.TipoNombre</span></td>
+                                        <td>@item.UnidadMedida</td>
+                                        <td>
+                                            <div class="fw-semibold">@item.Cantidad.ToString("N2")</div>
+                                            @if (item.StockMinimo > 0)
+                                            {
+                                                <div class="progress mt-1" style="height:3px;min-width:60px">
+                                                    <div class="progress-bar @ClaseProgressStock(item.Cantidad, item.StockMinimo)"
+                                                         style="width:@(PorcentajeStock(item.Cantidad, item.StockMinimo))%">
+                                                    </div>
+                                                </div>
+                                            }
+                                        </td>
+                                        <td class="text-muted">@item.StockMinimo.ToString("N2")</td>
+                                        <td>$@item.PrecioUnitario.ToString("N2")</td>
+                                        <td>$@item.CostoTotal.ToString("N2")</td>
+                                        <td>
+                                            @if (item.EstaBajoMinimo)
+                                            {
+                                                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Bajo</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success">OK</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (_puedeMovimientos || _puedeReportes)
+        {
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros de movimientos</span>
+                        <button class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltrosMovimientos">Limpiar</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-lg-2 col-md-6">
+                            <label class="form-label">Origen</label>
+                            <select class="form-select" @bind="filtroMovimientoOrigen" @bind:after="AplicarFiltros">
+                                <option value="">Todos</option>
+                                <option value="@OrigenMateriaPrima">Materia Prima</option>
+                                <option value="@OrigenInsumo">Insumo</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-2 col-md-6">
+                            <label class="form-label">Tipo movimiento</label>
+                            <select class="form-select" @bind="filtroMovimientoTipo" @bind:after="AplicarFiltros">
+                                <option value="">Todos</option>
+                                <option value="@MovimientoInventarioTipoEnum.Entrada.ToString()">Entrada</option>
+                                <option value="@MovimientoInventarioTipoEnum.Salida.ToString()">Salida</option>
+                                <option value="@MovimientoInventarioTipoEnum.Ajuste.ToString()">Ajuste</option>
+                            </select>
+                        </div>
+                        <div class="col-lg-2 col-md-6">
+                            <label class="form-label">Desde</label>
+                            <InputDate class="form-control" @bind-Value="filtroFechaDesde" @bind-Value:after="AplicarFiltros" />
+                        </div>
+                        <div class="col-lg-2 col-md-6">
+                            <label class="form-label">Hasta</label>
+                            <InputDate class="form-control" @bind-Value="filtroFechaHasta" @bind-Value:after="AplicarFiltros" />
+                        </div>
+                        <div class="col-lg-4 col-md-12">
+                            <label class="form-label">Buscar</label>
+                            <input class="form-control" @bind="textoBusquedaMovimiento" @bind:after="AplicarFiltros" placeholder="Código, nombre, referencia u observaciones" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow">
+                <div class="card-header bg-white border-bottom">
+                    <h5 class="mb-0"><i class="bi bi-journal-text me-2 text-muted"></i>Movimientos de inventario</h5>
+                </div>
+                <div class="card-body">
+                    @if (!movimientosFiltrados.Any())
+                    {
+                        <div class="alert alert-info mb-0">No hay movimientos registrados con los filtros actuales.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Origen</th>
+                                        <th>Item</th>
+                                        <th>Movimiento</th>
+                                        <th>Cantidad</th>
+                                        <th>Anterior</th>
+                                        <th>Nueva</th>
+                                        <th>Costo Unit.</th>
+                                        <th>Impacto</th>
+                                        <th>Referencia</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var movimientoItem in movimientosFiltrados)
+                                    {
+                                        <tr>
+                                            <td>@movimientoItem.FechaMovimiento.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td><span class="badge @(movimientoItem.Origen == OrigenMateriaPrima ? "bg-primary" : "bg-success")">@movimientoItem.Origen</span></td>
+                                            <td>
+                                                <div><strong>@movimientoItem.Codigo</strong></div>
+                                                <div class="small text-muted">@movimientoItem.Nombre</div>
+                                            </td>
+                                            <td><span class="badge @ClaseBadgeTipoMovimiento(movimientoItem.TipoMovimiento)">@movimientoItem.TipoMovimiento</span></td>
+                                            <td class="@(movimientoItem.TipoMovimiento == "Entrada" ? "text-success fw-semibold" : movimientoItem.TipoMovimiento == "Salida" ? "text-danger fw-semibold" : "")">@movimientoItem.Cantidad.ToString("N2")</td>
+                                            <td>@movimientoItem.ExistenciaAnterior.ToString("N2")</td>
+                                            <td>@movimientoItem.ExistenciaNueva.ToString("N2")</td>
+                                            <td>$@movimientoItem.CostoUnitario.ToString("N2")</td>
+                                            <td>$@movimientoItem.ImpactoCosto.ToString("N2")</td>
+                                            <td>
+                                                <div>@movimientoItem.Referencia</div>
+                                                @if (!string.IsNullOrWhiteSpace(movimientoItem.Observaciones))
+                                                {
+                                                    <div class="small text-muted">@movimientoItem.Observaciones</div>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const string OrigenMateriaPrima = "Materia Prima";
+    private const string OrigenInsumo = "Insumo";
+
+    private readonly List<InventarioItemViewModel> items = [];
+    private readonly List<MovimientoInventarioViewModel> movimientos = [];
+    private List<InventarioItemViewModel> itemsFiltrados = [];
+    private List<MovimientoInventarioViewModel> movimientosFiltrados = [];
+    private List<TipoInventario> tiposMateriaPrima = [];
+    private List<TipoInventario> tiposInsumo = [];
+    private List<string> tiposDisponibles = [];
+    private Guid _empresaId;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _puedeMovimientos;
+    private bool _puedeReportes;
+    private bool cargando = true;
+    private bool soloStockBajo;
+    private bool soloSinExistencia;
+    private bool mostrarFormularioItem;
+    private bool mostrarFormularioMovimiento;
+    private bool movimientoDirectoPorItem;
+    private string filtroOrigen = string.Empty;
+    private string filtroTipo = string.Empty;
+    private string filtroEstadoExistencia = "activos";
+    private string filtroMovimientoOrigen = string.Empty;
+    private string filtroMovimientoTipo = string.Empty;
+    private string textoBusqueda = string.Empty;
+    private string textoBusquedaMovimiento = string.Empty;
+    private DateTime? filtroFechaDesde = DateTime.Today.AddDays(-30);
+    private DateTime? filtroFechaHasta = DateTime.Today;
+    private string? error;
+    private string? success;
+    private NuevoInventarioModel nuevoItem = new();
+    private MovimientoFormModel movimiento = new();
+    private InventarioItemViewModel? movimientoItemSeleccionado;
+
+    private decimal CostoInventarioFiltrado => itemsFiltrados.Sum(i => i.CostoTotal);
+    private string EtiquetaCantidadMovimiento => movimiento.TipoMovimiento == MovimientoInventarioTipoEnum.Ajuste ? "Nueva existencia" : "Cantidad";
+    private string TituloMovimiento => movimientoItemSeleccionado is null
+        ? "Registrar Movimiento de Inventario"
+        : $"{movimiento.TipoMovimiento} · {movimientoItemSeleccionado.Codigo} - {movimientoItemSeleccionado.Nombre}";
+
+    private string ClaseHeaderMovimiento => movimiento.TipoMovimiento switch
+    {
+        MovimientoInventarioTipoEnum.Entrada => "bg-success text-white",
+        MovimientoInventarioTipoEnum.Salida => "bg-danger text-white",
+        MovimientoInventarioTipoEnum.Ajuste => "bg-warning text-dark",
+        _ => "bg-dark text-white"
+    };
+
+    private string IconoTipoMovimiento => movimiento.TipoMovimiento switch
+    {
+        MovimientoInventarioTipoEnum.Entrada => "bi-box-arrow-in-down",
+        MovimientoInventarioTipoEnum.Salida => "bi-box-arrow-up-right",
+        MovimientoInventarioTipoEnum.Ajuste => "bi-sliders",
+        _ => "bi-arrow-left-right"
+    };
+
+    private decimal? ExistenciaPreview => movimientoItemSeleccionado is null
+        ? null
+        : CalcularNuevaExistencia(movimientoItemSeleccionado.Cantidad, movimiento.TipoMovimiento, movimiento.Cantidad);
+
+    private static string ClaseBadgeTipoMovimiento(string tipo) => tipo switch
+    {
+        "Entrada" => "bg-success",
+        "Salida" => "bg-danger",
+        "Ajuste" => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+
+    private static int PorcentajeStock(decimal cantidad, decimal minimo)
+        => minimo <= 0 ? 100 : (int)Math.Min(100, Math.Round(cantidad / minimo * 100));
+
+    private static string ClaseProgressStock(decimal cantidad, decimal minimo)
+        => cantidad <= 0 ? "bg-dark" : cantidad <= minimo ? "bg-danger" : cantidad <= minimo * 1.5m ? "bg-warning" : "bg-success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContexto();
+        if (_puedeVer)
+            await Cargar();
+        cargando = false;
+    }
+
+    private async Task CargarContexto()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+        _ = Guid.TryParse(empresaIdStr, out _empresaId);
+        _puedeVer = state.User.HasClaim("Capacidad", "inventario.ver") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+        _puedeEditar = state.User.HasClaim("Capacidad", "inventario.editar") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+        _puedeMovimientos = state.User.HasClaim("Capacidad", "inventario.movimientos") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+        _puedeReportes = state.User.HasClaim("Capacidad", "inventario.reportes") || state.User.HasClaim("Capacidad", "contabilidad.dashboard") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+    }
+
+    private async Task Cargar()
+    {
+        error = null;
+        success = null;
+        items.Clear();
+        movimientos.Clear();
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay una empresa activa en sesión.";
+            itemsFiltrados = [];
+            movimientosFiltrados = [];
+            tiposDisponibles = [];
+            tiposMateriaPrima = [];
+            tiposInsumo = [];
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            tiposMateriaPrima = await db.TiposInventario.IgnoreQueryFilters()
+                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
+                .Include(t => t.CategoriaInventario)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Nombre)
+                .ToListAsync();
+
+            tiposInsumo = await db.TiposInventario.IgnoreQueryFilters()
+                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "INSUMO")
+                .Include(t => t.CategoriaInventario)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Nombre)
+                .ToListAsync();
+
+            var materiasPrimas = await db.MateriasPrimas.IgnoreQueryFilters()
+                .Where(i => i.EmpresaId == _empresaId)
+                .Include(i => i.TipoInventario)
+                .OrderBy(i => i.Nombre)
+                .ToListAsync();
+
+            var insumos = await db.Insumos.IgnoreQueryFilters()
+                .Where(i => i.EmpresaId == _empresaId)
+                .Include(i => i.TipoInventario)
+                .OrderBy(i => i.Nombre)
+                .ToListAsync();
+
+            items.AddRange(materiasPrimas.Select(i => new InventarioItemViewModel
+            {
+                Id = i.Id,
+                Origen = OrigenMateriaPrima,
+                Codigo = i.Codigo,
+                Nombre = i.Nombre,
+                TipoNombre = i.TipoInventario?.Nombre ?? i.TipoMateriaPrima.ToString(),
+                UnidadMedida = i.UnidadMedida,
+                Cantidad = i.Cantidad,
+                StockMinimo = i.StockMinimo,
+                PrecioUnitario = i.PrecioUnitario,
+                IsActive = i.IsActive
+            }));
+
+            items.AddRange(insumos.Select(i => new InventarioItemViewModel
+            {
+                Id = i.Id,
+                Origen = OrigenInsumo,
+                Codigo = i.Codigo,
+                Nombre = i.Nombre,
+                TipoNombre = i.TipoInventario?.Nombre ?? i.TipoInsumo.ToString(),
+                UnidadMedida = i.UnidadMedida,
+                Cantidad = i.Cantidad,
+                StockMinimo = i.StockMinimo,
+                PrecioUnitario = i.PrecioUnitario,
+                IsActive = i.IsActive
+            }));
+
+            var movimientosDb = await db.MovimientosInventario.IgnoreQueryFilters()
+                .Where(m => m.EmpresaId == _empresaId)
+                .Include(m => m.MateriaPrima)
+                .Include(m => m.Insumo)
+                .OrderByDescending(m => m.FechaMovimiento)
+                .ToListAsync();
+
+            movimientos.AddRange(movimientosDb.Select(m => new MovimientoInventarioViewModel
+            {
+                FechaMovimiento = m.FechaMovimiento,
+                Origen = m.Origen == MovimientoInventarioOrigenEnum.MateriaPrima ? OrigenMateriaPrima : OrigenInsumo,
+                TipoMovimiento = m.TipoMovimiento.ToString(),
+                Codigo = m.MateriaPrima?.Codigo ?? m.Insumo?.Codigo ?? string.Empty,
+                Nombre = m.MateriaPrima?.Nombre ?? m.Insumo?.Nombre ?? string.Empty,
+                Cantidad = m.Cantidad,
+                ExistenciaAnterior = m.ExistenciaAnterior,
+                ExistenciaNueva = m.ExistenciaNueva,
+                CostoUnitario = m.CostoUnitario,
+                Referencia = m.Referencia,
+                Observaciones = m.Observaciones
+            }));
+
+            tiposDisponibles = items
+                .Select(i => i.TipoNombre)
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(t => t)
+                .ToList();
+
+            AplicarFiltros();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo cargar el inventario. {ex.Message}";
+            itemsFiltrados = [];
+            movimientosFiltrados = [];
+            tiposDisponibles = [];
+        }
+    }
+
+    private void AplicarFiltros()
+    {
+        IEnumerable<InventarioItemViewModel> consulta = items;
+
+        if (!string.IsNullOrWhiteSpace(filtroOrigen))
+            consulta = consulta.Where(i => string.Equals(i.Origen, filtroOrigen, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(filtroTipo))
+            consulta = consulta.Where(i => string.Equals(i.TipoNombre, filtroTipo, StringComparison.OrdinalIgnoreCase));
+
+        consulta = filtroEstadoExistencia switch
+        {
+            "inactivos" => consulta.Where(i => !i.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(i => i.IsActive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(i =>
+                i.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                i.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                i.TipoNombre.Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (soloStockBajo)
+            consulta = consulta.Where(i => i.EstaBajoMinimo);
+
+        if (soloSinExistencia)
+            consulta = consulta.Where(i => i.Cantidad <= 0);
+
+        itemsFiltrados = consulta
+            .OrderBy(i => i.Origen)
+            .ThenBy(i => i.TipoNombre)
+            .ThenBy(i => i.Nombre)
+            .ToList();
+
+        IEnumerable<MovimientoInventarioViewModel> consultaMov = movimientos;
+
+        if (!string.IsNullOrWhiteSpace(filtroMovimientoOrigen))
+            consultaMov = consultaMov.Where(i => string.Equals(i.Origen, filtroMovimientoOrigen, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(filtroMovimientoTipo))
+            consultaMov = consultaMov.Where(i => string.Equals(i.TipoMovimiento, filtroMovimientoTipo, StringComparison.OrdinalIgnoreCase));
+
+        if (filtroFechaDesde.HasValue)
+            consultaMov = consultaMov.Where(i => i.FechaMovimiento.Date >= filtroFechaDesde.Value.Date);
+
+        if (filtroFechaHasta.HasValue)
+            consultaMov = consultaMov.Where(i => i.FechaMovimiento.Date <= filtroFechaHasta.Value.Date);
+
+        if (!string.IsNullOrWhiteSpace(textoBusquedaMovimiento))
+        {
+            var textoMov = textoBusquedaMovimiento.Trim();
+            consultaMov = consultaMov.Where(i =>
+                i.Codigo.Contains(textoMov, StringComparison.OrdinalIgnoreCase) ||
+                i.Nombre.Contains(textoMov, StringComparison.OrdinalIgnoreCase) ||
+                (i.Referencia?.Contains(textoMov, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (i.Observaciones?.Contains(textoMov, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        movimientosFiltrados = consultaMov.ToList();
+        movimientoItemSeleccionado = ObtenerItemsPorOrigen(movimiento.Origen).FirstOrDefault(i => i.Id == movimiento.ItemId);
+    }
+
+    private void LimpiarFiltrosExistencias()
+    {
+        filtroOrigen = string.Empty;
+        filtroTipo = string.Empty;
+        filtroEstadoExistencia = "activos";
+        textoBusqueda = string.Empty;
+        soloStockBajo = false;
+        soloSinExistencia = false;
+        AplicarFiltros();
+    }
+
+    private void LimpiarFiltrosMovimientos()
+    {
+        filtroMovimientoOrigen = string.Empty;
+        filtroMovimientoTipo = string.Empty;
+        filtroFechaDesde = DateTime.Today.AddDays(-30);
+        filtroFechaHasta = DateTime.Today;
+        textoBusquedaMovimiento = string.Empty;
+        AplicarFiltros();
+    }
+
+    private async Task RefrescarAsync()
+    {
+        cargando = true;
+        await Cargar();
+        cargando = false;
+    }
+
+    private async Task PrepararNuevoItemAsync(string origen)
+    {
+        error = null;
+        success = null;
+        mostrarFormularioMovimiento = false;
+        mostrarFormularioItem = true;
+        nuevoItem = new NuevoInventarioModel
+        {
+            Origen = origen,
+            UnidadMedida = origen == OrigenMateriaPrima ? "kg" : "pza"
+        };
+        await GenerarCodigoNuevoItemAsync();
+        nuevoItem.TipoInventarioId = ObtenerTiposPorOrigen(origen).FirstOrDefault()?.Id;
+    }
+
+    private async Task OnNuevoItemOrigenChangedAsync()
+    {
+        nuevoItem.TipoInventarioId = ObtenerTiposPorOrigen(nuevoItem.Origen).FirstOrDefault()?.Id;
+        nuevoItem.UnidadMedida = nuevoItem.Origen == OrigenMateriaPrima ? "kg" : "pza";
+        await GenerarCodigoNuevoItemAsync();
+    }
+
+    private async Task GenerarCodigoNuevoItemAsync()
+    {
+        if (_empresaId == Guid.Empty)
+            return;
+
+        nuevoItem.Codigo = nuevoItem.Origen == OrigenMateriaPrima
+            ? await AppConfigRepository.GetNextCodeAsync("MP-", "Consecutivo:MateriaPrima")
+            : await AppConfigRepository.GetNextCodeAsync("INS-", "Consecutivo:Insumo");
+    }
+
+    private async Task GuardarNuevoItemAsync()
+    {
+        error = null;
+        success = null;
+
+        if (string.IsNullOrWhiteSpace(nuevoItem.Nombre))
+        {
+            error = "El nombre es requerido.";
+            return;
+        }
+
+        if (!nuevoItem.TipoInventarioId.HasValue || nuevoItem.TipoInventarioId == Guid.Empty)
+        {
+            error = "Seleccione un tipo.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var tipo = await db.TiposInventario.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == nuevoItem.TipoInventarioId && t.EmpresaId == _empresaId && t.IsActive);
+
+        if (tipo is null)
+        {
+            error = "El tipo seleccionado no es válido.";
+            return;
+        }
+
+        if (nuevoItem.Origen == OrigenMateriaPrima)
+        {
+            db.MateriasPrimas.Add(new MateriaPrima
+            {
+                EmpresaId = _empresaId,
+                Codigo = nuevoItem.Codigo,
+                Nombre = nuevoItem.Nombre.Trim(),
+                TipoInventarioId = nuevoItem.TipoInventarioId,
+                TipoMateriaPrima = MapearTipoMateriaPrimaLegacy(tipo.Codigo),
+                PrecioUnitario = nuevoItem.PrecioUnitario,
+                Cantidad = nuevoItem.Cantidad,
+                UnidadMedida = nuevoItem.UnidadMedida,
+                StockMinimo = nuevoItem.StockMinimo,
+                IsActive = true
+            });
+        }
+        else
+        {
+            db.Insumos.Add(new Insumo
+            {
+                EmpresaId = _empresaId,
+                Codigo = nuevoItem.Codigo,
+                Nombre = nuevoItem.Nombre.Trim(),
+                TipoInventarioId = nuevoItem.TipoInventarioId,
+                TipoInsumo = MapearTipoInsumoLegacy(tipo.Codigo),
+                PrecioUnitario = nuevoItem.PrecioUnitario,
+                Cantidad = nuevoItem.Cantidad,
+                UnidadMedida = nuevoItem.UnidadMedida,
+                StockMinimo = nuevoItem.StockMinimo,
+                IsActive = true
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await Cargar();
+        success = $"{nuevoItem.Origen} guardado correctamente.";
+        CancelarNuevoItem();
+    }
+
+    private void CancelarNuevoItem()
+    {
+        nuevoItem = new NuevoInventarioModel();
+        mostrarFormularioItem = false;
+    }
+
+    private void PrepararMovimiento()
+    {
+        error = null;
+        success = null;
+        mostrarFormularioItem = false;
+        mostrarFormularioMovimiento = true;
+        movimientoDirectoPorItem = false;
+        movimiento = new MovimientoFormModel
+        {
+            Origen = OrigenMateriaPrima,
+            TipoMovimiento = MovimientoInventarioTipoEnum.Entrada
+        };
+        movimientoItemSeleccionado = null;
+    }
+
+    private void AbrirMovimientoParaItem(InventarioItemViewModel item, MovimientoInventarioTipoEnum tipoMovimiento)
+    {
+        error = null;
+        success = null;
+        mostrarFormularioItem = false;
+        mostrarFormularioMovimiento = true;
+        movimientoDirectoPorItem = true;
+        movimientoItemSeleccionado = item;
+        movimiento = new MovimientoFormModel
+        {
+            Origen = item.Origen,
+            ItemId = item.Id,
+            TipoMovimiento = tipoMovimiento,
+            Cantidad = tipoMovimiento == MovimientoInventarioTipoEnum.Ajuste ? item.Cantidad : 0,
+            CostoUnitario = item.PrecioUnitario
+        };
+    }
+
+    private void OnMovimientoOrigenChanged()
+    {
+        movimiento.ItemId = Guid.Empty;
+        movimiento.CostoUnitario = 0;
+        movimientoItemSeleccionado = null;
+    }
+
+    private void OnMovimientoItemChanged()
+    {
+        movimientoItemSeleccionado = ObtenerItemsPorOrigen(movimiento.Origen).FirstOrDefault(i => i.Id == movimiento.ItemId);
+        if (movimientoItemSeleccionado is not null)
+            movimiento.CostoUnitario = movimientoItemSeleccionado.PrecioUnitario;
+    }
+
+    private async Task GuardarMovimientoAsync()
+    {
+        error = null;
+        success = null;
+
+        if (movimiento.ItemId == Guid.Empty)
+        {
+            error = "Seleccione un item.";
+            return;
+        }
+
+        if (movimiento.Cantidad < 0)
+        {
+            error = "La cantidad no puede ser negativa.";
+            return;
+        }
+
+        if (movimiento.TipoMovimiento != MovimientoInventarioTipoEnum.Ajuste && movimiento.Cantidad == 0)
+        {
+            error = "La cantidad debe ser mayor a cero.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var costoUnitario = movimiento.CostoUnitario;
+        decimal existenciaAnterior;
+        decimal existenciaNueva;
+        Guid? materiaPrimaId = null;
+        Guid? insumoId = null;
+        string nombreItem;
+
+        if (movimiento.Origen == OrigenMateriaPrima)
+        {
+            var item = await db.MateriasPrimas.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == movimiento.ItemId && i.EmpresaId == _empresaId && i.IsActive);
+            if (item is null)
+            {
+                error = "No se encontró la materia prima seleccionada.";
+                return;
+            }
+
+            existenciaAnterior = item.Cantidad;
+            existenciaNueva = CalcularNuevaExistencia(existenciaAnterior, movimiento.TipoMovimiento, movimiento.Cantidad);
+            if (existenciaNueva < 0)
+            {
+                error = "La salida no puede dejar existencia negativa.";
+                return;
+            }
+
+            item.Cantidad = existenciaNueva;
+            if (costoUnitario > 0)
+                item.PrecioUnitario = costoUnitario;
+            item.UpdatedAt = DateTime.UtcNow;
+            materiaPrimaId = item.Id;
+            nombreItem = item.Nombre;
+            costoUnitario = item.PrecioUnitario;
+        }
+        else
+        {
+            var item = await db.Insumos.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == movimiento.ItemId && i.EmpresaId == _empresaId && i.IsActive);
+            if (item is null)
+            {
+                error = "No se encontró el insumo seleccionado.";
+                return;
+            }
+
+            existenciaAnterior = item.Cantidad;
+            existenciaNueva = CalcularNuevaExistencia(existenciaAnterior, movimiento.TipoMovimiento, movimiento.Cantidad);
+            if (existenciaNueva < 0)
+            {
+                error = "La salida no puede dejar existencia negativa.";
+                return;
+            }
+
+            item.Cantidad = existenciaNueva;
+            if (costoUnitario > 0)
+                item.PrecioUnitario = costoUnitario;
+            item.UpdatedAt = DateTime.UtcNow;
+            insumoId = item.Id;
+            nombreItem = item.Nombre;
+            costoUnitario = item.PrecioUnitario;
+        }
+
+        db.MovimientosInventario.Add(new MovimientoInventario
+        {
+            EmpresaId = _empresaId,
+            Origen = movimiento.Origen == OrigenMateriaPrima ? MovimientoInventarioOrigenEnum.MateriaPrima : MovimientoInventarioOrigenEnum.Insumo,
+            TipoMovimiento = movimiento.TipoMovimiento,
+            MateriaPrimaId = materiaPrimaId,
+            InsumoId = insumoId,
+            Cantidad = movimiento.Cantidad,
+            ExistenciaAnterior = existenciaAnterior,
+            ExistenciaNueva = existenciaNueva,
+            CostoUnitario = costoUnitario,
+            FechaMovimiento = DateTime.UtcNow,
+            Referencia = string.IsNullOrWhiteSpace(movimiento.Referencia) ? null : movimiento.Referencia.Trim(),
+            Observaciones = string.IsNullOrWhiteSpace(movimiento.Observaciones) ? null : movimiento.Observaciones.Trim()
+        });
+
+        await db.SaveChangesAsync();
+        await Cargar();
+        success = $"Movimiento aplicado correctamente a {nombreItem}.";
+        CancelarMovimiento();
+    }
+
+    private static decimal CalcularNuevaExistencia(decimal existenciaAnterior, MovimientoInventarioTipoEnum tipoMovimiento, decimal cantidad)
+        => tipoMovimiento switch
+        {
+            MovimientoInventarioTipoEnum.Entrada => existenciaAnterior + cantidad,
+            MovimientoInventarioTipoEnum.Salida => existenciaAnterior - cantidad,
+            MovimientoInventarioTipoEnum.Ajuste => cantidad,
+            _ => existenciaAnterior
+        };
+
+    private void CancelarMovimiento()
+    {
+        movimiento = new MovimientoFormModel
+        {
+            Origen = OrigenMateriaPrima,
+            TipoMovimiento = MovimientoInventarioTipoEnum.Entrada
+        };
+        movimientoDirectoPorItem = false;
+        movimientoItemSeleccionado = null;
+        mostrarFormularioMovimiento = false;
+    }
+
+    private IEnumerable<TipoInventario> ObtenerTiposPorOrigen(string origen)
+        => origen == OrigenMateriaPrima ? tiposMateriaPrima : tiposInsumo;
+
+    private IEnumerable<InventarioItemViewModel> ObtenerItemsPorOrigen(string origen)
+        => items.Where(i => i.Origen == origen).OrderBy(i => i.Nombre);
+
+    private static TipoMateriaPrimaEnum MapearTipoMateriaPrimaLegacy(string codigo)
+        => codigo.ToUpperInvariant() switch
+        {
+            "TINTA" => TipoMateriaPrimaEnum.Tinta,
+            "BASE" => TipoMateriaPrimaEnum.Base,
+            "SOLVENTE" => TipoMateriaPrimaEnum.Solvente,
+            "ADITIVO" => TipoMateriaPrimaEnum.Aditivo,
+            _ => TipoMateriaPrimaEnum.Otro
+        };
+
+    private static TipoInsumoEnum MapearTipoInsumoLegacy(string codigo)
+        => codigo.ToUpperInvariant() switch
+        {
+            "BASICO" => TipoInsumoEnum.Basico,
+            _ => TipoInsumoEnum.Diverso
+        };
+
+    private sealed class InventarioItemViewModel
+    {
+        public Guid Id { get; set; }
+        public string Origen { get; set; } = string.Empty;
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string TipoNombre { get; set; } = string.Empty;
+        public string UnidadMedida { get; set; } = string.Empty;
+        public decimal Cantidad { get; set; }
+        public decimal StockMinimo { get; set; }
+        public decimal PrecioUnitario { get; set; }
+        public bool IsActive { get; set; }
+        public decimal CostoTotal => Cantidad * PrecioUnitario;
+        public bool EstaBajoMinimo => Cantidad <= StockMinimo;
+    }
+
+    private sealed class MovimientoInventarioViewModel
+    {
+        public DateTime FechaMovimiento { get; set; }
+        public string Origen { get; set; } = string.Empty;
+        public string TipoMovimiento { get; set; } = string.Empty;
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Cantidad { get; set; }
+        public decimal ExistenciaAnterior { get; set; }
+        public decimal ExistenciaNueva { get; set; }
+        public decimal CostoUnitario { get; set; }
+        public string? Referencia { get; set; }
+        public string? Observaciones { get; set; }
+        public decimal ImpactoCosto => Cantidad * CostoUnitario;
+    }
+
+    private sealed class NuevoInventarioModel
+    {
+        public string Origen { get; set; } = OrigenMateriaPrima;
+        public Guid? TipoInventarioId { get; set; }
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string UnidadMedida { get; set; } = "kg";
+        public decimal PrecioUnitario { get; set; }
+        public decimal Cantidad { get; set; }
+        public decimal StockMinimo { get; set; }
+    }
+
+    private sealed class MovimientoFormModel
+    {
+        public string Origen { get; set; } = OrigenMateriaPrima;
+        public Guid ItemId { get; set; }
+        public MovimientoInventarioTipoEnum TipoMovimiento { get; set; } = MovimientoInventarioTipoEnum.Entrada;
+        public decimal Cantidad { get; set; }
+        public decimal CostoUnitario { get; set; }
+        public string Referencia { get; set; } = string.Empty;
+        public string Observaciones { get; set; } = string.Empty;
+    }
+}

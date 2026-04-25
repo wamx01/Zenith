@@ -1,0 +1,437 @@
+@page "/rrhh/esquemas-pago"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Esquemas de Pago</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver esquemas de pago.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h1 class="display-6 fw-bold"><i class="bi bi-cash-stack me-2"></i>Esquemas de Pago</h1>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo Esquema</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+    @if (!string.IsNullOrEmpty(ok)) { <div class="alert alert-success">@ok</div> }
+
+    @if (mostrarForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">@(editandoId == Guid.Empty ? "Nuevo Esquema" : "Editar Esquema")</h5></div>
+            <div class="card-body">
+                <EditForm Model="editando" OnValidSubmit="Guardar">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Descripción</label>
+                            <InputText class="form-control" @bind-Value="editando.Descripcion" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Tipo</label>
+                            <InputSelect class="form-select" @bind-Value="editando.Tipo">
+                                <option value="@TipoEsquemaPago.SueldoFijo">Sueldo Fijo</option>
+                                <option value="@TipoEsquemaPago.DestajoPorPieza">Destajo por Pieza</option>
+                                <option value="@TipoEsquemaPago.DestajoPorOperacion">Destajo por Operación</option>
+                                <option value="@TipoEsquemaPago.BonoMetaPedidos">Bono Meta Pedidos</option>
+                                <option value="@TipoEsquemaPago.Mixto">Mixto</option>
+                            </InputSelect>
+                        </div>
+
+                        @if (MuestraSueldoBase)
+                        {
+                            <div class="col-md-3">
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.IncluyeSueldoBase" />
+                                    <label class="form-check-label">Incluye sueldo base</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Sueldo base sugerido</label>
+                                <InputNumber class="form-control" @bind-Value="editando.SueldoBaseSugerido" />
+                            </div>
+                        }
+
+                        @if (MuestraBono)
+                        {
+                            <div class="col-12"><hr /><h6 class="text-muted">Configuración de bono por meta</h6></div>
+                            <div class="col-md-2">
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.UsaMetaPorPedidos" />
+                                    <label class="form-check-label">Usa meta por pedidos</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Bono cumplimiento</label>
+                                <InputNumber class="form-control" @bind-Value="editando.BonoCumplimientoMonto" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Bono adelanto</label>
+                                <InputNumber class="form-control" @bind-Value="editando.BonoAdelantoMonto" />
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.BonoRepartirPorSueldo" />
+                                    <label class="form-check-label">Repartir por sueldo</label>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check mt-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.BonoRepartirPorAsistencia" />
+                                    <label class="form-check-label">Repartir por asistencia</label>
+                                </div>
+                            </div>
+                        }
+
+                        @if (MuestraTarifas)
+                        {
+                            <div class="col-12"><hr /><h6 class="text-muted">Tarifas por proceso</h6></div>
+                            <div class="col-12">
+                                <table class="table table-sm table-bordered align-middle mb-2">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Proceso</th><th>Posición</th><th class="text-end">Tarifa</th><th>Descripción</th><th style="width:60px"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var t in tarifasEditando)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <select class="form-select form-select-sm" @bind="t.TipoProcesoId">
+                                                        <option value="">(cualquiera)</option>
+                                                        @foreach (var p in procesos)
+                                                        {
+                                                            <option value="@p.Id">@p.Nombre</option>
+                                                        }
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" @bind="t.PosicionId">
+                                                        <option value="">(cualquiera)</option>
+                                                        @foreach (var pos in posiciones)
+                                                        {
+                                                            <option value="@pos.Id">@pos.Nombre</option>
+                                                        }
+                                                    </select>
+                                                </td>
+                                                <td><input type="number" class="form-control form-control-sm text-end" step="0.01" @bind="t.Tarifa" /></td>
+                                                <td><input type="text" class="form-control form-control-sm" @bind="t.Descripcion" /></td>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => tarifasEditando.Remove(t)"><i class="bi bi-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AgregarTarifa"><i class="bi bi-plus me-1"></i>Agregar tarifa</button>
+                            </div>
+                        }
+
+                        <div class="col-12 d-flex gap-2 mt-3">
+                            <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
+                        </div>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Nombre</th><th>Tipo</th><th class="text-center">Sueldo Base</th>
+                        <th class="text-center">Meta Pedidos</th><th class="text-end">Tarifas</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr>
+                            <td class="fw-semibold">@e.Nombre</td>
+                            <td><span class="badge @TipoBadge(e.Tipo)">@TipoLabel(e.Tipo)</span></td>
+                            <td class="text-center">
+                                @if (e.IncluyeSueldoBase)
+                                {
+                                    <span class="badge bg-success">Sí @(e.SueldoBaseSugerido.HasValue ? e.SueldoBaseSugerido.Value.ToString("C2") : "")</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td class="text-center">
+                                @if (e.UsaMetaPorPedidos)
+                                {
+                                    <span class="badge bg-info text-dark">Sí</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                            <td class="text-end">@e.Tarifas.Count</td>
+                            <td class="text-end">
+                                @if (_puedeEditar)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => Editar(e)"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Eliminar(e)"><i class="bi bi-trash"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+</div>
+
+@code {
+    private List<EsquemaPago> lista = [];
+    private List<TipoProceso> procesos = [];
+    private List<Posicion> posiciones = [];
+    private EsquemaPago editando = new();
+    private Guid editandoId = Guid.Empty;
+    private List<TarifaEditable> tarifasEditando = [];
+    private bool mostrarForm, guardando;
+    private string? error, ok;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+
+    private bool MuestraSueldoBase => editando.Tipo is TipoEsquemaPago.SueldoFijo
+        or TipoEsquemaPago.BonoMetaPedidos or TipoEsquemaPago.Mixto;
+
+    private bool MuestraBono => editando.Tipo is TipoEsquemaPago.BonoMetaPedidos or TipoEsquemaPago.Mixto;
+
+    private bool MuestraTarifas => editando.Tipo is TipoEsquemaPago.DestajoPorPieza
+        or TipoEsquemaPago.DestajoPorOperacion or TipoEsquemaPago.Mixto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+        {
+            await CargarCatalogos();
+            await Cargar();
+        }
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "nominas.editar");
+    }
+
+    private async Task CargarCatalogos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        procesos = await db.TiposProceso.AsNoTracking()
+            .Where(t => t.Activo).OrderBy(t => t.Orden).ThenBy(t => t.Nombre).ToListAsync();
+        posiciones = await db.Posiciones.AsNoTracking()
+            .Where(p => p.IsActive).OrderBy(p => p.Orden).ThenBy(p => p.Nombre).ToListAsync();
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        lista = await db.EsquemasPago
+            .Include(e => e.Tarifas)
+            .AsNoTracking()
+            .OrderBy(e => e.Nombre)
+            .ToListAsync();
+    }
+
+    private void Nuevo()
+    {
+        if (!_puedeEditar) { error = "No tienes permisos."; return; }
+        error = ok = null;
+        editandoId = Guid.Empty;
+        editando = new() { IncluyeSueldoBase = true, BonoRepartirPorSueldo = true, BonoRepartirPorAsistencia = true };
+        tarifasEditando = [];
+        mostrarForm = true;
+    }
+
+    private void Editar(EsquemaPago e)
+    {
+        if (!_puedeEditar) { error = "No tienes permisos."; return; }
+        error = ok = null;
+        editandoId = e.Id;
+        editando = new()
+        {
+            Nombre = e.Nombre, Descripcion = e.Descripcion, Tipo = e.Tipo,
+            IncluyeSueldoBase = e.IncluyeSueldoBase, SueldoBaseSugerido = e.SueldoBaseSugerido,
+            UsaMetaPorPedidos = e.UsaMetaPorPedidos, BonoCumplimientoMonto = e.BonoCumplimientoMonto,
+            BonoAdelantoMonto = e.BonoAdelantoMonto, BonoRepartirPorSueldo = e.BonoRepartirPorSueldo,
+            BonoRepartirPorAsistencia = e.BonoRepartirPorAsistencia
+        };
+        tarifasEditando = e.Tarifas.Select(t => new TarifaEditable
+        {
+            Id = t.Id, TipoProcesoId = t.TipoProcesoId, PosicionId = t.PosicionId,
+            Tarifa = t.Tarifa, Descripcion = t.Descripcion
+        }).ToList();
+        mostrarForm = true;
+    }
+
+    private void AgregarTarifa()
+    {
+        tarifasEditando.Add(new TarifaEditable());
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos."; return; }
+            if (string.IsNullOrWhiteSpace(editando.Nombre)) { error = "El nombre es requerido."; return; }
+
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId);
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            if (editandoId == Guid.Empty)
+            {
+                var nuevo = new EsquemaPago
+                {
+                    EmpresaId = empresaId, Nombre = editando.Nombre.Trim(),
+                    Descripcion = editando.Descripcion?.Trim(), Tipo = editando.Tipo,
+                    IncluyeSueldoBase = editando.IncluyeSueldoBase, SueldoBaseSugerido = editando.SueldoBaseSugerido,
+                    UsaMetaPorPedidos = editando.UsaMetaPorPedidos, BonoCumplimientoMonto = editando.BonoCumplimientoMonto,
+                    BonoAdelantoMonto = editando.BonoAdelantoMonto, BonoRepartirPorSueldo = editando.BonoRepartirPorSueldo,
+                    BonoRepartirPorAsistencia = editando.BonoRepartirPorAsistencia
+                };
+                foreach (var t in tarifasEditando)
+                {
+                    nuevo.Tarifas.Add(new EsquemaPagoTarifa
+                    {
+                        TipoProcesoId = t.TipoProcesoId, PosicionId = t.PosicionId,
+                        Tarifa = t.Tarifa, Descripcion = t.Descripcion?.Trim()
+                    });
+                }
+                db.EsquemasPago.Add(nuevo);
+            }
+            else
+            {
+                var ex = await db.EsquemasPago.Include(e => e.Tarifas).FirstOrDefaultAsync(e => e.Id == editandoId);
+                if (ex == null) return;
+                ex.Nombre = editando.Nombre.Trim(); ex.Descripcion = editando.Descripcion?.Trim();
+                ex.Tipo = editando.Tipo; ex.IncluyeSueldoBase = editando.IncluyeSueldoBase;
+                ex.SueldoBaseSugerido = editando.SueldoBaseSugerido;
+                ex.UsaMetaPorPedidos = editando.UsaMetaPorPedidos;
+                ex.BonoCumplimientoMonto = editando.BonoCumplimientoMonto;
+                ex.BonoAdelantoMonto = editando.BonoAdelantoMonto;
+                ex.BonoRepartirPorSueldo = editando.BonoRepartirPorSueldo;
+                ex.BonoRepartirPorAsistencia = editando.BonoRepartirPorAsistencia;
+                ex.UpdatedAt = DateTime.UtcNow;
+
+                // Sync tarifas
+                var idsExistentes = tarifasEditando.Where(t => t.Id != Guid.Empty).Select(t => t.Id).ToHashSet();
+                var eliminar = ex.Tarifas.Where(t => !idsExistentes.Contains(t.Id)).ToList();
+                foreach (var del in eliminar) db.Set<EsquemaPagoTarifa>().Remove(del);
+
+                foreach (var t in tarifasEditando)
+                {
+                    if (t.Id != Guid.Empty)
+                    {
+                        var existente = ex.Tarifas.FirstOrDefault(x => x.Id == t.Id);
+                        if (existente != null)
+                        {
+                            existente.TipoProcesoId = t.TipoProcesoId;
+                            existente.PosicionId = t.PosicionId;
+                            existente.Tarifa = t.Tarifa;
+                            existente.Descripcion = t.Descripcion?.Trim();
+                            existente.UpdatedAt = DateTime.UtcNow;
+                        }
+                    }
+                    else
+                    {
+                        ex.Tarifas.Add(new EsquemaPagoTarifa
+                        {
+                            EsquemaPagoId = ex.Id,
+                            TipoProcesoId = t.TipoProcesoId, PosicionId = t.PosicionId,
+                            Tarifa = t.Tarifa, Descripcion = t.Descripcion?.Trim()
+                        });
+                    }
+                }
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Guardado."; mostrarForm = false; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task Eliminar(EsquemaPago esquema)
+    {
+        error = ok = null;
+        try
+        {
+            if (!_puedeEditar) { error = "No tienes permisos."; return; }
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var ex = await db.EsquemasPago.Include(e => e.Tarifas).FirstOrDefaultAsync(e => e.Id == esquema.Id);
+            if (ex == null) return;
+
+            var tieneEmpleados = await db.Set<EmpleadoEsquemaPago>().AnyAsync(ea => ea.EsquemaPagoId == esquema.Id);
+            if (tieneEmpleados) { error = "No se puede eliminar: hay empleados asignados a este esquema."; return; }
+
+            db.Set<EsquemaPagoTarifa>().RemoveRange(ex.Tarifas);
+            db.EsquemasPago.Remove(ex);
+            await db.SaveChangesAsync();
+            ok = "Eliminado."; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+    }
+
+    private static string TipoBadge(TipoEsquemaPago tipo) => tipo switch
+    {
+        TipoEsquemaPago.SueldoFijo => "bg-primary",
+        TipoEsquemaPago.DestajoPorPieza => "bg-warning text-dark",
+        TipoEsquemaPago.DestajoPorOperacion => "bg-info text-dark",
+        TipoEsquemaPago.BonoMetaPedidos => "bg-success",
+        TipoEsquemaPago.Mixto => "bg-secondary",
+        _ => "bg-dark"
+    };
+
+    private static string TipoLabel(TipoEsquemaPago tipo) => tipo switch
+    {
+        TipoEsquemaPago.SueldoFijo => "Sueldo Fijo",
+        TipoEsquemaPago.DestajoPorPieza => "Destajo/Pieza",
+        TipoEsquemaPago.DestajoPorOperacion => "Destajo/Operación",
+        TipoEsquemaPago.BonoMetaPedidos => "Bono Meta",
+        TipoEsquemaPago.Mixto => "Mixto",
+        _ => tipo.ToString()
+    };
+
+    private class TarifaEditable
+    {
+        public Guid Id { get; set; }
+        public Guid? TipoProcesoId { get; set; }
+        public Guid? PosicionId { get; set; }
+        public decimal Tarifa { get; set; }
+        public string? Descripcion { get; set; }
+    }
+}

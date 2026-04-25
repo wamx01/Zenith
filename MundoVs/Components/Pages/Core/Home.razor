@@ -1,0 +1,835 @@
+@page "/"
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Infrastructure.Data
+@using System.Security.Claims
+@inject IClienteRepository ClienteRepository
+@inject IProductoRepository ProductoRepository
+@inject IAppConfigRepository AppConfigRepository
+@inject IDbContextFactory<CrmDbContext> ContextFactory
+@inject ModuloStateService ModuloState
+@implements IDisposable
+
+<PageTitle>@($"Inicio - {companyName}")</PageTitle>
+
+<style>
+    .hero-section {
+        position: relative;
+        overflow: hidden;
+        background:
+            radial-gradient(circle at 16% 22%, rgba(241,199,104,.18) 0%, transparent 28%),
+            radial-gradient(circle at 82% 18%, rgba(156,163,175,.14) 0%, transparent 24%),
+            radial-gradient(circle at 70% 78%, rgba(184,131,47,.14) 0%, transparent 30%),
+            linear-gradient(135deg, #09090b 0%, #111827 48%, #1f2937 100%);
+        padding: 3.25rem 2.4rem;
+        border-radius: 24px;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: 0 22px 55px rgba(17, 24, 39, 0.28);
+        border: 1px solid rgba(241, 199, 104, 0.14);
+    }
+
+    .hero-section::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(115deg, transparent 0%, rgba(255,255,255,.05) 18%, transparent 36%),
+            linear-gradient(150deg, transparent 10%, rgba(255,255,255,.035) 22%, transparent 42%),
+            linear-gradient(85deg, transparent 30%, rgba(255,255,255,.03) 40%, transparent 58%),
+            linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0));
+        opacity: .9;
+        pointer-events: none;
+    }
+
+    .hero-section::after {
+        content: "";
+        position: absolute;
+        inset: 1px;
+        border-radius: 23px;
+        border: 1px solid rgba(255,255,255,.05);
+        pointer-events: none;
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .hero-brand-block {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .hero-logo-shell {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 68px;
+        height: 68px;
+        flex-shrink: 0;
+        border-radius: 16px;
+        background: linear-gradient(145deg, rgba(255,255,255,.98) 0%, rgba(245,245,244,.94) 100%);
+        box-shadow: 0 12px 28px rgba(0,0,0,.28);
+        overflow: hidden;
+        padding: .4rem;
+        border: 1px solid rgba(241, 199, 104, 0.28);
+    }
+
+    .hero-logo-frame {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+
+    .hero-logo-fallback {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #fce8a2 0%, #f1c768 55%, #d1d5db 100%);
+        color: #111827;
+        font-weight: 900;
+        font-size: 1.5rem;
+        letter-spacing: -.08em;
+    }
+
+    .hero-title-block {
+        min-width: 0;
+    }
+
+    .hero-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        margin-bottom: .4rem;
+        padding: .3rem .7rem;
+        border-radius: 999px;
+        background: rgba(241,199,104,.12);
+        color: #fce8a2;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        border: 1px solid rgba(241,199,104,.22);
+    }
+
+    .hero-title {
+        margin: 0;
+        font-size: clamp(2.9rem, 5vw, 4.5rem);
+        font-weight: 900;
+        line-height: .95;
+        letter-spacing: -.05em;
+        background: linear-gradient(90deg, #fce8a2 0%, #f1c768 45%, #d4af37 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-wrap: balance;
+    }
+
+    .hero-slogan {
+        font-size: 1.9rem;
+        font-weight: 700;
+        color: rgba(245,245,244,.96);
+        margin: 1.1rem 0 .4rem;
+        letter-spacing: -.03em;
+    }
+
+    .hero-icon-wrap {
+        position: relative;
+        z-index: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 118px;
+        height: 118px;
+        border-radius: 32px;
+        background: linear-gradient(145deg, rgba(31,41,55,.92), rgba(17,24,39,.9));
+        border: 1px solid rgba(241,199,104,.14);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 20px 32px rgba(0,0,0,.2);
+    }
+
+    .hero-icon-wrap::before {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border-radius: 24px;
+        background: radial-gradient(circle at 30% 30%, rgba(241,199,104,.18), transparent 60%);
+        pointer-events: none;
+    }
+
+    .hero-icon {
+        font-size: 2.8rem;
+        color: rgba(241,199,104,.92);
+        line-height: 1;
+    }
+    
+    .stat-card {
+        border: none;
+        border-radius: 15px;
+        transition: all 0.3s ease;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    }
+    
+    .stat-icon {
+        font-size: 3rem;
+        opacity: 0.2;
+        position: absolute;
+        right: 15px;
+        top: 15px;
+    }
+    
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 0;
+    }
+    
+    .quick-action-card {
+        border: 2px solid transparent;
+        border-radius: 15px;
+        padding: 2rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        background: white;
+        box-shadow: 0 3px 15px rgba(0,0,0,0.05);
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        height: 100%;
+    }
+    
+    .quick-action-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        border-color: #d4af37;
+        text-decoration: none;
+    }
+    
+    .quick-action-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        color: #b8832f;
+    }
+    
+    .industry-badge {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .progress-stat {
+        height: 8px;
+        border-radius: 10px;
+        margin-top: 0.5rem;
+    }
+    
+    .feature-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+        height: 100%;
+    }
+    
+    .gradient-bg-1 { background: linear-gradient(135deg, #0f172a 0%, #111827 100%); }
+    .gradient-bg-2 { background: linear-gradient(135deg, #f1c768 0%, #b8832f 100%); color: #111827; }
+    .gradient-bg-3 { background: linear-gradient(135deg, #6b7280 0%, #374151 100%); }
+    .gradient-bg-4 { background: linear-gradient(135deg, #1f2937 0%, #111827 100%); }
+    .gradient-bg-5 { background: linear-gradient(135deg, #d4af37 0%, #8a6a21 100%); color: #111827; }
+    .gradient-bg-6 { background: linear-gradient(135deg, #7c5a1e 0%, #1f2937 100%); }
+
+    .home-zenith-accent {
+        color: #d4af37;
+    }
+
+    .home-zenith-soft {
+        color: #f1c768;
+    }
+
+    .home-zenith-muted {
+        color: #9ca3af;
+    }
+
+    .estado-badge {
+        display: inline-block;
+        padding: .2rem .6rem;
+        border-radius: 20px;
+        font-size: .72rem;
+        font-weight: 600;
+    }
+    .estado-activa { background: rgba(241,199,104,.16); color: #b8832f; }
+    .estado-demo { background: rgba(212,175,55,.16); color: #8a6a21; }
+    .estado-suspendida { background: rgba(107,114,128,.18); color: #4b5563; }
+    .estado-cancelada { background: rgba(209,213,219,.3); color: #6b7280; }
+
+    @@media (max-width: 767.98px) {
+        .hero-section {
+            padding: 2.3rem 1.35rem;
+        }
+
+        .hero-brand-block {
+            align-items: flex-start;
+        }
+
+        .hero-logo-shell {
+            width: 60px;
+            height: 60px;
+        }
+
+        .hero-slogan {
+            font-size: 1.45rem;
+        }
+
+        .hero-description {
+            font-size: .98rem;
+        }
+
+        .hero-icon-wrap {
+            margin-top: 1.5rem;
+            width: 92px;
+            height: 92px;
+            border-radius: 26px;
+        }
+
+        .hero-icon {
+            font-size: 2.35rem;
+        }
+    }
+</style>
+
+<div class="container-fluid px-4">
+    @if (cargando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Hero Section -->
+        <div class="hero-section mb-4">
+            <div class="row align-items-center hero-content">
+                <div class="col-md-8">
+                    <div class="hero-brand-block">
+                        <span class="hero-logo-shell">
+                            @if (!string.IsNullOrEmpty(companyLogo))
+                            {
+                                <img src="@companyLogo" alt="Logo" class="hero-logo-frame" />
+                            }
+                            else
+                            {
+                                <span class="hero-logo-fallback">VS</span>
+                            }
+                        </span>
+
+                        <div class="hero-title-block">
+                            <span class="hero-kicker"><i class="bi bi-stars"></i>Panel principal</span>
+                            <h1 class="hero-title">@companyName</h1>
+                        </div>
+                    </div>
+
+                    <p class="hero-slogan">@companySlogan</p>
+                </div>
+                <div class="col-md-4 d-none d-md-flex justify-content-end align-items-center">
+                    <div class="hero-icon-wrap">
+                        @if (esSuperAdmin)
+                        {
+                            <i class="bi bi-shield-lock-fill hero-icon"></i>
+                        }
+                        else if (moduloSerigrafia)
+                        {
+                            <i class="bi bi-palette-fill hero-icon"></i>
+                        }
+                        else
+                        {
+                            <i class="bi bi-graph-up-arrow hero-icon"></i>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (esSuperAdmin)
+        {
+            <!-- ??????????? SUPERADMIN DASHBOARD ??????????? -->
+
+            <!-- Stats -->
+            <div class="row g-4 mb-4">
+                <div class="col-lg-3 col-md-6">
+                    <div class="stat-card card gradient-bg-1 text-white p-4 position-relative">
+                        <i class="bi bi-building stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Empresas</h6>
+                        <h2 class="stat-number">@totalEmpresas</h2>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="stat-card card gradient-bg-2 text-white p-4 position-relative">
+                        <i class="bi bi-people-fill stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Usuarios</h6>
+                        <h2 class="stat-number">@totalUsuarios</h2>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="stat-card card gradient-bg-5 text-white p-4 position-relative">
+                        <i class="bi bi-key-fill stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Capacidades</h6>
+                        <h2 class="stat-number">@totalCapacidades</h2>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="stat-card card gradient-bg-3 text-white p-4 position-relative">
+                        <i class="bi bi-credit-card-fill stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Planes</h6>
+                        <h2 class="stat-number">@totalPlanes</h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estado de empresas -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-2"><i class="bi bi-check-circle-fill text-success"></i></div>
+                        <h2 class="text-success mb-1">@empresasActivas</h2>
+                        <span class="estado-badge estado-activa">Activas</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-2"><i class="bi bi-hourglass-split" style="color:#6366f1"></i></div>
+                        <h2 style="color:#6366f1" class="mb-1">@empresasDemo</h2>
+                        <span class="estado-badge estado-demo">Demo / Trial</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-2"><i class="bi bi-exclamation-triangle-fill text-danger"></i></div>
+                        <h2 class="text-danger mb-1">@empresasSuspendidas</h2>
+                        <span class="estado-badge estado-suspendida">Suspendidas</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-2"><i class="bi bi-x-circle-fill text-secondary"></i></div>
+                        <h2 class="text-secondary mb-1">@empresasCanceladas</h2>
+                        <span class="estado-badge estado-cancelada">Canceladas</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accesos rápidos SuperAdmin -->
+            <div class="row mb-4">
+                <div class="col-12 mb-3">
+                    <h3><i class="bi bi-lightning-fill"></i> Accesos Rápidos</h3>
+                </div>
+            </div>
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <a href="/superadmin/empresas" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-building text-primary"></i></div>
+                        <h5>Empresas</h5>
+                        <p class="text-muted small mb-0">Gestión de empresas y suscripciones</p>
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="/superadmin/capacidades" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-key-fill" style="color:#6366f1"></i></div>
+                        <h5>Capacidades</h5>
+                        <p class="text-muted small mb-0">Permisos del sistema</p>
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="/admin/usuarios" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-people-fill text-success"></i></div>
+                        <h5>Usuarios</h5>
+                        <p class="text-muted small mb-0">Administración de usuarios</p>
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="/admin/tipos-usuario" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-shield-lock text-warning"></i></div>
+                        <h5>Roles y Permisos</h5>
+                        <p class="text-muted small mb-0">Tipos de usuario y asignación</p>
+                    </a>
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- ??????????? DASHBOARD USUARIO NORMAL ??????????? -->
+
+            <!-- Estadísticas principales -->
+            <div class="row g-4 mb-4">
+                @if (Tiene("clientes.ver"))
+                {
+                <div class="@(Tiene("productos.ver") ? "col-lg-6 col-md-6" : "col-12")">
+                    <div class="stat-card card gradient-bg-1 text-white p-4 position-relative">
+                        <i class="bi bi-people-fill stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Clientes Activos</h6>
+                        <h2 class="stat-number">@totalClientes</h2>
+                        <div class="progress progress-stat mt-3 bg-white bg-opacity-25">
+                            <div class="progress-bar bg-white" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+                }
+
+                @if (Tiene("productos.ver"))
+                {
+                <div class="@(Tiene("clientes.ver") ? "col-lg-6 col-md-6" : "col-12")">
+                    <div class="stat-card card gradient-bg-2 text-white p-4 position-relative">
+                        <i class="bi bi-box-seam-fill stat-icon"></i>
+                        <h6 class="text-uppercase opacity-75 mb-2">Productos en Catálogo</h6>
+                        <h2 class="stat-number">@totalProductos</h2>
+                        <div class="progress progress-stat mt-3 bg-white bg-opacity-25">
+                            <div class="progress-bar bg-white" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+                }
+            </div>
+
+            @if (Tiene("clientes.ver") || Tiene("productos.ver"))
+            {
+            <div class="row g-4 mb-4">
+                <div class="col-12">
+                    <div class="feature-card card p-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="industry-badge me-3"><i class="bi bi-briefcase-fill text-primary"></i></div>
+                            <div>
+                                <h4 class="mb-1">Giro de empresa</h4>
+                                <p class="text-muted mb-0">@companyGiro</p>
+                            </div>
+                        </div>
+                        <div class="row text-center">
+                            @if (Tiene("clientes.ver"))
+                            {
+                            <div class="@(Tiene("productos.ver") ? "col-6" : "col-12")">
+                                <h3 class="text-primary mb-0">@totalClientes</h3>
+                                <small class="text-muted">Clientes</small>
+                            </div>
+                            }
+                            @if (Tiene("productos.ver"))
+                            {
+                            <div class="@(Tiene("clientes.ver") ? "col-6" : "col-12")">
+                                <h3 class="text-success mb-0">@totalProductos</h3>
+                                <small class="text-muted">Productos</small>
+                            </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            }
+
+            <!-- Accesos rápidos -->
+            <div class="row mb-4">
+                <div class="col-12 mb-3">
+                    <h3><i class="bi bi-lightning-fill"></i> Accesos Rápidos</h3>
+                </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+                @if (moduloSerigrafia && Tiene("pedidos.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/serigrafia/pedidos" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-clipboard-check-fill text-success"></i></div>
+                        <h5>Pedidos</h5>
+                        <p class="text-muted small mb-0">Gestión completa de órdenes</p>
+                    </a>
+                </div>
+                }
+
+                @if (moduloSerigrafia && Tiene("cotizaciones.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/serigrafia/cotizaciones" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-calculator text-info"></i></div>
+                        <h5>Cotizaciones</h5>
+                        <p class="text-muted small mb-0">Presupuestos y cotizaciones</p>
+                    </a>
+                </div>
+                }
+
+                @if (Tiene("clientes.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/clientes" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-people-fill text-primary"></i></div>
+                        <h5>Clientes</h5>
+                        <p class="text-muted small mb-0">Gestión de clientes</p>
+                    </a>
+                </div>
+                }
+
+                @if (Tiene("productos.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/productos" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-box-seam-fill text-warning"></i></div>
+                        <h5>Productos</h5>
+                        <p class="text-muted small mb-0">Catálogo de productos</p>
+                    </a>
+                </div>
+                }
+
+                @if (Tiene("contabilidad.dashboard"))
+                {
+                <div class="col-md-3">
+                    <a href="/dashboard" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-speedometer2 text-danger"></i></div>
+                        <h5>Dashboard</h5>
+                        <p class="text-muted small mb-0">Resumen contable</p>
+                    </a>
+                </div>
+                }
+
+                @if (Tiene("configuracion.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/configuracion" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-gear-fill text-secondary"></i></div>
+                        <h5>Configuración</h5>
+                        <p class="text-muted small mb-0">Ajustes del sistema</p>
+                    </a>
+                </div>
+                }
+
+                @if (Tiene("usuarios.ver"))
+                {
+                <div class="col-md-3">
+                    <a href="/admin/usuarios" class="quick-action-card">
+                        <div class="quick-action-icon"><i class="bi bi-person-gear text-dark"></i></div>
+                        <h5>Usuarios</h5>
+                        <p class="text-muted small mb-0">Administrar usuarios</p>
+                    </a>
+                </div>
+                }
+            </div>
+
+            <!-- Resumen adicional -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-4">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-3"><i class="bi bi-graph-up text-success"></i></div>
+                        <h5>Módulos Activos</h5>
+                        <h2 class="text-success">@modulosActivos</h2>
+                        <p class="text-muted mb-0">Funcionalidades disponibles</p>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="feature-card card p-4 text-center">
+                        <div class="fs-1 mb-3"><i class="bi bi-check-circle-fill text-info"></i></div>
+                        <h5>Sistema</h5>
+                        <h2 class="text-info">100%</h2>
+                        <p class="text-muted mb-0">Operativo y funcional</p>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Footer info -->
+        <div class="row mt-5">
+            <div class="col-12">
+                <div class="card border-0 bg-light">
+                    <div class="card-body text-center py-4">
+                        <p class="text-muted mb-2">
+                            <i class="bi bi-code-square"></i> 
+                            <strong>Zenith</strong> v1.0
+                        </p>
+                        <p class="text-muted small mb-0">
+                            Desarrollado con .NET 10 • Blazor Server • MariaDB • Entity Framework Core
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool cargando = true;
+    private string companyName = "Zenith";
+    private string companySlogan = "Plataforma operativa empresarial";
+    private string companyGiro = "General";
+    private string? companyLogo = "/branding/zenith-logo.svg";
+    private Guid empresaId;
+    private bool esSuperAdmin;
+    private ClaimsPrincipal user = new(new ClaimsIdentity());
+
+    // Módulos
+    private bool moduloCalzado;
+    private bool moduloSerigrafia = true;
+    private int modulosActivos;
+
+    // Totales usuario normal
+    private int totalClientes;
+    private int totalProductos;
+
+    // Totales SuperAdmin
+    private int totalEmpresas;
+    private int totalUsuarios;
+    private int totalCapacidades;
+    private int totalPlanes;
+    private int empresasActivas;
+    private int empresasDemo;
+    private int empresasSuspendidas;
+    private int empresasCanceladas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            user = state.User;
+            esSuperAdmin = string.Equals(user.FindFirst(ClaimTypes.Role)?.Value, "SuperAdmin", StringComparison.OrdinalIgnoreCase);
+            _ = Guid.TryParse(user.FindFirst("EmpresaId")?.Value, out empresaId);
+        }
+
+        await CargarBrandingAsync();
+
+        var giro = await AppConfigRepository.GetValueAsync("GiroEmpresa");
+        if (!string.IsNullOrEmpty(giro)) companyGiro = giro;
+
+        if (esSuperAdmin)
+        {
+            await CargarEstadisticasSuperAdmin();
+        }
+        else
+        {
+            await CargarModulos();
+            await CargarEstadisticas();
+            ModuloState.OnChange += OnModuloStateChanged;
+        }
+
+        cargando = false;
+    }
+
+    private async Task CargarBrandingAsync()
+    {
+        var configuredName = await AppConfigRepository.GetValueAsync("CompanyName");
+        var configuredSlogan = await AppConfigRepository.GetValueAsync("CompanySlogan");
+
+        await using var context = await ContextFactory.CreateDbContextAsync();
+        Empresa? empresaActual = null;
+
+        if (empresaId != Guid.Empty)
+        {
+            empresaActual = await context.Empresas
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == empresaId && e.IsActive);
+        }
+
+        if (empresaActual is null && esSuperAdmin)
+        {
+            return;
+        }
+
+        var nombreEmpresa = string.IsNullOrWhiteSpace(empresaActual?.NombreComercial)
+            ? empresaActual?.RazonSocial
+            : empresaActual.NombreComercial;
+
+        if (!string.IsNullOrWhiteSpace(nombreEmpresa))
+        {
+            companyName = nombreEmpresa.Trim();
+        }
+        else if (EsBrandingValido(configuredName))
+        {
+            companyName = configuredName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(empresaActual?.Slogan))
+        {
+            companySlogan = empresaActual.Slogan.Trim();
+        }
+        else if (EsBrandingValido(configuredSlogan))
+        {
+            companySlogan = configuredSlogan.Trim();
+        }
+    }
+
+    private bool EsBrandingValido(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var normalized = value.Trim();
+        return !string.Equals(normalized, "MundoVs", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalized, "Empresa", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalized, user.Identity?.Name, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalized, user.FindFirst(ClaimTypes.Role)?.Value, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task CargarModulos()
+    {
+        moduloCalzado = string.Equals(await AppConfigRepository.GetValueAsync("Modulo:Calzado"), "true", StringComparison.OrdinalIgnoreCase);
+        moduloSerigrafia = !string.Equals(await AppConfigRepository.GetValueAsync("Modulo:Serigrafia"), "false", StringComparison.OrdinalIgnoreCase);
+        modulosActivos = (moduloCalzado ? 1 : 0) + (moduloSerigrafia ? 1 : 0);
+    }
+
+    private void OnModuloStateChanged()
+    {
+        moduloCalzado = ModuloState.Calzado;
+        moduloSerigrafia = ModuloState.Serigrafia;
+        modulosActivos = (moduloCalzado ? 1 : 0) + (moduloSerigrafia ? 1 : 0);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CargarEstadisticas()
+    {
+        if (Tiene("clientes.ver"))
+        {
+            var clientes = await ClienteRepository.GetAllAsync();
+            totalClientes = clientes.Count();
+        }
+
+        if (Tiene("productos.ver"))
+        {
+            var productos = await ProductoRepository.GetAllAsync();
+            totalProductos = productos.Count();
+        }
+    }
+
+    private async Task CargarEstadisticasSuperAdmin()
+    {
+        await using var context = await ContextFactory.CreateDbContextAsync();
+
+        var empresas = await context.Empresas.AsNoTracking().ToListAsync();
+        totalEmpresas = empresas.Count;
+        empresasActivas = empresas.Count(e => e.Estado == EmpresaEstado.Activa && e.IsActive && !e.IsSuspended);
+        empresasDemo = empresas.Count(e => e.Estado == EmpresaEstado.Demo);
+        empresasSuspendidas = empresas.Count(e => e.Estado == EmpresaEstado.Suspendida || e.IsSuspended);
+        empresasCanceladas = empresas.Count(e => e.Estado == EmpresaEstado.Cancelada);
+
+        totalUsuarios = await context.Usuarios.AsNoTracking().CountAsync();
+        totalCapacidades = await context.Capacidades.AsNoTracking().CountAsync();
+        totalPlanes = await context.Planes.AsNoTracking().CountAsync();
+    }
+
+    private bool Tiene(string capacidad)
+        => user.HasClaim("Capacidad", capacidad);
+
+    public void Dispose()
+    {
+        if (!esSuperAdmin)
+            ModuloState.OnChange -= OnModuloStateChanged;
+    }
+}

@@ -1,0 +1,731 @@
+@page "/configuracion/bonos"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<PageTitle>Bonos de Nómina</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver la configuración de bonos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-gift me-2"></i>Bonos de Nómina</h1>
+                <p class="text-muted mb-0">Administra rubros, estructuras de bono y el monto maestro que cada posición distribuye cuando su esquema es por porcentaje.</p>
+            </div>
+            <div class="d-flex gap-2">
+                @if (_puedeEditar)
+                {
+                    <button class="btn btn-primary" @onclick="GuardarAsync" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar cambios</button>
+                }
+                <a class="btn btn-outline-secondary" href="/configuracion/nomina">Volver a nómina</a>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <div class="row g-4">
+            <div class="col-xl-4 col-lg-12">
+                <div class="card h-100 border-warning">
+                    <div class="card-header bg-warning-subtle fw-semibold">Rubros de bono</div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Clave</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="rubroBonoEnCaptura.Clave" />
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label">Nombre</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="rubroBonoEnCaptura.Nombre" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Orden</label>
+                                <InputNumber class="form-control form-control-sm" @bind-Value="rubroBonoEnCaptura.Orden" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Descripción</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="rubroBonoEnCaptura.Descripcion" />
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-warning" @onclick="AgregarOActualizarRubroBono">@(rubroBonoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoRubroBono">Limpiar</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light"><tr><th>Clave</th><th>Nombre</th><th class="text-end">Orden</th><th></th></tr></thead>
+                                <tbody>
+                                    @if (rubrosBono.Count == 0)
+                                    {
+                                        <tr><td colspan="4" class="text-center text-muted py-3">No hay rubros configurados.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var rubro in rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre))
+                                        {
+                                            <tr @key="@(rubro.Id == Guid.Empty ? $"nuevo-rubro-{rubro.Clave}-{rubro.Nombre}" : rubro.Id.ToString())">
+                                                <td>@rubro.Clave</td>
+                                                <td class="fw-semibold">@rubro.Nombre</td>
+                                                <td class="text-end">@rubro.Orden</td>
+                                                <td class="text-end">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarRubroBono(rubro)"><i class="bi bi-pencil"></i></button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarRubroBono(rubro)"><i class="bi bi-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-8 col-lg-12">
+                <div class="card h-100 border-warning">
+                    <div class="card-header bg-warning-subtle fw-semibold">Estructuras de bono</div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Nombre</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="esquemaBonoEnCaptura.Nombre" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Tipo de captura</label>
+                                <InputSelect class="form-select form-select-sm" @bind-Value="esquemaBonoEnCaptura.TipoCaptura" @bind-Value:after="OnTipoCapturaEsquemaBonoChangedAsync">
+                                    @foreach (var tipo in Enum.GetValues<TipoCapturaBonoNomina>())
+                                    {
+                                        <option value="@tipo">@tipo</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Descripción</label>
+                                <InputText class="form-control form-control-sm" @bind-Value="esquemaBonoEnCaptura.Descripcion" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Rubros incluidos</label>
+                                @if (rubrosBono.Count == 0)
+                                {
+                                    <div class="small text-muted">Primero configura rubros de bono.</div>
+                                }
+                                else
+                                {
+                                    <div class="border rounded p-2 small d-flex flex-column gap-2">
+                                        @foreach (var rubro in rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre))
+                                        {
+                                            <div class="d-flex flex-wrap align-items-center gap-2" @key="@(rubro.Id == Guid.Empty ? $"selector-rubro-{rubro.Clave}-{rubro.Nombre}" : rubro.Id.ToString())">
+                                                <label class="form-check-label d-flex align-items-center gap-2 mb-0">
+                                                    <input type="checkbox" class="form-check-input" checked="@rubrosEsquemaSeleccionados.Contains(rubro.Id)" @onchange="@(args => AlternarRubroEsquema(rubro.Id, args.Value is bool value && value))" />
+                                                    <span>@rubro.Nombre</span>
+                                                </label>
+                                                @if (esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido && rubrosEsquemaSeleccionados.Contains(rubro.Id))
+                                                {
+                                                    <input type="number" step="0.01" class="form-control form-control-sm" style="max-width:120px" value="@ObtenerPorcentajeRubroEsquema(rubro.Id)" @onchange="@(args => ActualizarPorcentajeRubroEsquema(rubro.Id, args.Value?.ToString()))" />
+                                                    <span class="text-muted">%</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            @if (esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido && rubrosEsquemaSeleccionados.Count > 0)
+                            {
+                                <div class="col-12">
+                                    <div class="small @(TotalPorcentajeEsquema == 100m ? "text-muted" : "text-danger")">
+                                        Total porcentajes: @TotalPorcentajeEsquema.ToString("0.##")%
+                                    </div>
+                                </div>
+                            }
+                            <div class="col-12 d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-warning" @onclick="AgregarOActualizarEsquemaBono">@(esquemaBonoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoEsquemaBono">Limpiar</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light"><tr><th>Nombre</th><th>Tipo</th><th>Rubros</th><th></th></tr></thead>
+                                <tbody>
+                                    @if (esquemasBono.Count == 0)
+                                    {
+                                        <tr><td colspan="4" class="text-center text-muted py-3">No hay estructuras configuradas.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var esquema in esquemasBono.OrderBy(e => e.Nombre))
+                                        {
+                                            <tr @key="@(esquema.Id == Guid.Empty ? $"nuevo-esquema-{esquema.Nombre}" : esquema.Id.ToString())">
+                                                <td class="fw-semibold">@esquema.Nombre</td>
+                                                <td>@esquema.TipoCaptura</td>
+                                                <td class="small text-muted">@string.Join(", ", esquema.Detalles.OrderBy(d => d.Orden).Select(d => esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? $"{d.BonoRubroRrhh.Nombre} {d.Porcentaje:0.##}%" : d.BonoRubroRrhh.Nombre))</td>
+                                                <td class="text-end">
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarEsquemaBono(esquema)"><i class="bi bi-pencil"></i></button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarEsquemaBono(esquema)"><i class="bi bi-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning-subtle fw-semibold">Asignación por posición</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Posición</th>
+                                        <th>Estructura de bono</th>
+                                        <th class="text-end">Monto a distribuir</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (posiciones.Count == 0)
+                                    {
+                                        <tr><td colspan="3" class="text-center text-muted py-3">No hay posiciones configuradas.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var posicion in posiciones.OrderBy(p => p.Orden).ThenBy(p => p.Nombre))
+                                        {
+                                            <tr @key="posicion.Id">
+                                                <td class="fw-semibold">@posicion.Nombre</td>
+                                                <td>
+                                                    <InputSelect class="form-select form-select-sm" @bind-Value="posicion.BonoEstructuraRrhhId" @bind-Value:after="() => OnEsquemaPosicionChanged(posicion)">
+                                                        <option value="">(sin estructura)</option>
+                                                        @foreach (var esquema in esquemasBono.OrderBy(e => e.Nombre))
+                                                        {
+                                                            <option value="@esquema.Id">@esquema.Nombre</option>
+                                                        }
+                                                    </InputSelect>
+                                                </td>
+                                                <td class="text-end" style="max-width: 180px;">
+                                                    @if (RequiereMontoDistribuido(posicion.BonoEstructuraRrhhId))
+                                                    {
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="posicion.MontoBonoDistribuido" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">—</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<BonoRubroRrhh> rubrosBono = [];
+    private BonoRubroRrhh rubroBonoEnCaptura = CrearRubroBonoVacio();
+    private HashSet<Guid> rubrosBonoEliminados = [];
+    private List<BonoEstructuraRrhh> esquemasBono = [];
+    private BonoEstructuraRrhh esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+    private HashSet<Guid> esquemasBonoEliminados = [];
+    private HashSet<Guid> rubrosEsquemaSeleccionados = [];
+    private Dictionary<Guid, decimal> porcentajesRubrosEsquema = [];
+    private List<Posicion> posiciones = [];
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool guardando;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+    private bool _disposed;
+    private decimal TotalPorcentajeEsquema => rubrosEsquemaSeleccionados.Sum(id => ObtenerPorcentajeRubroEsquema(id));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_disposed)
+            return;
+
+        if (_puedeVer)
+            await CargarAsync();
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "configuracion.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "configuracion.ver") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var rubros = await db.BonosRubrosRrhh
+            .AsNoTracking()
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Nombre)
+            .ToListAsync();
+
+        var esquemas = await db.BonosEstructurasRrhh
+            .AsNoTracking()
+            .Include(e => e.Detalles.OrderBy(d => d.Orden))
+                .ThenInclude(d => d.BonoRubroRrhh)
+            .Where(e => e.IsActive)
+            .OrderBy(e => e.Nombre)
+            .ToListAsync();
+
+        var posicionesCargadas = await db.Posiciones
+            .AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Orden)
+            .ThenBy(p => p.Nombre)
+            .ToListAsync();
+
+        if (_disposed)
+            return;
+
+        rubrosBono = rubros;
+        esquemasBono = esquemas;
+        posiciones = posicionesCargadas;
+
+        rubroBonoEnCaptura = CrearRubroBonoVacio();
+        rubrosBonoEliminados = [];
+        esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+        esquemasBonoEliminados = [];
+        rubrosEsquemaSeleccionados = [];
+        porcentajesRubrosEsquema = [];
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_disposed)
+            return;
+
+        error = ok = null;
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar bonos.";
+            return;
+        }
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay empresa activa.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await GuardarRubrosBonoAsync(db);
+            await GuardarEsquemasBonoAsync(db);
+            await GuardarAsignacionesPorPosicionAsync(db);
+            await db.SaveChangesAsync();
+
+            if (_disposed)
+                return;
+
+            ok = "Bonos guardados.";
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task GuardarRubrosBonoAsync(CrmDbContext db)
+    {
+        if (rubrosBonoEliminados.Count > 0)
+        {
+            var eliminados = await db.BonosRubrosRrhh.Where(r => rubrosBonoEliminados.Contains(r.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.BonosRubrosRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var rubro in rubrosBono)
+        {
+            if (rubro.Id == Guid.Empty)
+            {
+                db.BonosRubrosRrhh.Add(new BonoRubroRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Clave = rubro.Clave.Trim().ToUpperInvariant(),
+                    Nombre = rubro.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(rubro.Descripcion) ? null : rubro.Descripcion.Trim(),
+                    Orden = rubro.Orden,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                continue;
+            }
+
+            var actual = await db.BonosRubrosRrhh.FirstOrDefaultAsync(r => r.Id == rubro.Id);
+            if (actual == null)
+                continue;
+
+            actual.Clave = rubro.Clave.Trim().ToUpperInvariant();
+            actual.Nombre = rubro.Nombre.Trim();
+            actual.Descripcion = string.IsNullOrWhiteSpace(rubro.Descripcion) ? null : rubro.Descripcion.Trim();
+            actual.Orden = rubro.Orden;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task GuardarEsquemasBonoAsync(CrmDbContext db)
+    {
+        if (esquemasBonoEliminados.Count > 0)
+        {
+            var eliminados = await db.BonosEstructurasRrhh.Where(e => esquemasBonoEliminados.Contains(e.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.BonosEstructurasRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var esquema in esquemasBono)
+        {
+            if (esquema.Id == Guid.Empty)
+            {
+                var nueva = new BonoEstructuraRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Nombre = esquema.Nombre.Trim(),
+                    Descripcion = string.IsNullOrWhiteSpace(esquema.Descripcion) ? null : esquema.Descripcion.Trim(),
+                    TipoCaptura = esquema.TipoCaptura,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                db.BonosEstructurasRrhh.Add(nueva);
+
+                var detalleOrden = 1;
+                foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
+                {
+                    db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        BonoEstructuraRrhh = nueva,
+                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        Orden = detalleOrden++,
+                        Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+
+                continue;
+            }
+
+            var actual = await db.BonosEstructurasRrhh
+                .Include(e => e.Detalles)
+                .FirstOrDefaultAsync(e => e.Id == esquema.Id);
+            if (actual == null)
+                continue;
+
+            actual.Nombre = esquema.Nombre.Trim();
+            actual.Descripcion = string.IsNullOrWhiteSpace(esquema.Descripcion) ? null : esquema.Descripcion.Trim();
+            actual.TipoCaptura = esquema.TipoCaptura;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+
+            var rubrosDeseados = esquema.Detalles.Select(d => d.BonoRubroRrhhId).ToHashSet();
+            var eliminarDetalle = actual.Detalles.Where(d => !rubrosDeseados.Contains(d.BonoRubroRrhhId)).ToList();
+            if (eliminarDetalle.Count > 0)
+                db.BonosEstructurasDetalleRrhh.RemoveRange(eliminarDetalle);
+
+            var existentes = actual.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
+            var orden = 1;
+            foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
+            {
+                if (!existentes.TryGetValue(detalle.BonoRubroRrhhId, out var actualDetalle))
+                {
+                    db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        BonoEstructuraRrhhId = actual.Id,
+                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        Orden = orden++,
+                        Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    continue;
+                }
+
+                actualDetalle.Orden = orden++;
+                actualDetalle.Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m;
+                actualDetalle.IsActive = true;
+                actualDetalle.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+    }
+
+    private async Task GuardarAsignacionesPorPosicionAsync(CrmDbContext db)
+    {
+        foreach (var posicion in posiciones)
+        {
+            var actual = await db.Posiciones.FirstOrDefaultAsync(p => p.Id == posicion.Id);
+            if (actual == null)
+                continue;
+
+            actual.BonoEstructuraRrhhId = posicion.BonoEstructuraRrhhId;
+            actual.MontoBonoDistribuido = RequiereMontoDistribuido(posicion.BonoEstructuraRrhhId) ? posicion.MontoBonoDistribuido : 0m;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private void PrepararNuevoRubroBono()
+    {
+        rubroBonoEnCaptura = CrearRubroBonoVacio();
+        error = ok = null;
+    }
+
+    private void AgregarOActualizarRubroBono()
+    {
+        error = ok = null;
+        if (string.IsNullOrWhiteSpace(rubroBonoEnCaptura.Clave) || string.IsNullOrWhiteSpace(rubroBonoEnCaptura.Nombre))
+        {
+            error = "La clave y el nombre del rubro son requeridos.";
+            return;
+        }
+
+        var clave = rubroBonoEnCaptura.Clave.Trim().ToUpperInvariant();
+        if (rubrosBono.Any(r => r.Id != rubroBonoEnCaptura.Id && r.Clave == clave))
+        {
+            error = "Ya existe un rubro con esa clave.";
+            return;
+        }
+
+        if (rubroBonoEnCaptura.Id == Guid.Empty)
+        {
+            rubrosBono.Add(new BonoRubroRrhh { Id = Guid.Empty, Clave = clave, Nombre = rubroBonoEnCaptura.Nombre.Trim(), Descripcion = rubroBonoEnCaptura.Descripcion?.Trim(), Orden = rubroBonoEnCaptura.Orden, IsActive = true });
+        }
+        else
+        {
+            var actual = rubrosBono.FirstOrDefault(r => r.Id == rubroBonoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Clave = clave;
+            actual.Nombre = rubroBonoEnCaptura.Nombre.Trim();
+            actual.Descripcion = rubroBonoEnCaptura.Descripcion?.Trim();
+            actual.Orden = rubroBonoEnCaptura.Orden;
+        }
+
+        rubrosBono = rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre).ToList();
+        PrepararNuevoRubroBono();
+    }
+
+    private void EditarRubroBono(BonoRubroRrhh rubro)
+        => rubroBonoEnCaptura = new BonoRubroRrhh { Id = rubro.Id, Clave = rubro.Clave, Nombre = rubro.Nombre, Descripcion = rubro.Descripcion, Orden = rubro.Orden, IsActive = rubro.IsActive };
+
+    private void EliminarRubroBono(BonoRubroRrhh rubro)
+    {
+        rubrosBono.RemoveAll(r => r == rubro || (rubro.Id != Guid.Empty && r.Id == rubro.Id));
+        if (rubro.Id != Guid.Empty)
+            rubrosBonoEliminados.Add(rubro.Id);
+
+        rubrosEsquemaSeleccionados.Remove(rubro.Id);
+        porcentajesRubrosEsquema.Remove(rubro.Id);
+        foreach (var esquema in esquemasBono)
+            esquema.Detalles = esquema.Detalles.Where(d => d.BonoRubroRrhhId != rubro.Id).ToList();
+
+        if (rubroBonoEnCaptura.Id == rubro.Id)
+            PrepararNuevoRubroBono();
+    }
+
+    private void PrepararNuevoEsquemaBono()
+    {
+        esquemaBonoEnCaptura = CrearEsquemaBonoVacio();
+        rubrosEsquemaSeleccionados = [];
+        porcentajesRubrosEsquema = [];
+        error = ok = null;
+    }
+
+    private void AlternarRubroEsquema(Guid rubroId, bool selected)
+    {
+        if (selected)
+        {
+            rubrosEsquemaSeleccionados.Add(rubroId);
+            porcentajesRubrosEsquema.TryAdd(rubroId, 0m);
+            return;
+        }
+
+        rubrosEsquemaSeleccionados.Remove(rubroId);
+        porcentajesRubrosEsquema.Remove(rubroId);
+    }
+
+    private Task OnTipoCapturaEsquemaBonoChangedAsync()
+    {
+        if (esquemaBonoEnCaptura.TipoCaptura != TipoCapturaBonoNomina.TotalDistribuido)
+        {
+            foreach (var rubroId in rubrosEsquemaSeleccionados)
+                porcentajesRubrosEsquema[rubroId] = 0m;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private decimal ObtenerPorcentajeRubroEsquema(Guid rubroId)
+        => porcentajesRubrosEsquema.TryGetValue(rubroId, out var porcentaje) ? porcentaje : 0m;
+
+    private void ActualizarPorcentajeRubroEsquema(Guid rubroId, string? valor)
+        => porcentajesRubrosEsquema[rubroId] = decimal.TryParse(valor, out var porcentaje) ? Math.Max(0m, porcentaje) : 0m;
+
+    private void AgregarOActualizarEsquemaBono()
+    {
+        if (string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Nombre))
+        {
+            error = "El nombre de la estructura es requerido.";
+            return;
+        }
+
+        if (rubrosEsquemaSeleccionados.Count == 0)
+        {
+            error = "Selecciona al menos un rubro para la estructura.";
+            return;
+        }
+
+        if (esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido && Math.Round(TotalPorcentajeEsquema, 2) != 100m)
+        {
+            error = "La estructura de bono distribuida debe sumar 100%.";
+            return;
+        }
+
+        var nombre = esquemaBonoEnCaptura.Nombre.Trim();
+        if (esquemasBono.Any(e => e.Id != esquemaBonoEnCaptura.Id && string.Equals(e.Nombre, nombre, StringComparison.OrdinalIgnoreCase)))
+        {
+            error = "Ya existe una estructura con ese nombre.";
+            return;
+        }
+
+        var detalles = rubrosBono
+            .Where(r => rubrosEsquemaSeleccionados.Contains(r.Id))
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Nombre)
+            .Select((r, index) => new BonoEstructuraDetalleRrhh
+            {
+                Id = Guid.Empty,
+                BonoRubroRrhhId = r.Id,
+                BonoRubroRrhh = r,
+                Orden = index + 1,
+                Porcentaje = esquemaBonoEnCaptura.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? ObtenerPorcentajeRubroEsquema(r.Id) : 0m,
+                IsActive = true
+            })
+            .ToList();
+
+        if (esquemaBonoEnCaptura.Id == Guid.Empty)
+        {
+            esquemasBono.Add(new BonoEstructuraRrhh
+            {
+                Id = Guid.Empty,
+                Nombre = nombre,
+                Descripcion = string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Descripcion) ? null : esquemaBonoEnCaptura.Descripcion.Trim(),
+                TipoCaptura = esquemaBonoEnCaptura.TipoCaptura,
+                Detalles = detalles,
+                IsActive = true
+            });
+        }
+        else
+        {
+            var actual = esquemasBono.FirstOrDefault(e => e.Id == esquemaBonoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Nombre = nombre;
+            actual.Descripcion = string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Descripcion) ? null : esquemaBonoEnCaptura.Descripcion.Trim();
+            actual.TipoCaptura = esquemaBonoEnCaptura.TipoCaptura;
+            actual.Detalles = detalles;
+        }
+
+        esquemasBono = esquemasBono.OrderBy(e => e.Nombre).ToList();
+        PrepararNuevoEsquemaBono();
+    }
+
+    private void EditarEsquemaBono(BonoEstructuraRrhh esquema)
+    {
+        esquemaBonoEnCaptura = new BonoEstructuraRrhh
+        {
+            Id = esquema.Id,
+            Nombre = esquema.Nombre,
+            Descripcion = esquema.Descripcion,
+            TipoCaptura = esquema.TipoCaptura,
+            IsActive = esquema.IsActive
+        };
+        rubrosEsquemaSeleccionados = esquema.Detalles.Select(d => d.BonoRubroRrhhId).ToHashSet();
+        porcentajesRubrosEsquema = esquema.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d.Porcentaje);
+        error = ok = null;
+    }
+
+    private void EliminarEsquemaBono(BonoEstructuraRrhh esquema)
+    {
+        esquemasBono.RemoveAll(e => e == esquema || (esquema.Id != Guid.Empty && e.Id == esquema.Id));
+        if (esquema.Id != Guid.Empty)
+            esquemasBonoEliminados.Add(esquema.Id);
+
+        foreach (var posicion in posiciones.Where(p => p.BonoEstructuraRrhhId == esquema.Id))
+        {
+            posicion.BonoEstructuraRrhhId = null;
+            posicion.MontoBonoDistribuido = 0m;
+        }
+
+        if (esquemaBonoEnCaptura.Id == esquema.Id)
+            PrepararNuevoEsquemaBono();
+    }
+
+    private Task OnEsquemaPosicionChanged(Posicion posicion)
+    {
+        if (!RequiereMontoDistribuido(posicion.BonoEstructuraRrhhId))
+            posicion.MontoBonoDistribuido = 0m;
+
+        return Task.CompletedTask;
+    }
+
+    private bool RequiereMontoDistribuido(Guid? esquemaId)
+        => esquemaId.HasValue && esquemasBono.Any(e => e.Id == esquemaId.Value && e.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido);
+
+    private static BonoRubroRrhh CrearRubroBonoVacio()
+        => new() { Orden = 1, IsActive = true };
+
+    private static BonoEstructuraRrhh CrearEsquemaBonoVacio()
+        => new() { IsActive = true, TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte };
+
+    public void Dispose()
+    {
+        _disposed = true;
+    }
+}

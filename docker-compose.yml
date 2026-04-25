@@ -1,0 +1,74 @@
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: mundovs-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - mundovs-network
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p$$MARIADB_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mundovs:
+    build:
+      context: .
+      dockerfile: MundoVs/Dockerfile
+    container_name: mundovs-app
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Hosting__Urls: http://+:5130
+      ConnectionStrings__ZenithConnection: Server=mariadb;Port=3306;Database=${MARIADB_DATABASE};User=${MARIADB_USER};Password=${MARIADB_PASSWORD};CharSet=utf8mb4;
+      Auth__CookieSecurePolicy: Always
+      Auth__SameSite: Lax
+      Auth__UseHttpsRedirection: false
+      Logging__LogLevel__Default: Information
+      Logging__LogLevel__Microsoft__AspNetCore: Warning
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    volumes:
+      - mundovs_uploads:/app/wwwroot/uploads
+    networks:
+      - mundovs-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:5130/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: mundovs-nginx
+    restart: unless-stopped
+    depends_on:
+      mundovs:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - mundovs-network
+
+volumes:
+  mariadb_data:
+  mundovs_uploads:
+
+networks:
+  mundovs-network:
+    driver: bridge

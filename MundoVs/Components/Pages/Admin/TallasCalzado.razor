@@ -1,0 +1,329 @@
+@page "/configuracion/tallas-calzado"
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Calzado
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@rendermode InteractiveServer
+
+<PageTitle>Tallas base</PageTitle>
+
+<div class="container-fluid px-4 py-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-rulers me-2"></i>Catálogo base de tallas</h2>
+            <div class="text-muted small">Tallas globales por empresa con sistema de numeración.</div>
+        </div>
+        <button class="btn btn-primary" type="button" @onclick="AgregarTalla">
+            <i class="bi bi-plus-circle me-1"></i>Nueva talla
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning py-2">@error</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(ok))
+    {
+        <div class="alert alert-success py-2">@ok</div>
+    }
+
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tc-kpi-card">
+                <div class="card-body">
+                    <div class="tc-kpi-label">Registros visibles</div>
+                    <div class="tc-kpi-value">@tallasFiltradas.Count()</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tc-kpi-card tc-kpi-card--success">
+                <div class="card-body">
+                    <div class="tc-kpi-label">Activas</div>
+                    <div class="tc-kpi-value">@tallas.Count(t => t.Activa)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tc-kpi-card tc-kpi-card--muted">
+                <div class="card-body">
+                    <div class="tc-kpi-label">Inactivas</div>
+                    <div class="tc-kpi-value">@tallas.Count(t => !t.Activa)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tc-kpi-card tc-kpi-card--info">
+                <div class="card-body">
+                    <div class="tc-kpi-label">Sistemas</div>
+                    <div class="tc-kpi-value">@tallas.Select(t => t.SistemaNumeracion).Distinct().Count()</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+            <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</span>
+            <button type="button" class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltros">Limpiar</button>
+        </div>
+        <div class="card-body pt-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5 col-md-6">
+                    <label class="form-label">Buscar</label>
+                    <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltros" placeholder="Talla o sistema de numeración" />
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select" @bind="filtroEstado" @bind:after="AplicarFiltros">
+                        <option value="activas">Activas</option>
+                        <option value="inactivas">Inactivas</option>
+                        <option value="todas">Todas</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            @if (!tallasFiltradas.Any())
+            {
+                <div class="tc-empty-state text-center py-5">
+                    <div class="tc-empty-icon mb-2"><i class="bi bi-rulers"></i></div>
+                    <div class="fw-semibold">No hay tallas base con los filtros actuales.</div>
+                    <div class="text-muted small">Prueba con otro estado o limpia la búsqueda.</div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 tc-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:56px">Acciones</th>
+                                <th style="width:110px">Estado</th>
+                                <th style="width:160px">Talla</th>
+                                <th style="width:180px">Sistema</th>
+                                <th style="width:110px">Orden</th>
+                                <th style="width:90px">Activa</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var talla in tallasFiltradas.OrderBy(t => t.Orden).ThenBy(t => t.SistemaNumeracion).ThenBy(t => t.Talla))
+                            {
+                                <tr class="@(!talla.Activa ? "table-light opacity-75" : string.Empty)">
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => QuitarTalla(talla.LocalKey)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                    <td>
+                                        <span class="badge @(talla.Activa ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(talla.Activa ? "Activa" : "Inactiva")</span>
+                                    </td>
+                                    <td>
+                                        <InputText class="form-control form-control-sm" @bind-Value="talla.Talla" />
+                                    </td>
+                                    <td>
+                                        <InputSelect class="form-select form-select-sm" @bind-Value="talla.SistemaNumeracion">
+                                            @foreach (var sistema in Enum.GetValues<SistemaNumeracionCalzadoEnum>())
+                                            {
+                                                <option value="@sistema">@sistema</option>
+                                            }
+                                        </InputSelect>
+                                    </td>
+                                    <td>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="talla.Orden" />
+                                    </td>
+                                    <td class="text-center">
+                                        <InputCheckbox class="form-check-input" @bind-Value="talla.Activa" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-success" type="button" @onclick="GuardarAsync">
+                    <i class="bi bi-save me-1"></i>Guardar
+                </button>
+                <button class="btn btn-outline-secondary" type="button" @onclick="CargarAsync">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Recargar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .tc-kpi-card { border-radius: 14px; }
+    .tc-kpi-card .card-body { padding: .9rem 1rem; }
+    .tc-kpi-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-bottom: .2rem; }
+    .tc-kpi-value { font-size: 1.7rem; font-weight: 800; line-height: 1; color: #1f2937; }
+    .tc-kpi-card--success { background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); }
+    .tc-kpi-card--muted { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); }
+    .tc-kpi-card--info { background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); }
+    .tc-table thead th { white-space: nowrap; }
+    .tc-empty-state { border: 1px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; }
+    .tc-empty-icon { font-size: 1.8rem; color: #64748b; }
+</style>
+
+@code {
+    private List<TallaCatalogoEditor> tallas = [];
+    private IEnumerable<TallaCatalogoEditor> tallasFiltradas = [];
+    private string? error;
+    private string? ok;
+    private string textoBusqueda = string.Empty;
+    private string filtroEstado = "activas";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        tallas = await db.CatalogoTallasCalzado
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.SistemaNumeracion)
+            .ThenBy(t => t.Talla)
+            .Select(t => new TallaCatalogoEditor
+            {
+                Id = t.Id,
+                Talla = t.Talla,
+                SistemaNumeracion = t.SistemaNumeracion,
+                Orden = t.Orden,
+                Activa = t.Activa
+            })
+            .ToListAsync();
+
+        error = null;
+        ok = null;
+        AplicarFiltros();
+    }
+
+    private void AplicarFiltros()
+    {
+        IEnumerable<TallaCatalogoEditor> consulta = tallas;
+
+        consulta = filtroEstado switch
+        {
+            "inactivas" => consulta.Where(t => !t.Activa),
+            "todas" => consulta,
+            _ => consulta.Where(t => t.Activa)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(t =>
+                t.Talla.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || t.SistemaNumeracion.ToString().Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        tallasFiltradas = consulta.ToList();
+    }
+
+    private void LimpiarFiltros()
+    {
+        textoBusqueda = string.Empty;
+        filtroEstado = "activas";
+        AplicarFiltros();
+    }
+
+    private void AgregarTalla()
+    {
+        var siguienteOrden = tallas.Count == 0 ? 1 : tallas.Max(t => t.Orden) + 1;
+        tallas.Add(new TallaCatalogoEditor
+        {
+            Orden = siguienteOrden,
+            Activa = true,
+            SistemaNumeracion = SistemaNumeracionCalzadoEnum.MX
+        });
+    }
+
+    private void QuitarTalla(string localKey)
+    {
+        tallas.RemoveAll(t => t.LocalKey == localKey);
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+
+        var duplicadas = tallas
+            .Where(t => !string.IsNullOrWhiteSpace(t.Talla))
+            .GroupBy(t => $"{t.SistemaNumeracion}|{t.Talla.Trim().ToUpperInvariant()}")
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key.Replace("|", " "))
+            .ToList();
+
+        if (duplicadas.Any())
+        {
+            error = $"Hay tallas duplicadas en el catálogo: {string.Join(", ", duplicadas)}.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existentes = await db.CatalogoTallasCalzado.Where(t => t.IsActive).ToListAsync();
+        var idsEditados = tallas.Where(t => t.Id != Guid.Empty).Select(t => t.Id).ToHashSet();
+
+        foreach (var existente in existentes.Where(t => !idsEditados.Contains(t.Id)))
+        {
+            existente.Activa = false;
+            existente.IsActive = false;
+            existente.UpdatedAt = DateTime.UtcNow;
+        }
+
+        foreach (var talla in tallas.Where(t => !string.IsNullOrWhiteSpace(t.Talla)))
+        {
+            if (talla.Id == Guid.Empty)
+            {
+                db.CatalogoTallasCalzado.Add(new CatalogoTallaCalzado
+                {
+                    Id = Guid.NewGuid(),
+                    Talla = talla.Talla.Trim(),
+                    SistemaNumeracion = talla.SistemaNumeracion,
+                    Orden = talla.Orden,
+                    Activa = talla.Activa,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
+            else
+            {
+                var existente = existentes.FirstOrDefault(t => t.Id == talla.Id);
+                if (existente == null)
+                {
+                    continue;
+                }
+
+                existente.Talla = talla.Talla.Trim();
+                existente.SistemaNumeracion = talla.SistemaNumeracion;
+                existente.Orden = talla.Orden;
+                existente.Activa = talla.Activa;
+                existente.IsActive = true;
+                existente.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await db.SaveChangesAsync();
+        ok = "Catálogo base de tallas guardado correctamente.";
+        await CargarAsync();
+    }
+
+    private sealed class TallaCatalogoEditor
+    {
+        public string LocalKey { get; set; } = Guid.NewGuid().ToString("N");
+        public Guid Id { get; set; }
+        public string Talla { get; set; } = string.Empty;
+        public SistemaNumeracionCalzadoEnum SistemaNumeracion { get; set; }
+        public int Orden { get; set; }
+        public bool Activa { get; set; } = true;
+    }
+}

@@ -1,0 +1,271 @@
+@page "/configuracion/posiciones"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Posiciones</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver posiciones.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-diagram-3 me-2"></i>Posiciones</h1>
+                <p class="text-muted mb-0">Catálogo base de posiciones para empleados, esquemas y procesos.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nueva posición</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (mostrarForm)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nueva posición" : "Editar posición")</h5></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Tarifa por minuto</label>
+                            <InputNumber class="form-control" @bind-Value="editando.TarifaPorMinuto" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Orden</label>
+                            <InputNumber class="form-control" @bind-Value="editando.Orden" />
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <div class="form-check mb-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label">Activo</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="small text-muted">
+                                La estructura de bono se administra en <a href="/configuracion/bonos">Bonos de Nómina</a>.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-4">
+                        <button class="btn btn-success" @onclick="Guardar" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar</button>
+                        <button class="btn btn-outline-secondary" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Nombre</th>
+                            <th class="text-end">Tarifa/min</th>
+                            <th class="text-center">Orden</th>
+                            <th class="text-center">Activo</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (lista.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-center text-muted py-4">No hay posiciones configuradas.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in lista)
+                            {
+                                <tr>
+                                    <td class="fw-semibold">@item.Nombre</td>
+                                    <td class="text-end">@item.TarifaPorMinuto.ToString("C4")</td>
+                                    <td class="text-center">@item.Orden</td>
+                                    <td class="text-center"><span class="badge @(item.IsActive ? "bg-success" : "bg-secondary")">@(item.IsActive ? "Sí" : "No")</span></td>
+                                    <td class="text-end">
+                                        @if (_puedeEditar)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)"><i class="bi bi-pencil"></i></button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Posicion> lista = [];
+    private Posicion editando = new();
+    private bool mostrarForm;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+            await CargarAsync();
+
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        lista = await db.Posiciones
+            .Include(p => p.BonoEstructuraRrhh)
+            .AsNoTracking()
+            .OrderBy(p => p.Orden)
+            .ThenBy(p => p.Nombre)
+            .ToListAsync();
+    }
+
+    private void Nuevo()
+    {
+        error = ok = null;
+        editando = new Posicion { Id = Guid.Empty, IsActive = true, Orden = lista.Count == 0 ? 1 : lista.Max(p => p.Orden) + 1, BonoEstructuraRrhhId = null };
+        mostrarForm = true;
+    }
+
+    private void Cancelar()
+    {
+        mostrarForm = false;
+        editando = new();
+        error = ok = null;
+    }
+
+    private async Task Editar(Guid id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var posicion = await db.Posiciones.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+        if (posicion == null)
+        {
+            error = "No se encontró la posición.";
+            return;
+        }
+
+        error = ok = null;
+        editando = new Posicion
+        {
+            Id = posicion.Id,
+            EmpresaId = posicion.EmpresaId,
+            Nombre = posicion.Nombre,
+            TarifaPorMinuto = posicion.TarifaPorMinuto,
+            Orden = posicion.Orden,
+            BonoEstructuraRrhhId = posicion.BonoEstructuraRrhhId,
+            IsActive = posicion.IsActive,
+            CreatedAt = posicion.CreatedAt,
+            CreatedBy = posicion.CreatedBy,
+            UpdatedAt = posicion.UpdatedAt,
+            UpdatedBy = posicion.UpdatedBy
+        };
+        mostrarForm = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null;
+        if (string.IsNullOrWhiteSpace(editando.Nombre))
+        {
+            error = "El nombre es requerido.";
+            return;
+        }
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay empresa activa.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nombre = editando.Nombre.Trim();
+            var duplicado = await db.Posiciones.AnyAsync(p => p.Nombre == nombre && p.Id != editando.Id);
+            if (duplicado)
+            {
+                error = "Ya existe una posición con ese nombre.";
+                return;
+            }
+
+            if (editando.Id == Guid.Empty)
+            {
+                db.Posiciones.Add(new Posicion
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Nombre = nombre,
+                    TarifaPorMinuto = editando.TarifaPorMinuto,
+                    Orden = editando.Orden,
+                    BonoEstructuraRrhhId = editando.BonoEstructuraRrhhId,
+                    IsActive = editando.IsActive,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                var actual = await db.Posiciones.FirstOrDefaultAsync(p => p.Id == editando.Id);
+                if (actual == null)
+                {
+                    error = "No se encontró la posición a guardar.";
+                    return;
+                }
+
+                actual.Nombre = nombre;
+                actual.TarifaPorMinuto = editando.TarifaPorMinuto;
+                actual.Orden = editando.Orden;
+                actual.BonoEstructuraRrhhId = editando.BonoEstructuraRrhhId;
+                actual.IsActive = editando.IsActive;
+                actual.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Posición guardada.";
+            mostrarForm = false;
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

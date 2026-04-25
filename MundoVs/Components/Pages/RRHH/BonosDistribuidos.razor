@@ -1,0 +1,980 @@
+@page "/rrhh/bonos-distribuidos"
+@rendermode InteractiveServer
+@using System.Text
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Bonos Distribuidos</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver bonos distribuidos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
+            <div>
+                <h1 class="h3 fw-bold mb-1"><i class="bi bi-percent me-2"></i>Bonos distribuidos</h1>
+                <p class="text-muted mb-0">Captura por período los porcentajes de reparto para empleados con esquema de bono distribuido.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/configuracion/bonos"><i class="bi bi-gift me-1"></i>Maestro de bonos</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/nominas"><i class="bi bi-wallet2 me-1"></i>Nóminas</a>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (empleadoEnfoqueId.HasValue)
+        {
+            <div class="alert alert-primary py-2 px-3 d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
+                <div>
+                    <strong>Contexto desde nómina:</strong>
+                    @if (!string.IsNullOrWhiteSpace(EmpleadoEnfoqueNombre))
+                    {
+                        <span>@EmpleadoEnfoqueNombre</span>
+                    }
+                    else
+                    {
+                        <span>Empleado filtrado</span>
+                    }
+                    <span class="text-muted">· @periodo</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="LimpiarEnfoqueEmpleado">Ver todos</button>
+            </div>
+        }
+
+        <div class="alert alert-info py-2 px-3 small d-flex align-items-start gap-2 mb-3">
+            <i class="bi bi-info-circle mt-1"></i>
+            <div>
+                Los porcentajes configurados por rubro son topes máximos. Si un empleado no gana el 100% del rubro, puedes capturar un valor menor; únicamente se bloquean excedentes.
+            </div>
+        </div>
+
+        <div class="card mb-3 border-primary shadow-sm">
+            <div class="card-header bg-primary text-white fw-semibold">Filtros de captura</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Fecha inicio</label>
+                        <InputDate class="form-control form-control-sm" @bind-Value="fechaInicio" @bind-Value:after="OnPeriodoEditadoAsync" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Fecha fin</label>
+                        <InputDate class="form-control form-control-sm" @bind-Value="fechaFin" @bind-Value:after="OnPeriodoEditadoAsync" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Período</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="periodo" readonly />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Área</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="departamentoFiltro">
+                            <option value="">(todas)</option>
+                            @foreach (var departamento in departamentosDisponibles)
+                            {
+                                <option value="@departamento">@departamento</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Posición</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="posicionSeleccionadaId">
+                            <option value="">Seleccionar...</option>
+                            <option value="@TodasLasPosicionesValue">Todas las posiciones</option>
+                            @foreach (var posicion in posicionesDistribuidas)
+                            {
+                                <option value="@posicion.Id">@posicion.Nombre</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Empleado</label>
+                        <InputText class="form-control form-control-sm" @bind-Value="filtroEmpleado" placeholder="Nombre o área" />
+                    </div>
+                    <div class="col-xl-4 col-lg-5 col-md-12 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-outline-primary btn-sm" @onclick="CargarEmpleadosAsync"><i class="bi bi-search me-1"></i>Cargar empleados</button>
+                        <button class="btn btn-outline-success btn-sm" @onclick="ExportarCsvAsync" disabled="@(gruposCaptura.Count == 0)"><i class="bi bi-filetype-csv me-1"></i>Exportar CSV</button>
+                        @if (_puedeEditar)
+                        {
+                            <button class="btn btn-primary btn-sm" @onclick="GuardarAsync" disabled="@(guardando || gruposCaptura.Count == 0)"><i class="bi bi-save me-1"></i>@(gruposCaptura.Count > 1 ? "Guardar capturas" : "Guardar captura")</button>
+                        }
+                    </div>
+                </div>
+
+                @if (gruposCaptura.Count > 0)
+                {
+                    <div class="d-flex flex-wrap gap-2 mt-3 small">
+                        <span class="badge text-bg-light">Posiciones: @gruposCaptura.Count</span>
+                        <span class="badge text-bg-light">Empleados: @TotalEmpleadosCapturados</span>
+                        <span class="badge text-bg-light">Monto base: @MontoBaseTotal.ToString("C2")</span>
+                        <span class="badge text-bg-success">Asignado: @MontoAsignadoTotal.ToString("C2")</span>
+                        <span class="badge @(MontoRemanenteTotal > 0m ? "text-bg-warning" : "text-bg-light")">Remanente: @MontoRemanenteTotal.ToString("C2")</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (gruposCaptura.Count == 0)
+        {
+            <div class="card shadow-sm">
+                <div class="card-body text-center text-muted py-5">
+                    Selecciona un período y una posición para capturar la distribución. También puedes elegir <strong>Todas las posiciones</strong> para revisar varias tablas a la vez.
+                </div>
+            </div>
+        }
+        else
+        {
+            @foreach (var grupo in gruposCaptura.OrderBy(g => g.PosicionOrden).ThenBy(g => g.PosicionNombre))
+            {
+                var empleadosVisibles = ObtenerEmpleadosVisibles(grupo);
+                <div class="card mb-3 shadow-sm border-@(GrupoDentroDeTopes(grupo) ? "success" : "danger")">
+                    <div class="card-header bg-light d-flex flex-wrap align-items-center justify-content-between gap-2 py-2">
+                        <div>
+                            <div class="fw-semibold">@grupo.PosicionNombre</div>
+                            <div class="small text-muted">@(string.IsNullOrWhiteSpace(grupo.EstructuraNombre) ? "Sin estructura" : grupo.EstructuraNombre) · @grupo.TipoCapturaTexto</div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 small">
+                            <span class="badge text-bg-light">Monto base: @grupo.MontoTotalDistribuir.ToString("C2")</span>
+                            <span class="badge text-bg-light">Empleados: @grupo.Empleados.Count</span>
+                            @if (filtroEmpleadoActivo || empleadoEnfoqueId.HasValue)
+                            {
+                                <span class="badge text-bg-primary">Visibles: @empleadosVisibles.Count</span>
+                            }
+                            <span class="badge @(GrupoDentroDeTopes(grupo) ? "text-bg-success" : "text-bg-danger")">Capturado: @ObtenerTotalGrupo(grupo).ToString("0.##")%</span>
+                            <span class="badge @(ObtenerRemanenteGrupo(grupo) > 0m ? "text-bg-warning" : "text-bg-light")">Remanente: @ObtenerRemanenteGrupo(grupo).ToString("0.##")%</span>
+                            <span class="badge text-bg-success">Asignado: @ObtenerMontoGrupo(grupo).ToString("C2")</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="px-3 py-2 border-bottom bg-body-tertiary">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-lg-5 col-md-12">
+                                    <label class="form-label small mb-1">Observaciones</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="grupo.Observaciones" />
+                                </div>
+                                <div class="col-lg-7 col-md-12">
+                                    <div class="small text-muted">
+                                        Rubros: @string.Join(", ", grupo.Rubros.Select(r => $"{r.Nombre} {r.TopePorcentaje:0.##}%"))
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th rowspan="2">Empleado</th>
+                                        <th rowspan="2">Área</th>
+                                        @foreach (var rubro in grupo.Rubros)
+                                        {
+                                            <th class="text-center" @key="@($"tope-{grupo.PosicionId}-{rubro.BonoRubroRrhhId}")">@rubro.TopePorcentaje.ToString("0.##")%</th>
+                                        }
+                                        <th rowspan="2" class="text-end">Total %</th>
+                                        <th rowspan="2" class="text-end">Monto</th>
+                                    </tr>
+                                    <tr>
+                                        @foreach (var rubro in grupo.Rubros)
+                                        {
+                                            <th class="text-center" @key="@($"nombre-{grupo.PosicionId}-{rubro.BonoRubroRrhhId}")">@rubro.Nombre</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (grupo.Empleados.Count == 0)
+                                    {
+                                        <tr><td colspan="@(grupo.Rubros.Count + 4)" class="text-center text-muted py-4">No hay empleados activos para esta posición con los filtros seleccionados.</td></tr>
+                                    }
+                                    else if (empleadosVisibles.Count == 0)
+                                    {
+                                        <tr><td colspan="@(grupo.Rubros.Count + 4)" class="text-center text-muted py-4">No hay empleados visibles con el filtro actual para esta posición.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in empleadosVisibles)
+                                        {
+                                            <tr class="@(EsEmpleadoEnfocado(item) ? "table-warning" : string.Empty)" @key="@($"{grupo.PosicionId}-{item.EmpleadoId}")">
+                                                <td class="fw-semibold">@item.NombreEmpleado</td>
+                                                <td>@(string.IsNullOrWhiteSpace(item.Departamento) ? "—" : item.Departamento)</td>
+
+                                                @foreach (var rubro in item.Detalles.OrderBy(d => d.Orden))
+                                                {
+                                                    <td class="text-end" style="min-width:140px" @key="@($"{grupo.PosicionId}-{item.EmpleadoId}-{rubro.BonoRubroRrhhId}")">
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="rubro.Porcentaje" @bind-Value:after="OnDistribucionRubroChangedAsync" />
+                                                        <div class="small text-muted text-end mt-1">@rubro.MontoAsignado.ToString("C2")</div>
+                                                    </td>
+                                                }
+
+                                                <td class="text-end fw-semibold @(ObtenerTotalFila(item) > ObtenerTopeTotalGrupo(grupo) ? "text-danger" : string.Empty)">@ObtenerTotalFila(item).ToString("0.##")%</td>
+                                                <td class="text-end">@ObtenerMontoFila(item).ToString("C2")</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                                @if (grupo.Empleados.Count > 0)
+                                {
+                                    <tfoot>
+                                        <tr class="table-light fw-semibold">
+                                            <td colspan="2" class="text-end">Totales</td>
+                                            @foreach (var rubro in grupo.Rubros)
+                                            {
+                                                var totalRubro = ObtenerTotalRubro(grupo, rubro.BonoRubroRrhhId);
+                                                <td class="text-end @(Math.Round(totalRubro, 2) <= Math.Round(rubro.TopePorcentaje, 2) ? "text-success" : "text-danger")" @key="@($"total-{grupo.PosicionId}-{rubro.BonoRubroRrhhId}")">
+                                                    @totalRubro.ToString("0.##")%
+                                                </td>
+                                            }
+                                            <td class="text-end @(GrupoDentroDeTopes(grupo) ? string.Empty : "text-danger")">@ObtenerTotalGrupo(grupo).ToString("0.##")%</td>
+                                            <td class="text-end">@ObtenerMontoGrupo(grupo).ToString("C2")</td>
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+<style>
+    .table td,
+    .table th {
+        vertical-align: middle;
+    }
+</style>
+
+@code {
+    private const string TodasLasPosicionesValue = "__TODAS__";
+    [SupplyParameterFromQuery(Name = "inicio")]
+    public DateTime? InicioQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "fin")]
+    public DateTime? FinQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "posicionId")]
+    public string? PosicionIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "empleadoId")]
+    public string? EmpleadoIdQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "autocargar")]
+    public bool? AutocargarQuery { get; set; }
+
+    private List<string> departamentosDisponibles = [];
+    private List<Posicion> posicionesDistribuidas = [];
+    private List<PosicionCapturaDistribucion> gruposCaptura = [];
+    private NominaCorteRrhh corteSemanal = new() { PeriodicidadPago = PeriodicidadPago.Semanal, DiaCorteSemana = DayOfWeek.Sunday, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private DateTime fechaInicio;
+    private DateTime fechaFin;
+    private string periodo = string.Empty;
+    private string? departamentoFiltro = string.Empty;
+    private string? filtroEmpleado;
+    private string posicionSeleccionadaId = string.Empty;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+    private bool _disposed;
+    private bool _catalogosCargados;
+    private Guid? empleadoEnfoqueId;
+    private string? _firmaContextoAplicado;
+    private string? EmpleadoEnfoqueNombre => empleadoEnfoqueId.HasValue
+        ? gruposCaptura.SelectMany(g => g.Empleados).FirstOrDefault(e => e.EmpleadoId == empleadoEnfoqueId.Value)?.NombreEmpleado
+        : null;
+    private bool filtroEmpleadoActivo => !string.IsNullOrWhiteSpace(filtroEmpleado);
+    private int TotalEmpleadosCapturados => gruposCaptura.Sum(g => g.Empleados.Count);
+    private decimal MontoBaseTotal => gruposCaptura.Sum(g => g.MontoTotalDistribuir);
+    private decimal MontoAsignadoTotal => gruposCaptura.Sum(ObtenerMontoGrupo);
+    private decimal MontoRemanenteTotal => Math.Max(0m, MontoBaseTotal - MontoAsignadoTotal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_disposed)
+            return;
+
+        if (_puedeVer)
+        {
+            await CargarConfiguracionAsync();
+            if (_disposed)
+                return;
+
+            await CargarCatalogosAsync();
+            if (_disposed)
+                return;
+
+            _catalogosCargados = true;
+
+            await InicializarPeriodoAsync();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_puedeVer || !_catalogosCargados || _disposed)
+            return;
+
+        var firma = string.Join("|",
+            InicioQuery?.ToString("yyyy-MM-dd") ?? string.Empty,
+            FinQuery?.ToString("yyyy-MM-dd") ?? string.Empty,
+            PosicionIdQuery ?? string.Empty,
+            EmpleadoIdQuery ?? string.Empty,
+            AutocargarQuery?.ToString() ?? string.Empty);
+
+        if (firma == _firmaContextoAplicado)
+            return;
+
+        _firmaContextoAplicado = firma;
+        await AplicarContextoConsultaAsync();
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarConfiguracionAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (_disposed)
+            return;
+
+        corteSemanal = await db.NominaCortesRrhh
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.PeriodicidadPago == PeriodicidadPago.Semanal && c.IsActive)
+            ?? corteSemanal;
+    }
+
+    private async Task CargarCatalogosAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (_disposed)
+            return;
+
+        posicionesDistribuidas = await db.Posiciones
+            .AsNoTracking()
+            .Include(p => p.BonoEstructuraRrhh)
+                .ThenInclude(e => e!.Detalles)
+                    .ThenInclude(d => d.BonoRubroRrhh)
+            .Where(p => p.IsActive && p.BonoEstructuraRrhhId.HasValue && p.BonoEstructuraRrhh != null && p.BonoEstructuraRrhh.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido)
+            .OrderBy(p => p.Orden)
+            .ThenBy(p => p.Nombre)
+            .ToListAsync();
+
+        var departamentosCatalogo = await db.DepartamentosRrhh
+            .AsNoTracking()
+            .Where(d => d.IsActive)
+            .OrderBy(d => d.Orden)
+            .ThenBy(d => d.Nombre)
+            .Select(d => d.Nombre)
+            .ToListAsync();
+
+        var departamentosEmpleados = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive && !string.IsNullOrWhiteSpace(e.Departamento))
+            .Select(e => e.Departamento!)
+            .Distinct()
+            .ToListAsync();
+
+        departamentosDisponibles = departamentosCatalogo
+            .Concat(departamentosEmpleados)
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(d => d)
+            .ToList();
+    }
+
+    private async Task AplicarContextoConsultaAsync()
+    {
+        var tieneContexto = InicioQuery.HasValue
+            || FinQuery.HasValue
+            || !string.IsNullOrWhiteSpace(PosicionIdQuery)
+            || !string.IsNullOrWhiteSpace(EmpleadoIdQuery)
+            || AutocargarQuery == true;
+
+        if (!tieneContexto)
+            return;
+
+        if (InicioQuery.HasValue)
+            fechaInicio = InicioQuery.Value.Date;
+
+        if (FinQuery.HasValue)
+            fechaFin = FinQuery.Value.Date;
+
+        await OnPeriodoEditadoAsync();
+
+        if (!string.IsNullOrWhiteSpace(PosicionIdQuery))
+            posicionSeleccionadaId = PosicionIdQuery!;
+
+        empleadoEnfoqueId = Guid.TryParse(EmpleadoIdQuery, out var empleadoId) ? empleadoId : null;
+
+        if (AutocargarQuery == true || !string.IsNullOrWhiteSpace(posicionSeleccionadaId))
+            await CargarEmpleadosAsync();
+    }
+
+    private Task InicializarPeriodoAsync()
+    {
+        var (inicio, fin) = NominaPeriodoHelper.ObtenerPeriodoSemanal(DateTime.Today, corteSemanal.DiaCorteSemana);
+        fechaInicio = inicio;
+        fechaFin = fin;
+        periodo = NominaPeriodoHelper.ConstruirEtiquetaSemanal(inicio, fin);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPeriodoEditadoAsync()
+    {
+        periodo = NominaPeriodoHelper.ConstruirEtiquetaSemanal(fechaInicio.Date, fechaFin.Date);
+        return Task.CompletedTask;
+    }
+
+    private async Task CargarEmpleadosAsync()
+    {
+        if (_disposed)
+            return;
+
+        error = ok = null;
+        gruposCaptura = [];
+
+        var posicionesSeleccionadas = ObtenerPosicionesFiltradas();
+        if (posicionesSeleccionadas.Count == 0)
+        {
+            error = "Selecciona una posición.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var posiciones = await db.Posiciones
+            .AsNoTracking()
+            .Include(p => p.BonoEstructuraRrhh)
+                .ThenInclude(e => e!.Detalles)
+                    .ThenInclude(d => d.BonoRubroRrhh)
+            .Where(p => posicionesSeleccionadas.Contains(p.Id))
+            .OrderBy(p => p.Orden)
+            .ThenBy(p => p.Nombre)
+            .ToListAsync();
+
+        if (_disposed)
+            return;
+
+        if (posiciones.Count == 0)
+        {
+            error = "La posición seleccionada no tiene un esquema de bono distribuido.";
+            return;
+        }
+
+        if (posiciones.Any(p => p.BonoEstructuraRrhh?.TipoCaptura != TipoCapturaBonoNomina.TotalDistribuido))
+        {
+            error = "Una de las posiciones seleccionadas no tiene un esquema de bono distribuido.";
+            return;
+        }
+
+        var departamento = NormalizarDepartamento(departamentoFiltro);
+        var empleados = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive && e.PosicionId.HasValue && posicionesSeleccionadas.Contains(e.PosicionId.Value) && (departamento == null || e.Departamento == departamento))
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+
+        var capturas = await db.BonosDistribucionesPeriodoRrhh
+            .AsNoTracking()
+            .Include(c => c.Detalles)
+                .ThenInclude(d => d.Detalles)
+            .Where(c => c.IsActive
+                && c.FechaInicio == fechaInicio.Date
+                && c.FechaFin == fechaFin.Date
+                && posicionesSeleccionadas.Contains(c.PosicionId)
+                && c.Departamento == departamento)
+            .ToListAsync();
+
+        if (_disposed)
+            return;
+
+        gruposCaptura = posiciones.Select(posicion =>
+        {
+            var captura = capturas.FirstOrDefault(c => c.PosicionId == posicion.Id);
+            var detallesPorEmpleado = captura?.Detalles.ToDictionary(d => d.EmpleadoId, d => d) ?? [];
+            var rubros = posicion.BonoEstructuraRrhh?.Detalles
+                .Where(d => d.IsActive && d.BonoRubroRrhh.IsActive)
+                .OrderBy(d => d.Orden)
+                .ThenBy(d => d.BonoRubroRrhh.Nombre)
+                .Select(d => new RubroPosicionDistribucion
+                {
+                    BonoRubroRrhhId = d.BonoRubroRrhhId,
+                    Nombre = d.BonoRubroRrhh.Nombre,
+                    TopePorcentaje = d.Porcentaje,
+                    Orden = d.Orden
+                })
+                .ToList() ?? [];
+
+            var empleadosPosicion = empleados
+                .Where(e => e.PosicionId == posicion.Id)
+                .OrderBy(e => e.NombreCompleto)
+                .Select(e =>
+                {
+                    var detalle = detallesPorEmpleado.GetValueOrDefault(e.Id);
+                    var detallesRubro = detalle?.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d) ?? [];
+                    return new EmpleadoCapturaDistribucion
+                    {
+                        EmpleadoId = e.Id,
+                        NombreEmpleado = e.NombreCompleto,
+                        Departamento = e.Departamento,
+                        Detalles = rubros.Select(rubro =>
+                        {
+                            var detalleRubro = detallesRubro.GetValueOrDefault(rubro.BonoRubroRrhhId);
+                            return new RubroCapturaDistribucion
+                            {
+                                BonoRubroRrhhId = rubro.BonoRubroRrhhId,
+                                RubroNombre = rubro.Nombre,
+                                TopePorcentaje = rubro.TopePorcentaje,
+                                Orden = rubro.Orden,
+                                Porcentaje = detalleRubro?.Porcentaje ?? 0m,
+                                MontoAsignado = detalleRubro?.MontoAsignado ?? 0m
+                            };
+                        }).ToList()
+                    };
+                })
+                .ToList();
+
+            var grupo = new PosicionCapturaDistribucion
+            {
+                CapturaId = captura?.Id ?? Guid.Empty,
+                PosicionId = posicion.Id,
+                PosicionNombre = posicion.Nombre,
+                PosicionOrden = posicion.Orden,
+                BonoEstructuraRrhhId = posicion.BonoEstructuraRrhhId,
+                EstructuraNombre = posicion.BonoEstructuraRrhh?.Nombre,
+                TipoCapturaTexto = posicion.BonoEstructuraRrhh?.TipoCaptura.ToString() ?? "—",
+                Departamento = departamento,
+                MontoTotalDistribuir = captura?.MontoTotalDistribuir > 0m ? captura.MontoTotalDistribuir : posicion.MontoBonoDistribuido,
+                Observaciones = captura?.Observaciones,
+                Rubros = rubros,
+                Empleados = empleadosPosicion
+            };
+
+            RecalcularGrupo(grupo);
+            return grupo;
+        })
+        .Where(g => g.Rubros.Count > 0)
+        .ToList();
+
+        if (gruposCaptura.All(g => g.MontoTotalDistribuir <= 0m))
+        {
+            error = "Las posiciones seleccionadas no tienen monto configurado para distribuir. Configúralo en Bonos de Nómina.";
+            gruposCaptura = [];
+            return;
+        }
+
+        if (gruposCaptura.Sum(g => g.Empleados.Count) == 0)
+            ok = "No se encontraron empleados activos con los filtros seleccionados.";
+
+        if (empleadoEnfoqueId.HasValue && gruposCaptura.SelectMany(g => g.Empleados).All(e => e.EmpleadoId != empleadoEnfoqueId.Value))
+            ok = "Se cargó la captura, pero el empleado enviado desde nómina no aparece en esta distribución.";
+    }
+
+    private Task OnDistribucionRubroChangedAsync()
+    {
+        RecalcularMontos();
+        return Task.CompletedTask;
+    }
+
+    private void RecalcularMontos()
+    {
+        foreach (var grupo in gruposCaptura)
+            RecalcularGrupo(grupo);
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_disposed)
+            return;
+
+        error = ok = null;
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar bonos distribuidos.";
+            return;
+        }
+
+        if (gruposCaptura.Count == 0)
+        {
+            error = "No hay empleados para guardar.";
+            return;
+        }
+
+        foreach (var grupo in gruposCaptura)
+        {
+            var errorValidacion = ValidarGrupo(grupo);
+            if (!string.IsNullOrWhiteSpace(errorValidacion))
+            {
+                error = errorValidacion;
+                return;
+            }
+        }
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            foreach (var grupo in gruposCaptura)
+                await GuardarGrupoAsync(db, grupo);
+
+            await db.SaveChangesAsync();
+
+            if (_disposed)
+                return;
+
+            ok = gruposCaptura.Count > 1 ? "Capturas de bonos guardadas." : "Distribución de bonos guardada.";
+            await CargarEmpleadosAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static string? NormalizarDepartamento(string? departamento)
+        => string.IsNullOrWhiteSpace(departamento) ? null : departamento.Trim();
+
+    private List<Guid> ObtenerPosicionesFiltradas()
+    {
+        if (string.IsNullOrWhiteSpace(posicionSeleccionadaId))
+            return [];
+
+        if (posicionSeleccionadaId == TodasLasPosicionesValue)
+            return posicionesDistribuidas.Select(p => p.Id).ToList();
+
+        return Guid.TryParse(posicionSeleccionadaId, out var posicionId) ? [posicionId] : [];
+    }
+
+    private List<EmpleadoCapturaDistribucion> ObtenerEmpleadosVisibles(PosicionCapturaDistribucion grupo)
+        => grupo.Empleados
+            .Where(EsEmpleadoVisible)
+            .OrderBy(e => e.NombreEmpleado)
+            .ToList();
+
+    private bool EsEmpleadoVisible(EmpleadoCapturaDistribucion empleado)
+    {
+        var coincideEnfoque = !empleadoEnfoqueId.HasValue || empleado.EmpleadoId == empleadoEnfoqueId.Value;
+        if (!coincideEnfoque)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(filtroEmpleado))
+            return true;
+
+        var filtro = filtroEmpleado.Trim();
+        return empleado.NombreEmpleado.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(empleado.Departamento) && empleado.Departamento.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool EsEmpleadoEnfocado(EmpleadoCapturaDistribucion empleado)
+        => empleadoEnfoqueId.HasValue && empleado.EmpleadoId == empleadoEnfoqueId.Value;
+
+    private void LimpiarEnfoqueEmpleado()
+    {
+        empleadoEnfoqueId = null;
+        filtroEmpleado = null;
+    }
+
+    private void RecalcularGrupo(PosicionCapturaDistribucion grupo)
+    {
+        foreach (var item in grupo.Empleados)
+        {
+            foreach (var detalle in item.Detalles)
+                detalle.MontoAsignado = Math.Round(grupo.MontoTotalDistribuir * (detalle.Porcentaje / 100m), 2);
+
+            item.PorcentajeTotal = item.Detalles.Sum(d => d.Porcentaje);
+            item.MontoAsignado = item.Detalles.Sum(d => d.MontoAsignado);
+        }
+    }
+
+    private string? ValidarGrupo(PosicionCapturaDistribucion grupo)
+    {
+        if (grupo.BonoEstructuraRrhhId is null)
+            return $"La posición {grupo.PosicionNombre} no tiene una estructura de bono válida.";
+
+        if (grupo.MontoTotalDistribuir <= 0m)
+            return $"La posición {grupo.PosicionNombre} no tiene monto válido para distribuir.";
+
+        foreach (var item in grupo.Empleados)
+        {
+            foreach (var detalle in item.Detalles)
+            {
+                if (detalle.Porcentaje < 0m)
+                    return $"El rubro {detalle.RubroNombre} de {item.NombreEmpleado} no puede ser negativo.";
+
+                if (Math.Round(detalle.Porcentaje, 2) > Math.Round(detalle.TopePorcentaje, 2))
+                    return $"El rubro {detalle.RubroNombre} de {item.NombreEmpleado} no puede exceder {detalle.TopePorcentaje:0.##}%.";
+            }
+        }
+
+        foreach (var rubro in grupo.Rubros)
+        {
+            var totalRubro = Math.Round(ObtenerTotalRubro(grupo, rubro.BonoRubroRrhhId), 2);
+            var topeRubro = Math.Round(rubro.TopePorcentaje, 2);
+            if (totalRubro > topeRubro)
+                return $"La distribución del rubro {rubro.Nombre} en {grupo.PosicionNombre} no puede exceder {topeRubro:0.##}%.";
+        }
+
+        return null;
+    }
+
+    private async Task GuardarGrupoAsync(CrmDbContext db, PosicionCapturaDistribucion grupo)
+    {
+        var captura = grupo.CapturaId == Guid.Empty
+            ? null
+            : await db.BonosDistribucionesPeriodoRrhh
+                .Include(c => c.Detalles)
+                    .ThenInclude(d => d.Detalles)
+                .FirstOrDefaultAsync(c => c.Id == grupo.CapturaId);
+
+        if (_disposed)
+            return;
+
+        if (captura == null)
+        {
+            captura = new BonoDistribucionPeriodoRrhh
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                Periodo = periodo,
+                FechaInicio = fechaInicio.Date,
+                FechaFin = fechaFin.Date,
+                Departamento = grupo.Departamento,
+                PosicionId = grupo.PosicionId,
+                BonoEstructuraRrhhId = grupo.BonoEstructuraRrhhId!.Value,
+                MontoTotalDistribuir = grupo.MontoTotalDistribuir,
+                Observaciones = string.IsNullOrWhiteSpace(grupo.Observaciones) ? null : grupo.Observaciones.Trim(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                Detalles = []
+            };
+            db.BonosDistribucionesPeriodoRrhh.Add(captura);
+            grupo.CapturaId = captura.Id;
+        }
+        else
+        {
+            captura.Periodo = periodo;
+            captura.FechaInicio = fechaInicio.Date;
+            captura.FechaFin = fechaFin.Date;
+            captura.Departamento = grupo.Departamento;
+            captura.PosicionId = grupo.PosicionId;
+            captura.BonoEstructuraRrhhId = grupo.BonoEstructuraRrhhId!.Value;
+            captura.MontoTotalDistribuir = grupo.MontoTotalDistribuir;
+            captura.Observaciones = string.IsNullOrWhiteSpace(grupo.Observaciones) ? null : grupo.Observaciones.Trim();
+            captura.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var detallesExistentes = captura.Detalles.ToDictionary(d => d.EmpleadoId, d => d);
+        var empleadosConPorcentaje = grupo.Empleados.Where(e => e.Detalles.Any(d => d.Porcentaje > 0m)).ToList();
+        var idsActivos = empleadosConPorcentaje.Select(e => e.EmpleadoId).ToHashSet();
+        var eliminar = captura.Detalles.Where(d => !idsActivos.Contains(d.EmpleadoId)).ToList();
+        if (eliminar.Count > 0)
+            db.BonosDistribucionesEmpleadosRrhh.RemoveRange(eliminar);
+
+        foreach (var item in empleadosConPorcentaje)
+        {
+            if (!detallesExistentes.TryGetValue(item.EmpleadoId, out var detalle))
+            {
+                detalle = new BonoDistribucionEmpleadoRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    BonoDistribucionPeriodoRrhh = captura,
+                    EmpleadoId = item.EmpleadoId,
+                    Porcentaje = item.PorcentajeTotal,
+                    MontoAsignado = item.MontoAsignado,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    Detalles = []
+                };
+                db.BonosDistribucionesEmpleadosRrhh.Add(detalle);
+            }
+
+            detalle.Porcentaje = item.PorcentajeTotal;
+            detalle.MontoAsignado = item.MontoAsignado;
+            detalle.IsActive = true;
+            detalle.UpdatedAt = DateTime.UtcNow;
+
+            var detallesRubroExistentes = detalle.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
+            var rubrosActivos = item.Detalles.Where(d => d.Porcentaje > 0m).ToList();
+            var rubrosActivosIds = rubrosActivos.Select(d => d.BonoRubroRrhhId).ToHashSet();
+            var eliminarRubros = detalle.Detalles.Where(d => !rubrosActivosIds.Contains(d.BonoRubroRrhhId)).ToList();
+            if (eliminarRubros.Count > 0)
+                db.BonosDistribucionesEmpleadosDetalleRrhh.RemoveRange(eliminarRubros);
+
+            foreach (var rubro in rubrosActivos)
+            {
+                if (!detallesRubroExistentes.TryGetValue(rubro.BonoRubroRrhhId, out var detalleRubro))
+                {
+                    detalleRubro = new BonoDistribucionEmpleadoDetalleRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        BonoDistribucionEmpleadoRrhh = detalle,
+                        BonoRubroRrhhId = rubro.BonoRubroRrhhId,
+                        Porcentaje = rubro.Porcentaje,
+                        MontoAsignado = rubro.MontoAsignado,
+                        Orden = rubro.Orden,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    db.BonosDistribucionesEmpleadosDetalleRrhh.Add(detalleRubro);
+                    continue;
+                }
+
+                detalleRubro.Porcentaje = rubro.Porcentaje;
+                detalleRubro.MontoAsignado = rubro.MontoAsignado;
+                detalleRubro.Orden = rubro.Orden;
+                detalleRubro.IsActive = true;
+                detalleRubro.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+    }
+
+    private async Task ExportarCsvAsync()
+    {
+        error = ok = null;
+        if (gruposCaptura.Count == 0)
+        {
+            error = "No hay datos cargados para exportar.";
+            return;
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Periodo,FechaInicio,FechaFin,Area,Posicion,Estructura,Empleado,Rubro,TopeRubro,PorcentajeCapturado,MontoRubro,TotalEmpleado,MontoEmpleado,Observaciones");
+
+        foreach (var grupo in gruposCaptura.OrderBy(g => g.PosicionOrden).ThenBy(g => g.PosicionNombre))
+        {
+            foreach (var empleado in grupo.Empleados.OrderBy(e => e.NombreEmpleado))
+            {
+                foreach (var rubro in empleado.Detalles.OrderBy(d => d.Orden))
+                {
+                    builder.AppendLine(string.Join(",",
+                        EscapeCsv(periodo),
+                        EscapeCsv(fechaInicio.ToString("yyyy-MM-dd")),
+                        EscapeCsv(fechaFin.ToString("yyyy-MM-dd")),
+                        EscapeCsv(empleado.Departamento),
+                        EscapeCsv(grupo.PosicionNombre),
+                        EscapeCsv(grupo.EstructuraNombre),
+                        EscapeCsv(empleado.NombreEmpleado),
+                        EscapeCsv(rubro.RubroNombre),
+                        rubro.TopePorcentaje.ToString("0.##"),
+                        rubro.Porcentaje.ToString("0.##"),
+                        rubro.MontoAsignado.ToString("0.00"),
+                        ObtenerTotalFila(empleado).ToString("0.##"),
+                        ObtenerMontoFila(empleado).ToString("0.00"),
+                        EscapeCsv(grupo.Observaciones)));
+                }
+            }
+        }
+
+        await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", $"bonos-distribuidos-{fechaInicio:yyyyMMdd}-{fechaFin:yyyyMMdd}.csv", builder.ToString());
+        ok = "CSV exportado correctamente.";
+    }
+
+    private static string EscapeCsv(string? value)
+    {
+        var texto = value ?? string.Empty;
+        return $"\"{texto.Replace("\"", "\"\"")}\"";
+    }
+
+    private decimal ObtenerTotalFila(EmpleadoCapturaDistribucion empleado)
+        => empleado.Detalles.Sum(d => d.Porcentaje);
+
+    private decimal ObtenerMontoFila(EmpleadoCapturaDistribucion empleado)
+        => empleado.Detalles.Sum(d => d.MontoAsignado);
+
+    private decimal ObtenerTotalRubro(PosicionCapturaDistribucion grupo, Guid bonoRubroRrhhId)
+        => grupo.Empleados.Sum(e => e.Detalles.Where(d => d.BonoRubroRrhhId == bonoRubroRrhhId).Sum(d => d.Porcentaje));
+
+    private decimal ObtenerTotalGrupo(PosicionCapturaDistribucion grupo)
+        => grupo.Empleados.Sum(ObtenerTotalFila);
+
+    private decimal ObtenerMontoGrupo(PosicionCapturaDistribucion grupo)
+        => grupo.Empleados.Sum(ObtenerMontoFila);
+
+    private decimal ObtenerTopeTotalGrupo(PosicionCapturaDistribucion grupo)
+        => grupo.Rubros.Sum(r => r.TopePorcentaje);
+
+    private decimal ObtenerRemanenteGrupo(PosicionCapturaDistribucion grupo)
+        => Math.Max(0m, ObtenerTopeTotalGrupo(grupo) - ObtenerTotalGrupo(grupo));
+
+    private bool GrupoDentroDeTopes(PosicionCapturaDistribucion grupo)
+        => grupo.Rubros.All(r => Math.Round(ObtenerTotalRubro(grupo, r.BonoRubroRrhhId), 2) <= Math.Round(r.TopePorcentaje, 2));
+
+    public void Dispose()
+    {
+        _disposed = true;
+    }
+
+    private sealed class PosicionCapturaDistribucion
+    {
+        public Guid CapturaId { get; set; }
+        public Guid PosicionId { get; set; }
+        public int PosicionOrden { get; set; }
+        public string PosicionNombre { get; set; } = string.Empty;
+        public Guid? BonoEstructuraRrhhId { get; set; }
+        public string? EstructuraNombre { get; set; }
+        public string TipoCapturaTexto { get; set; } = string.Empty;
+        public string? Departamento { get; set; }
+        public decimal MontoTotalDistribuir { get; set; }
+        public string? Observaciones { get; set; }
+        public List<RubroPosicionDistribucion> Rubros { get; set; } = [];
+        public List<EmpleadoCapturaDistribucion> Empleados { get; set; } = [];
+    }
+
+    private sealed class EmpleadoCapturaDistribucion
+    {
+        public Guid EmpleadoId { get; set; }
+        public string NombreEmpleado { get; set; } = string.Empty;
+        public string? Departamento { get; set; }
+        public decimal PorcentajeTotal { get; set; }
+        public decimal MontoAsignado { get; set; }
+        public List<RubroCapturaDistribucion> Detalles { get; set; } = [];
+    }
+
+    private sealed class RubroCapturaDistribucion
+    {
+        public Guid BonoRubroRrhhId { get; set; }
+        public string RubroNombre { get; set; } = string.Empty;
+        public decimal TopePorcentaje { get; set; }
+        public decimal Porcentaje { get; set; }
+        public decimal MontoAsignado { get; set; }
+        public int Orden { get; set; }
+    }
+
+    private sealed class RubroPosicionDistribucion
+    {
+        public Guid BonoRubroRrhhId { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public decimal TopePorcentaje { get; set; }
+        public int Orden { get; set; }
+    }
+}

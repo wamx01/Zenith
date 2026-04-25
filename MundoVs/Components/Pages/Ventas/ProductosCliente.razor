@@ -1,0 +1,275 @@
+@page "/clientes/productos"
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@inject IClienteRepository ClienteRepository
+@inject IProductoRepository ProductoRepository
+@inject IProductoClienteRepository ProductoClienteRepository
+@rendermode InteractiveServer
+
+<PageTitle>Productos por Cliente</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 class="display-6 mb-1"><i class="bi bi-diagram-3"></i> Productos por Cliente</h1>
+            <p class="text-muted mb-0">Administra el catálogo comercial permitido por cliente con una vista más clara e intuitiva.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning py-2 mb-3"><i class="bi bi-exclamation-triangle me-1"></i>@error</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(ok))
+    {
+        <div class="alert alert-success py-2 mb-3"><i class="bi bi-check-circle me-1"></i>@ok</div>
+    }
+
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 pc-kpi-card">
+                <div class="card-body">
+                    <div class="pc-kpi-label">Clientes visibles</div>
+                    <div class="pc-kpi-value">@clientes.Count()</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 pc-kpi-card pc-kpi-card--success">
+                <div class="card-body">
+                    <div class="pc-kpi-label">Asignados</div>
+                    <div class="pc-kpi-value">@productosAsignadosFiltrados.Count()</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 pc-kpi-card pc-kpi-card--info">
+                <div class="card-body">
+                    <div class="pc-kpi-label">Catálogo disponible</div>
+                    <div class="pc-kpi-value">@productosDisponiblesSelector.Count()</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+            <span class="fw-semibold"><i class="bi bi-link-45deg me-1"></i>Asignación</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label">Cliente</label>
+                    <select class="form-select" @onchange="OnClienteChanged">
+                        <option value="">Seleccione...</option>
+                        @if (clientes != null)
+                        {
+                            @foreach (var cliente in clientes)
+                            {
+                                <option value="@cliente.Id" selected="@(clienteSeleccionadoId == cliente.Id)">@cliente.RazonSocial</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Buscar producto</label>
+                    <input class="form-control mb-2" @bind="textoBusquedaProductoDisponible" @bind:after="AplicarFiltrosProductosAsignados" placeholder="Escribe código o nombre para buscar en catálogo" />
+                    <label class="form-label">Producto</label>
+                    <select class="form-select" @bind="productoSeleccionadoId" disabled="@(!productosDisponiblesSelector.Any())">
+                        <option value="">Seleccione...</option>
+                        @foreach (var producto in productosDisponiblesSelector)
+                        {
+                            <option value="@producto.Id">@producto.Codigo · @producto.Nombre</option>
+                        }
+                    </select>
+                    @if (clienteSeleccionadoId.HasValue && !productosDisponiblesSelector.Any())
+                    {
+                        <div class="form-text">Si el cliente aún no tiene productos asignados, la lista permanece vacía hasta que busques un producto.</div>
+                    }
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" @onclick="AgregarProducto">
+                        <i class="bi bi-plus-circle"></i> Agregar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <strong>Productos asignados</strong>
+        </div>
+        <div class="card-body">
+            @if (productosAsignados == null)
+            {
+                <div class="text-muted">Seleccione un cliente para ver los productos.</div>
+            }
+            else if (!productosAsignados.Any())
+            {
+                <div class="alert alert-info">No hay productos asignados a este cliente.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Producto</th>
+                                <th>Industria</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var asignacion in productosAsignados)
+                            {
+                                <tr>
+                                    <td>@asignacion.Producto.Codigo</td>
+                                    <td>@asignacion.Producto.Nombre</td>
+                                    <td>@asignacion.Producto.Industria</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => QuitarProducto(asignacion)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .pc-kpi-card { border-radius: 14px; }
+    .pc-kpi-card .card-body { padding: .9rem 1rem; }
+    .pc-kpi-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-bottom: .2rem; }
+    .pc-kpi-value { font-size: 1.7rem; font-weight: 800; line-height: 1; color: #1f2937; }
+    .pc-kpi-card--success { background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); }
+    .pc-kpi-card--info { background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); }
+</style>
+
+@code {
+    private IEnumerable<Cliente> clientes = [];
+    private IEnumerable<Producto> productos = [];
+    private IEnumerable<ProductoCliente>? productosAsignados;
+    private IEnumerable<ProductoCliente> productosAsignadosFiltrados = [];
+    private Guid? clienteSeleccionadoId;
+    private Guid? productoSeleccionadoId;
+    private string? error;
+    private string? ok;
+    private string textoBusquedaProductoDisponible = string.Empty;
+    private string textoBusquedaAsignados = string.Empty;
+    private string filtroEstadoAsignados = "activos";
+
+    protected override async Task OnInitializedAsync()
+    {
+        clientes = await ClienteRepository.GetAllAsync();
+        productos = await ProductoRepository.GetAllAsync();
+    }
+
+    private async Task OnClienteChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var clienteId))
+        {
+            clienteSeleccionadoId = clienteId;
+            productosAsignados = await ProductoClienteRepository.GetByClienteAsync(clienteId);
+            AplicarFiltrosProductosAsignados();
+            productoSeleccionadoId = null;
+            ok = null;
+            error = null;
+        }
+        else
+        {
+            clienteSeleccionadoId = null;
+            productosAsignados = null;
+            productosAsignadosFiltrados = [];
+            productoSeleccionadoId = null;
+        }
+    }
+
+    private async Task AgregarProducto()
+    {
+        if (!clienteSeleccionadoId.HasValue || !productoSeleccionadoId.HasValue)
+        {
+            error = "Selecciona un cliente y un producto.";
+            return;
+        }
+
+        var existe = await ProductoClienteRepository.ExistsAsync(clienteSeleccionadoId.Value, productoSeleccionadoId.Value);
+        if (existe)
+        {
+            error = "Ese producto ya está asignado al cliente.";
+            return;
+        }
+
+        var asignacion = new ProductoCliente
+        {
+            ClienteId = clienteSeleccionadoId.Value,
+            ProductoId = productoSeleccionadoId.Value
+        };
+
+        await ProductoClienteRepository.AddAsync(asignacion);
+        productosAsignados = await ProductoClienteRepository.GetByClienteAsync(clienteSeleccionadoId.Value);
+        productoSeleccionadoId = null;
+        ok = "Producto asignado correctamente al cliente.";
+        error = null;
+        AplicarFiltrosProductosAsignados();
+    }
+
+    private async Task QuitarProducto(ProductoCliente asignacion)
+    {
+        asignacion.IsActive = false;
+        asignacion.UpdatedAt = DateTime.UtcNow;
+        await ProductoClienteRepository.UpdateAsync(asignacion);
+        productosAsignados = await ProductoClienteRepository.GetByClienteAsync(asignacion.ClienteId);
+        ok = "Producto retirado del cliente correctamente.";
+        error = null;
+        AplicarFiltrosProductosAsignados();
+    }
+
+    private IEnumerable<Producto> productosDisponiblesSelector
+        => !clienteSeleccionadoId.HasValue
+            ? []
+            : (!string.IsNullOrWhiteSpace(textoBusquedaProductoDisponible) || (productosAsignados?.Any() ?? false))
+                ? productos.Where(p => p.IsActive)
+                    .Where(p => string.IsNullOrWhiteSpace(textoBusquedaProductoDisponible)
+                        || p.Codigo.Contains(textoBusquedaProductoDisponible.Trim(), StringComparison.OrdinalIgnoreCase)
+                        || p.Nombre.Contains(textoBusquedaProductoDisponible.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(p => p.Nombre)
+                : [];
+
+    private void AplicarFiltrosProductosAsignados()
+    {
+        IEnumerable<ProductoCliente> consulta = productosAsignados ?? [];
+
+        consulta = filtroEstadoAsignados switch
+        {
+            "inactivos" => consulta.Where(a => !a.Producto.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(a => a.Producto.IsActive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusquedaAsignados))
+        {
+            var texto = textoBusquedaAsignados.Trim();
+            consulta = consulta.Where(a =>
+                a.Producto.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || a.Producto.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || a.Producto.Industria.ToString().Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        productosAsignadosFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltrosAsignados()
+    {
+        textoBusquedaAsignados = string.Empty;
+        filtroEstadoAsignados = "activos";
+        AplicarFiltrosProductosAsignados();
+    }
+}

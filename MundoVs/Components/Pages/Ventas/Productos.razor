@@ -1,0 +1,834 @@
+@page "/productos"
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Calzado
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IProductoRepository ProductoRepository
+@inject CodigoNegocioService CodigoNegocio
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Productos</PageTitle>
+
+<div class="container-fluid cat-page">
+    <div class="d-flex align-items-start justify-content-between mb-2">
+        <div>
+            <div class="cat-title"><i class="bi bi-box-seam-fill me-1"></i>Productos</div>
+            <div class="cat-subtitle">Catálogo de productos, variantes y SKU</div>
+        </div>
+        <button class="btn btn-sm btn-primary" @onclick="NuevoProducto">
+            <i class="bi bi-plus-circle me-1"></i>Nuevo
+        </button>
+    </div>
+
+    <div class="cat-kpi mb-2">
+        <span class="cat-kpi-chip">Total: @productos.Count</span>
+        <span class="cat-kpi-chip active">Activos: @productos.Count(p => p.IsActive)</span>
+        <span class="cat-kpi-chip inactive">Inactivos: @productos.Count(p => !p.IsActive)</span>
+        @if (textoBusquedaProductos.Length > 0 || filtroIndustria.Length > 0 || filtroEstadoProductos != "activos")
+        {
+            <span class="cat-kpi-chip filtered">Filtrados: @productosFiltrados.Count()</span>
+        }
+    </div>
+
+    <div class="cat-filter-bar mb-3">
+        <div>
+            <label>Buscar</label>
+            <div class="input-group" style="width:260px">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input class="form-control" @bind="textoBusquedaProductos" @bind:after="AplicarFiltrosProductos" placeholder="Código, referencia, nombre..." />
+            </div>
+        </div>
+        <div>
+            <label>Industria</label>
+            <select class="form-select" style="width:140px" @bind="filtroIndustria" @bind:after="AplicarFiltrosProductos">
+                <option value="">Todas</option>
+                <option value="@IndustriaEnum.Calzado.ToString()">Calzado</option>
+                <option value="@IndustriaEnum.Serigrafia.ToString()">Serigrafía</option>
+            </select>
+        </div>
+        <div>
+            <label>Estado</label>
+            <select class="form-select" style="width:120px" @bind="filtroEstadoProductos" @bind:after="AplicarFiltrosProductos">
+                <option value="activos">Activos</option>
+                <option value="inactivos">Inactivos</option>
+                <option value="todos">Todos</option>
+            </select>
+        </div>
+        <div class="d-flex align-items-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LimpiarFiltrosProductos">
+                <i class="bi bi-x-circle me-1"></i>Limpiar
+            </button>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>@(productoEditando.Id == Guid.Empty ? "Nuevo Producto" : "Editar Producto")</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="productoEditando" OnValidSubmit="GuardarProducto">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Código</label>
+                            <InputText class="form-control" @bind-Value="productoEditando.Codigo" readonly />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="productoEditando.Nombre" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Referencia</label>
+                            <InputText class="form-control" @bind-Value="productoEditando.Referencia" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Descripción</label>
+                        <InputTextArea class="form-control" rows="3" @bind-Value="productoEditando.Descripcion" />
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Industria</label>
+                            <InputSelect class="form-select" @bind-Value="productoEditando.Industria">
+                                <option value="@IndustriaEnum.Calzado">Calzado</option>
+                                <option value="@IndustriaEnum.Serigrafia">Serigrafía</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Categoría</label>
+                            <InputText class="form-control" @bind-Value="productoEditando.Categoria" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Unidad de Medida</label>
+                            <InputText class="form-control" @bind-Value="productoEditando.UnidadMedida" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Precio Base</label>
+                            <InputNumber class="form-control" @bind-Value="productoEditando.PrecioBase" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3 d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.TieneVariantes" @bind-Value:after="OnTieneVariantesChanged" />
+                                <label class="form-check-label">Este producto usa variantes</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3 d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesTalla" disabled="@(!productoEditando.TieneVariantes)" @bind-Value:after="OnConfigVariantesChanged" />
+                                <label class="form-check-label">Generar variantes por talla</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3 d-flex align-items-end">
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesColor" disabled="@(!productoEditando.TieneVariantes)" @bind-Value:after="OnConfigVariantesChanged" />
+                                <label class="form-check-label">Generar variantes por color</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (productoEditando.TieneVariantes)
+                    {
+                        <div class="card border-0 bg-light mb-3">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                    <div>
+                                        <h6 class="mb-0">Variantes y SKU</h6>
+                                        <div class="text-muted small">Define si el SKU se genera por talla, color o ambas dimensiones.</div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="GenerarVariantes">
+                                        <i class="bi bi-upc-scan me-1"></i>Generar variantes
+                                    </button>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(variantesError))
+                                {
+                                    <div class="alert alert-warning py-2">@variantesError</div>
+                                }
+
+                                @if (productoEditando.UsaVariantesTalla)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Tallas disponibles</label>
+                                        @if (!tallasCatalogo.Any())
+                                        {
+                                            <div class="text-muted small">No hay tallas base configuradas para la empresa.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex flex-wrap gap-2">
+                                                @foreach (var talla in tallasCatalogo.OrderBy(t => t.Orden).ThenBy(t => t.Talla))
+                                                {
+                                                    <label class="badge rounded-pill bg-white text-dark border d-inline-flex align-items-center gap-2 px-3 py-2">
+                                                        <InputCheckbox class="form-check-input mt-0" @bind-Value="talla.Seleccionada" />
+                                                        <span>@talla.Talla <span class="text-muted">@talla.Sistema</span></span>
+                                                    </label>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (productoEditando.UsaVariantesColor)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Colores</label>
+                                        <InputText class="form-control" @bind-Value="coloresVariantesTexto" placeholder="Ej. Negro, Blanco, Azul Marino" />
+                                        <div class="form-text">Separar colores por coma.</div>
+                                    </div>
+                                }
+
+                                @if (!variantesEditando.Any())
+                                {
+                                    <div class="text-muted small">Genera las combinaciones para crear los SKU del producto.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>SKU</th>
+                                                    <th>Talla</th>
+                                                    <th>Color</th>
+                                                    <th>Precio variante</th>
+                                                    <th>Activa</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var variante in variantesEditando.OrderBy(v => v.Talla).ThenBy(v => v.Color).ThenBy(v => v.Sku))
+                                                {
+                                                    <tr>
+                                                        <td><InputText class="form-control form-control-sm" @bind-Value="variante.Sku" /></td>
+                                                        <td>@(string.IsNullOrWhiteSpace(variante.Talla) ? "—" : variante.Talla)</td>
+                                                        <td>@(string.IsNullOrWhiteSpace(variante.Color) ? "—" : variante.Color)</td>
+                                                        <td><InputNumber class="form-control form-control-sm" @bind-Value="variante.PrecioOverride" /></td>
+                                                        <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="variante.Activa" /></td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-save"></i> Guardar
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="CancelarEdicion">
+                            <i class="bi bi-x-circle"></i> Cancelar
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            @if (productos == null)
+            {
+                <div class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Cargando...</span></div>
+                    <div class="text-muted small mt-1">Cargando productos...</div>
+                </div>
+            }
+            else if (!productosFiltrados.Any())
+            {
+                <div class="text-center py-4 text-muted small"><i class="bi bi-inbox me-1"></i>Sin registros con los filtros actuales.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 cat-table">
+                        <thead>
+                            <tr>
+                                <th style="width:70px">Acciones</th>
+                                <th style="width:72px">Estado</th>
+                                <th>Código</th>
+                                <th>Referencia</th>
+                                <th>Nombre</th>
+                                <th>Industria</th>
+                                <th>Categoría</th>
+                                <th>Variantes</th>
+                                <th>Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var producto in productosFiltrados)
+                            {
+                                <tr class="@(!producto.IsActive ? "cat-row-inactive" : string.Empty)">
+                                    <td class="cat-actions">
+                                        <button class="cat-btn-edit me-1" @onclick="async () => await EditarProducto(producto)" title="Editar"><i class="bi bi-pencil"></i></button>
+                                        <button class="cat-btn-delete" @onclick="() => EliminarProducto(producto)" title="Desactivar"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                    <td><span class="@(producto.IsActive ? "cat-badge-active" : "cat-badge-inactive")">@(producto.IsActive ? "Activo" : "Inactivo")</span></td>
+                                    <td class="fw-semibold text-primary-emphasis">@producto.Codigo</td>
+                                    <td class="text-muted">@producto.Referencia</td>
+                                    <td>@producto.Nombre</td>
+                                    <td>
+                                        <span class="badge bg-@ObtenerColorIndustria(producto.Industria)" style="font-size:0.68rem">@producto.Industria</span>
+                                    </td>
+                                    <td>@producto.Categoria</td>
+                                    <td>
+                                        <span class="@(producto.TieneVariantes ? "cat-badge-active" : "cat-badge-inactive")">
+                                            @(producto.TieneVariantes ? "Sí" : "No")
+                                        </span>
+                                    </td>
+                                    <td class="fw-semibold">$@producto.PrecioBase.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .cat-page { padding: 0.65rem 0.9rem; }
+    .cat-title { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
+    .cat-subtitle { font-size: 0.74rem; color: #6c757d; }
+    .cat-kpi { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .cat-kpi-chip { font-size: 0.73rem; padding: 0.18rem 0.6rem; border-radius: 999px; border: 1px solid #dee2e6; background: #f8f9fa; color: #495057; font-weight: 600; }
+    .cat-kpi-chip.active { background: #d1e7dd; border-color: #a3cfbb; color: #146c43; }
+    .cat-kpi-chip.inactive { background: #e9ecef; border-color: #ced4da; color: #6c757d; }
+    .cat-kpi-chip.filtered { background: #cfe2ff; border-color: #9ec5fe; color: #084298; }
+    .cat-filter-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: flex-end; }
+    .cat-filter-bar label { display: block; font-size: 0.68rem; font-weight: 700; color: #6c757d; margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cat-filter-bar .form-control,
+    .cat-filter-bar .form-select { font-size: 0.8rem; padding: 0.22rem 0.5rem; height: 28px; }
+    .cat-filter-bar .input-group-text { font-size: 0.78rem; padding: 0.22rem 0.5rem; height: 28px; background: #f8f9fa; }
+    .cat-filter-bar .btn { font-size: 0.78rem; padding: 0.22rem 0.6rem; height: 28px; }
+    .cat-table { font-size: 0.81rem; }
+    .cat-table thead tr th { background: #1e3a5f !important; color: #fff !important; font-size: 0.69rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border: none; padding: 0.38rem 0.6rem; }
+    .cat-table tbody tr td { padding: 0.28rem 0.6rem; vertical-align: middle; border-color: #f0f2f5; }
+    .cat-table tbody tr:hover td { background-color: #f5f8ff; }
+    .cat-row-inactive td { opacity: 0.5; }
+    .cat-badge-active { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #d1e7dd; color: #146c43; border: 1px solid #a3cfbb; font-weight: 600; white-space: nowrap; }
+    .cat-badge-inactive { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #e9ecef; color: #6c757d; border: 1px solid #ced4da; font-weight: 600; white-space: nowrap; }
+    .cat-actions { white-space: nowrap; }
+    .cat-btn-edit, .cat-btn-delete { background: transparent; border-radius: 4px; padding: 0.14rem 0.38rem; font-size: 0.73rem; line-height: 1; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .cat-btn-edit { border: 1px solid #0d6efd; color: #0d6efd; }
+    .cat-btn-edit:hover { background: #0d6efd; color: #fff; }
+    .cat-btn-delete { border: 1px solid #dc3545; color: #dc3545; }
+    .cat-btn-delete:hover { background: #dc3545; color: #fff; }
+</style>
+
+@code {
+    private List<Producto> productos = [];
+    private IEnumerable<Producto> productosFiltrados = [];
+    private Producto productoEditando = new();
+    private bool mostrarFormulario = false;
+    private List<TallaVarianteEditor> tallasCatalogo = [];
+    private List<ProductoVarianteEditor> variantesEditando = [];
+    private string coloresVariantesTexto = string.Empty;
+    private string? variantesError;
+    private Guid _empresaId;
+    private string filtroIndustria = string.Empty;
+    private string filtroEstadoProductos = "activos";
+    private string textoBusquedaProductos = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContextoAsync();
+        await CargarTallasCatalogoAsync();
+        await CargarProductos();
+    }
+
+    private async Task CargarContextoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarProductos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        productos = await db.Productos
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(p => p.EmpresaId == _empresaId)
+            .OrderBy(p => p.Nombre)
+            .ToListAsync();
+        AplicarFiltrosProductos();
+    }
+
+    private void AplicarFiltrosProductos()
+    {
+        IEnumerable<Producto> consulta = productos;
+
+        if (!string.IsNullOrWhiteSpace(textoBusquedaProductos))
+        {
+            var texto = textoBusquedaProductos.Trim();
+            consulta = consulta.Where(p =>
+                p.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (p.Referencia?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || p.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (p.Categoria?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtroIndustria)
+            && Enum.TryParse<IndustriaEnum>(filtroIndustria, out var industria))
+        {
+            consulta = consulta.Where(p => p.Industria == industria);
+        }
+
+        consulta = filtroEstadoProductos switch
+        {
+            "inactivos" => consulta.Where(p => !p.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(p => p.IsActive)
+        };
+
+        productosFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltrosProductos()
+    {
+        textoBusquedaProductos = string.Empty;
+        filtroIndustria = string.Empty;
+        filtroEstadoProductos = "activos";
+        AplicarFiltrosProductos();
+    }
+
+    private async Task NuevoProducto()
+    {
+        productoEditando = new Producto
+        {
+            UnidadMedida = "pza",
+            Referencia = string.Empty,
+            Codigo = _empresaId == Guid.Empty ? string.Empty : await CodigoNegocio.GetNextEntityCodeAsync(_empresaId, "PRD", "Consecutivo:Producto")
+        };
+        variantesEditando = [];
+        coloresVariantesTexto = string.Empty;
+        variantesError = null;
+        foreach (var talla in tallasCatalogo)
+        {
+            talla.Seleccionada = false;
+        }
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarProducto(Producto producto)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var productoDb = await db.Productos
+            .AsNoTracking()
+            .Include(p => p.Variantes)
+            .FirstOrDefaultAsync(p => p.Id == producto.Id);
+
+        if (productoDb == null)
+        {
+            return;
+        }
+
+        productoEditando = new Producto
+        {
+            Id = productoDb.Id,
+            EmpresaId = productoDb.EmpresaId,
+            Codigo = productoDb.Codigo,
+            Referencia = productoDb.Referencia,
+            Nombre = productoDb.Nombre,
+            Descripcion = productoDb.Descripcion,
+            Industria = productoDb.Industria,
+            PrecioBase = productoDb.PrecioBase,
+            UnidadMedida = productoDb.UnidadMedida,
+            Categoria = productoDb.Categoria,
+            TieneVariantes = productoDb.TieneVariantes,
+            UsaVariantesTalla = productoDb.UsaVariantesTalla,
+            UsaVariantesColor = productoDb.UsaVariantesColor,
+            CreatedAt = productoDb.CreatedAt,
+            CreatedBy = productoDb.CreatedBy,
+            UpdatedAt = productoDb.UpdatedAt,
+            UpdatedBy = productoDb.UpdatedBy,
+            IsActive = productoDb.IsActive
+        };
+
+        variantesEditando = productoDb.Variantes
+            .OrderBy(v => v.Talla)
+            .ThenBy(v => v.Color)
+            .Select(v => new ProductoVarianteEditor
+            {
+                Id = v.Id,
+                Sku = v.Sku,
+                Talla = v.Talla,
+                Color = v.Color,
+                PrecioOverride = v.PrecioOverride,
+                Activa = v.Activa
+            })
+            .ToList();
+
+        coloresVariantesTexto = string.Join(", ", variantesEditando
+            .Select(v => v.Color)
+            .Where(color => !string.IsNullOrWhiteSpace(color))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        SincronizarTallasSeleccionadas();
+        variantesError = null;
+        mostrarFormulario = true;
+    }
+
+    private async Task GuardarProducto()
+    {
+        if (productoEditando.TieneVariantes && !productoEditando.UsaVariantesTalla && !productoEditando.UsaVariantesColor)
+        {
+            variantesError = "Selecciona al menos una dimensión para generar los SKU del producto.";
+            return;
+        }
+
+        if (productoEditando.TieneVariantes && !variantesEditando.Any())
+        {
+            GenerarVariantes();
+            if (!variantesEditando.Any())
+            {
+                return;
+            }
+        }
+
+        PrepararProductoParaGuardar();
+
+        if (productoEditando.Id == Guid.Empty && string.IsNullOrWhiteSpace(productoEditando.Codigo))
+        {
+            productoEditando.Codigo = await CodigoNegocio.GetNextEntityCodeAsync(_empresaId, "PRD", "Consecutivo:Producto");
+        }
+
+        if (productoEditando.Id == Guid.Empty)
+        {
+            await ProductoRepository.AddAsync(productoEditando);
+        }
+        else
+        {
+            productoEditando.UpdatedAt = DateTime.UtcNow;
+            await ProductoRepository.UpdateAsync(productoEditando);
+        }
+
+        await GuardarVariantesProductoAsync(productoEditando.Id);
+
+        await CargarProductos();
+        CancelarEdicion();
+    }
+
+    private async Task EliminarProducto(Producto producto)
+    {
+        producto.IsActive = false;
+        producto.UpdatedAt = DateTime.UtcNow;
+        await ProductoRepository.UpdateAsync(producto);
+        await CargarProductos();
+    }
+
+    private void CancelarEdicion()
+    {
+        productoEditando = new();
+        variantesEditando = [];
+        coloresVariantesTexto = string.Empty;
+        variantesError = null;
+        foreach (var talla in tallasCatalogo)
+        {
+            talla.Seleccionada = false;
+        }
+        mostrarFormulario = false;
+    }
+
+    private void OnTieneVariantesChanged()
+    {
+        if (!productoEditando.TieneVariantes)
+        {
+            productoEditando.UsaVariantesTalla = false;
+            productoEditando.UsaVariantesColor = false;
+            variantesEditando = [];
+            coloresVariantesTexto = string.Empty;
+            foreach (var talla in tallasCatalogo)
+            {
+                talla.Seleccionada = false;
+            }
+        }
+
+        variantesError = null;
+    }
+
+    private void OnConfigVariantesChanged()
+    {
+        if (!productoEditando.UsaVariantesTalla)
+        {
+            foreach (var talla in tallasCatalogo)
+            {
+                talla.Seleccionada = false;
+            }
+        }
+
+        if (!productoEditando.UsaVariantesColor)
+        {
+            coloresVariantesTexto = string.Empty;
+        }
+
+        variantesError = null;
+    }
+
+    private async Task CargarTallasCatalogoAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        tallasCatalogo = await db.CatalogoTallasCalzado
+            .AsNoTracking()
+            .Where(t => t.IsActive && t.Activa)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => new TallaVarianteEditor
+            {
+                Talla = t.Talla,
+                Sistema = t.SistemaNumeracion.ToString(),
+                Orden = t.Orden
+            })
+            .ToListAsync();
+    }
+
+    private void SincronizarTallasSeleccionadas()
+    {
+        var tallasVariantes = variantesEditando
+            .Select(v => v.Talla)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var talla in tallasCatalogo)
+        {
+            talla.Seleccionada = tallasVariantes.Contains(talla.Talla);
+        }
+    }
+
+    private void GenerarVariantes()
+    {
+        variantesError = null;
+
+        if (!productoEditando.TieneVariantes)
+        {
+            variantesEditando = [];
+            return;
+        }
+
+        if (!productoEditando.UsaVariantesTalla && !productoEditando.UsaVariantesColor)
+        {
+            variantesError = "Activa talla, color o ambas dimensiones para generar variantes.";
+            return;
+        }
+
+        var tallas = productoEditando.UsaVariantesTalla
+            ? tallasCatalogo.Where(t => t.Seleccionada).OrderBy(t => t.Orden).Select(t => t.Talla.Trim()).ToList()
+            : new List<string?> { null };
+
+        if (productoEditando.UsaVariantesTalla && !tallas.Any())
+        {
+            variantesError = "Selecciona al menos una talla para generar variantes.";
+            return;
+        }
+
+        var colores = productoEditando.UsaVariantesColor
+            ? coloresVariantesTexto.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string?>()
+                .ToList()
+            : new List<string?> { null };
+
+        if (productoEditando.UsaVariantesColor && !colores.Any())
+        {
+            variantesError = "Captura al menos un color para generar variantes.";
+            return;
+        }
+
+        var existentes = variantesEditando.ToDictionary(
+            v => ObtenerClaveVariante(v.Talla, v.Color),
+            v => v,
+            StringComparer.OrdinalIgnoreCase);
+
+        var skusUsados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nuevasVariantes = new List<ProductoVarianteEditor>();
+
+        foreach (var talla in tallas)
+        {
+            foreach (var color in colores)
+            {
+                var clave = ObtenerClaveVariante(talla, color);
+                var skuBase = GenerarSkuVariante(talla, color);
+                var sku = skuBase;
+                var consecutivo = 2;
+                while (!skusUsados.Add(sku))
+                {
+                    sku = $"{skuBase}-{consecutivo++}";
+                }
+
+                if (existentes.TryGetValue(clave, out var varianteExistente))
+                {
+                    varianteExistente.Sku = string.IsNullOrWhiteSpace(varianteExistente.Sku) ? sku : varianteExistente.Sku.Trim().ToUpperInvariant();
+                    varianteExistente.Talla = talla;
+                    varianteExistente.Color = color;
+                    nuevasVariantes.Add(varianteExistente);
+                    continue;
+                }
+
+                nuevasVariantes.Add(new ProductoVarianteEditor
+                {
+                    Sku = sku,
+                    Talla = talla,
+                    Color = color,
+                    Activa = true
+                });
+            }
+        }
+
+        variantesEditando = nuevasVariantes;
+    }
+
+    private async Task GuardarVariantesProductoAsync(Guid productoId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existentes = await db.ProductosVariantes.Where(v => v.ProductoId == productoId).ToListAsync();
+        if (existentes.Any())
+        {
+            db.ProductosVariantes.RemoveRange(existentes);
+        }
+
+        if (!productoEditando.TieneVariantes)
+        {
+            await db.SaveChangesAsync();
+            return;
+        }
+
+        foreach (var variante in variantesEditando.Where(v => !string.IsNullOrWhiteSpace(v.Sku)))
+        {
+            db.ProductosVariantes.Add(new ProductoVariante
+            {
+                Id = variante.Id == Guid.Empty ? Guid.NewGuid() : variante.Id,
+                ProductoId = productoId,
+                Sku = variante.Sku.Trim().ToUpperInvariant(),
+                Talla = LimpiarTexto(variante.Talla),
+                Color = LimpiarTexto(variante.Color),
+                PrecioOverride = variante.PrecioOverride,
+                Activa = variante.Activa,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private void PrepararProductoParaGuardar()
+    {
+        productoEditando.Codigo = productoEditando.Codigo.Trim().ToUpperInvariant();
+        productoEditando.Referencia = LimpiarTexto(productoEditando.Referencia);
+        productoEditando.Nombre = productoEditando.Nombre.Trim();
+        productoEditando.Descripcion = LimpiarTexto(productoEditando.Descripcion);
+        productoEditando.Categoria = LimpiarTexto(productoEditando.Categoria);
+        productoEditando.UnidadMedida = LimpiarTexto(productoEditando.UnidadMedida) ?? "pza";
+
+        if (!productoEditando.TieneVariantes)
+        {
+            productoEditando.UsaVariantesTalla = false;
+            productoEditando.UsaVariantesColor = false;
+            variantesEditando = [];
+            return;
+        }
+
+        foreach (var variante in variantesEditando)
+        {
+            variante.Sku = variante.Sku.Trim().ToUpperInvariant();
+            variante.Talla = LimpiarTexto(variante.Talla);
+            variante.Color = LimpiarTexto(variante.Color);
+        }
+    }
+
+    private string GenerarSkuVariante(string? talla, string? color)
+    {
+        var segmentos = new List<string> { NormalizarSegmentoSku(productoEditando.Codigo) };
+
+        if (!string.IsNullOrWhiteSpace(color))
+        {
+            segmentos.Add(NormalizarSegmentoSku(color));
+        }
+
+        if (!string.IsNullOrWhiteSpace(talla))
+        {
+            segmentos.Add(NormalizarSegmentoSku(talla));
+        }
+
+        return string.Join("-", segmentos.Where(s => !string.IsNullOrWhiteSpace(s)));
+    }
+
+    private static string ObtenerClaveVariante(string? talla, string? color)
+        => $"{talla?.Trim().ToUpperInvariant() ?? "SIN-TALLA"}|{color?.Trim().ToUpperInvariant() ?? "SIN-COLOR"}";
+
+    private static string NormalizarSegmentoSku(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+        {
+            return string.Empty;
+        }
+
+        var caracteres = valor
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToUpperInvariant)
+            .Take(18)
+            .ToArray();
+
+        return caracteres.Length == 0 ? "VAR" : new string(caracteres);
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private async Task FiltrarPorIndustria(ChangeEventArgs e)
+    {
+        filtroIndustria = e.Value?.ToString() ?? string.Empty;
+        AplicarFiltrosProductos();
+        await Task.CompletedTask;
+    }
+
+    private string ObtenerColorIndustria(IndustriaEnum industria)
+    {
+        return industria switch
+        {
+            IndustriaEnum.Calzado => "primary",
+            IndustriaEnum.Serigrafia => "success",
+            _ => "secondary"
+        };
+    }
+
+    private sealed class TallaVarianteEditor
+    {
+        public string Talla { get; set; } = string.Empty;
+        public string Sistema { get; set; } = string.Empty;
+        public int Orden { get; set; }
+        public bool Seleccionada { get; set; }
+    }
+
+    private sealed class ProductoVarianteEditor
+    {
+        public Guid Id { get; set; }
+        public string Sku { get; set; } = string.Empty;
+        public string? Talla { get; set; }
+        public string? Color { get; set; }
+        public decimal? PrecioOverride { get; set; }
+        public bool Activa { get; set; } = true;
+    }
+}

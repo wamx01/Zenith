@@ -1,0 +1,648 @@
+@page "/rrhh/marcaciones"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IRrhhAsistenciaProcessor RrhhAsistenciaProcessor
+@rendermode InteractiveServer
+
+<PageTitle>Marcaciones</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver marcaciones.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-start justify-content-between mb-3 gap-3 flex-wrap">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-list-check me-2"></i>Marcaciones</h1>
+                <p class="text-muted mb-0">Consulta las marcas crudas recibidas desde los checadores y detecta pendientes de clasificación.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-secondary" href="/rrhh/checadores"><i class="bi bi-hdd-network me-1"></i>Checadores</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/control-tiempo"><i class="bi bi-stopwatch me-1"></i>Control de tiempos</a>
+                @if (_puedeEditar)
+                {
+                    <button class="btn btn-outline-primary" @onclick="NuevoManual"><i class="bi bi-plus-circle me-1"></i>Marcaje manual</button>
+                }
+                <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>Actualizar</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (_puedeEditar && mostrarFormManual)
+        {
+            <div class="card border-primary shadow-sm mb-4">
+                <div class="card-header bg-primary text-white">Marcaje manual</div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Empleado</label>
+                            <InputSelect class="form-select" @bind-Value="manualEmpleadoIdTexto" @bind-Value:after="OnEmpleadoManualChangedAsync">
+                                <option value="">Seleccione...</option>
+                                @foreach (var empleado in empleados)
+                                {
+                                    <option value="@empleado.Id.ToString()">@empleado.NombreCompleto (@empleado.NumeroEmpleado)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Checador</label>
+                            <InputSelect class="form-select" @bind-Value="manualChecadorIdTexto" @bind-Value:after="OnChecadorManualChangedAsync">
+                                <option value="">Seleccione...</option>
+                                @foreach (var checador in checadores)
+                                {
+                                    <option value="@checador.Id.ToString()">@checador.Nombre</option>
+                                }
+                            </InputSelect>
+                            <div class="form-text">Zona del checador: @ObtenerDescripcionZonaChecadorSeleccionado(manualChecadorIdTexto)</div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Fecha</label>
+                            <InputDate class="form-control" @bind-Value="manualFecha" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Hora</label>
+                            <InputText class="form-control" @bind-Value="manualHoraTexto" placeholder="08:00" />
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">Tipo</label>
+                            <InputText class="form-control" @bind-Value="manualTipo" placeholder="IN" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Código checador</label>
+                            <InputText class="form-control" @bind-Value="manualCodigoChecador" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Observación</label>
+                            <InputText class="form-control" @bind-Value="manualObservacion" placeholder="Ej. olvidó checar salida" />
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-success" @onclick="GuardarMarcacionManualAsync" disabled="@cargando"><i class="bi bi-save me-1"></i>Guardar y reprocesar</button>
+                            <button class="btn btn-outline-secondary" @onclick="CerrarManual">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Mostradas</div><div class="fs-4 fw-bold">@lista.Count</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Pendientes</div><div class="fs-4 fw-bold">@lista.Count(m => !m.Procesada)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Procesadas</div><div class="fs-4 fw-bold">@lista.Count(m => m.Procesada)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Sin empleado</div><div class="fs-4 fw-bold">@lista.Count(m => m.EmpleadoId == null)</div></div></div></div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white">Filtros</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Checador</label>
+                        <InputSelect class="form-select" @bind-Value="filtroChecadorIdTexto">
+                            <option value="">Todos</option>
+                            @foreach (var checador in checadores)
+                            {
+                                <option value="@checador.Id.ToString()">@checador.Nombre</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Desde</label>
+                        <InputDate class="form-control" @bind-Value="filtroDesde" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Hasta</label>
+                        <InputDate class="form-control" @bind-Value="filtroHasta" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Estado</label>
+                        <InputSelect class="form-select" @bind-Value="filtroEstado">
+                            <option value="todos">Todos</option>
+                            <option value="pendientes">Pendientes</option>
+                            <option value="procesadas">Procesadas</option>
+                            <option value="sin-empleado">Sin empleado</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Código checador</label>
+                        <InputText class="form-control" @bind-Value="filtroCodigo" placeholder="Código o nómina del reloj" />
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar filtros</button>
+                        <button class="btn btn-outline-secondary" @onclick="LimpiarFiltros" disabled="@cargando">Limpiar</button>
+                        <span class="small text-muted align-self-center">Vista limitada a las últimas @RegistrosRecientesMaximos marcaciones.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0 align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Empleado</th>
+                                <th>Código</th>
+                                <th>Checador</th>
+                                <th>Tipo</th>
+                                <th>Estado</th>
+                                <th>Resultado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (lista.Count == 0)
+                            {
+                                <tr><td colspan="7" class="text-center text-muted py-4">No hay marcaciones para los filtros seleccionados.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in lista)
+                                {
+                                    <tr>
+                                        <td class="small">
+                                            <div class="fw-semibold">@FormatearFechaMarcacionLocal(item)</div>
+                                            <div class="text-muted">@ObtenerPieFechaMarcacion(item)</div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold">@(item.Empleado?.NombreCompleto ?? "Sin vincular")</div>
+                                            <div class="small text-muted">@(item.Empleado?.NumeroEmpleado ?? "Sin número")</div>
+                                        </td>
+                                        <td class="small">@item.CodigoChecador</td>
+                                        <td>
+                                            <div class="fw-semibold">@item.Checador.Nombre</div>
+                                            <div class="small text-muted">@(string.IsNullOrWhiteSpace(item.Checador.Ip) ? "Sin IP" : $"{item.Checador.Ip}:{item.Checador.Puerto}")</div>
+                                        </td>
+                                        <td class="small">@(item.TipoMarcacionRaw ?? "—")</td>
+                                        <td>
+                                            <span class="badge @ObtenerClaseEstado(item)">@ObtenerTextoEstado(item)</span>
+                                        </td>
+                                        <td class="small">@(item.ResultadoProcesamiento ?? "Sin resultado")</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RrhhMarcacion> lista = [];
+    private List<RrhhChecador> checadores = [];
+    private List<Empleado> empleados = [];
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private bool cargando;
+    private string? error;
+    private string? ok;
+    private string filtroChecadorIdTexto = string.Empty;
+    private DateTime? filtroDesde = DateTime.Today.AddDays(-7);
+    private DateTime? filtroHasta = DateTime.Today;
+    private string filtroEstado = "todos";
+    private string? filtroCodigo;
+    private bool mostrarFormManual;
+    private string manualEmpleadoIdTexto = string.Empty;
+    private string manualChecadorIdTexto = string.Empty;
+    private DateTime manualFecha = DateTime.Today;
+    private string manualHoraTexto = string.Empty;
+    private string manualTipo = string.Empty;
+    private string manualCodigoChecador = string.Empty;
+    private string? manualObservacion;
+    private static int RegistrosRecientesMaximos => 100;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "rrhh.marcaciones.auditoria");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        cargando = true;
+        error = null;
+
+        try
+        {
+            if (_empresaId == Guid.Empty)
+            {
+                error = "No hay empresa activa.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            checadores = await db.RrhhChecadores
+                .AsNoTracking()
+                .Where(c => c.EmpresaId == _empresaId)
+                .OrderBy(c => c.Nombre)
+                .ToListAsync();
+
+            empleados = await db.Empleados
+                .AsNoTracking()
+                .Where(e => e.EmpresaId == _empresaId && e.IsActive)
+                .OrderBy(e => e.Nombre)
+                .ThenBy(e => e.ApellidoPaterno)
+                .ToListAsync();
+
+            var query = db.RrhhMarcaciones
+                .AsNoTracking()
+                .Include(m => m.Checador)
+                .Include(m => m.Empleado)
+                .Where(m => m.EmpresaId == _empresaId);
+
+            if (Guid.TryParse(filtroChecadorIdTexto, out var checadorId) && checadorId != Guid.Empty)
+            {
+                query = query.Where(m => m.ChecadorId == checadorId);
+            }
+
+            if (filtroDesde.HasValue)
+            {
+                var desdeLocal = filtroDesde.Value.Date;
+                query = query.Where(m => (m.FechaHoraMarcacionLocal ?? m.FechaHoraMarcacionUtc) >= desdeLocal);
+            }
+
+            if (filtroHasta.HasValue)
+            {
+                var hastaLocalExclusivo = filtroHasta.Value.Date.AddDays(1);
+                query = query.Where(m => (m.FechaHoraMarcacionLocal ?? m.FechaHoraMarcacionUtc) < hastaLocalExclusivo);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtroCodigo))
+            {
+                var codigo = filtroCodigo.Trim();
+                query = query.Where(m => m.CodigoChecador.Contains(codigo));
+            }
+
+            query = filtroEstado switch
+            {
+                "pendientes" => query.Where(m => !m.Procesada),
+                "procesadas" => query.Where(m => m.Procesada),
+                "sin-empleado" => query.Where(m => m.EmpleadoId == null),
+                _ => query
+            };
+
+            lista = await query
+                .OrderByDescending(m => m.FechaHoraMarcacionUtc)
+                .Take(RegistrosRecientesMaximos)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        filtroChecadorIdTexto = string.Empty;
+        filtroDesde = DateTime.Today.AddDays(-7);
+        filtroHasta = DateTime.Today;
+        filtroEstado = "todos";
+        filtroCodigo = null;
+        await CargarAsync();
+    }
+
+    private void NuevoManual()
+    {
+        error = ok = null;
+        manualEmpleadoIdTexto = string.Empty;
+        manualChecadorIdTexto = checadores.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+        manualFecha = DateTime.Today;
+        manualHoraTexto = string.Empty;
+        manualTipo = string.Empty;
+        manualCodigoChecador = string.Empty;
+        manualObservacion = null;
+        mostrarFormManual = true;
+    }
+
+    private void CerrarManual()
+    {
+        mostrarFormManual = false;
+        error = ok = null;
+    }
+
+    private Task OnEmpleadoManualChangedAsync()
+    {
+        if (Guid.TryParse(manualEmpleadoIdTexto, out var empleadoId))
+        {
+            var empleado = empleados.FirstOrDefault(e => e.Id == empleadoId);
+            if (empleado != null)
+            {
+                manualCodigoChecador = empleado.CodigoChecador ?? string.Empty;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnChecadorManualChangedAsync()
+        => Task.CompletedTask;
+
+    private async Task GuardarMarcacionManualAsync()
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para registrar marcaciones manuales.";
+            return;
+        }
+
+        if (!Guid.TryParse(manualEmpleadoIdTexto, out var empleadoId) || empleadoId == Guid.Empty)
+        {
+            error = "Selecciona un empleado.";
+            return;
+        }
+
+        if (!Guid.TryParse(manualChecadorIdTexto, out var checadorId) || checadorId == Guid.Empty)
+        {
+            error = "Selecciona un checador.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(manualCodigoChecador))
+        {
+            error = "El empleado debe tener código de checador o debes capturarlo manualmente.";
+            return;
+        }
+
+        if (!TimeSpan.TryParse(manualHoraTexto, out var hora))
+        {
+            error = "La hora manual debe tener formato HH:mm.";
+            return;
+        }
+
+        cargando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var checador = checadores.FirstOrDefault(c => c.Id == checadorId)
+                ?? await db.RrhhChecadores.AsNoTracking().FirstOrDefaultAsync(c => c.Id == checadorId && c.EmpresaId == _empresaId);
+
+            if (checador == null)
+            {
+                error = "No se encontró el checador seleccionado.";
+                return;
+            }
+
+            var fechaLocal = manualFecha.Date.Add(hora);
+            var zonaHorariaAplicada = ObtenerZonaHorariaAplicada(checador.ZonaHoraria);
+            var fechaUtc = ConvertirLocalChecadorAUtc(fechaLocal, zonaHorariaAplicada);
+            var hashManual = $"manual:{_empresaId}:{checadorId}:{empleadoId}:{fechaUtc:O}";
+
+            var existe = await db.RrhhMarcaciones.AnyAsync(m => m.HashUnico == hashManual);
+            if (existe)
+            {
+                error = "Ya existe una marcación manual con la misma fecha y hora.";
+                return;
+            }
+
+            db.RrhhMarcaciones.Add(new RrhhMarcacion
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                ChecadorId = checadorId,
+                EmpleadoId = empleadoId,
+                CodigoChecador = manualCodigoChecador.Trim(),
+                FechaHoraMarcacionLocal = DateTime.SpecifyKind(fechaLocal, DateTimeKind.Unspecified),
+                FechaHoraMarcacionUtc = fechaUtc,
+                ZonaHorariaAplicada = zonaHorariaAplicada,
+                TipoMarcacionRaw = string.IsNullOrWhiteSpace(manualTipo) ? "MANUAL" : manualTipo.Trim(),
+                Origen = "Manual",
+                EventoIdExterno = $"MANUAL-{Guid.NewGuid():N}",
+                HashUnico = hashManual,
+                EsManual = true,
+                Procesada = false,
+                ResultadoProcesamiento = "Pendiente de reproceso manual",
+                PayloadRaw = string.IsNullOrWhiteSpace(manualObservacion) ? "Marcación manual desde UI" : $"Marcación manual desde UI. {manualObservacion.Trim()}",
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+
+            await db.SaveChangesAsync();
+            await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, DateOnly.FromDateTime(manualFecha.Date), DateOnly.FromDateTime(manualFecha.Date), empleadoId);
+            await db.SaveChangesAsync();
+
+            ok = "Marcación manual guardada y asistencia reprocesada.";
+            mostrarFormManual = false;
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private static string ObtenerTextoEstado(RrhhMarcacion marcacion)
+    {
+        if (marcacion.EmpleadoId == null)
+        {
+            return "Sin empleado";
+        }
+
+        return marcacion.Procesada ? "Procesada" : "Pendiente";
+    }
+
+    private static string ObtenerClaseEstado(RrhhMarcacion marcacion)
+    {
+        if (marcacion.EmpleadoId == null)
+        {
+            return "bg-secondary";
+        }
+
+        return marcacion.Procesada ? "bg-success" : "bg-warning text-dark";
+    }
+
+    private string FormatearFechaMarcacionLocal(RrhhMarcacion marcacion)
+        => ObtenerFechaHoraLocalMarcacion(marcacion).ToString("dd/MM/yyyy HH:mm");
+
+    private string ObtenerPieFechaMarcacion(RrhhMarcacion marcacion)
+        => $"{ObtenerDescripcionZonaHoraria(marcacion.ZonaHorariaAplicada ?? marcacion.Checador?.ZonaHoraria)} · UTC {DateTime.SpecifyKind(marcacion.FechaHoraMarcacionUtc, DateTimeKind.Utc):dd/MM/yyyy HH:mm} · {(marcacion.EventoIdExterno ?? "Sin evento")}";
+
+    private string ObtenerDescripcionZonaChecadorSeleccionado(string checadorIdTexto)
+    {
+        if (!Guid.TryParse(checadorIdTexto, out var checadorId))
+        {
+            return "Sin seleccionar";
+        }
+
+        return ObtenerDescripcionZonaHoraria(checadores.FirstOrDefault(c => c.Id == checadorId)?.ZonaHoraria);
+    }
+
+    private TimeZoneInfo ObtenerZonaHorariaFiltro(Guid checadorId)
+    {
+        if (checadorId != Guid.Empty)
+        {
+            return ResolverZonaHoraria(checadores.FirstOrDefault(c => c.Id == checadorId)?.ZonaHoraria);
+        }
+
+        return ResolverZonaHoraria(null);
+    }
+
+    private static string ObtenerDescripcionZonaHoraria(string? zonaHoraria)
+        => string.IsNullOrWhiteSpace(zonaHoraria)
+            ? "Centro (predeterminada)"
+            : zonaHoraria.Trim();
+
+    private static string ObtenerZonaHorariaAplicada(string? zonaHoraria)
+        => string.IsNullOrWhiteSpace(zonaHoraria)
+            ? ResolverZonaHoraria(null).Id
+            : zonaHoraria.Trim();
+
+    private static DateTime ObtenerFechaHoraLocalMarcacion(RrhhMarcacion marcacion)
+    {
+        if (marcacion.FechaHoraMarcacionLocal.HasValue)
+        {
+            return DateTime.SpecifyKind(marcacion.FechaHoraMarcacionLocal.Value, DateTimeKind.Unspecified);
+        }
+
+        return ConvertirUtcAZonaHoraria(marcacion.FechaHoraMarcacionUtc, marcacion.ZonaHorariaAplicada ?? marcacion.Checador?.ZonaHoraria);
+    }
+
+    private static DateTime ConvertirUtcAZonaHoraria(DateTime fechaUtc, string? zonaHoraria)
+    {
+        var utc = fechaUtc.Kind == DateTimeKind.Utc ? fechaUtc : DateTime.SpecifyKind(fechaUtc, DateTimeKind.Utc);
+        return TimeZoneInfo.ConvertTimeFromUtc(utc, ResolverZonaHoraria(zonaHoraria));
+    }
+
+    private static DateTime ConvertirLocalChecadorAUtc(DateTime fechaLocal, string? zonaHoraria)
+        => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(fechaLocal, DateTimeKind.Unspecified), ResolverZonaHoraria(zonaHoraria));
+
+    private static TimeZoneInfo ResolverZonaHoraria(string? zonaHoraria)
+    {
+        const string defaultMexicoTimeZone = "Central Standard Time (Mexico)";
+
+        if (string.IsNullOrWhiteSpace(zonaHoraria))
+        {
+            return ResolverZonaHoraria(defaultMexicoTimeZone);
+        }
+
+        if (TryCreateUtcOffsetTimeZone(zonaHoraria, out var zonaHorariaOffset))
+        {
+            return zonaHorariaOffset;
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(zonaHoraria.Trim());
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            if (TimeZoneAliases.TryGetValue(zonaHoraria.Trim(), out var alias))
+            {
+                try
+                {
+                    return TimeZoneInfo.FindSystemTimeZoneById(alias);
+                }
+                catch (TimeZoneNotFoundException)
+                {
+                }
+            }
+        }
+        catch (InvalidTimeZoneException)
+        {
+        }
+
+        return TimeZoneInfo.Utc;
+    }
+
+    private static bool TryCreateUtcOffsetTimeZone(string zonaHoraria, out TimeZoneInfo timeZone)
+    {
+        var normalized = zonaHoraria.Trim().ToUpperInvariant();
+        if (normalized == "UTC")
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return true;
+        }
+
+        if (!normalized.StartsWith("UTC", StringComparison.Ordinal) || normalized.Length <= 3)
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
+        }
+
+        var offsetText = normalized[3..];
+        if (offsetText.Length == 3)
+        {
+            offsetText += ":00";
+        }
+
+        if (offsetText.Length != 6
+            || (offsetText[0] != '+' && offsetText[0] != '-')
+            || offsetText[3] != ':'
+            || !int.TryParse(offsetText[1..3], out var hours)
+            || !int.TryParse(offsetText[4..6], out var minutes))
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
+        }
+
+        var totalMinutes = (hours * 60) + minutes;
+        var offset = offsetText[0] == '-'
+            ? TimeSpan.FromMinutes(-totalMinutes)
+            : TimeSpan.FromMinutes(totalMinutes);
+
+        try
+        {
+            var id = $"UTC{(offset >= TimeSpan.Zero ? "+" : "-")}{Math.Abs(offset.Hours):00}:{Math.Abs(offset.Minutes):00}";
+            timeZone = TimeZoneInfo.CreateCustomTimeZone(id, offset, id, id);
+            return true;
+        }
+        catch
+        {
+            timeZone = TimeZoneInfo.Utc;
+            return false;
+        }
+    }
+
+    private static readonly Dictionary<string, string> TimeZoneAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["America/Mexico_City"] = "Central Standard Time (Mexico)",
+        ["America/Merida"] = "Central Standard Time (Mexico)",
+        ["America/Cancun"] = "Eastern Standard Time (Mexico)",
+        ["America/Chihuahua"] = "Mountain Standard Time (Mexico)",
+        ["America/Hermosillo"] = "Mexico Standard Time 2",
+        ["America/Mazatlan"] = "Mountain Standard Time (Mexico)",
+        ["America/Tijuana"] = "Pacific Standard Time (Mexico)",
+        ["Etc/UTC"] = "UTC"
+    };
+}

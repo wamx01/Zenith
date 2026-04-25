@@ -1,0 +1,487 @@
+@page "/proveedores"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject CodigoNegocioService CodigoNegocio
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Proveedores</PageTitle>
+
+<div class="container-fluid cat-page">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver proveedores.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-start justify-content-between mb-2">
+        <div>
+            <div class="cat-title"><i class="bi bi-truck me-1"></i>Proveedores</div>
+            <div class="cat-subtitle">Directorio de proveedores, datos fiscales y condiciones de pago</div>
+        </div>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-sm btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo</button>
+        }
+    </div>
+
+    <div class="cat-kpi mb-2">
+        <span class="cat-kpi-chip">Total: @lista.Count</span>
+        <span class="cat-kpi-chip active">Activos: @lista.Count(p => p.IsActive)</span>
+        <span class="cat-kpi-chip inactive">Inactivos: @lista.Count(p => !p.IsActive)</span>
+        @if (textoBusqueda.Length > 0 || filtroEstado != "todos")
+        {
+            <span class="cat-kpi-chip filtered">Filtrados: @listaFiltrada.Count()</span>
+        }
+    </div>
+
+    <div class="cat-filter-bar mb-3">
+        <div>
+            <label>Buscar</label>
+            <div class="input-group" style="width:260px">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltros" placeholder="Código, nombre, RFC, contacto..." />
+            </div>
+        </div>
+        <div>
+            <label>Estado</label>
+            <select class="form-select" style="width:120px" @bind="filtroEstado" @bind:after="AplicarFiltros">
+                <option value="activos">Activos</option>
+                <option value="inactivos">Inactivos</option>
+                <option value="todos">Todos</option>
+            </select>
+        </div>
+        <div class="d-flex align-items-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LimpiarFiltros">
+                <i class="bi bi-x-circle me-1"></i>Limpiar
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+    @if (!string.IsNullOrEmpty(ok)) { <div class="alert alert-success">@ok</div> }
+
+    @if (mostrarForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo Proveedor" : "Editar Proveedor")</h5></div>
+            <div class="card-body">
+                <EditForm Model="editando" OnValidSubmit="Guardar">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Código</label>
+                            <InputText class="form-control" @bind-Value="editando.Codigo" readonly />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">RFC</label>
+                            <InputText class="form-control" @bind-Value="editando.Rfc" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Razón Social</label>
+                            <InputText class="form-control" @bind-Value="editando.RazonSocial" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Regimen Fiscal</label>
+                            <InputText class="form-control" @bind-Value="editando.RegimenFiscal" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Teléfono</label>
+                            <InputText class="form-control" @bind-Value="editando.Telefono" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email</label>
+                            <InputText class="form-control" @bind-Value="editando.Email" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email Fiscal</label>
+                            <InputText class="form-control" @bind-Value="editando.EmailFiscal" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email Ordenes</label>
+                            <InputText class="form-control" @bind-Value="editando.EmailOrdenesCompra" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Dirección</label>
+                            <InputText class="form-control" @bind-Value="editando.Direccion" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Ciudad</label>
+                            <InputText class="form-control" @bind-Value="editando.Ciudad" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Estado</label>
+                            <InputText class="form-control" @bind-Value="editando.Estado" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CP</label>
+                            <InputText class="form-control" @bind-Value="editando.CodigoPostal" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Pais</label>
+                            <InputText class="form-control" @bind-Value="editando.Pais" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Contacto</label>
+                            <InputText class="form-control" @bind-Value="editando.Contacto" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Banco</label>
+                            <InputText class="form-control" @bind-Value="editando.Banco" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Cuenta</label>
+                            <InputText class="form-control" @bind-Value="editando.CuentaBancaria" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CLABE</label>
+                            <InputText class="form-control" @bind-Value="editando.Clabe" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Titular Cuenta</label>
+                            <InputText class="form-control" @bind-Value="editando.TitularCuenta" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Dias de Pago</label>
+                            <InputNumber class="form-control" @bind-Value="editando.DiasPago" />
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.EsCliente" />
+                                <label class="form-check-label">Tambien es cliente</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label">Activo</label>
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
+                        </div>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            @if (!listaFiltrada.Any() && lista.Count == 0)
+            {
+                <div class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Cargando...</span></div>
+                    <div class="text-muted small mt-1">Cargando proveedores...</div>
+                </div>
+            }
+            else if (!listaFiltrada.Any())
+            {
+                <div class="text-center py-4 text-muted small"><i class="bi bi-inbox me-1"></i>Sin registros con los filtros actuales.</div>
+            }
+            else
+            {
+                <table class="table table-sm align-middle mb-0 cat-table">
+                    <thead>
+                        <tr>
+                            @if (_puedeEditar) { <th style="width:52px">Acc.</th> }
+                            <th style="width:72px">Estado</th>
+                            <th>Código</th>
+                            <th>Nombre</th>
+                            <th>RFC</th>
+                            <th>Teléfono</th>
+                            <th>Contacto</th>
+                            <th>Ciudad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in listaFiltrada)
+                        {
+                            <tr class="@(!p.IsActive ? "cat-row-inactive" : string.Empty)">
+                                @if (_puedeEditar)
+                                {
+                                    <td class="cat-actions">
+                                        <button class="cat-btn-edit" @onclick="() => Editar(p)" title="Editar"><i class="bi bi-pencil"></i></button>
+                                    </td>
+                                }
+                                <td><span class="@(p.IsActive ? "cat-badge-active" : "cat-badge-inactive")">@(p.IsActive ? "Activo" : "Inactivo")</span></td>
+                                <td class="fw-semibold text-primary-emphasis">@p.Codigo</td>
+                                <td>@p.Nombre</td>
+                                <td class="text-muted">@(p.Rfc ?? "—")</td>
+                                <td>@(p.Telefono ?? "—")</td>
+                                <td>@(p.Contacto ?? "—")</td>
+                                <td>@(p.Ciudad ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+    }
+</div>
+
+<style>
+    .cat-page { padding: 0.65rem 0.9rem; }
+    .cat-title { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
+    .cat-subtitle { font-size: 0.74rem; color: #6c757d; }
+    .cat-kpi { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .cat-kpi-chip { font-size: 0.73rem; padding: 0.18rem 0.6rem; border-radius: 999px; border: 1px solid #dee2e6; background: #f8f9fa; color: #495057; font-weight: 600; }
+    .cat-kpi-chip.active { background: #d1e7dd; border-color: #a3cfbb; color: #146c43; }
+    .cat-kpi-chip.inactive { background: #e9ecef; border-color: #ced4da; color: #6c757d; }
+    .cat-kpi-chip.filtered { background: #cfe2ff; border-color: #9ec5fe; color: #084298; }
+    .cat-filter-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: flex-end; }
+    .cat-filter-bar label { display: block; font-size: 0.68rem; font-weight: 700; color: #6c757d; margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cat-filter-bar .form-control,
+    .cat-filter-bar .form-select { font-size: 0.8rem; padding: 0.22rem 0.5rem; height: 28px; }
+    .cat-filter-bar .input-group-text { font-size: 0.78rem; padding: 0.22rem 0.5rem; height: 28px; background: #f8f9fa; }
+    .cat-filter-bar .btn { font-size: 0.78rem; padding: 0.22rem 0.6rem; height: 28px; }
+    .cat-table { font-size: 0.81rem; }
+    .cat-table thead tr th { background: #1e3a5f !important; color: #fff !important; font-size: 0.69rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border: none; padding: 0.38rem 0.6rem; }
+    .cat-table tbody tr td { padding: 0.28rem 0.6rem; vertical-align: middle; border-color: #f0f2f5; }
+    .cat-table tbody tr:hover td { background-color: #f5f8ff; }
+    .cat-row-inactive td { opacity: 0.5; }
+    .cat-badge-active { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #d1e7dd; color: #146c43; border: 1px solid #a3cfbb; font-weight: 600; white-space: nowrap; }
+    .cat-badge-inactive { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #e9ecef; color: #6c757d; border: 1px solid #ced4da; font-weight: 600; white-space: nowrap; }
+    .cat-actions { white-space: nowrap; }
+    .cat-btn-edit, .cat-btn-delete { background: transparent; border-radius: 4px; padding: 0.14rem 0.38rem; font-size: 0.73rem; line-height: 1; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .cat-btn-edit { border: 1px solid #0d6efd; color: #0d6efd; }
+    .cat-btn-edit:hover { background: #0d6efd; color: #fff; }
+    .cat-btn-delete { border: 1px solid #dc3545; color: #dc3545; }
+    .cat-btn-delete:hover { background: #dc3545; color: #fff; }
+</style>
+
+@code {
+    private List<Proveedor> lista = [];
+    private IEnumerable<Proveedor> listaFiltrada = [];
+    private string textoBusqueda = string.Empty;
+    private string filtroEstado = "activos";
+    private Proveedor editando = new();
+    private bool mostrarForm;
+    private bool guardando;
+    private string? error, ok;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+            await Cargar();
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "proveedores.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "proveedores.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        lista = await db.Proveedores.AsNoTracking().OrderBy(p => p.Nombre).ToListAsync();
+        AplicarFiltros();
+    }
+
+    private void AplicarFiltros()
+    {
+        IEnumerable<Proveedor> consulta = lista;
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(p =>
+                p.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || p.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (p.Rfc?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (p.Contacto?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (p.Ciudad?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        consulta = filtroEstado switch
+        {
+            "inactivos" => consulta.Where(p => !p.IsActive),
+            "activos" => consulta.Where(p => p.IsActive),
+            _ => consulta
+        };
+
+        listaFiltrada = consulta.ToList();
+    }
+
+    private void LimpiarFiltros()
+    {
+        textoBusqueda = string.Empty;
+        filtroEstado = "activos";
+        AplicarFiltros();
+    }
+
+    private async Task Nuevo()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para crear proveedores.";
+            return;
+        }
+
+        error = ok = null;
+        editando = new()
+        {
+            Id = Guid.Empty,
+            IsActive = true,
+            Pais = "México",
+            Codigo = _empresaId == Guid.Empty ? string.Empty : await CodigoNegocio.GetNextEntityCodeAsync(_empresaId, "PRV", "Consecutivo:Proveedor")
+        };
+        mostrarForm = true;
+    }
+
+    private void Editar(Proveedor p)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar proveedores.";
+            return;
+        }
+
+        error = ok = null;
+        editando = ClonarProveedor(p);
+        mostrarForm = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null;
+        guardando = true;
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar proveedores.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editando.Nombre))
+            { error = "El nombre es requerido."; return; }
+
+            PrepararProveedorParaGuardar();
+
+            var empresaId = _empresaId;
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (editando.Id == Guid.Empty)
+            {
+                if (string.IsNullOrWhiteSpace(editando.Codigo))
+                    editando.Codigo = await CodigoNegocio.GetNextEntityCodeAsync(empresaId, "PRV", "Consecutivo:Proveedor");
+
+                db.Proveedores.Add(new Proveedor
+                {
+                    Id = Guid.NewGuid(), EmpresaId = empresaId, Codigo = editando.Codigo.Trim(), Nombre = editando.Nombre.Trim(),
+                    RazonSocial = editando.RazonSocial?.Trim(), Rfc = editando.Rfc?.Trim(),
+                    RegimenFiscal = editando.RegimenFiscal?.Trim(), Telefono = editando.Telefono?.Trim(),
+                    Email = editando.Email?.Trim(), EmailFiscal = editando.EmailFiscal?.Trim(),
+                    EmailOrdenesCompra = editando.EmailOrdenesCompra?.Trim(), Direccion = editando.Direccion?.Trim(),
+                    Ciudad = editando.Ciudad?.Trim(), Estado = editando.Estado?.Trim(),
+                    CodigoPostal = editando.CodigoPostal?.Trim(), Pais = editando.Pais?.Trim(),
+                    Contacto = editando.Contacto?.Trim(), Banco = editando.Banco?.Trim(),
+                    CuentaBancaria = editando.CuentaBancaria?.Trim(), Clabe = editando.Clabe?.Trim(),
+                    TitularCuenta = editando.TitularCuenta?.Trim(), DiasPago = editando.DiasPago,
+                    EsCliente = editando.EsCliente, IsActive = editando.IsActive
+                });
+            }
+            else
+            {
+                var ex = await db.Proveedores.FirstOrDefaultAsync(p => p.Id == editando.Id);
+                if (ex == null) return;
+                ex.Nombre = editando.Nombre.Trim();
+                ex.RazonSocial = editando.RazonSocial?.Trim(); ex.Rfc = editando.Rfc?.Trim();
+                ex.RegimenFiscal = editando.RegimenFiscal?.Trim(); ex.Telefono = editando.Telefono?.Trim();
+                ex.Email = editando.Email?.Trim(); ex.EmailFiscal = editando.EmailFiscal?.Trim();
+                ex.EmailOrdenesCompra = editando.EmailOrdenesCompra?.Trim(); ex.Direccion = editando.Direccion?.Trim();
+                ex.Ciudad = editando.Ciudad?.Trim(); ex.Estado = editando.Estado?.Trim();
+                ex.CodigoPostal = editando.CodigoPostal?.Trim(); ex.Pais = editando.Pais?.Trim();
+                ex.Contacto = editando.Contacto?.Trim(); ex.Banco = editando.Banco?.Trim();
+                ex.CuentaBancaria = editando.CuentaBancaria?.Trim(); ex.Clabe = editando.Clabe?.Trim();
+                ex.TitularCuenta = editando.TitularCuenta?.Trim(); ex.DiasPago = editando.DiasPago;
+                ex.EsCliente = editando.EsCliente; ex.IsActive = editando.IsActive; ex.UpdatedAt = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync();
+            ok = "Guardado."; mostrarForm = false; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private void PrepararProveedorParaGuardar()
+    {
+        editando.Codigo = editando.Codigo.Trim();
+        editando.Nombre = editando.Nombre.Trim();
+        editando.RazonSocial = LimpiarTexto(editando.RazonSocial);
+        editando.Rfc = LimpiarTexto(editando.Rfc);
+        editando.RegimenFiscal = LimpiarTexto(editando.RegimenFiscal);
+        editando.Telefono = LimpiarTexto(editando.Telefono);
+        editando.Email = LimpiarTexto(editando.Email);
+        editando.EmailFiscal = LimpiarTexto(editando.EmailFiscal) ?? editando.Email;
+        editando.EmailOrdenesCompra = LimpiarTexto(editando.EmailOrdenesCompra) ?? editando.EmailFiscal;
+        editando.Direccion = LimpiarTexto(editando.Direccion);
+        editando.Ciudad = LimpiarTexto(editando.Ciudad);
+        editando.Estado = LimpiarTexto(editando.Estado);
+        editando.CodigoPostal = LimpiarTexto(editando.CodigoPostal);
+        editando.Pais = LimpiarTexto(editando.Pais) ?? "México";
+        editando.Contacto = LimpiarTexto(editando.Contacto);
+        editando.Banco = LimpiarTexto(editando.Banco);
+        editando.CuentaBancaria = LimpiarTexto(editando.CuentaBancaria);
+        editando.Clabe = LimpiarTexto(editando.Clabe);
+        editando.TitularCuenta = LimpiarTexto(editando.TitularCuenta);
+        editando.Notas = LimpiarTexto(editando.Notas);
+    }
+
+    private static Proveedor ClonarProveedor(Proveedor proveedor)
+    {
+        return new Proveedor
+        {
+            Id = proveedor.Id,
+            EmpresaId = proveedor.EmpresaId,
+            Codigo = proveedor.Codigo,
+            Nombre = proveedor.Nombre,
+            RazonSocial = proveedor.RazonSocial,
+            Rfc = proveedor.Rfc,
+            RegimenFiscal = proveedor.RegimenFiscal,
+            Telefono = proveedor.Telefono,
+            Email = proveedor.Email,
+            EmailFiscal = proveedor.EmailFiscal,
+            EmailOrdenesCompra = proveedor.EmailOrdenesCompra,
+            Direccion = proveedor.Direccion,
+            Ciudad = proveedor.Ciudad,
+            Estado = proveedor.Estado,
+            CodigoPostal = proveedor.CodigoPostal,
+            Pais = proveedor.Pais,
+            Contacto = proveedor.Contacto,
+            Banco = proveedor.Banco,
+            CuentaBancaria = proveedor.CuentaBancaria,
+            Clabe = proveedor.Clabe,
+            TitularCuenta = proveedor.TitularCuenta,
+            DiasPago = proveedor.DiasPago,
+            EsCliente = proveedor.EsCliente,
+            Notas = proveedor.Notas,
+            CreatedAt = proveedor.CreatedAt,
+            CreatedBy = proveedor.CreatedBy,
+            UpdatedAt = proveedor.UpdatedAt,
+            UpdatedBy = proveedor.UpdatedBy,
+            IsActive = proveedor.IsActive
+        };
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+}

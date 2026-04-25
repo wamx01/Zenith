@@ -1,0 +1,570 @@
+@page "/admin/usuarios"
+@using Microsoft.AspNetCore.Components.Authorization
+@using MundoVs.Core.Entities.Auth
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Security
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject IAuthService AuthService
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Usuarios</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver usuarios.</div>
+    }
+    else
+    {
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1"><i class="bi bi-people-fill me-2"></i>Usuarios</h1>
+            <p class="text-muted mb-0">Administra accesos, roles y vigencia de usuarios con una vista más compacta.</p>
+        </div>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="NuevoUsuario"><i class="bi bi-plus-circle me-1"></i>Nuevo Usuario</button>
+        }
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 us-kpi-card">
+                <div class="card-body">
+                    <div class="us-kpi-label">Visibles</div>
+                    <div class="us-kpi-value">@usuariosFiltrados.Count()</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 us-kpi-card us-kpi-card--success">
+                <div class="card-body">
+                    <div class="us-kpi-label">Activos</div>
+                    <div class="us-kpi-value">@usuarios.Count(u => u.IsActive)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 us-kpi-card us-kpi-card--muted">
+                <div class="card-body">
+                    <div class="us-kpi-label">Inactivos</div>
+                    <div class="us-kpi-value">@usuarios.Count(u => !u.IsActive)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 us-kpi-card us-kpi-card--info">
+                <div class="card-body">
+                    <div class="us-kpi-label">Tipos</div>
+                    <div class="us-kpi-value">@usuarios.Select(u => u.TipoUsuarioId).Distinct().Count()</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+            <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</span>
+            <button type="button" class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltros">Limpiar</button>
+        </div>
+        <div class="card-body pt-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5 col-md-6">
+                    <label class="form-label">Buscar</label>
+                    <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltros" placeholder="Nombre, correo o tipo de usuario" />
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select" @bind="filtroEstado" @bind:after="AplicarFiltros">
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(passwordTemporalGenerado))
+    {
+        <div class="alert alert-warning d-flex flex-column gap-1" role="alert">
+            <div class="fw-semibold"><i class="bi bi-key me-1"></i>Contraseña temporal generada para @passwordTemporalUsuario</div>
+            <div class="small">Compártela por un canal seguro. El usuario deberá cambiarla al iniciar sesión.</div>
+            <code>@passwordTemporalGenerado</code>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(mensajeOperacion))
+    {
+        <div class="alert alert-success py-2">@mensajeOperacion</div>
+    }
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo Usuario" : "Editar Usuario")</h5></div>
+            <div class="card-body">
+                <EditForm Model="editando" OnValidSubmit="Guardar">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nombre completo</label>
+                            <InputText class="form-control" @bind-Value="editando.NombreCompleto" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Correo electrónico</label>
+                            <InputText class="form-control" @bind-Value="editando.Email" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Tipo de usuario</label>
+                            <InputSelect class="form-select" @bind-Value="editando.TipoUsuarioId">
+                                <option value="">— Seleccione —</option>
+                                @foreach (var t in tiposUsuario)
+                                {
+                                    <option value="@t.Id">@t.Nombre</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">@(editando.Id == Guid.Empty ? "Contraseña" : "Nueva contraseña (dejar vacío para no cambiar)")</label>
+                            <InputText class="form-control" @bind-Value="passwordInput" type="password" />
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label">Activo</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger mt-3 py-2">@mensajeError</div>
+                    }
+
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-success" disabled="@guardando">
+                            @if (guardando) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                            <i class="bi bi-check-lg me-1"></i>Guardar
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar">Cancelar</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Estado</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Tipo</th>
+                        <th>Último acceso</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!usuariosFiltrados.Any())
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">No hay usuarios con los filtros actuales.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var u in usuariosFiltrados)
+                        {
+                            <tr class="@(!u.IsActive ? "table-light opacity-75" : string.Empty)">
+                                <td>
+                                    <span class="badge @(u.IsActive ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(u.IsActive ? "Activo" : "Inactivo")</span>
+                                </td>
+                                <td class="fw-semibold">@u.NombreCompleto</td>
+                                <td>@u.Email</td>
+                                <td><span class="badge bg-primary">@u.TipoUsuario.Nombre</span></td>
+                                <td class="text-muted small">@(u.UltimoAcceso?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                                <td class="text-end">
+                                    @if (_puedeEditar)
+                                    {
+                                        <button class="btn btn-sm btn-outline-warning me-1" title="Generar contraseña temporal" @onclick="() => GenerarPasswordTemporal(u)"><i class="bi bi-key"></i></button>
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(u)"><i class="bi bi-pencil"></i></button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+</div>
+
+<style>
+    .us-kpi-card { border-radius: 14px; }
+    .us-kpi-card .card-body { padding: .9rem 1rem; }
+    .us-kpi-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-bottom: .2rem; }
+    .us-kpi-value { font-size: 1.7rem; font-weight: 800; line-height: 1; color: #1f2937; }
+    .us-kpi-card--success { background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); }
+    .us-kpi-card--muted { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); }
+    .us-kpi-card--info { background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); }
+</style>
+
+@code {
+    private List<Usuario> usuarios = [];
+    private IEnumerable<Usuario> usuariosFiltrados = [];
+    private List<TipoUsuario> tiposUsuario = [];
+    private Usuario editando = new();
+    private string passwordInput = "";
+    private bool mostrarFormulario;
+    private bool guardando;
+    private string? mensajeError;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _esSuperAdmin;
+    private Guid _empresaId;
+    private string textoBusqueda = string.Empty;
+    private string filtroEstado = "activos";
+    private string? passwordTemporalGenerado;
+    private string? passwordTemporalUsuario;
+    private string? mensajeOperacion;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+            await Cargar();
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Administracion) && state.User.HasClaim("Capacidad", "usuarios.ver");
+        _puedeEditar = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Administracion) && state.User.HasClaim("Capacidad", "usuarios.editar");
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        if (_empresaId == Guid.Empty)
+        {
+            usuarios = [];
+            tiposUsuario = [];
+            AplicarFiltros();
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        usuarios = await db.Usuarios
+            .IgnoreQueryFilters()
+            .Include(u => u.TipoUsuario)
+            .Where(u => u.EmpresaId == _empresaId && (_esSuperAdmin || !u.TipoUsuario.IsSystem))
+            .OrderBy(u => u.NombreCompleto)
+            .ToListAsync();
+
+        tiposUsuario = await db.TiposUsuario
+            .IgnoreQueryFilters()
+            .Where(t => t.EmpresaId == _empresaId && t.IsActive && (_esSuperAdmin || !t.IsSystem))
+            .OrderBy(t => t.Nombre)
+            .ToListAsync();
+        AplicarFiltros();
+    }
+
+    private void AplicarFiltros()
+    {
+        IEnumerable<Usuario> consulta = usuarios;
+
+        consulta = filtroEstado switch
+        {
+            "inactivos" => consulta.Where(u => !u.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(u => u.IsActive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(u =>
+                u.NombreCompleto.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || u.Email.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || u.TipoUsuario.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        usuariosFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltros()
+    {
+        textoBusqueda = string.Empty;
+        filtroEstado = "activos";
+        AplicarFiltros();
+    }
+
+    private void NuevoUsuario()
+    {
+        if (!_puedeEditar)
+        {
+            mensajeError = "No tienes permisos para crear usuarios.";
+            return;
+        }
+
+        LimpiarMensajesOperacion();
+        // Importante: las entidades tienen Id inicializado con Guid.NewGuid(); para distinguir "nuevo" usamos Guid.Empty.
+        editando = new() { Id = Guid.Empty, IsActive = true };
+        passwordInput = "";
+        mensajeError = null;
+        mostrarFormulario = true;
+    }
+
+    private void Editar(Usuario u)
+    {
+        if (!_puedeEditar)
+        {
+            mensajeError = "No tienes permisos para editar usuarios.";
+            return;
+        }
+
+        LimpiarMensajesOperacion();
+        editando = new()
+        {
+            Id = u.Id,
+            NombreCompleto = u.NombreCompleto,
+            Email = u.Email,
+            TipoUsuarioId = u.TipoUsuarioId,
+            IsActive = u.IsActive
+        };
+        passwordInput = "";
+        mensajeError = null;
+        mostrarFormulario = true;
+    }
+
+    private async Task Guardar()
+    {
+        LimpiarMensajesOperacion();
+        mensajeError = null;
+        guardando = true;
+
+        if (string.IsNullOrWhiteSpace(editando.NombreCompleto) || string.IsNullOrWhiteSpace(editando.Email) || editando.TipoUsuarioId == Guid.Empty)
+        {
+            mensajeError = "Complete todos los campos requeridos.";
+            guardando = false;
+            return;
+        }
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                mensajeError = "No tienes permisos para guardar usuarios.";
+                guardando = false;
+                return;
+            }
+
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+            _ = Guid.TryParse(empresaIdStr, out var empresaId);
+
+            if (empresaId == Guid.Empty)
+            {
+                mensajeError = "No hay una empresa activa en sesión.";
+                guardando = false;
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var tipoUsuarioSeleccionado = await db.TiposUsuario
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == editando.TipoUsuarioId && t.EmpresaId == empresaId && t.IsActive && (_esSuperAdmin || !t.IsSystem));
+
+            if (tipoUsuarioSeleccionado == null)
+            {
+                mensajeError = "El tipo de usuario seleccionado no pertenece a la empresa activa o no está disponible.";
+                guardando = false;
+                return;
+            }
+
+            var email = editando.Email.Trim().ToLowerInvariant();
+            var empresa = await db.Empresas
+                .Include(e => e.PlanActual)
+                .FirstOrDefaultAsync(e => e.Id == empresaId);
+            if (empresa == null)
+            {
+                mensajeError = "No se encontró la empresa activa.";
+                guardando = false;
+                return;
+            }
+
+            var limiteUsuarios = empresa.MaxUsuarios ?? empresa.PlanActual?.LimiteUsuarios;
+
+            if (editando.Id == Guid.Empty)
+            {
+                if (string.IsNullOrWhiteSpace(passwordInput))
+                {
+                    mensajeError = "La contraseña es obligatoria para nuevos usuarios.";
+                    guardando = false;
+                    return;
+                }
+
+                var passwordError = AuthService.ValidarPassword(passwordInput);
+                if (!string.IsNullOrWhiteSpace(passwordError))
+                {
+                    mensajeError = passwordError;
+                    guardando = false;
+                    return;
+                }
+
+                // Email es único globalmente (índice). Ignorar filtros para validar correctamente.
+                if (await db.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
+                {
+                    mensajeError = "Ya existe un usuario con ese correo.";
+                    guardando = false;
+                    return;
+                }
+
+                if (editando.IsActive && limiteUsuarios.HasValue)
+                {
+                    var usuariosActivos = await db.Usuarios.CountAsync(u => u.EmpresaId == empresaId && u.IsActive);
+                    if (usuariosActivos >= limiteUsuarios.Value)
+                    {
+                        mensajeError = $"El plan actual permite máximo {limiteUsuarios.Value} usuarios activos.";
+                        guardando = false;
+                        return;
+                    }
+                }
+
+                var nuevo = new Usuario
+                {
+                    EmpresaId = empresaId,
+                    NombreCompleto = editando.NombreCompleto.Trim(),
+                    Email = email,
+                    PasswordHash = AuthService.HashPassword(passwordInput),
+                    TipoUsuarioId = tipoUsuarioSeleccionado.Id,
+                    RequiereCambioPassword = true,
+                    IsActive = editando.IsActive
+                };
+                db.Usuarios.Add(nuevo);
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Crear usuario", nameof(Usuario), nuevo.Id, $"Usuario {nuevo.Email} creado.", empresaId);
+                mensajeOperacion = "Usuario creado correctamente.";
+            }
+            else
+            {
+                var existing = await db.Usuarios.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == editando.Id && u.EmpresaId == empresaId);
+                if (existing == null) { guardando = false; return; }
+
+                if (editando.IsActive && !existing.IsActive && limiteUsuarios.HasValue)
+                {
+                    var usuariosActivos = await db.Usuarios.CountAsync(u => u.EmpresaId == empresaId && u.IsActive && u.Id != existing.Id);
+                    if (usuariosActivos >= limiteUsuarios.Value)
+                    {
+                        mensajeError = $"El plan actual permite máximo {limiteUsuarios.Value} usuarios activos.";
+                        guardando = false;
+                        return;
+                    }
+                }
+
+                // Email es único globalmente (índice). Ignorar filtros para validar correctamente.
+                if (!string.Equals(existing.Email, email, StringComparison.OrdinalIgnoreCase)
+                    && await db.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email == email && u.Id != existing.Id))
+                {
+                    mensajeError = "Ya existe un usuario con ese correo.";
+                    guardando = false;
+                    return;
+                }
+
+                existing.NombreCompleto = editando.NombreCompleto.Trim();
+                existing.Email = email;
+                existing.TipoUsuarioId = tipoUsuarioSeleccionado.Id;
+                existing.IsActive = editando.IsActive;
+                existing.UpdatedAt = DateTime.UtcNow;
+
+                if (!string.IsNullOrWhiteSpace(passwordInput))
+                {
+                    var passwordError = AuthService.ValidarPassword(passwordInput);
+                    if (!string.IsNullOrWhiteSpace(passwordError))
+                    {
+                        mensajeError = passwordError;
+                        guardando = false;
+                        return;
+                    }
+
+                    existing.PasswordHash = AuthService.HashPassword(passwordInput);
+                    existing.RequiereCambioPassword = true;
+                    existing.PasswordChangedAt = null;
+                }
+
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Editar usuario", nameof(Usuario), existing.Id, $"Usuario {existing.Email} actualizado.", empresaId);
+                await Cargar();
+                mostrarFormulario = false;
+                mensajeOperacion = "Usuario actualizado correctamente.";
+                guardando = false;
+                return;
+            }
+
+            await db.SaveChangesAsync();
+            await Cargar();
+            mostrarFormulario = false;
+            mensajeOperacion = "Usuario guardado correctamente.";
+            guardando = false;
+        }
+        catch (DbUpdateException ex)
+        {
+            mensajeError = ex.InnerException?.Message ?? ex.Message;
+            guardando = false;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+            guardando = false;
+        }
+    }
+
+    private async Task GenerarPasswordTemporal(Usuario usuario)
+    {
+        mensajeError = null;
+        mensajeOperacion = null;
+        passwordTemporalGenerado = null;
+        passwordTemporalUsuario = null;
+
+        if (!_puedeEditar)
+        {
+            mensajeError = "No tienes permisos para restablecer accesos.";
+            return;
+        }
+
+        var passwordTemporal = await AuthService.GenerarPasswordTemporalAsync(usuario.Id);
+        if (string.IsNullOrWhiteSpace(passwordTemporal))
+        {
+            mensajeError = "No fue posible generar la contraseña temporal.";
+            return;
+        }
+
+        passwordTemporalGenerado = passwordTemporal;
+        passwordTemporalUsuario = usuario.Email;
+        mensajeOperacion = $"Se generó una contraseña temporal para {usuario.NombreCompleto}.";
+        await AuditService.LogAsync("Generar contraseña temporal", nameof(Usuario), usuario.Id, $"Se generó contraseña temporal para {usuario.Email}.", _empresaId);
+        await Cargar();
+    }
+
+    private void LimpiarMensajesOperacion()
+    {
+        mensajeOperacion = null;
+        passwordTemporalGenerado = null;
+        passwordTemporalUsuario = null;
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+        mensajeError = null;
+    }
+}

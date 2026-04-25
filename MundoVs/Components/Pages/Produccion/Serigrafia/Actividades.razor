@@ -1,0 +1,138 @@
+@page "/serigrafia/actividades"
+@page "/serigrafia/posiciones"
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@inject IRepository<Posicion> PosicionRepository
+@rendermode InteractiveServer
+
+<PageTitle>Posiciones</PageTitle>
+
+<div class="container-fluid px-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2><i class="bi bi-person-workspace"></i> Posiciones</h2>
+        <button class="btn btn-success" @onclick="Nuevo">
+            <i class="bi bi-plus-circle"></i> Nueva Posición
+        </button>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow">
+            <div class="card-header text-dark fw-bold" style="background:#FFD700">
+                <strong>@(editando.Id == Guid.Empty ? "Nueva Posición" : "Editar Posición")</strong>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label">Nombre de la Posición</label>
+                        <input type="text" class="form-control" @bind="editando.Nombre" placeholder="Ej: TIRADO DE MATERIAL" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Tarifa por Minuto</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.0001" class="form-control" @bind="editando.TarifaPorMinuto" />
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Orden</label>
+                        <input type="number" class="form-control" @bind="editando.Orden" />
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success" @onclick="Guardar"><i class="bi bi-save"></i> Guardar</button>
+                    <button class="btn btn-secondary" @onclick="Cancelar"><i class="bi bi-x-circle"></i> Cancelar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow">
+        <div class="card-body">
+            @if (items == null)
+            {
+                <div class="text-center py-3"><div class="spinner-border"></div></div>
+            }
+            else if (!items.Any())
+            {
+                <div class="alert alert-info">No hay posiciones registradas.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead style="background:#FFD700">
+                            <tr>
+                                <th>#</th>
+                                <th>Posición</th>
+                                <th>Tarifa por Minuto</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in items)
+                            {
+                                <tr>
+                                    <td>@item.Orden</td>
+                                    <td><strong>@item.Nombre</strong></td>
+                                    <td>$@item.TarifaPorMinuto.ToString("N4")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => Editar(item)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(item)"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<Posicion>? items;
+    private Posicion editando = new();
+    private bool mostrarFormulario;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        items = (await PosicionRepository.GetAllAsync()).Where(i => i.IsActive).OrderBy(i => i.Orden);
+    }
+
+    private void Nuevo()
+    {
+        var maxOrden = items?.Any() == true ? items.Max(i => i.Orden) + 1 : 1;
+        editando = new Posicion { Orden = maxOrden, TarifaPorMinuto = 1.2458m };
+        mostrarFormulario = true;
+    }
+
+    private void Editar(Posicion item)
+    {
+        editando = new Posicion
+        {
+            Id = item.Id, Nombre = item.Nombre, TarifaPorMinuto = item.TarifaPorMinuto,
+            Orden = item.Orden, CreatedAt = item.CreatedAt, IsActive = item.IsActive
+        };
+        mostrarFormulario = true;
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(editando.Nombre)) return;
+        if (editando.Id == Guid.Empty) await PosicionRepository.AddAsync(editando);
+        else { editando.UpdatedAt = DateTime.UtcNow; await PosicionRepository.UpdateAsync(editando); }
+        await Cargar(); Cancelar();
+    }
+
+    private async Task Eliminar(Posicion item)
+    {
+        item.IsActive = false; item.UpdatedAt = DateTime.UtcNow;
+        await PosicionRepository.UpdateAsync(item); await Cargar();
+    }
+
+    private void Cancelar() { editando = new(); mostrarFormulario = false; }
+}

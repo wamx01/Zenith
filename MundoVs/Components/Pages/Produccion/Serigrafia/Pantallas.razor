@@ -1,0 +1,216 @@
+@page "/serigrafia/pantallas"
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@inject IRepository<Pantalla> PantallaRepository
+@rendermode InteractiveServer
+
+<PageTitle>Pantallas</PageTitle>
+
+<div class="container-fluid px-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2><i class="bi bi-grid-3x3-gap-fill"></i> Pantallas</h2>
+        <button class="btn btn-success" @onclick="NuevaPantalla">
+            <i class="bi bi-plus-circle"></i> Nueva Pantalla
+        </button>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow">
+            <div class="card-header bg-dark text-white">
+                <strong>@(pantallaEditando.Id == Guid.Empty ? "Nueva Pantalla" : "Editar Pantalla")</strong>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Código</label>
+                        <input type="text" class="form-control" @bind="pantallaEditando.Codigo" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Malla #</label>
+                        <input type="number" class="form-control" @bind="pantallaEditando.MallaNumero" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Dimensiones</label>
+                        <input type="text" class="form-control" @bind="pantallaEditando.Dimensiones" placeholder="Ej: 50x60 cm" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" @bind="pantallaEditando.Estado">
+                            @foreach (var estado in Enum.GetValues<EstadoPantallaEnum>())
+                            {
+                                <option value="@estado">@estado</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Usos Totales</label>
+                        <input type="number" class="form-control" @bind="pantallaEditando.UsosTotales" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Fecha Creación</label>
+                        <input type="date" class="form-control" @bind="pantallaEditando.FechaCreacion" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Diseño Para</label>
+                        <input type="text" class="form-control" @bind="pantallaEditando.DisenoPara" placeholder="Cliente / diseño asignado" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Descripción</label>
+                    <textarea class="form-control" rows="2" @bind="pantallaEditando.Descripcion"></textarea>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success" @onclick="GuardarPantalla">
+                        <i class="bi bi-save"></i> Guardar
+                    </button>
+                    <button class="btn btn-secondary" @onclick="Cancelar">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Lista -->
+    <div class="card border-0 shadow">
+        <div class="card-body">
+            @if (pantallas == null)
+            {
+                <div class="text-center py-3"><div class="spinner-border"></div></div>
+            }
+            else if (!pantallas.Any())
+            {
+                <div class="alert alert-info">No hay pantallas registradas.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Código</th>
+                                <th>Malla #</th>
+                                <th>Dimensiones</th>
+                                <th>Estado</th>
+                                <th>Usos</th>
+                                <th>Diseño Para</th>
+                                <th>Fecha Creación</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in pantallas)
+                            {
+                                <tr>
+                                    <td><strong>@p.Codigo</strong></td>
+                                    <td>@p.MallaNumero</td>
+                                    <td>@p.Dimensiones</td>
+                                    <td><span class="badge bg-@ObtenerColorEstado(p.Estado)">@p.Estado</span></td>
+                                    <td>@p.UsosTotales</td>
+                                    <td>@p.DisenoPara</td>
+                                    <td>@p.FechaCreacion?.ToString("dd/MM/yy")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => EditarPantalla(p)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarPantalla(p)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<Pantalla>? pantallas;
+    private Pantalla pantallaEditando = new();
+    private bool mostrarFormulario;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarPantallas();
+    }
+
+    private async Task CargarPantallas()
+    {
+        pantallas = (await PantallaRepository.GetAllAsync())
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Codigo);
+    }
+
+    private void NuevaPantalla()
+    {
+        pantallaEditando = new Pantalla
+        {
+            FechaCreacion = DateTime.Now,
+            Estado = EstadoPantallaEnum.Nueva
+        };
+        mostrarFormulario = true;
+    }
+
+    private void EditarPantalla(Pantalla p)
+    {
+        pantallaEditando = new Pantalla
+        {
+            Id = p.Id, Codigo = p.Codigo, Descripcion = p.Descripcion,
+            MallaNumero = p.MallaNumero, Dimensiones = p.Dimensiones,
+            Estado = p.Estado, UsosTotales = p.UsosTotales,
+            FechaCreacion = p.FechaCreacion, DisenoPara = p.DisenoPara,
+            CreatedAt = p.CreatedAt, CreatedBy = p.CreatedBy, IsActive = p.IsActive
+        };
+        mostrarFormulario = true;
+    }
+
+    private async Task GuardarPantalla()
+    {
+        if (string.IsNullOrWhiteSpace(pantallaEditando.Codigo))
+            return;
+
+        if (pantallaEditando.Id == Guid.Empty)
+            await PantallaRepository.AddAsync(pantallaEditando);
+        else
+        {
+            pantallaEditando.UpdatedAt = DateTime.UtcNow;
+            await PantallaRepository.UpdateAsync(pantallaEditando);
+        }
+
+        await CargarPantallas();
+        Cancelar();
+    }
+
+    private async Task EliminarPantalla(Pantalla p)
+    {
+        p.IsActive = false;
+        p.UpdatedAt = DateTime.UtcNow;
+        await PantallaRepository.UpdateAsync(p);
+        await CargarPantallas();
+    }
+
+    private void Cancelar()
+    {
+        pantallaEditando = new();
+        mostrarFormulario = false;
+    }
+
+    private string ObtenerColorEstado(EstadoPantallaEnum estado) => estado switch
+    {
+        EstadoPantallaEnum.Nueva => "success",
+        EstadoPantallaEnum.Activa => "primary",
+        EstadoPantallaEnum.Desgastada => "warning",
+        EstadoPantallaEnum.Recuperable => "info",
+        EstadoPantallaEnum.Inservible => "danger",
+        _ => "secondary"
+    };
+}

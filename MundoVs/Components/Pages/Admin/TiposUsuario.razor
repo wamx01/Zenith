@@ -1,0 +1,392 @@
+@page "/admin/tipos-usuario"
+@using Microsoft.AspNetCore.Components.Authorization
+@using MundoVs.Core.Entities.Auth
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Security
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IModuloAccesoService ModuloAccesoService
+@rendermode InteractiveServer
+
+<PageTitle>Tipos de Usuario y Capacidades</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver roles y permisos.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h1 class="display-6 fw-bold"><i class="bi bi-shield-lock me-2"></i>Tipos de Usuario</h1>
+            <p class="text-muted mb-0">Configure los roles y sus capacidades de acceso</p>
+        </div>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="NuevoTipo"><i class="bi bi-plus-circle me-1"></i>Nuevo Tipo</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+
+    @if (mostrarFormularioTipo)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">@(editandoTipo.Id == Guid.Empty ? "Nuevo Tipo de Usuario" : "Editar Tipo de Usuario")</h5></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Nombre</label>
+                        <input class="form-control" @bind="editandoTipo.Nombre" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Descripción</label>
+                        <input class="form-control" @bind="editandoTipo.Descripcion" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end gap-2">
+                        <button class="btn btn-success" @onclick="GuardarTipo"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => mostrarFormularioTipo = false">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (cargando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var tipo in tipos)
+            {
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex align-items-center justify-content-between">
+                            <div>
+                                <h5 class="mb-0">
+                                    <i class="bi bi-person-badge me-1"></i>@tipo.Nombre
+                                    @if (tipo.IsSystem)
+                                    {
+                                        <span class="badge bg-warning text-dark ms-2" style="font-size:.65rem">SISTEMA</span>
+                                    }
+                                </h5>
+                                @if (!string.IsNullOrEmpty(tipo.Descripcion))
+                                {
+                                    <small class="text-muted">@tipo.Descripcion</small>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                <span class="badge bg-info">@tipo.Capacidades.Count capacidades</span>
+                                @if (!tipo.IsSystem && _puedeEditar)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarTipo(tipo)"><i class="bi bi-pencil"></i></button>
+                                }
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            @foreach (var modulo in capacidades.GroupBy(c => c.Modulo).OrderBy(g => g.Key))
+                            {
+                                <div class="mb-3">
+                                    <h6 class="fw-bold text-uppercase text-muted" style="font-size:.72rem;letter-spacing:.04em">
+                                        <i class="bi bi-folder me-1"></i>@modulo.Key
+                                    </h6>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach (var cap in modulo)
+                                        {
+                                            var asignada = tipo.Capacidades.Any(tc => tc.CapacidadId == cap.Id);
+                                            <button class="btn btn-sm @(asignada ? "btn-success" : "btn-outline-secondary")"
+                                                    @onclick="() => ToggleCapacidad(tipo.Id, cap.Id)"
+                                                    title="@cap.Descripcion"
+                                                    disabled="@(!_puedeEditar)">
+                                                <i class="bi @(asignada ? "bi-check-circle-fill" : "bi-circle") me-1"></i>@cap.Nombre
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    }
+</div>
+
+@code {
+    private List<TipoUsuario> tipos = [];
+    private List<Capacidad> capacidades = [];
+    private TipoUsuario editandoTipo = new();
+    private bool mostrarFormularioTipo;
+    private bool cargando = true;
+    private string? error;
+    private Guid _empresaId;
+    private bool _esSuperAdmin;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private HashSet<string> _modulosHabilitados = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+            await Cargar();
+        cargando = false;
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Administracion) && state.User.HasClaim("Capacidad", "usuarios.ver");
+        _puedeEditar = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Administracion) && state.User.HasClaim("Capacidad", "usuarios.editar");
+    }
+
+    private async Task CargarContexto()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+        _ = Guid.TryParse(empresaIdStr, out _empresaId);
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin") || string.Equals(state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value, "SuperAdmin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task Cargar()
+    {
+        await CargarContexto();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (_empresaId == Guid.Empty)
+        {
+            tipos = [];
+            capacidades = [];
+            error = "No hay una empresa activa en sesión.";
+            return;
+        }
+
+        // Usar EmpresaId desde claims para evitar depender del query filter si el contexto no quedó establecido aún.
+        tipos = await db.TiposUsuario.IgnoreQueryFilters()
+            .Where(t => t.EmpresaId == _empresaId)
+            .Include(t => t.Capacidades)
+            .ThenInclude(tc => tc.Capacidad)
+            .OrderBy(t => t.Nombre)
+            .ToListAsync();
+
+        if (!_esSuperAdmin)
+            tipos = tipos.Where(t => !t.IsSystem).ToList();
+
+        _modulosHabilitados = await ModuloAccesoService.ObtenerModulosHabilitadosAsync(_empresaId);
+
+        capacidades = await db.Capacidades
+            .IgnoreQueryFilters()
+            .Include(c => c.ModuloAcceso)
+            .Where(c => _modulosHabilitados.Contains(c.ModuloAcceso.Clave) && (_esSuperAdmin || !c.ModuloAcceso.EsGlobal))
+            .OrderBy(c => c.Modulo)
+            .ThenBy(c => c.Nombre)
+            .ToListAsync();
+
+        var capacidadesPermitidas = capacidades.Select(c => c.Id).ToHashSet();
+        foreach (var tipo in tipos)
+        {
+            tipo.Capacidades = tipo.Capacidades.Where(tc => capacidadesPermitidas.Contains(tc.CapacidadId)).ToList();
+        }
+    }
+
+    private void NuevoTipo()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para crear roles.";
+            return;
+        }
+
+        error = null;
+        // Importante: las entidades tienen Id inicializado con Guid.NewGuid(); para distinguir "nuevo" usamos Guid.Empty.
+        editandoTipo = new() { Id = Guid.Empty, IsActive = true };
+        mostrarFormularioTipo = true;
+    }
+
+    private void EditarTipo(TipoUsuario tipo)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar roles.";
+            return;
+        }
+
+        editandoTipo = new()
+        {
+            Id = tipo.Id,
+            Nombre = tipo.Nombre,
+            Descripcion = tipo.Descripcion,
+            IsActive = tipo.IsActive
+        };
+        mostrarFormularioTipo = true;
+    }
+
+    private async Task GuardarTipo()
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(editandoTipo.Nombre))
+        {
+            error = "El nombre del tipo de usuario es requerido.";
+            return;
+        }
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar roles.";
+                return;
+            }
+
+            // Tomar SIEMPRE el EmpresaId desde el auth state actual (evita problemas por prerender/caché)
+            var state = await AuthStateProvider.GetAuthenticationStateAsync();
+            var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+            _ = Guid.TryParse(empresaIdStr, out var empresaId);
+
+            if (empresaId == Guid.Empty)
+            {
+                error = "No hay una Empresa activa en sesión para crear roles. Cierra sesión y vuelve a iniciar sesión como administrador de una empresa.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var nombre = editandoTipo.Nombre.Trim();
+            var descripcion = editandoTipo.Descripcion?.Trim();
+
+            if (nombre.Length > 100)
+            {
+                error = "El nombre no puede exceder 100 caracteres.";
+                return;
+            }
+            if (descripcion is { Length: > 200 })
+            {
+                error = "La descripción no puede exceder 200 caracteres.";
+                return;
+            }
+
+            // Validar que la empresa exista (FK). Si esto falla normalmente es que la sesión no trae el EmpresaId correcto.
+            var empresaExiste = await db.Empresas.IgnoreQueryFilters().AnyAsync(e => e.Id == empresaId);
+            if (!empresaExiste)
+            {
+                error = "La empresa activa en sesión no existe en la base de datos.";
+                return;
+            }
+
+            var existeNombre = await db.TiposUsuario.AnyAsync(t => t.EmpresaId == empresaId && t.Nombre == nombre && t.Id != editandoTipo.Id);
+            if (existeNombre)
+            {
+                error = "Ya existe un tipo de usuario con ese nombre en esta empresa.";
+                return;
+            }
+
+            if (editandoTipo.Id == Guid.Empty)
+            {
+                var nuevo = new TipoUsuario
+                {
+                    EmpresaId = empresaId,
+                    Nombre = nombre,
+                    Descripcion = descripcion,
+                    IsActive = true,
+                    IsSystem = false
+                };
+                db.TiposUsuario.Add(nuevo);
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Crear rol", nameof(TipoUsuario), nuevo.Id, $"Rol {nuevo.Nombre} creado.", empresaId);
+            }
+            else
+            {
+                var existing = await db.TiposUsuario
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == editandoTipo.Id && t.EmpresaId == empresaId && (_esSuperAdmin || !t.IsSystem));
+
+                if (existing == null)
+                {
+                    error = "El rol seleccionado no pertenece a la empresa activa o no está disponible para edición.";
+                    return;
+                }
+
+                existing.Nombre = nombre;
+                existing.Descripcion = descripcion;
+                existing.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Editar rol", nameof(TipoUsuario), existing.Id, $"Rol {existing.Nombre} actualizado.", empresaId);
+                await Cargar();
+                mostrarFormularioTipo = false;
+                return;
+            }
+
+            await db.SaveChangesAsync();
+            await Cargar();
+            mostrarFormularioTipo = false;
+        }
+        catch (DbUpdateException ex)
+        {
+            // Ej: nombre duplicado por empresa (índice único) o FK/EmpresaId
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task ToggleCapacidad(Guid tipoUsuarioId, Guid capacidadId)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para modificar capacidades.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var tipo = await db.TiposUsuario
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tipoUsuarioId && t.EmpresaId == _empresaId && (_esSuperAdmin || !t.IsSystem));
+
+        if (tipo == null)
+        {
+            error = "El rol seleccionado no pertenece a la empresa activa o no está disponible.";
+            return;
+        }
+
+        var capacidad = await db.Capacidades
+            .IgnoreQueryFilters()
+            .Include(c => c.ModuloAcceso)
+            .FirstOrDefaultAsync(c => c.Id == capacidadId);
+
+        if (capacidad == null || !_modulosHabilitados.Contains(capacidad.ModuloAcceso.Clave) || (!_esSuperAdmin && capacidad.ModuloAcceso.EsGlobal))
+        {
+            error = "La capacidad seleccionada no está habilitada para esta empresa.";
+            return;
+        }
+
+        var existing = await db.TipoUsuarioCapacidades
+            .FirstOrDefaultAsync(tc => tc.TipoUsuarioId == tipo.Id && tc.CapacidadId == capacidad.Id);
+
+        if (existing != null)
+        {
+            db.TipoUsuarioCapacidades.Remove(existing);
+            await AuditService.LogAsync("Quitar capacidad a rol", nameof(TipoUsuarioCapacidad), null, $"Capacidad {capacidad.Clave} removida del rol {tipo.Nombre}.", _empresaId);
+        }
+        else
+        {
+            db.TipoUsuarioCapacidades.Add(new TipoUsuarioCapacidad { TipoUsuarioId = tipo.Id, CapacidadId = capacidad.Id });
+            await AuditService.LogAsync("Asignar capacidad a rol", nameof(TipoUsuarioCapacidad), null, $"Capacidad {capacidad.Clave} asignada al rol {tipo.Nombre}.", _empresaId);
+        }
+
+        await db.SaveChangesAsync();
+        await Cargar();
+    }
+}

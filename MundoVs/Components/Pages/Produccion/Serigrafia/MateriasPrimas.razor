@@ -1,0 +1,329 @@
+@page "/serigrafia/materias-primas"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Inventario
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IRepository<MateriaPrima> MateriaPrimaRepository
+@inject IAppConfigRepository AppConfigRepository
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Materias Primas</PageTitle>
+
+<div class="container-fluid px-4">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2><i class="bi bi-droplet-fill"></i> Materias Primas</h2>
+        <button class="btn btn-success" @onclick="Nuevo">
+            <i class="bi bi-plus-circle"></i> Nueva Materia Prima
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <select class="form-select" @bind="filtroTipoId" @bind:after="AplicarFiltro">
+                <option value="">Todos los tipos</option>
+                @foreach (var tipo in tiposMateriaPrima)
+                {
+                    <option value="@tipo.Id">@tipo.Nombre</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow">
+            <div class="card-header bg-dark text-white">
+                <strong>@(editando.Id == Guid.Empty ? "Nueva Materia Prima" : "Editar Materia Prima")</strong>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Código</label>
+                        <input type="text" class="form-control" @bind="editando.Codigo" readonly="@(editando.Id == Guid.Empty)" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Nombre</label>
+                        <input type="text" class="form-control" @bind="editando.Nombre" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Tipo</label>
+                        <select class="form-select" @bind="editando.TipoInventarioId">
+                            <option value="">Seleccione...</option>
+                            @foreach (var tipo in tiposMateriaPrima)
+                            {
+                                <option value="@tipo.Id">@tipo.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Precio Unitario</label>
+                        <input type="number" step="0.0001" class="form-control" @bind="editando.PrecioUnitario" />
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Unidad</label>
+                        <select class="form-select" @bind="editando.UnidadMedida">
+                            <option value="kg">kg</option>
+                            <option value="lt">lt</option>
+                            <option value="ml">ml</option>
+                            <option value="gr">gr</option>
+                            <option value="pza">pza</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Cantidad (Stock)</label>
+                        <input type="number" step="0.01" class="form-control" @bind="editando.Cantidad" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Stock Mínimo</label>
+                        <input type="number" step="0.01" class="form-control" @bind="editando.StockMinimo" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Pantone</label>
+                        <input type="text" class="form-control" @bind="editando.CodigoPantone" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Color Hex</label>
+                        <div class="d-flex gap-2">
+                            <input type="color" class="form-control form-control-color" value="@(editando.CodigoHex ?? "#000000")" @onchange="e => editando.CodigoHex = e.Value?.ToString()" />
+                            <input type="text" class="form-control" @bind="editando.CodigoHex" placeholder="#000000" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success" @onclick="Guardar"><i class="bi bi-save"></i> Guardar</button>
+                    <button class="btn btn-secondary" @onclick="Cancelar"><i class="bi bi-x-circle"></i> Cancelar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow">
+        <div class="card-body">
+            @if (items == null)
+            {
+                <div class="text-center py-3"><div class="spinner-border"></div></div>
+            }
+            else if (!items.Any())
+            {
+                <div class="alert alert-info">No hay materias primas registradas.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Color</th>
+                                <th>Código</th>
+                                <th>Nombre</th>
+                                <th>Tipo</th>
+                                <th>Precio Unit.</th>
+                                <th>Cantidad</th>
+                                <th>Stock Mín.</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in items)
+                            {
+                                var stockBajo = item.Cantidad <= item.StockMinimo;
+                                <tr class="@(stockBajo ? "table-danger" : "")">
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(item.CodigoHex))
+                                        {
+                                            <span style="display:inline-block;width:24px;height:24px;border-radius:6px;background:@item.CodigoHex;border:1px solid rgba(0,0,0,.15)"></span>
+                                        }
+                                    </td>
+                                    <td><strong>@item.Codigo</strong></td>
+                                    <td>@item.Nombre</td>
+                                    <td><span class="badge bg-secondary">@ObtenerNombreTipo(item)</span></td>
+                                    <td>$@item.PrecioUnitario.ToString("N4")</td>
+                                    <td>@item.Cantidad.ToString("N2") @item.UnidadMedida</td>
+                                    <td>@item.StockMinimo.ToString("N2")</td>
+                                    <td>
+                                        @if (stockBajo)
+                                        {
+                                            <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Bajo</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success">OK</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => Editar(item)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => Eliminar(item)"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<MateriaPrima>? items;
+    private IEnumerable<MateriaPrima>? todosItems;
+    private List<TipoInventario> tiposMateriaPrima = [];
+    private MateriaPrima editando = new();
+    private Guid _empresaId;
+    private Guid? filtroTipoId;
+    private bool mostrarFormulario;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContexto();
+        await Cargar();
+    }
+
+    private async Task CargarContexto()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+        _ = Guid.TryParse(empresaIdStr, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        error = null;
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay una empresa activa en sesión.";
+            items = [];
+            todosItems = [];
+            tiposMateriaPrima = [];
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            tiposMateriaPrima = await db.TiposInventario.IgnoreQueryFilters()
+                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
+                .Include(t => t.CategoriaInventario)
+                .OrderBy(t => t.Orden)
+                .ThenBy(t => t.Nombre)
+                .ToListAsync();
+
+            todosItems = await db.MateriasPrimas.IgnoreQueryFilters()
+                .Where(i => i.EmpresaId == _empresaId && i.IsActive)
+                .Include(i => i.TipoInventario)
+                .OrderBy(i => i.Nombre)
+                .ToListAsync();
+
+            AplicarFiltro();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudieron cargar las materias primas. {ex.Message}";
+            items = [];
+            todosItems = [];
+            tiposMateriaPrima = [];
+        }
+    }
+
+    private void AplicarFiltro()
+    {
+        items = filtroTipoId.HasValue && filtroTipoId.Value != Guid.Empty
+            ? todosItems?.Where(i => i.TipoInventarioId == filtroTipoId.Value)
+            : todosItems;
+    }
+
+    private async Task Nuevo()
+    {
+        editando = new MateriaPrima
+        {
+            EmpresaId = _empresaId,
+            Codigo = await AppConfigRepository.GetNextCodeAsync("MP-", "Consecutivo:MateriaPrima"),
+            TipoInventarioId = filtroTipoId ?? tiposMateriaPrima.FirstOrDefault()?.Id
+        };
+        mostrarFormulario = true;
+    }
+
+    private void Editar(MateriaPrima item)
+    {
+        editando = new MateriaPrima
+        {
+            Id = item.Id,
+            EmpresaId = item.EmpresaId,
+            Codigo = item.Codigo,
+            Nombre = item.Nombre,
+            TipoInventarioId = item.TipoInventarioId,
+            TipoMateriaPrima = item.TipoMateriaPrima,
+            PrecioUnitario = item.PrecioUnitario,
+            CodigoPantone = item.CodigoPantone,
+            CodigoHex = item.CodigoHex,
+            Cantidad = item.Cantidad,
+            UnidadMedida = item.UnidadMedida,
+            StockMinimo = item.StockMinimo,
+            CreatedAt = item.CreatedAt,
+            IsActive = item.IsActive
+        };
+        mostrarFormulario = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(editando.Nombre))
+        {
+            error = "El nombre es requerido.";
+            return;
+        }
+
+        if (!editando.TipoInventarioId.HasValue || editando.TipoInventarioId == Guid.Empty)
+        {
+            error = "Seleccione un tipo de materia prima.";
+            return;
+        }
+
+        if (editando.Id == Guid.Empty)
+            await MateriaPrimaRepository.AddAsync(editando);
+        else
+        {
+            editando.UpdatedAt = DateTime.UtcNow;
+            await MateriaPrimaRepository.UpdateAsync(editando);
+        }
+
+        await Cargar();
+        Cancelar();
+    }
+
+    private async Task Eliminar(MateriaPrima item)
+    {
+        item.IsActive = false;
+        item.UpdatedAt = DateTime.UtcNow;
+        await MateriaPrimaRepository.UpdateAsync(item);
+        await Cargar();
+    }
+
+    private void Cancelar()
+    {
+        editando = new MateriaPrima();
+        mostrarFormulario = false;
+    }
+
+    private static string ObtenerNombreTipo(MateriaPrima item)
+        => item.TipoInventario?.Nombre ?? item.TipoMateriaPrima.ToString();
+}

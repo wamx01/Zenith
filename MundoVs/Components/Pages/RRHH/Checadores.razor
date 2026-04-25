@@ -1,0 +1,602 @@
+@page "/rrhh/checadores"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Models
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IRrhhMarcacionZonaHorariaService MarcacionZonaHorariaService
+@inject IRrhhAsistenciaProcessor AsistenciaProcessor
+@rendermode InteractiveServer
+
+<PageTitle>Checadores</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver checadores.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-start justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-hdd-network me-2"></i>Checadores</h1>
+                <p class="text-muted mb-0">Administra los dispositivos de marcación y su configuración de conexión.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo checador</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (mostrarForm)
+        {
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo checador" : "Editar checador")</h5></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Número de serie</label>
+                            <InputText class="form-control" @bind-Value="editando.NumeroSerie" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Marca</label>
+                            <InputText class="form-control" @bind-Value="editando.Marca" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Modelo</label>
+                            <InputText class="form-control" @bind-Value="editando.Modelo" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">IP</label>
+                            <InputText class="form-control" @bind-Value="editando.Ip" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Puerto</label>
+                            <InputNumber class="form-control" @bind-Value="editando.Puerto" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">No. máquina</label>
+                            <InputNumber class="form-control" @bind-Value="editando.NumeroMaquina" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Ubicación</label>
+                            <InputText class="form-control" @bind-Value="editando.Ubicacion" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Zona horaria</label>
+                            <InputSelect class="form-select" @bind-Value="editando.ZonaHoraria">
+                                @foreach (var zona in ZonasHorariasDisponibles)
+                                {
+                                    <option value="@zona.Id">@zona.Nombre</option>
+                                }
+                            </InputSelect>
+                            <div class="form-text">Se usa para interpretar la hora que envía el checador y convertirla a UTC.</div>
+                        </div>
+                        <div class="col-md-12 d-flex gap-2 mt-3">
+                            <button class="btn btn-success" @onclick="Guardar" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar</button>
+                            <button class="btn btn-outline-secondary" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Mostrados</div><div class="fs-4 fw-bold">@lista.Count</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Activos</div><div class="fs-4 fw-bold">@lista.Count(c => c.IsActive)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Con sync</div><div class="fs-4 fw-bold">@lista.Count(c => c.UltimaSincronizacionUtc.HasValue)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Sin IP</div><div class="fs-4 fw-bold">@lista.Count(c => string.IsNullOrWhiteSpace(c.Ip))</div></div></div></div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white">Filtros</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Buscar</label>
+                        <InputText class="form-control" @bind-Value="filtroTexto" placeholder="Nombre, serie, IP o ubicación" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Estado</label>
+                        <InputSelect class="form-select" @bind-Value="filtroEstado">
+                            <option value="todos">Todos</option>
+                            <option value="activos">Activos</option>
+                            <option value="inactivos">Inactivos</option>
+                            <option value="sin-sync">Sin sincronización</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-5 d-flex gap-2">
+                        <button class="btn btn-primary" @onclick="CargarAsync"><i class="bi bi-search me-1"></i>Aplicar filtros</button>
+                        <button class="btn btn-outline-secondary" @onclick="LimpiarFiltros">Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_puedeEditar)
+        {
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-warning-subtle d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-semibold">Corrección histórica de zona horaria</div>
+                        <div class="small text-muted">Puedes corregir UTC mal interpretado o reconstruir la hora local congelada usando la zona del checador.</div>
+                    </div>
+                    <span class="badge text-bg-warning">Por checador</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Checador</label>
+                            <InputSelect class="form-select" @bind-Value="checadorCorreccionIdTexto" @bind-Value:after="OnChecadorCorreccionChangedAsync">
+                                <option value="">Seleccionar checador...</option>
+                                @foreach (var checador in lista.Where(c => c.IsActive).OrderBy(c => c.Nombre))
+                                {
+                                    <option value="@checador.Id.ToString()">@checador.Nombre</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Desde</label>
+                            <InputDate class="form-control" @bind-Value="fechaCorreccionDesde" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Hasta</label>
+                            <InputDate class="form-control" @bind-Value="fechaCorreccionHasta" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Zona horaria a aplicar</label>
+                            <InputSelect class="form-select" @bind-Value="zonaHorariaCorreccion">
+                                <option value="">Usar la configurada en el checador</option>
+                                @foreach (var zona in ZonasHorariasDisponibles)
+                                {
+                                    <option value="@zona.Id">@zona.Nombre</option>
+                                }
+                            </InputSelect>
+                            <div class="form-text">No necesitas escribir el identificador manualmente.</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Motivo</label>
+                            <InputText class="form-control" @bind-Value="motivoCorreccion" placeholder="Ej. checador envió hora local y se guardó como UTC" />
+                        </div>
+                        <div class="col-md-2">
+                            <div class="form-check mt-4 pt-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="reprocesarCorreccion" />
+                                <label class="form-check-label ms-2">Reprocesar asistencias</label>
+                            </div>
+                        </div>
+                        <div class="col-md-2 d-grid gap-2">
+                            <button class="btn btn-warning" @onclick="CorregirZonaHorariaAsync" disabled="@guardandoCorreccion">
+                                <i class="bi bi-clock-history me-1"></i>Corregir UTC
+                            </button>
+                            <button class="btn btn-outline-primary" @onclick="ReconstruirHoraLocalAsync" disabled="@guardandoCorreccion">
+                                <i class="bi bi-arrow-repeat me-1"></i>Reconstruir local
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (checadorCorreccionSeleccionado is not null)
+                    {
+                        <div class="alert alert-light border mt-3 mb-0 small">
+                            <strong>Checador seleccionado:</strong> @checadorCorreccionSeleccionado.Nombre · TZ actual: @(string.IsNullOrWhiteSpace(checadorCorreccionSeleccionado.ZonaHoraria) ? "Predeterminada" : checadorCorreccionSeleccionado.ZonaHoraria)<br />
+                            <span class="text-muted">`Corregir UTC` reinterpreta la fecha guardada como hora local del checador. `Reconstruir local` conserva la UTC y reconstruye `FechaHoraMarcacionLocal` + `ZonaHorariaAplicada` para históricos.</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Conexión</th>
+                            <th>Serie</th>
+                            <th>Ubicación</th>
+                            <th>Última sync</th>
+                            <th>Último evento</th>
+                            <th class="text-center">Activo</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (lista.Count == 0)
+                        {
+                            <tr><td colspan="8" class="text-center text-muted py-4">No hay checadores registrados.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in lista)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@item.Nombre</div>
+                                        <div class="small text-muted">@(string.IsNullOrWhiteSpace(item.Marca) && string.IsNullOrWhiteSpace(item.Modelo) ? "Sin marca/modelo" : $"{item.Marca} {item.Modelo}".Trim())</div>
+                                    </td>
+                                    <td class="small">
+                                        <div>@(string.IsNullOrWhiteSpace(item.Ip) ? "—" : $"{item.Ip}:{item.Puerto}")</div>
+                                        <div class="text-muted">TZ @(string.IsNullOrWhiteSpace(item.ZonaHoraria) ? "Predeterminada" : item.ZonaHoraria)</div>
+                                    </td>
+                                    <td class="small">@(item.NumeroSerie ?? "—")</td>
+                                    <td class="small">@(item.Ubicacion ?? "—")</td>
+                                    <td class="small">@(item.UltimaSincronizacionUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Nunca")</td>
+                                    <td class="small">@(item.UltimoEventoLeido ?? "—")</td>
+                                    <td class="text-center"><span class="badge @(item.IsActive ? "bg-success" : "bg-secondary")">@(item.IsActive ? "Sí" : "No")</span></td>
+                                    <td class="text-end">
+                                        @if (_puedeEditar)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)"><i class="bi bi-pencil"></i></button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RrhhChecador> lista = [];
+    private RrhhChecador editando = new();
+    private bool mostrarForm;
+    private bool guardando;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private string? error;
+    private string? ok;
+    private string? filtroTexto;
+    private string filtroEstado = "todos";
+    private bool guardandoCorreccion;
+    private string checadorCorreccionIdTexto = string.Empty;
+    private string zonaHorariaCorreccion = string.Empty;
+    private DateTime fechaCorreccionDesde = DateTime.Today;
+    private DateTime fechaCorreccionHasta = DateTime.Today;
+    private string? motivoCorreccion;
+    private bool reprocesarCorreccion = true;
+    private RrhhChecador? checadorCorreccionSeleccionado;
+
+    private static IReadOnlyList<ZonaHorariaOpcion> ZonasHorariasDisponibles { get; } = ConstruirZonasHorariasDisponibles();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+            await CargarAsync();
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var query = db.RrhhChecadores
+            .AsNoTracking()
+            .Where(c => c.EmpresaId == _empresaId);
+
+        if (!string.IsNullOrWhiteSpace(filtroTexto))
+        {
+            var texto = filtroTexto.Trim();
+            query = query.Where(c =>
+                c.Nombre.Contains(texto) ||
+                (c.NumeroSerie != null && c.NumeroSerie.Contains(texto)) ||
+                (c.Ip != null && c.Ip.Contains(texto)) ||
+                (c.Ubicacion != null && c.Ubicacion.Contains(texto)));
+        }
+
+        query = filtroEstado switch
+        {
+            "activos" => query.Where(c => c.IsActive),
+            "inactivos" => query.Where(c => !c.IsActive),
+            "sin-sync" => query.Where(c => c.UltimaSincronizacionUtc == null),
+            _ => query
+        };
+
+        lista = await query
+            .OrderByDescending(c => c.IsActive)
+            .ThenBy(c => c.Nombre)
+            .ToListAsync();
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        filtroTexto = null;
+        filtroEstado = "todos";
+        await CargarAsync();
+    }
+
+    private void Nuevo()
+    {
+        error = ok = null;
+        editando = new RrhhChecador { Id = Guid.Empty, IsActive = true, Puerto = 4370, NumeroMaquina = 1, ZonaHoraria = ZonasHorariasDisponibles[0].Id };
+        mostrarForm = true;
+    }
+
+    private void Cancelar()
+    {
+        mostrarForm = false;
+        editando = new();
+        error = ok = null;
+    }
+
+    private async Task Editar(Guid id)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var checador = await db.RrhhChecadores.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id && c.EmpresaId == _empresaId);
+        if (checador == null)
+        {
+            error = "No se encontró el checador.";
+            return;
+        }
+
+        error = ok = null;
+        editando = new RrhhChecador
+        {
+            Id = checador.Id,
+            EmpresaId = checador.EmpresaId,
+            Nombre = checador.Nombre,
+            NumeroSerie = checador.NumeroSerie,
+            Marca = checador.Marca,
+            Modelo = checador.Modelo,
+            Ip = checador.Ip,
+            Puerto = checador.Puerto,
+            NumeroMaquina = checador.NumeroMaquina,
+            Ubicacion = checador.Ubicacion,
+            ZonaHoraria = checador.ZonaHoraria,
+            UltimaSincronizacionUtc = checador.UltimaSincronizacionUtc,
+            UltimoEventoLeido = checador.UltimoEventoLeido,
+            CreatedAt = checador.CreatedAt,
+            CreatedBy = checador.CreatedBy,
+            UpdatedAt = checador.UpdatedAt,
+            UpdatedBy = checador.UpdatedBy,
+            IsActive = checador.IsActive
+        };
+        mostrarForm = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null;
+        if (string.IsNullOrWhiteSpace(editando.Nombre))
+        {
+            error = "El nombre es requerido.";
+            return;
+        }
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay empresa activa.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nombre = editando.Nombre.Trim();
+            var serie = string.IsNullOrWhiteSpace(editando.NumeroSerie) ? null : editando.NumeroSerie.Trim();
+
+            var duplicadoNombre = await db.RrhhChecadores.AnyAsync(c => c.EmpresaId == _empresaId && c.Nombre == nombre && c.Id != editando.Id);
+            if (duplicadoNombre)
+            {
+                error = "Ya existe un checador con ese nombre.";
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(serie))
+            {
+                var duplicadoSerie = await db.RrhhChecadores.AnyAsync(c => c.EmpresaId == _empresaId && c.NumeroSerie == serie && c.Id != editando.Id);
+                if (duplicadoSerie)
+                {
+                    error = "Ya existe un checador con ese número de serie.";
+                    return;
+                }
+            }
+
+            if (editando.Id == Guid.Empty)
+            {
+                db.RrhhChecadores.Add(new RrhhChecador
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Nombre = nombre,
+                    NumeroSerie = serie,
+                    Marca = LimpiarTexto(editando.Marca),
+                    Modelo = LimpiarTexto(editando.Modelo),
+                    Ip = LimpiarTexto(editando.Ip),
+                    Puerto = editando.Puerto <= 0 ? 4370 : editando.Puerto,
+                    NumeroMaquina = editando.NumeroMaquina <= 0 ? 1 : editando.NumeroMaquina,
+                    Ubicacion = LimpiarTexto(editando.Ubicacion),
+                    ZonaHoraria = LimpiarTexto(editando.ZonaHoraria),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = editando.IsActive
+                });
+            }
+            else
+            {
+                var actual = await db.RrhhChecadores.FirstOrDefaultAsync(c => c.Id == editando.Id && c.EmpresaId == _empresaId);
+                if (actual == null)
+                {
+                    error = "No se encontró el checador a guardar.";
+                    return;
+                }
+
+                actual.Nombre = nombre;
+                actual.NumeroSerie = serie;
+                actual.Marca = LimpiarTexto(editando.Marca);
+                actual.Modelo = LimpiarTexto(editando.Modelo);
+                actual.Ip = LimpiarTexto(editando.Ip);
+                actual.Puerto = editando.Puerto <= 0 ? 4370 : editando.Puerto;
+                actual.NumeroMaquina = editando.NumeroMaquina <= 0 ? 1 : editando.NumeroMaquina;
+                actual.Ubicacion = LimpiarTexto(editando.Ubicacion);
+                actual.ZonaHoraria = LimpiarTexto(editando.ZonaHoraria);
+                actual.IsActive = editando.IsActive;
+                actual.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Checador guardado.";
+            mostrarForm = false;
+            await CargarAsync();
+
+            if (checadorCorreccionSeleccionado?.Id == editando.Id)
+            {
+                checadorCorreccionSeleccionado = lista.FirstOrDefault(c => c.Id == editando.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private Task OnChecadorCorreccionChangedAsync()
+    {
+        checadorCorreccionSeleccionado = Guid.TryParse(checadorCorreccionIdTexto, out var checadorId)
+            ? lista.FirstOrDefault(c => c.Id == checadorId)
+            : null;
+
+        zonaHorariaCorreccion = checadorCorreccionSeleccionado?.ZonaHoraria ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task CorregirZonaHorariaAsync()
+        => await EjecutarCorreccionZonaHorariaAsync(
+            db => MarcacionZonaHorariaService.CorregirMarcacionesGuardadasComoHoraLocalAsync(db, ConstruirSolicitudCorreccion()),
+            resultado => resultado.MarcacionesCorregidas > 0
+                ? $"Se corrigieron {resultado.MarcacionesCorregidas} marcación(es) usando la zona {resultado.ZonaHorariaAplicada}."
+                : "No se encontraron marcaciones a corregir para ese checador y rango.");
+
+    private async Task ReconstruirHoraLocalAsync()
+        => await EjecutarCorreccionZonaHorariaAsync(
+            db => MarcacionZonaHorariaService.ReconstruirHoraLocalDesdeUtcAsync(db, ConstruirSolicitudCorreccion()),
+            resultado => resultado.MarcacionesCorregidas > 0
+                ? $"Se reconstruyeron {resultado.MarcacionesCorregidas} marcación(es) usando la zona {resultado.ZonaHorariaAplicada}."
+                : "No se encontraron marcaciones para reconstruir en ese checador y rango.");
+
+    private RrhhMarcacionZonaHorariaCorrectionRequest ConstruirSolicitudCorreccion()
+        => new()
+        {
+            EmpresaId = _empresaId,
+            ChecadorId = Guid.Parse(checadorCorreccionIdTexto),
+            FechaDesde = DateOnly.FromDateTime(fechaCorreccionDesde.Date),
+            FechaHasta = DateOnly.FromDateTime(fechaCorreccionHasta.Date),
+            ZonaHoraria = string.IsNullOrWhiteSpace(zonaHorariaCorreccion) ? null : zonaHorariaCorreccion,
+            ReprocesarAsistencias = reprocesarCorreccion,
+            Motivo = motivoCorreccion
+        };
+
+    private async Task EjecutarCorreccionZonaHorariaAsync(
+        Func<CrmDbContext, Task<RrhhMarcacionZonaHorariaCorrectionResult>> operacion,
+        Func<RrhhMarcacionZonaHorariaCorrectionResult, string> mensajeExito)
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para corregir marcaciones.";
+            return;
+        }
+
+        if (!Guid.TryParse(checadorCorreccionIdTexto, out var checadorId))
+        {
+            error = "Selecciona un checador para la corrección.";
+            return;
+        }
+
+        if (fechaCorreccionHasta.Date < fechaCorreccionDesde.Date)
+        {
+            error = "La fecha final no puede ser menor a la fecha inicial.";
+            return;
+        }
+
+        guardandoCorreccion = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var request = ConstruirSolicitudCorreccion();
+            var resultado = await operacion(db);
+
+            if (reprocesarCorreccion && resultado.MarcacionesCorregidas > 0)
+            {
+                await AsistenciaProcessor.ReprocesarRangoAsync(
+                    db,
+                    _empresaId,
+                    request.FechaDesde,
+                    request.FechaHasta);
+            }
+
+            ok = mensajeExito(resultado);
+
+            await CargarAsync();
+            await OnChecadorCorreccionChangedAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardandoCorreccion = false;
+        }
+    }
+
+    private sealed record ZonaHorariaOpcion(string Id, string Nombre);
+
+    private static IReadOnlyList<ZonaHorariaOpcion> ConstruirZonasHorariasDisponibles()
+    {
+        var offsets = Enumerable.Range(-12, 25)
+            .Select(offset => new ZonaHorariaOpcion(
+                offset == 0 ? "UTC" : $"UTC{(offset >= 0 ? "+" : "-")}{Math.Abs(offset):00}:00",
+                offset == 0 ? "UTC±00:00 (offset fijo)" : $"UTC{(offset >= 0 ? "+" : "-")}{Math.Abs(offset):00}:00 (offset fijo)"));
+
+        var regiones = new[]
+        {
+            new ZonaHorariaOpcion("America/Mexico_City", "Centro (CDMX, Edo. Méx., Jalisco, Nuevo León)"),
+            new ZonaHorariaOpcion("America/Merida", "Centro sureste (Yucatán, Campeche)"),
+            new ZonaHorariaOpcion("America/Cancun", "Quintana Roo"),
+            new ZonaHorariaOpcion("America/Chihuahua", "Chihuahua"),
+            new ZonaHorariaOpcion("America/Hermosillo", "Sonora"),
+            new ZonaHorariaOpcion("America/Mazatlan", "Pacífico norte (Sinaloa, Nayarit)"),
+            new ZonaHorariaOpcion("America/Tijuana", "Baja California")
+        };
+
+        return offsets
+            .Concat(regiones)
+            .ToList();
+    }
+}

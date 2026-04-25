@@ -1,0 +1,757 @@
+s@page "/contabilidad/cuentas-por-cobrar"
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject CrmDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Cuentas por Cobrar</PageTitle>
+
+<div class="cpc-page">
+
+    <div class="cpc-header">
+        <div>
+            <h1 class="cpc-title"><i class="bi bi-wallet2 me-2"></i>Cuentas por Cobrar</h1>
+            <p class="cpc-subtitle">¿Quién te debe, cuánto y desde cuándo?</p>
+        </div>
+    </div>
+
+    <div class="cpc-kpi-strip">
+        <div class="cpc-kpi" style="--kpi-accent:#f59e0b;--kpi-bg:linear-gradient(135deg,#fffbeb,#fef3c7)">
+            <div class="cpc-kpi-icon-wrap"><i class="bi bi-cash-coin"></i></div>
+            <div class="cpc-kpi-value">@totalPendiente.ToString("C2")</div>
+            <div class="cpc-kpi-label">Por cobrar</div>
+        </div>
+        <div class="cpc-kpi" style="--kpi-accent:#10b981;--kpi-bg:linear-gradient(135deg,#ecfdf5,#d1fae5)">
+            <div class="cpc-kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
+            <div class="cpc-kpi-value">@totalCobrado.ToString("C2")</div>
+            <div class="cpc-kpi-label">Cobrado</div>
+        </div>
+        <div class="cpc-kpi" style="--kpi-accent:#3b82f6;--kpi-bg:linear-gradient(135deg,#eff6ff,#dbeafe)">
+            <div class="cpc-kpi-icon-wrap"><i class="bi bi-people-fill"></i></div>
+            <div class="cpc-kpi-value">@clientesConAdeudo</div>
+            <div class="cpc-kpi-label">Con adeudo</div>
+        </div>
+        <div class="cpc-kpi" style="--kpi-accent:@(montoVencido > 0 ? "#ef4444" : "#10b981");--kpi-bg:linear-gradient(135deg,@(montoVencido > 0 ? "#fef2f2,#fee2e2" : "#ecfdf5,#d1fae5"))">
+            <div class="cpc-kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
+            <div class="cpc-kpi-value">@montoVencido.ToString("C2")</div>
+            <div class="cpc-kpi-label">Vencido</div>
+        </div>
+    </div>
+
+    <div class="cpc-toolbar">
+        <div class="cpc-search-box">
+            <i class="bi bi-search"></i>
+            <input type="text" placeholder="Buscar cliente..." @bind="textoBusqueda" @bind:event="oninput" @bind:after="AplicarFiltros" />
+        </div>
+        <select class="cpc-select" @bind="filtro" @bind:after="AplicarFiltros">
+            <option value="pendientes">Pendientes</option>
+            <option value="pagadas">Pagadas</option>
+            <option value="todas">Todas</option>
+        </select>
+        <select class="cpc-select" @bind="ordenarPor" @bind:after="AplicarFiltros">
+            <option value="mayor_adeudo">Mayor adeudo</option>
+            <option value="mayor_atraso">Mayor atraso</option>
+            <option value="nombre">Nombre A-Z</option>
+        </select>
+    </div>
+
+    @if (clientesAgrupados == null)
+    {
+        <div class="cpc-empty"><div class="spinner-border text-primary me-2" role="status" style="width:1.4rem;height:1.4rem"></div>Cargando...</div>
+    }
+    else if (!clientesAgrupados.Any())
+    {
+        <div class="cpc-empty"><i class="bi bi-inbox" style="font-size:1.8rem;opacity:.3"></i><span>No hay cuentas @(filtro == "pendientes" ? "pendientes" : filtro == "pagadas" ? "pagadas" : "registradas").</span></div>
+    }
+    else
+    {
+        @foreach (var cliente in clientesAgrupados)
+        {
+            var isExpanded = expandedCliente == cliente.ClienteId;
+            var atrasoColor = GetAtrasoColor(cliente.MayorDiasAtraso);
+            var pctPagado = cliente.Total > 0 ? Math.Min(100, (int)Math.Round((double)cliente.Pagado / (double)cliente.Total * 100)) : 0;
+            var barColor = cliente.Saldo <= 0 ? "#10b981" : cliente.Pagado > 0 ? "#f59e0b" : "#ef4444";
+
+            <div class="cpc-client-card @(isExpanded ? "cpc-expanded" : "") @(cliente.Saldo <= 0 ? "cpc-card-paid" : "")">
+                <div class="cpc-client-row" @onclick="() => ToggleCliente(cliente.ClienteId)">
+                    <div class="cpc-client-left">
+                        <div class="cpc-avatar" style="background:@(cliente.Saldo <= 0 ? "#10b981" : "#1e3a5f")">@cliente.ClienteNombre[..1]</div>
+                        <div>
+                            <div class="cpc-client-name">@cliente.ClienteNombre</div>
+                            <div class="cpc-client-meta">@cliente.Facturas.Count factura@(cliente.Facturas.Count != 1 ? "s" : "")</div>
+                        </div>
+                    </div>
+                    <div class="cpc-client-nums">
+                        <div class="cpc-num-block">
+                            <span class="cpc-num-label">Total</span>
+                            <span class="cpc-num-val">@cliente.Total.ToString("C2")</span>
+                        </div>
+                        <div class="cpc-num-block">
+                            <span class="cpc-num-label">Pagado</span>
+                            <span class="cpc-num-val" style="color:#10b981">@cliente.Pagado.ToString("C2")</span>
+                        </div>
+                        <div class="cpc-num-block">
+                            <span class="cpc-num-label">Saldo</span>
+                            <span class="cpc-num-val cpc-num-saldo" style="color:@(cliente.Saldo > 0 ? "#ef4444" : "#10b981")">@cliente.Saldo.ToString("C2")</span>
+                        </div>
+                        <div class="cpc-num-block cpc-num-atraso">
+                            @if (cliente.Saldo > 0 && cliente.MayorDiasAtraso > 0)
+                            {
+                                <span class="cpc-badge-atraso" style="background:@atrasoColor">@cliente.MayorDiasAtraso d</span>
+                            }
+                            else if (cliente.Saldo > 0)
+                            {
+                                <span class="cpc-badge-atraso" style="background:#10b981">OK</span>
+                            }
+                            else
+                            {
+                                <span class="cpc-badge-estado cpc-badge-pagado"><i class="bi bi-check-lg"></i></span>
+                            }
+                        </div>
+                        <div class="cpc-num-block cpc-num-estado">
+                            @if (cliente.Saldo <= 0)
+                            {
+                                <span class="cpc-badge-estado cpc-badge-pagado">Pagado</span>
+                            }
+                            else if (cliente.Pagado > 0)
+                            {
+                                <span class="cpc-badge-estado cpc-badge-parcial">Parcial</span>
+                            }
+                            else
+                            {
+                                <span class="cpc-badge-estado cpc-badge-pendiente">Pendiente</span>
+                            }
+                        </div>
+                        <i class="bi @(isExpanded ? "bi-chevron-up" : "bi-chevron-down") cpc-chevron"></i>
+                    </div>
+                </div>
+                <div class="cpc-progress-track"><div class="cpc-progress-bar" style="width:@(pctPagado)%;background:@barColor"></div></div>
+
+                @if (isExpanded)
+                {
+                    <div class="cpc-detail-panel">
+                        @foreach (var factura in cliente.Facturas)
+                        {
+                            var pagosFactura = pagosPorFactura.GetValueOrDefault(factura.FacturaId, []);
+                            var pagado = pagosFactura.Sum(p => p.ImporteAplicado);
+                            var saldo = Math.Max(0, factura.Total - pagado);
+                            var fColor = saldo <= 0 ? "#10b981" : saldo < factura.Total ? "#f59e0b" : "#ef4444";
+                            var diasAtraso = factura.DiasAtraso;
+                            var isFacturaExpanded = expandedFactura == factura.FacturaId;
+
+                            <div class="cpc-invoice @(saldo <= 0 ? "cpc-invoice-paid" : "")">
+                                <div class="cpc-invoice-head" @onclick="() => ToggleFactura(factura.FacturaId)" @onclick:stopPropagation="true">
+                                    <div class="cpc-invoice-left">
+                                        <span class="cpc-inv-num"><i class="bi bi-receipt me-1"></i>@factura.NumeroFactura</span>
+                                        @if (!string.IsNullOrWhiteSpace(factura.NumeroPedido))
+                                        {
+                                            <span class="cpc-inv-tag">Ped. @factura.NumeroPedido</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(factura.NumeroNota))
+                                        {
+                                            <span class="cpc-inv-tag">Nota @factura.NumeroNota</span>
+                                        }
+                                        <span class="cpc-inv-date"><i class="bi bi-calendar3 me-1"></i>@factura.FechaFactura.ToString("dd/MM/yyyy")</span>
+                                        @if (factura.FechaVencimiento.HasValue)
+                                        {
+                                            <span class="cpc-inv-date" style="color:@(diasAtraso > 0 ? "#ef4444" : "#6b7280")">
+                                                <i class="bi bi-clock me-1"></i>Vence @factura.FechaVencimiento.Value.ToString("dd/MM/yyyy")
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="cpc-invoice-right">
+                                        <span class="cpc-inv-total">@factura.Total.ToString("C2")</span>
+                                        <span class="cpc-inv-saldo" style="color:@fColor">@saldo.ToString("C2")</span>
+                                        @if (saldo > 0 && diasAtraso > 0)
+                                        {
+                                            <span class="cpc-badge-atraso-sm" style="background:@GetAtrasoColor(diasAtraso)">@diasAtraso d</span>
+                                        }
+                                        <i class="bi @(isFacturaExpanded ? "bi-chevron-up" : "bi-chevron-down") cpc-chevron-sm"></i>
+                                    </div>
+                                </div>
+
+                                @if (isFacturaExpanded)
+                                {
+                                    <div class="cpc-invoice-body">
+                                        @if (pagosFactura.Any())
+                                        {
+                                            <div class="cpc-section-title">Pagos aplicados</div>
+                                            <table class="cpc-pay-table">
+                                                <thead>
+                                                    <tr><th>#</th><th>Fecha</th><th>Forma</th><th>Referencia</th><th>Notas</th><th class="text-end">Importe</th><th></th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    @{ var idx = 1; }
+                                                    @foreach (var aplicacion in pagosFactura.OrderBy(p => p.PagoRecibido.FechaPago))
+                                                    {
+                                                        <tr>
+                                                            <td class="text-muted">@idx</td>
+                                                            <td>@aplicacion.PagoRecibido.FechaPago.ToString("dd/MM/yyyy")</td>
+                                                            <td><span class="cpc-forma-pill">@GetFormaPagoLabel(aplicacion.PagoRecibido.FormaPagoSat)</span></td>
+                                                            <td class="fw-semibold">@(aplicacion.PagoRecibido.Referencia ?? "—")</td>
+                                                            <td style="color:#6b7280;max-width:160px">@(aplicacion.PagoRecibido.Notas ?? "—")</td>
+                                                            <td class="text-end fw-bold" style="color:#10b981">@aplicacion.ImporteAplicado.ToString("C2")</td>
+                                                            <td><button type="button" class="cpc-btn-trash" @onclick="async () => await EliminarPago(aplicacion.Id, factura.FacturaId, cliente.ClienteId)" @onclick:stopPropagation="true"><i class="bi bi-trash3"></i></button></td>
+                                                        </tr>
+                                                        idx++;
+                                                    }
+                                                </tbody>
+                                                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total cobrado</td><td class="text-end fw-bold">@pagado.ToString("C2")</td><td></td></tr></tfoot>
+                                            </table>
+                                        }
+
+                                        @if (saldo > 0)
+                                        {
+                                            <div class="cpc-section-title">Aplicar cobro</div>
+                                            <div class="cpc-pay-form">
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-6 col-md-2">
+                                                        <label class="cpc-lbl">Fecha</label>
+                                                        <input type="date" class="form-control form-control-sm cpc-inp" @bind="nuevoPagoFecha" />
+                                                    </div>
+                                                    <div class="col-6 col-md-2">
+                                                        <label class="cpc-lbl">Importe <small>(máx @saldo.ToString("C2"))</small></label>
+                                                        <input type="number" step="0.01" min="0.01" max="@saldo" class="form-control form-control-sm cpc-inp" @bind="nuevoPagoMonto" placeholder="@saldo.ToString("F2")" />
+                                                    </div>
+                                                    <div class="col-6 col-md-2">
+                                                        <label class="cpc-lbl">Forma de pago</label>
+                                                        <select class="form-select form-select-sm cpc-inp" @bind="nuevoPagoFormaPago">
+                                                            <option value="@FormaPagoEnum.Transferencia">Transferencia</option>
+                                                            <option value="@FormaPagoEnum.Efectivo">Efectivo</option>
+                                                            <option value="@FormaPagoEnum.Cheque">Cheque</option>
+                                                            <option value="@FormaPagoEnum.TarjetaCredito">Tarjeta Crédito</option>
+                                                            <option value="@FormaPagoEnum.TarjetaDebito">Tarjeta Débito</option>
+                                                            <option value="@FormaPagoEnum.Otro">Otro</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-6 col-md-2">
+                                                        <label class="cpc-lbl">No. referencia</label>
+                                                        <input type="text" class="form-control form-control-sm cpc-inp" @bind="nuevoPagoReferencia" placeholder="No. operación..." />
+                                                    </div>
+                                                    <div class="col-12 col-md-2">
+                                                        <label class="cpc-lbl">Notas</label>
+                                                        <input type="text" class="form-control form-control-sm cpc-inp" @bind="nuevoPagoNotas" placeholder="Banco, comprobante..." />
+                                                    </div>
+                                                    <div class="col-12 col-md-2">
+                                                        <button type="button" class="btn cpc-btn-action btn-sm w-100" @onclick="async () => await AgregarPago(factura.FacturaId, factura.Total, cliente.ClienteId, factura.PedidoId, factura.NotaEntregaId, factura.MetodoPagoSat)" @onclick:stopPropagation="true">
+                                                            <i class="bi bi-plus-circle me-1"></i>Aplicar cobro
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(errorPago))
+                                                {
+                                                    <div class="text-danger mt-2" style="font-size:.72rem"><i class="bi bi-exclamation-circle me-1"></i>@errorPago</div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="cpc-paid-msg"><i class="bi bi-check-circle-fill me-1"></i>Pagado ✓</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .cpc-page { padding: .75rem; max-width: 1200px; margin: 0 auto; font-family: 'Segoe UI', system-ui, sans-serif; }
+    @@media (min-width:768px) { .cpc-page { padding: 1.25rem 1.75rem; } }
+
+    .cpc-header { margin-bottom: .75rem; }
+    .cpc-title { font-size: 1.35rem; font-weight: 800; color: #1e3a5f; margin: 0; letter-spacing: -.01em; }
+    .cpc-subtitle { font-size: .72rem; color: #94a3b8; margin-top: .1rem; }
+
+    /* ── KPI Strip ── */
+    .cpc-kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: .6rem; margin-bottom: .75rem; }
+    @@media (max-width:767px) { .cpc-kpi-strip { grid-template-columns: repeat(2,1fr); } }
+    .cpc-kpi { background: var(--kpi-bg); border-radius: 10px; padding: .7rem .85rem; position: relative; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+    .cpc-kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--kpi-accent); }
+    .cpc-kpi-icon-wrap { width: 28px; height: 28px; border-radius: 8px; background: var(--kpi-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: .72rem; margin-bottom: .35rem; opacity: .85; }
+    .cpc-kpi-value { font-size: 1.15rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+    .cpc-kpi-label { font-size: .58rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-top: .15rem; font-weight: 600; }
+
+    /* ── Toolbar ── */
+    .cpc-toolbar { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .cpc-search-box { position: relative; flex: 1; min-width: 160px; max-width: 260px; }
+    .cpc-search-box i { position: absolute; left: .5rem; top: 50%; transform: translateY(-50%); font-size: .68rem; color: #94a3b8; pointer-events: none; }
+    .cpc-search-box input { width: 100%; font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem .28rem 1.6rem; background: #fff; color: #1e293b; height: 28px; transition: border .15s, box-shadow .15s; }
+    .cpc-search-box input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); outline: none; }
+    .cpc-select { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem; background: #fff; color: #1e293b; height: 28px; cursor: pointer; }
+
+    /* ── Empty state ── */
+    .cpc-empty { display: flex; align-items: center; justify-content: center; gap: .5rem; padding: 3rem 1rem; color: #94a3b8; font-size: .82rem; background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; }
+
+    /* ── Client cards ── */
+    .cpc-client-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: .5rem; overflow: hidden; transition: box-shadow .15s, border-color .15s; }
+    .cpc-client-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .cpc-expanded { border-color: #93c5fd; box-shadow: 0 2px 12px rgba(59,130,246,.1); }
+    .cpc-card-paid { opacity: .55; }
+    .cpc-card-paid:hover { opacity: .75; }
+
+    .cpc-client-row { display: flex; align-items: center; justify-content: space-between; padding: .6rem .85rem; cursor: pointer; gap: .5rem; flex-wrap: wrap; }
+    .cpc-client-left { display: flex; align-items: center; gap: .6rem; min-width: 200px; }
+    .cpc-avatar { width: 30px; height: 30px; border-radius: 8px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .7rem; flex-shrink: 0; }
+    .cpc-client-name { font-size: .82rem; font-weight: 700; color: #0f172a; line-height: 1.15; }
+    .cpc-client-meta { font-size: .62rem; color: #94a3b8; }
+
+    .cpc-client-nums { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
+    .cpc-num-block { text-align: right; }
+    .cpc-num-label { display: block; font-size: .52rem; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+    .cpc-num-val { display: block; font-size: .8rem; font-weight: 600; color: #334155; }
+    .cpc-num-saldo { font-weight: 800; font-size: .85rem; }
+    .cpc-num-atraso { min-width: 42px; text-align: center; }
+    .cpc-num-estado { min-width: 58px; text-align: center; }
+    .cpc-chevron { font-size: .65rem; color: #94a3b8; margin-left: .2rem; }
+
+    .cpc-badge-atraso { color: #fff; font-size: .58rem; padding: .15rem .4rem; border-radius: 10px; font-weight: 700; display: inline-block; }
+    .cpc-badge-atraso-sm { color: #fff; font-size: .52rem; padding: .1rem .3rem; border-radius: 8px; font-weight: 700; }
+    .cpc-badge-estado { font-size: .58rem; padding: .15rem .45rem; border-radius: 10px; font-weight: 700; display: inline-block; }
+    .cpc-badge-pagado { background: #d1fae5; color: #065f46; }
+    .cpc-badge-parcial { background: #fef3c7; color: #92400e; }
+    .cpc-badge-pendiente { background: #fee2e2; color: #991b1b; }
+
+    /* ── Progress bar ── */
+    .cpc-progress-track { height: 3px; background: #f1f5f9; }
+    .cpc-progress-bar { height: 100%; transition: width .35s ease; border-radius: 0 3px 3px 0; }
+
+    /* ── Detail panel ── */
+    .cpc-detail-panel { padding: .5rem .75rem .65rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+
+    /* ── Invoice cards ── */
+    .cpc-invoice { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: .4rem; overflow: hidden; background: #fff; }
+    .cpc-invoice-paid { background: #f0fdf4; border-color: #bbf7d0; }
+    .cpc-invoice-head { display: flex; align-items: center; justify-content: space-between; padding: .45rem .7rem; cursor: pointer; gap: .35rem; flex-wrap: wrap; transition: background .1s; }
+    .cpc-invoice-head:hover { background: #f8fafc; }
+    .cpc-invoice-left { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+    .cpc-invoice-right { display: flex; align-items: center; gap: .45rem; }
+    .cpc-inv-num { font-size: .78rem; font-weight: 700; color: #1e3a5f; }
+    .cpc-inv-tag { font-size: .56rem; background: #eef2ff; color: #4338ca; padding: .1rem .35rem; border-radius: 6px; font-weight: 600; }
+    .cpc-inv-date { font-size: .65rem; color: #94a3b8; }
+    .cpc-inv-total { font-size: .78rem; font-weight: 700; color: #0f172a; }
+    .cpc-inv-saldo { font-size: .72rem; font-weight: 700; }
+    .cpc-chevron-sm { font-size: .6rem; color: #94a3b8; }
+
+    .cpc-invoice-body { padding: .55rem .7rem; border-top: 1px solid #f1f5f9; }
+    .cpc-section-title { font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #475569; border-bottom: 2px solid #e2e8f0; padding-bottom: .2rem; margin-bottom: .5rem; }
+
+    /* ── Payments table ── */
+    .cpc-pay-table { width: 100%; border-collapse: collapse; font-size: .72rem; margin-bottom: .5rem; }
+    .cpc-pay-table thead th { background: #f1f5f9; color: #475569; font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: .3rem .45rem; border-bottom: 2px solid #e2e8f0; }
+    .cpc-pay-table tbody td { padding: .3rem .45rem; border-bottom: 1px solid #f8fafc; vertical-align: middle; }
+    .cpc-pay-table tfoot td { background: #f1f5f9; padding: .3rem .45rem; color: #1e3a5f; }
+    .cpc-forma-pill { background: #eef2ff; color: #3730a3; font-size: .56rem; padding: .1rem .35rem; border-radius: 6px; font-weight: 600; }
+    .cpc-btn-trash { width: 22px; height: 22px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: .6rem; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; transition: all .1s; }
+    .cpc-btn-trash:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+    /* ── Payment form ── */
+    .cpc-pay-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: .55rem; }
+    .cpc-lbl { font-size: .6rem; font-weight: 700; color: #475569; margin-bottom: .1rem; display: block; }
+    .cpc-lbl small { font-weight: 500; color: #94a3b8; }
+    .cpc-inp { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
+    .cpc-inp:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+    .cpc-btn-action { background: linear-gradient(135deg,#1e3a5f,#2563eb); color: #fff; border: none; border-radius: 7px; font-size: .72rem; font-weight: 600; transition: opacity .1s; }
+    .cpc-btn-action:hover { opacity: .88; color: #fff; }
+    .cpc-paid-msg { background: #d1fae5; color: #065f46; padding: .4rem .65rem; border-radius: 8px; font-size: .72rem; font-weight: 700; }
+</style>
+
+@code {
+    private List<ClienteAgrupado>? clientesAgrupados;
+    private List<ClienteAgrupado> todosClientes = [];
+    private Dictionary<Guid, List<PagoAplicacionDocumento>> pagosPorFactura = new();
+    private Guid? expandedCliente;
+    private Guid? expandedFactura;
+    private string filtro = "pendientes";
+    private string ordenarPor = "mayor_adeudo";
+    private string textoBusqueda = "";
+    private string? errorPago;
+
+    private decimal totalCobrado;
+    private decimal totalPendiente;
+    private int clientesConAdeudo;
+    private decimal montoVencido;
+
+    private DateTime nuevoPagoFecha = DateTime.Now;
+    private decimal nuevoPagoMonto;
+    private FormaPagoEnum nuevoPagoFormaPago = FormaPagoEnum.Transferencia;
+    private string? nuevoPagoReferencia;
+    private string? nuevoPagoNotas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        var todasFacturas = await DbContext.Facturas
+            .AsNoTracking()
+            .Include(f => f.Cliente)
+            .Include(f => f.Pedido)
+            .Include(f => f.NotaEntrega)
+            .Include(f => f.NotasEntregaRelacionadas)
+                .ThenInclude(r => r.NotaEntrega)
+            .Where(f => f.IsActive
+                && f.TipoComprobante == FacturaTipoComprobante.Ingreso
+                && f.Estatus != FacturaEstatus.Cancelado)
+            .OrderByDescending(f => f.FechaEmision)
+            .ToListAsync();
+
+        var facturaIds = todasFacturas.Select(f => f.Id).ToList();
+        var aplicaciones = await DbContext.PagosAplicacionDocumento
+            .AsNoTracking()
+            .Include(a => a.PagoRecibido)
+            .Where(a => a.IsActive
+                && facturaIds.Contains(a.FacturaId)
+                && a.PagoRecibido.IsActive)
+            .ToListAsync();
+
+        pagosPorFactura = aplicaciones
+            .GroupBy(a => a.FacturaId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var facturasView = todasFacturas.Select(f =>
+        {
+            var diasCredito = f.Cliente.DiasCredito ?? 0;
+            DateTime? fechaVencimiento = diasCredito > 0 ? f.FechaEmision.AddDays(diasCredito) : null;
+            var pagadoF = pagosPorFactura.GetValueOrDefault(f.Id, []).Sum(x => x.ImporteAplicado);
+            var saldoF = Math.Max(0, f.Total - pagadoF);
+            var diasAtraso = 0;
+            if (saldoF > 0 && fechaVencimiento.HasValue && fechaVencimiento.Value.Date < DateTime.Today)
+            {
+                diasAtraso = (DateTime.Today - fechaVencimiento.Value.Date).Days;
+            }
+
+            return new FacturaViewModel
+            {
+                FacturaId = f.Id,
+                PedidoId = f.PedidoId,
+                NotaEntregaId = f.NotaEntregaId,
+                ClienteId = f.ClienteId,
+                ClienteNombre = f.Cliente.RazonSocial,
+                NumeroFactura = string.IsNullOrWhiteSpace(f.FolioFiscal) ? f.FolioInterno : f.FolioFiscal!,
+                NumeroPedido = f.Pedido?.NumeroPedido,
+                NumeroNota = ObtenerResumenNotas(f),
+                FechaFactura = f.FechaEmision,
+                FechaVencimiento = fechaVencimiento,
+                DiasAtraso = diasAtraso,
+                MetodoPagoSat = f.MetodoPagoSat,
+                Total = f.Total
+            };
+        }).ToList();
+
+        var totalFacturado = facturasView.Sum(f => f.Total);
+        totalCobrado = aplicaciones.Sum(a => a.ImporteAplicado);
+        totalPendiente = Math.Max(0, totalFacturado - totalCobrado);
+        montoVencido = facturasView.Where(f => f.DiasAtraso > 0).Sum(f => f.Total - pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
+        montoVencido = Math.Max(0, montoVencido);
+
+        todosClientes = facturasView
+            .GroupBy(f => new { f.ClienteId, f.ClienteNombre })
+            .Select(g =>
+            {
+                var total = g.Sum(f => f.Total);
+                var pagado = g.Sum(f => pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
+                var mayorAtraso = g.Where(f =>
+                {
+                    var s = f.Total - pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado);
+                    return s > 0;
+                }).Select(f => f.DiasAtraso).DefaultIfEmpty(0).Max();
+
+                return new ClienteAgrupado
+                {
+                    ClienteId = g.Key.ClienteId,
+                    ClienteNombre = g.Key.ClienteNombre,
+                    Total = total,
+                    Pagado = pagado,
+                    Saldo = Math.Max(0, total - pagado),
+                    MayorDiasAtraso = mayorAtraso,
+                    Facturas = g.OrderByDescending(f => f.FechaFactura).ToList()
+                };
+            })
+            .ToList();
+
+        clientesConAdeudo = todosClientes.Count(c => c.Saldo > 0);
+
+        AplicarFiltros();
+    }
+
+    private void AplicarFiltros()
+    {
+        var lista = todosClientes.AsEnumerable();
+
+        lista = filtro switch
+        {
+            "pendientes" => lista.Where(c => c.Saldo > 0),
+            "pagadas" => lista.Where(c => c.Saldo <= 0),
+            _ => lista
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var busq = textoBusqueda.Trim();
+            lista = lista.Where(c => c.ClienteNombre.Contains(busq, StringComparison.OrdinalIgnoreCase));
+        }
+
+        lista = ordenarPor switch
+        {
+            "mayor_adeudo" => lista.OrderByDescending(c => c.Saldo),
+            "mayor_atraso" => lista.OrderByDescending(c => c.MayorDiasAtraso).ThenByDescending(c => c.Saldo),
+            "nombre" => lista.OrderBy(c => c.ClienteNombre),
+            _ => lista.OrderByDescending(c => c.Saldo)
+        };
+
+        clientesAgrupados = lista.ToList();
+    }
+
+    private void ToggleCliente(Guid clienteId)
+    {
+        if (expandedCliente == clienteId)
+        {
+            expandedCliente = null;
+            expandedFactura = null;
+        }
+        else
+        {
+            expandedCliente = clienteId;
+            expandedFactura = null;
+        }
+        ResetNuevoPago();
+    }
+
+    private void ToggleFactura(Guid facturaId)
+    {
+        expandedFactura = expandedFactura == facturaId ? null : facturaId;
+        ResetNuevoPago();
+    }
+
+    private async Task AgregarPago(Guid facturaId, decimal totalFactura, Guid clienteId, Guid? pedidoId, Guid? notaEntregaId, string metodoPagoSat)
+    {
+        errorPago = null;
+
+        if (nuevoPagoMonto <= 0)
+        {
+            errorPago = "El importe debe ser mayor a $0.";
+            return;
+        }
+
+        if (nuevoPagoFecha.Date > DateTime.Today)
+        {
+            errorPago = "La fecha del cobro no puede ser futura.";
+            return;
+        }
+
+        var pagadoActual = ObtenerTotalPagadoActivo(facturaId);
+        var saldoRestante = totalFactura - pagadoActual;
+        if (nuevoPagoMonto > saldoRestante)
+        {
+            errorPago = $"El importe (${nuevoPagoMonto:F2}) excede el saldo pendiente (${saldoRestante:F2}).";
+            return;
+        }
+
+        var factura = await DbContext.Facturas.AsNoTracking().FirstOrDefaultAsync(f => f.Id == facturaId);
+        if (factura == null)
+        {
+            errorPago = "No se encontró la factura asociada al cobro.";
+            return;
+        }
+
+        var pago = new PagoRecibido
+        {
+            Id = Guid.NewGuid(),
+            ClienteId = clienteId,
+            PedidoId = pedidoId,
+            NotaEntregaId = notaEntregaId,
+            FechaPago = nuevoPagoFecha,
+            Monto = nuevoPagoMonto,
+            FormaPagoSat = MapFormaPagoSat(nuevoPagoFormaPago),
+            MedioCobroInterno = GetFormaPagoLabel(MapFormaPagoSat(nuevoPagoFormaPago)),
+            Referencia = nuevoPagoReferencia,
+            Notas = nuevoPagoNotas,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        var aplicacion = new PagoAplicacionDocumento
+        {
+            Id = Guid.NewGuid(),
+            PagoRecibidoId = pago.Id,
+            PagoRecibido = pago,
+            FacturaId = facturaId,
+            ImporteAplicado = nuevoPagoMonto,
+            SaldoAnterior = saldoRestante,
+            SaldoInsoluto = Math.Max(0, saldoRestante - nuevoPagoMonto),
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        DbContext.PagosRecibidos.Add(pago);
+        DbContext.PagosAplicacionDocumento.Add(aplicacion);
+        await DbContext.SaveChangesAsync();
+        await ActualizarEstadoFacturaAsync(facturaId);
+
+        var keepCliente = clienteId;
+        var keepFactura = expandedFactura;
+        ResetNuevoPago();
+        await CargarDatos();
+        expandedCliente = keepCliente;
+        expandedFactura = keepFactura;
+    }
+
+    private async Task EliminarPago(Guid aplicacionId, Guid facturaId, Guid clienteId)
+    {
+        var aplicacion = await DbContext.PagosAplicacionDocumento
+            .Include(a => a.PagoRecibido)
+            .FirstOrDefaultAsync(a => a.Id == aplicacionId && a.IsActive);
+        if (aplicacion == null)
+        {
+            return;
+        }
+
+        aplicacion.IsActive = false;
+        aplicacion.UpdatedAt = DateTime.UtcNow;
+
+        var aplicacionesActivas = await DbContext.PagosAplicacionDocumento
+            .CountAsync(a => a.PagoRecibidoId == aplicacion.PagoRecibidoId && a.IsActive && a.Id != aplicacionId);
+
+        if (aplicacionesActivas == 0)
+        {
+            aplicacion.PagoRecibido.IsActive = false;
+            aplicacion.PagoRecibido.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await DbContext.SaveChangesAsync();
+        await ActualizarEstadoFacturaAsync(facturaId);
+
+        await CargarDatos();
+        expandedCliente = clienteId;
+        expandedFactura = facturaId;
+    }
+
+    private async Task ActualizarEstadoFacturaAsync(Guid facturaId)
+    {
+        var factura = await DbContext.Facturas.FindAsync(facturaId);
+        if (factura == null) return;
+
+        var totalPagado = await DbContext.PagosAplicacionDocumento
+            .Where(a => a.FacturaId == facturaId && a.IsActive)
+            .SumAsync(a => a.ImporteAplicado);
+
+        if (factura.Total > 0 && totalPagado >= factura.Total)
+        {
+            if (factura.Estatus != FacturaEstatus.PagadoTotal)
+            {
+                factura.Estatus = FacturaEstatus.PagadoTotal;
+                factura.UpdatedAt = DateTime.UtcNow;
+                await DbContext.SaveChangesAsync();
+            }
+        }
+        else if (totalPagado > 0)
+        {
+            if (factura.Estatus != FacturaEstatus.PagadoParcial)
+            {
+                factura.Estatus = FacturaEstatus.PagadoParcial;
+                factura.UpdatedAt = DateTime.UtcNow;
+                await DbContext.SaveChangesAsync();
+            }
+        }
+        else if (factura.Estatus is FacturaEstatus.PagadoTotal or FacturaEstatus.PagadoParcial)
+        {
+            factura.Estatus = string.IsNullOrWhiteSpace(factura.UuidFiscal)
+                ? FacturaEstatus.PendienteTimbrado
+                : FacturaEstatus.Timbrado;
+            factura.UpdatedAt = DateTime.UtcNow;
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private void ResetNuevoPago()
+    {
+        nuevoPagoFecha = DateTime.Now;
+        nuevoPagoMonto = 0;
+        nuevoPagoFormaPago = FormaPagoEnum.Transferencia;
+        nuevoPagoReferencia = null;
+        nuevoPagoNotas = null;
+        errorPago = null;
+    }
+
+    private decimal ObtenerTotalPagadoActivo(Guid facturaId)
+        => pagosPorFactura.GetValueOrDefault(facturaId, []).Sum(p => p.ImporteAplicado);
+
+    private static string GetFormaPagoLabel(string formaPagoSat) => formaPagoSat switch
+    {
+        "01" => "Efectivo",
+        "02" => "Cheque",
+        "03" => "Transferencia",
+        "04" => "Tarjeta Crédito",
+        "28" => "Tarjeta Débito",
+        _ => "Otro"
+    };
+
+    private static string MapFormaPagoSat(FormaPagoEnum forma) => forma switch
+    {
+        FormaPagoEnum.Efectivo => "01",
+        FormaPagoEnum.Cheque => "02",
+        FormaPagoEnum.Transferencia => "03",
+        FormaPagoEnum.TarjetaCredito => "04",
+        FormaPagoEnum.TarjetaDebito => "28",
+        _ => "99"
+    };
+
+    private static string GetAtrasoColor(int diasAtraso) => diasAtraso switch
+    {
+        <= 0 => "#10b981",
+        <= 30 => "#f59e0b",
+        _ => "#ef4444"
+    };
+
+    private static string? ObtenerResumenNotas(Factura factura)
+    {
+        var notas = factura.NotasEntregaRelacionadas
+            .Where(r => r.IsActive)
+            .Select(r => r.NotaEntrega.NumeroNota)
+            .Distinct()
+            .ToList();
+
+        if (notas.Count == 0 && factura.NotaEntrega != null)
+        {
+            return factura.NotaEntrega.NumeroNota;
+        }
+
+        return notas.Count == 0 ? null : string.Join(", ", notas);
+    }
+
+    private class FacturaViewModel
+    {
+        public Guid FacturaId { get; set; }
+        public Guid? PedidoId { get; set; }
+        public Guid? NotaEntregaId { get; set; }
+        public Guid ClienteId { get; set; }
+        public string ClienteNombre { get; set; } = "";
+        public string NumeroFactura { get; set; } = "";
+        public string? NumeroPedido { get; set; }
+        public string? NumeroNota { get; set; }
+        public DateTime FechaFactura { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public int DiasAtraso { get; set; }
+        public string MetodoPagoSat { get; set; } = "";
+        public decimal Total { get; set; }
+    }
+
+    private class ClienteAgrupado
+    {
+        public Guid ClienteId { get; set; }
+        public string ClienteNombre { get; set; } = "";
+        public decimal Total { get; set; }
+        public decimal Pagado { get; set; }
+        public decimal Saldo { get; set; }
+        public int MayorDiasAtraso { get; set; }
+        public List<FacturaViewModel> Facturas { get; set; } = [];
+    }
+}

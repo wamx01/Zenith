@@ -1,0 +1,617 @@
+@using MundoVs.Core.Entities
+
+@if (Visible && AsistenciaActual != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,.45);">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-primary shadow-sm">
+                <div class="modal-header bg-primary text-white py-3">
+                    <div>
+                        <h5 class="modal-title mb-0">Corrección operativa del día</h5>
+                        <div class="small opacity-75">@AsistenciaActual.Empleado.NombreCompleto · @AsistenciaActual.Fecha.ToString("dd/MM/yyyy")</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="asis-help-button" @onclick="AbrirAyudaReglas" title="Ver reglas aplicadas">
+                            <i class="bi bi-question-lg"></i>
+                        </button>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CerrarAsync" aria-label="Cerrar"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body p-0">
+                    <div class="asis-summary-strip px-3 pt-3 pb-2 border-bottom">
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            <span class="asis-chip asis-chip--muted"><i class="bi bi-calendar-event"></i>@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</span>
+                            <span class="asis-chip asis-chip--info"><i class="bi bi-hourglass-split"></i>Neto @FormatearMinutos(AsistenciaActual.MinutosTrabajadosNetos)</span>
+                            <span class="asis-chip @ObtenerClaseMetricaIncidencia(AsistenciaActual.MinutosRetardo)"><i class="bi bi-alarm"></i>Retardo @FormatearMinutosCortos(AsistenciaActual.MinutosRetardo)</span>
+                            <span class="asis-chip @ObtenerClaseMetricaIncidencia(AsistenciaActual.MinutosSalidaAnticipada)"><i class="bi bi-box-arrow-left"></i>Salida ant. @FormatearMinutosCortos(AsistenciaActual.MinutosSalidaAnticipada)</span>
+                            <span class="asis-chip @ObtenerClaseMetricaExtra(AsistenciaActual.MinutosExtra)"><i class="bi bi-plus-circle"></i>Extra @FormatearMinutosCortos(AsistenciaActual.MinutosExtra)</span>
+                            <span class="badge @ObtenerClaseEstatus(AsistenciaActual)">@ObtenerTextoEstatus(AsistenciaActual.Estatus)</span>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-3 col-6">
+                                <div class="asis-mini-stat">
+                                    <div class="asis-mini-stat__label">Entrada real</div>
+                                    <div class="asis-mini-stat__value">@(AsistenciaActual.HoraEntradaReal?.ToString("hh\\:mm") ?? "—")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="asis-mini-stat">
+                                    <div class="asis-mini-stat__label">Salida real</div>
+                                    <div class="asis-mini-stat__value">@(AsistenciaActual.HoraSalidaReal?.ToString("hh\\:mm") ?? "—")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="asis-mini-stat">
+                                    <div class="asis-mini-stat__label">Programado</div>
+                                    <div class="asis-mini-stat__value">@(AsistenciaActual.HoraEntradaProgramada?.ToString("hh\\:mm") ?? "—") - @(AsistenciaActual.HoraSalidaProgramada?.ToString("hh\\:mm") ?? "—")</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6">
+                                <div class="asis-mini-stat">
+                                    <div class="asis-mini-stat__label">Última corrección</div>
+                                    <div class="asis-mini-stat__value">@ObtenerUltimaCorreccionResumen()</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (TieneAusenciaActual() || TieneSenalRevisionOperativa(AsistenciaActual))
+                        {
+                            <div class="d-flex flex-column gap-2 mt-3">
+                                @if (TieneAusenciaActual())
+                                {
+                                    <div class="alert alert-info py-2 px-3 mb-0 small">
+                                        <strong>Ausencia registrada:</strong> @ObtenerResumenAusenciaActual()
+                                    </div>
+                                }
+
+                                @if (TieneSenalRevisionOperativa(AsistenciaActual))
+                                {
+                                    <div class="alert alert-warning py-2 px-3 mb-0 small">
+                                        <strong>@ObtenerSenalRevisionOperativa(AsistenciaActual):</strong>
+                                        @(string.IsNullOrWhiteSpace(AsistenciaActual.Observaciones)
+                                            ? "La jornada no coincide naturalmente con el turno asignado."
+                                            : AsistenciaActual.Observaciones)
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <ul class="nav nav-tabs asis-modal-tabs px-3 pt-2">
+                        <li class="nav-item">
+                            <button type="button" class="@ObtenerClaseTabModal(TabModalResumen)" @onclick="() => SeleccionarTabModal(TabModalResumen)">
+                                <i class="bi bi-grid me-1"></i>Resumen
+                                @if (EsTabSugerida(TabModalResumen))
+                                {
+                                    <span class="asis-tab-suggestion">Sugerida</span>
+                                }
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button type="button" class="@ObtenerClaseTabModal(TabModalMarcaciones)" @onclick="() => SeleccionarTabModal(TabModalMarcaciones)">
+                                <i class="bi bi-fingerprint me-1"></i>Marcaciones <span class="badge text-bg-light ms-1">@marcacionesDia.Count</span>
+                                @if (EsTabSugerida(TabModalMarcaciones))
+                                {
+                                    <span class="asis-tab-suggestion">Sugerida</span>
+                                }
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button type="button" class="@ObtenerClaseTabModal(TabModalPermisos)" @onclick="() => SeleccionarTabModal(TabModalPermisos)">
+                                <i class="bi bi-person-check me-1"></i>Permiso / Turno
+                                @if (EsTabSugerida(TabModalPermisos))
+                                {
+                                    <span class="asis-tab-suggestion">Sugerida</span>
+                                }
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button type="button" class="@ObtenerClaseTabModal(TabModalTiempo)" @onclick="() => SeleccionarTabModal(TabModalTiempo)">
+                                <i class="bi bi-bank me-1"></i>Tiempo / Bitácora
+                                @if (EsTabSugerida(TabModalTiempo))
+                                {
+                                    <span class="asis-tab-suggestion">Sugerida</span>
+                                }
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="p-3">
+                        @if (asesorCorreccionActual != null)
+                        {
+                            <div class="asis-advisor-card mb-3 shadow-sm">
+                                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                                    <div class="d-flex flex-column gap-2">
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            <span class="badge @asesorCorreccionActual.BadgeClass"><i class="bi @asesorCorreccionActual.Icono me-1"></i>@asesorCorreccionActual.Titulo</span>
+                                        </div>
+                                        <div class="asis-advisor-card__text">@asesorCorreccionActual.Descripcion</div>
+                                    </div>
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        <button class="btn btn-primary btn-sm" @onclick="IrATabSugerida">@asesorCorreccionActual.AccionPrincipalTexto</button>
+                                        @if (EsEscenarioSalidaTempranaCompensaDescanso())
+                                        {
+                                            <button class="btn btn-outline-info btn-sm" @onclick="ConfirmarSalidaTempranaCompensaDescansoAsync" disabled="@TieneConfirmacionSalidaTempranaCompensaDescanso()">
+                                                <i class="bi bi-check2-circle me-1"></i>@(TieneConfirmacionSalidaTempranaCompensaDescanso() ? "Regla confirmada" : "Confirmar sustitución de descanso")
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="asis-section-title mb-2">Distribución visual del día</div>
+                                <div class="asis-timeline mb-2">
+                                    @foreach (var segmento in asesorCorreccionActual.Segmentos)
+                                    {
+                                        <div class="asis-timeline__segment @segmento.CssClass" style="width:@($"{segmento.WidthPercent}%")" title="@($"{segmento.Titulo}: {segmento.TextoCorto}")"></div>
+                                    }
+                                </div>
+                                <div class="asis-timeline-legend">
+                                    @foreach (var segmento in asesorCorreccionActual.Segmentos)
+                                    {
+                                        <span class="asis-timeline-legend__item">
+                                            <span class="asis-timeline-legend__dot @segmento.CssClass.Replace("asis-timeline__segment", "asis-timeline-legend__dot")"></span>
+                                            <span>@segmento.Titulo: @segmento.TextoCorto</span>
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (AsistenciaActual != null)
+                        {
+                            <div class="row g-2 mb-3">
+                                <div class="col-lg-4 col-md-6">
+                                    <div class="asis-mini-stat @ObtenerClaseEstadoCorreccionActual()">
+                                        <div class="asis-mini-stat__label">Estado actual</div>
+                                        <div class="asis-mini-stat__value">@ObtenerEstadoCorreccionActual()</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-4 col-md-6">
+                                    <div class="asis-mini-stat">
+                                        <div class="asis-mini-stat__label">Ya aplicado</div>
+                                        <div class="asis-mini-stat__value">@ObtenerResumenResolucion(AsistenciaActual)</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-4 col-md-12">
+                                    <div class="asis-mini-stat">
+                                        <div class="asis-mini-stat__label">Siguiente paso sugerido</div>
+                                        <div class="asis-mini-stat__value">@ObtenerSiguientePasoCorreccionActual()</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(error))
+                        {
+                            <div class="alert alert-danger py-2">@error</div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(ok))
+                        {
+                            <div class="alert alert-success py-2">@ok</div>
+                        }
+
+                        @if (_tabModalActiva == TabModalResumen)
+                        {
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="asis-mini-stat h-100">
+                                        <div class="asis-section-title mb-2">Turno actual</div>
+                                        <div class="asis-mini-stat__value mb-1">@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</div>
+                                        <div class="small text-muted">@ObtenerResumenTurnoActual(AsistenciaActual)</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="asis-mini-stat h-100">
+                                        <div class="asis-section-title mb-2">Horario del día</div>
+                                        <div class="asis-mini-stat__value mb-1">@ObtenerHorarioTurnoSeleccionadoDia()</div>
+                                        <div class="small text-muted">Descansos: @ObtenerDescansosTurnoSeleccionadoDia()</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="asis-mini-stat h-100">
+                                        <div class="asis-section-title mb-2">Resolución actual</div>
+                                        <div class="asis-mini-stat__value mb-1">@ObtenerResumenResolucion(AsistenciaActual)</div>
+                                        <div class="small text-muted">Bitácora: @ObtenerBitacoraCorreccionResumen()</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card border-0 bg-light h-100">
+                                        <div class="card-body">
+                                            <div class="asis-section-title">Qué hacer aquí</div>
+                                            <div class="small text-muted d-flex flex-column gap-2">
+                                                <span><strong>Marcaciones:</strong> agrega, corrige o anula checadas del día.</span>
+                                                <span><strong>Permiso / Turno:</strong> registra permisos parciales o cambia el turno solo para este día.</span>
+                                                <span><strong>Tiempo / Bitácora:</strong> resuelve tiempo extra, banco de horas y revisa cambios previos.</span>
+                                                @if (asesorCorreccionActual != null)
+                                                {
+                                                    <span><strong>Acción sugerida:</strong> @asesorCorreccionActual.AccionPrincipalTexto.</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card border-0 bg-light h-100">
+                                        <div class="card-body">
+                                            <div class="asis-section-title">Observaciones del día</div>
+                                            <div class="small">@ObtenerObservacionPrincipal(AsistenciaActual)</div>
+                                            @if (!string.IsNullOrWhiteSpace(ObtenerObservacionSecundaria(AsistenciaActual)))
+                                            {
+                                                <div class="small text-muted mt-2">@ObtenerObservacionSecundaria(AsistenciaActual)</div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (_tabModalActiva == TabModalMarcaciones)
+                        {
+                            <div class="asis-section-title">Registrar o corregir marcaciones</div>
+                            <div class="row g-2 mb-3 align-items-end">
+                                <div class="col-md-2">
+                                    <label class="form-label mb-1 small">Hora</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="manualHoraTexto" placeholder="08:00" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label mb-1 small">Clasificación</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="manualClasificacion">
+                                        @foreach (var clasificacion in Enum.GetValues<TipoClasificacionMarcacionRrhh>())
+                                        {
+                                            <option value="@clasificacion">@clasificacion</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label mb-1 small">Observación</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="manualObservacion" placeholder="Ej. olvidó checar salida" />
+                                </div>
+                                <div class="col-md-2 d-grid">
+                                    <button class="btn btn-success btn-sm" @onclick="GuardarMarcacionManualDiaAsync" disabled="@cargando"><i class="bi bi-plus-circle me-1"></i>Agregar</button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Hora</th>
+                                            <th>Origen</th>
+                                            <th>Clasificación</th>
+                                            <th>Observación</th>
+                                            <th>Estado</th>
+                                            <th>Auditoría</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (marcacionesDia.Count == 0)
+                                        {
+                                            <tr><td colspan="7" class="text-center text-muted py-3">No hay marcaciones para este día.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var item in marcacionesDia)
+                                            {
+                                                <tr>
+                                                    <td>@ObtenerFechaHoraLocalMarcacion(item).ToString("HH:mm")</td>
+                                                    <td>@(item.EsManual ? "Manual" : (item.Origen ?? "Sistema"))</td>
+                                                    <td>
+                                                        <div class="small fw-semibold">@item.ClasificacionOperativa</div>
+                                                        <div class="btn-group btn-group-sm mt-1">
+                                                            <button class="btn btn-outline-secondary" @onclick="() => CambiarClasificacionMarcacionAsync(item.Id, TipoClasificacionMarcacionRrhh.Entrada)">E</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="() => CambiarClasificacionMarcacionAsync(item.Id, TipoClasificacionMarcacionRrhh.Salida)">S</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="() => CambiarClasificacionMarcacionAsync(item.Id, TipoClasificacionMarcacionRrhh.InicioDescanso)">DI</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="() => CambiarClasificacionMarcacionAsync(item.Id, TipoClasificacionMarcacionRrhh.FinDescanso)">DF</button>
+                                                        </div>
+                                                    </td>
+                                                    <td class="small">
+                                                        @if (item.EsManual && marcacionManualEditandoId == item.Id)
+                                                        {
+                                                            <div class="d-flex flex-column gap-1">
+                                                                <InputText class="form-control form-control-sm" @bind-Value="marcacionManualEditandoHoraTexto" />
+                                                                <InputText class="form-control form-control-sm" @bind-Value="marcacionManualEditandoObservacion" />
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            @(string.IsNullOrWhiteSpace(item.ObservacionManual) ? "—" : item.ObservacionManual)
+                                                        }
+                                                    </td>
+                                                    <td><span class="badge @(item.EsAnulada ? "bg-secondary" : "bg-success")">@(item.EsAnulada ? "Anulada" : "Activa")</span></td>
+                                                    <td class="small">@ObtenerAuditoriaMarcacion(item)</td>
+                                                    <td class="text-end">
+                                                        <div class="btn-group btn-group-sm">
+                                                            @if (item.EsManual && marcacionManualEditandoId == item.Id)
+                                                            {
+                                                                <button class="btn btn-outline-success" @onclick="GuardarEdicionMarcacionManualAsync">Guardar</button>
+                                                                <button class="btn btn-outline-secondary" @onclick="CancelarEdicionMarcacionManual">Cancelar</button>
+                                                            }
+                                                            else
+                                                            {
+                                                                @if (item.EsManual)
+                                                                {
+                                                                    <button class="btn btn-outline-primary" @onclick="() => IniciarEdicionMarcacionManual(item)">Editar</button>
+                                                                }
+                                                                <button class="btn btn-outline-warning" @onclick="() => AlternarAnulacionMarcacionAsync(item.Id)">@(item.EsAnulada ? "Reactivar" : "Anular")</button>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+
+                        @if (_tabModalActiva == TabModalPermisos)
+                        {
+                            <div class="row g-3">
+                                <div class="col-lg-7">
+                                    <div class="card border-info shadow-sm h-100">
+                                        <div class="card-header bg-info-subtle text-dark"><strong>Permiso parcial del día</strong></div>
+                                        <div class="card-body">
+                                            @if (!string.IsNullOrWhiteSpace(asesorCorreccionActual?.NotaPermiso))
+                                            {
+                                                <div class="alert alert-primary py-2 small"><i class="bi bi-signpost-split me-1"></i>@asesorCorreccionActual.NotaPermiso</div>
+                                            }
+
+                                            <div class="alert @(permisoDiaSeleccionado == null ? "alert-light border" : "alert-success") py-2 small">
+                                                <strong>@(permisoDiaSeleccionado == null ? "Paso recomendado:" : "Permiso actual:")</strong>
+                                                @(permisoDiaSeleccionado == null ? ObtenerGuiaRapidaPermiso() : ObtenerResumenPermisoDiaCaptura())
+                                            </div>
+
+                                            @if (AsistenciaActual != null)
+                                            {
+                                                <div class="alert alert-primary py-2 small">
+                                                    <strong>Permiso neto sugerido:</strong> @ObtenerResumenPermisoSugerido()
+                                                </div>
+
+                                                <div class="row g-2 mb-3">
+                                                    <div class="col-md-4">
+                                                        <div class="asis-mini-stat h-100 border border-primary-subtle">
+                                                            <div class="asis-mini-stat__label">Faltante neto del día</div>
+                                                            <div class="asis-mini-stat__value">@FormatearMinutos(ObtenerMinutosPermisoSugeridos(AsistenciaActual))</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="asis-mini-stat h-100 border border-primary-subtle">
+                                                            <div class="asis-mini-stat__label">Permiso capturado</div>
+                                                            <div class="asis-mini-stat__value">@FormatearMinutos(ObtenerMinutosPermisoCapturados())</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="asis-mini-stat h-100 border border-primary-subtle">
+                                                            <div class="asis-mini-stat__label">Faltante remanente</div>
+                                                            <div class="asis-mini-stat__value">@FormatearMinutos(ObtenerMinutosFaltanteRemanenteActual())</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            <div class="d-flex gap-2 flex-wrap mb-3">
+                                                <button class="btn btn-outline-primary btn-sm" @onclick="AplicarPermisoDiaSugerido" disabled="@(AsistenciaActual == null || guardandoPermisoDia)">
+                                                    <i class="bi bi-magic me-1"></i>Usar sugerido
+                                                </button>
+                                                <span class="small text-muted align-self-center">@ObtenerGuiaRapidaPermiso()</span>
+                                            </div>
+
+                                            <div class="row g-3 align-items-end">
+                                                <div class="col-md-3">
+                                                    <label class="form-label">Horas</label>
+                                                    <InputNumber class="form-control" @bind-Value="horasPermisoDiaCaptura" min="0" step="0.25" />
+                                                </div>
+                                                <div class="col-md-3 d-flex align-items-end">
+                                                    <div class="form-check mb-2">
+                                                        <InputCheckbox class="form-check-input" @bind-Value="permisoDiaConGoceCaptura" />
+                                                        <label class="form-check-label">Con goce</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Motivo</label>
+                                                    <InputText class="form-control" @bind-Value="permisoDiaMotivo" placeholder="Ej. cita médica o salida autorizada" />
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label">Observaciones</label>
+                                                    <InputText class="form-control" @bind-Value="permisoDiaObservaciones" placeholder="Se usa para evitar descuento doble de descansos" />
+                                                </div>
+                                                <div class="col-12 d-flex gap-2 flex-wrap">
+                                                    <button class="btn btn-info" @onclick="GuardarPermisoDiaAsync" disabled="@(cargando || guardandoPermisoDia)">
+                                                        <i class="bi bi-shield-check me-1"></i>@(guardandoPermisoDia ? "Guardando..." : (permisoDiaSeleccionado == null ? "Registrar permiso" : "Actualizar permiso"))
+                                                    </button>
+                                                    @if (permisoDiaSeleccionado != null)
+                                                    {
+                                                        <button class="btn btn-outline-danger" @onclick="QuitarPermisoDiaAsync" disabled="@(cargando || guardandoPermisoDia)">
+                                                            <i class="bi bi-x-circle me-1"></i>Quitar permiso
+                                                        </button>
+                                                    }
+                                                </div>
+                                                <div class="col-12">
+                                                    <div class="small text-muted">@ObtenerResumenPermisoDiaCaptura()</div>
+                                                    @if (permisoDiaConGoceCaptura)
+                                                    {
+                                                        <div class="small text-info mt-2">Saldo actual de banco: @saldoBancoHorasSeleccionado min.</div>
+                                                        <div class="small text-muted">El permiso con goce puede registrarse aunque el saldo final del banco quede negativo.</div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-5">
+                                    <div class="card border-0 bg-light shadow-sm h-100">
+                                        <div class="card-header"><strong>Turno para este día</strong></div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">Turno</label>
+                                                <InputSelect class="form-select" @bind-Value="turnoDiaSeleccionadoIdTexto">
+                                                    <option value="">(sin turno)</option>
+                                                    @foreach (var turno in Turnos)
+                                                    {
+                                                        <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                                                    }
+                                                </InputSelect>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Observación del cambio</label>
+                                                <InputText class="form-control" @bind-Value="turnoDiaObservaciones" placeholder="Ej. cobertura extraordinaria o relevo" />
+                                            </div>
+                                            <button class="btn btn-outline-secondary w-100" @onclick="GuardarTurnoDiaAsync" disabled="@cargando">Aplicar turno</button>
+                                            <div class="small text-muted mt-3">
+                                                <strong>Horario:</strong> @ObtenerHorarioTurnoSeleccionadoDia()<br />
+                                                <strong>Descansos:</strong> @ObtenerDescansosTurnoSeleccionadoDia()
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (_tabModalActiva == TabModalTiempo)
+                        {
+                            <div class="row g-3">
+                                <div class="col-lg-7">
+                                    @if (PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
+                                    {
+                                        <div class="card border-warning shadow-sm h-100">
+                                            <div class="card-header bg-warning-subtle text-dark"><strong>Resolución de tiempo y banco de horas</strong></div>
+                                            <div class="card-body">
+                                                @if (!string.IsNullOrWhiteSpace(asesorCorreccionActual?.NotaTiempo))
+                                                {
+                                                    <div class="alert alert-warning py-2 small">@asesorCorreccionActual.NotaTiempo</div>
+                                                }
+
+                                                <div class="row g-3 align-items-end">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Resolución</label>
+                                                        <InputSelect class="form-select" @bind-Value="tipoResolucionTiempoExtra" @bind-Value:after="AjustarResolucionTiempoSugerida">
+                                                            @foreach (var opcion in asesorCorreccionActual?.ResolucionesDisponibles ?? [])
+                                                            {
+                                                                <option value="@opcion.Value">@opcion.Label</option>
+                                                            }
+                                                        </InputSelect>
+                                                        @if (asesorCorreccionActual?.ResolucionesDisponibles.FirstOrDefault(o => o.Value == tipoResolucionTiempoExtra) is { } opcionSeleccionada)
+                                                        {
+                                                            <div class="small text-muted mt-1">@opcionSeleccionada.Description</div>
+                                                        }
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Notas</label>
+                                                        <InputText class="form-control" @bind-Value="resolucionTiempoExtraObservaciones" placeholder="Autorización o criterio aplicado" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label">Pago</label>
+                                                        <InputNumber class="form-control" @bind-Value="minutosExtraPagoCaptura" min="0" disabled="@(tipoResolucionTiempoExtra is "CubrirFaltanteConBanco" or "SinAccion")" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label">A banco</label>
+                                                        <InputNumber class="form-control" @bind-Value="minutosExtraBancoCaptura" min="0" disabled="@(tipoResolucionTiempoExtra is "CubrirFaltanteConBanco" or "SinAccion" || !bancoHorasHabilitadoConfigurado)" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label">Cubrir con banco</label>
+                                                        <InputNumber class="form-control" @bind-Value="minutosCubrirBancoCaptura" min="0" disabled="@(tipoResolucionTiempoExtra is not "CubrirFaltanteConBanco" || !bancoHorasHabilitadoConfigurado)" />
+                                                    </div>
+                                                    <div class="col-12 d-flex flex-wrap gap-2 small text-muted">
+                                                        <span>Extra actual: @AsistenciaActual.MinutosExtra min</span>
+                                                        <span>·</span>
+                                                        <span>Resoluble: @ObtenerMinutosResolubles(AsistenciaActual) min</span>
+                                                        <span>·</span>
+                                                        <span>Faltante neto: @ObtenerMinutosFaltanteBanco(AsistenciaActual) min</span>
+                                                        <span>·</span>
+                                                        <span>Saldo banco: @saldoBancoHorasSeleccionado min</span>
+                                                    </div>
+                                                    <div class="col-12 d-flex gap-2 align-items-center flex-wrap">
+                                                        <button class="btn btn-warning" @onclick="AplicarResolucionTiempoAsync" disabled="@cargando">Aplicar resolución</button>
+                                                        <span class="small text-muted">Resolución actual: @ObtenerResumenResolucion(AsistenciaActual)</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-light border mb-0">No hay una resolución de tiempo extra o banco pendiente para este día.</div>
+                                    }
+                                </div>
+                                <div class="col-lg-5">
+                                    <div class="card border-0 bg-light shadow-sm h-100">
+                                        <div class="card-header"><strong>Bitácora del día</strong></div>
+                                        <div class="card-body">
+                                            @if (bitacoraCorreccionDia.Count == 0)
+                                            {
+                                                <div class="text-muted small">Sin movimientos en la bitácora del día.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="d-flex flex-column gap-3 small">
+                                                    @foreach (var log in bitacoraCorreccionDia)
+                                                    {
+                                                        <div class="border-bottom pb-2">
+                                                            <div class="fw-semibold">@log.Mensaje.Replace("Se aplicó corrección de asistencia: ", string.Empty)</div>
+                                                            <div class="text-muted">@log.FechaUtc.ToLocalTime():dd/MM/yyyy HH:mm · @ObtenerUsuarioBitacora(log)</div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAsync">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (mostrarAyudaReglas)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,.35); z-index: 1070;">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content shadow">
+                    <div class="modal-header">
+                        <div>
+                            <h5 class="modal-title mb-0">Reglas del modal</h5>
+                            <div class="small text-muted">Ayuda para entender cómo se interpreta la jornada y por qué se sugiere cada acción.</div>
+                        </div>
+                        <button type="button" class="btn-close" @onclick="CerrarAyudaReglas" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-4">
+                            <div class="asis-section-title">Reglas generales</div>
+                            <ol class="asis-help-list small text-muted">
+                                @foreach (var regla in ObtenerReglasAyudaGenerales())
+                                {
+                                    <li>@regla</li>
+                                }
+                            </ol>
+                        </div>
+
+                        <div>
+                            <div class="asis-section-title">Aplicado a este día</div>
+                            <div class="alert alert-light border small mb-3">
+                                <strong>Diagnóstico actual:</strong> @asesorCorreccionActual?.Titulo
+                            </div>
+                            <ol class="asis-help-list small text-muted">
+                                @foreach (var regla in ObtenerReglasAyudaActual())
+                                {
+                                    <li>@regla</li>
+                                }
+                            </ol>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAyudaReglas">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}

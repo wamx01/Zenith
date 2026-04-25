@@ -1,0 +1,528 @@
+@page "/inventario/finished-goods"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Inventario
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Inventario FG</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver el inventario de finished goods.</div>
+    }
+    else if (cargando)
+    {
+        <div class="d-flex align-items-center gap-2 mt-3 text-muted">
+            <span class="spinner-border spinner-border-sm" role="status"></span>
+            <span>Cargando inventario de finished goods...</span>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <h2 class="mb-1"><i class="bi bi-box-seam"></i> Inventario FG</h2>
+                <p class="text-muted mb-0">Consulta existencias de producto terminado por cliente y SKU. Las entregas siguen naciendo desde el pedido.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="badge text-bg-light border px-3 py-2">Registros: @itemsFiltrados.Count</span>
+                <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis px-3 py-2">Activos: @items.Count(i => i.IsActive)</span>
+                <span class="badge text-bg-secondary px-3 py-2">Inactivos: @items.Count(i => !i.IsActive)</span>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-semibold mb-1">SKU filtrados</div>
+                        <div class="fs-3 fw-bold">@itemsFiltrados.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-semibold mb-1">Piezas disponibles</div>
+                        <div class="fs-3 fw-bold text-primary">@itemsFiltrados.Sum(i => i.CantidadDisponible).ToString("N2")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-semibold mb-1">Piezas reservadas</div>
+                        <div class="fs-3 fw-bold text-warning-emphasis">@itemsFiltrados.Sum(i => i.CantidadReservada).ToString("N2")</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase fw-semibold mb-1">Clientes visibles</div>
+                        <div class="fs-3 fw-bold text-success">@itemsFiltrados.Select(i => i.ClienteId).Distinct().Count()</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-info py-2 d-flex align-items-center gap-2 mb-4">
+            <i class="bi bi-info-circle"></i>
+            <span>Desde esta pantalla solo se permiten ajustes de inventario. La salida por entrega debe hacerse desde el pedido y la nota de entrega.</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+                <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</span>
+                <button type="button" class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltros">Limpiar</button>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-4 col-md-6">
+                        <label class="form-label">Cliente</label>
+                        <select class="form-select" @bind="filtroClienteId" @bind:after="AplicarFiltros">
+                            <option value="">Todos los clientes</option>
+                            @foreach (var cliente in clientesFiltro)
+                            {
+                                <option value="@cliente.Id">@cliente.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-lg-4 col-md-6">
+                        <label class="form-label">SKU</label>
+                        <input class="form-control" @bind="filtroSku" @bind:after="AplicarFiltros" placeholder="Buscar SKU exacto o parcial..." />
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" @bind="filtroEstado" @bind:after="AplicarFiltros">
+                            <option value="activos">Activos</option>
+                            <option value="inactivos">Inactivos</option>
+                            <option value="todos">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Búsqueda libre</label>
+                        <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltros" placeholder="Producto, talla, color o ubicación..." />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_puedeAjustar && ajusteItem is not null)
+        {
+            <div class="card border-0 shadow-sm mb-4 fg-adjust-card">
+                <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
+                    <div>
+                        <strong>Ajustar finished good</strong>
+                        <div class="small opacity-75">@ajusteItem.ClienteNombre · @ajusteItem.Sku</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="CancelarAjuste">Cerrar</button>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Existencia actual</label>
+                            <input class="form-control" value="@ajusteItem.CantidadDisponible.ToString("N2")" disabled />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Reservado</label>
+                            <input class="form-control" value="@ajusteItem.CantidadReservada.ToString("N2")" disabled />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nueva existencia</label>
+                            <InputNumber class="form-control" @bind-Value="ajusteForm.NuevaExistencia" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Ubicación</label>
+                            <InputText class="form-control" @bind-Value="ajusteForm.Ubicacion" />
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Referencia</label>
+                            <InputText class="form-control" @bind-Value="ajusteForm.Referencia" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Observaciones</label>
+                            <InputText class="form-control" @bind-Value="ajusteForm.Observaciones" />
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary" @onclick="GuardarAjusteAsync" disabled="@guardandoAjuste">
+                            <i class="bi bi-save me-1"></i>Guardar ajuste
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CancelarAjuste" disabled="@guardandoAjuste">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 fg-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Acciones</th>
+                                <th>Estado</th>
+                                <th>Cliente</th>
+                                <th>SKU</th>
+                                <th>Producto</th>
+                                <th>Talla</th>
+                                <th>Color</th>
+                                <th class="text-end">Disponible</th>
+                                <th class="text-end">Reservado</th>
+                                <th>Ubicación</th>
+                                <th>Actualizado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!itemsFiltrados.Any())
+                            {
+                                <tr>
+                                    <td colspan="10" class="text-center text-muted py-4">No hay finished goods registrados con los filtros actuales.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var item in itemsFiltrados)
+                                {
+                                    <tr class="@(!item.IsActive ? "table-light opacity-75" : string.Empty)">
+                                        <td>
+                                            @if (_puedeAjustar)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => PrepararAjuste(item)">
+                                                    <i class="bi bi-sliders me-1"></i>Ajustar
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted small">Solo lectura</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="badge @(item.IsActive ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(item.IsActive ? "Activo" : "Inactivo")</span>
+                                        </td>
+                                        <td class="fw-semibold">@item.ClienteNombre</td>
+                                        <td><code>@item.Sku</code></td>
+                                        <td>@item.ProductoNombre</td>
+                                        <td>@item.Talla</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Color) ? "—" : item.Color)</td>
+                                        <td class="text-end fw-semibold">@item.CantidadDisponible.ToString("N2")</td>
+                                        <td class="text-end">@item.CantidadReservada.ToString("N2")</td>
+                                        <td>@(string.IsNullOrWhiteSpace(item.Ubicacion) ? "—" : item.Ubicacion)</td>
+                                        <td>@(item.UpdatedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? item.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .fg-table td, .fg-table th { white-space: nowrap; }
+    .fg-adjust-card { border-left: 4px solid #1e3a5f; }
+</style>
+
+@code {
+    private readonly List<InventarioFinishedGoodRow> items = [];
+    private List<InventarioFinishedGoodRow> itemsFiltrados = [];
+    private List<ClienteFiltroOption> clientesFiltro = [];
+    private Guid _empresaId;
+    private bool _puedeVer;
+    private bool _puedeAjustar;
+    private bool cargando = true;
+    private bool guardandoAjuste;
+    private string filtroClienteId = string.Empty;
+    private string filtroSku = string.Empty;
+    private string filtroEstado = "activos";
+    private string textoBusqueda = string.Empty;
+    private string? error;
+    private string? ok;
+    private InventarioFinishedGoodRow? ajusteItem;
+    private AjusteFinishedGoodModel ajusteForm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContextoAsync();
+        if (_puedeVer)
+        {
+            await CargarAsync();
+        }
+
+        cargando = false;
+    }
+
+    private async Task CargarContextoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+        _ = Guid.TryParse(empresaIdStr, out _empresaId);
+        _puedeVer = state.User.HasClaim("Capacidad", "inventario.fg.ver") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+        _puedeAjustar = state.User.HasClaim("Capacidad", "inventario.fg.ajustar") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+    }
+
+    private async Task CargarAsync()
+    {
+        error = null;
+        ok = null;
+        items.Clear();
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay una empresa activa en sesión.";
+            itemsFiltrados = [];
+            clientesFiltro = [];
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var inventario = await db.InventariosFinishedGoods
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Include(i => i.Cliente)
+                .Include(i => i.Producto)
+                .Include(i => i.ProductoVariante)
+                .Where(i => i.EmpresaId == _empresaId)
+                .OrderBy(i => i.Cliente.RazonSocial)
+                .ThenBy(i => i.Sku)
+                .ToListAsync();
+
+            items.AddRange(inventario.Select(i => new InventarioFinishedGoodRow
+            {
+                Id = i.Id,
+                ClienteId = i.ClienteId,
+                ClienteNombre = i.Cliente.RazonSocial,
+                ProductoNombre = i.Producto.Nombre,
+                Sku = i.Sku,
+                Talla = i.Talla,
+                Color = i.Color,
+                CantidadDisponible = i.CantidadDisponible,
+                CantidadReservada = i.CantidadReservada,
+                Ubicacion = i.Ubicacion,
+                Observaciones = i.Observaciones,
+                CreatedAt = i.CreatedAt,
+                UpdatedAt = i.UpdatedAt,
+                IsActive = i.IsActive
+            }));
+
+            clientesFiltro = items
+                .GroupBy(i => new { i.ClienteId, i.ClienteNombre })
+                .Select(g => new ClienteFiltroOption(g.Key.ClienteId, g.Key.ClienteNombre))
+                .OrderBy(c => c.Nombre)
+                .ToList();
+
+            AplicarFiltros();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo cargar el inventario FG. {ex.Message}";
+            itemsFiltrados = [];
+            clientesFiltro = [];
+        }
+    }
+
+    private void AplicarFiltros()
+    {
+        IEnumerable<InventarioFinishedGoodRow> consulta = items;
+
+        if (Guid.TryParse(filtroClienteId, out var clienteId))
+        {
+            consulta = consulta.Where(i => i.ClienteId == clienteId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtroSku))
+        {
+            var sku = filtroSku.Trim();
+            consulta = consulta.Where(i => i.Sku.Contains(sku, StringComparison.OrdinalIgnoreCase));
+        }
+
+        consulta = filtroEstado switch
+        {
+            "inactivos" => consulta.Where(i => !i.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(i => i.IsActive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(i =>
+                i.ProductoNombre.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || i.Talla.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (i.Color?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (i.Ubicacion?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        itemsFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltros()
+    {
+        filtroClienteId = string.Empty;
+        filtroSku = string.Empty;
+        filtroEstado = "activos";
+        textoBusqueda = string.Empty;
+        AplicarFiltros();
+    }
+
+    private void PrepararAjuste(InventarioFinishedGoodRow item)
+    {
+        ajusteItem = item;
+        ajusteForm = new AjusteFinishedGoodModel
+        {
+            NuevaExistencia = item.CantidadDisponible,
+            Ubicacion = item.Ubicacion,
+            Observaciones = item.Observaciones
+        };
+        error = null;
+        ok = null;
+    }
+
+    private void CancelarAjuste()
+    {
+        ajusteItem = null;
+        ajusteForm = new AjusteFinishedGoodModel();
+    }
+
+    private async Task GuardarAjusteAsync()
+    {
+        if (!_puedeAjustar || ajusteItem is null)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        if (ajusteForm.NuevaExistencia < 0)
+        {
+            error = "La nueva existencia no puede ser negativa.";
+            return;
+        }
+
+        if (ajusteForm.NuevaExistencia < ajusteItem.CantidadReservada)
+        {
+            error = $"La nueva existencia no puede ser menor al reservado actual ({ajusteItem.CantidadReservada:N2}).";
+            return;
+        }
+
+        guardandoAjuste = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.InventariosFinishedGoods.FirstOrDefaultAsync(i => i.Id == ajusteItem.Id);
+            if (entity is null)
+            {
+                error = "El registro de finished goods ya no existe.";
+                return;
+            }
+
+            var existenciaAnterior = entity.CantidadDisponible;
+            var existenciaNueva = ajusteForm.NuevaExistencia;
+            var cantidadMovimiento = existenciaNueva - existenciaAnterior;
+            var usuario = await ObtenerUsuarioActualAsync();
+
+            if (cantidadMovimiento == 0
+                && string.Equals(entity.Ubicacion ?? string.Empty, ajusteForm.Ubicacion ?? string.Empty, StringComparison.Ordinal)
+                && string.Equals(entity.Observaciones ?? string.Empty, ajusteForm.Observaciones ?? string.Empty, StringComparison.Ordinal))
+            {
+                error = "No hay cambios por guardar.";
+                return;
+            }
+
+            entity.CantidadDisponible = existenciaNueva;
+            entity.Ubicacion = LimpiarTexto(ajusteForm.Ubicacion);
+            entity.Observaciones = LimpiarTexto(ajusteForm.Observaciones);
+            entity.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedBy = usuario;
+
+            db.MovimientosFinishedGoods.Add(new MovimientoFinishedGood
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = entity.EmpresaId,
+                InventarioFinishedGoodId = entity.Id,
+                TipoMovimiento = MovimientoFinishedGoodTipoEnum.Ajuste,
+                Cantidad = cantidadMovimiento,
+                ExistenciaAnterior = existenciaAnterior,
+                ExistenciaNueva = existenciaNueva,
+                FechaMovimiento = DateTime.UtcNow,
+                Referencia = LimpiarTexto(ajusteForm.Referencia),
+                Observaciones = LimpiarTexto(ajusteForm.Observaciones),
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            });
+
+            await db.SaveChangesAsync();
+            ok = $"Finished good {entity.Sku} ajustado correctamente.";
+            CancelarAjuste();
+            await CargarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo guardar el ajuste. {ex.Message}";
+        }
+        finally
+        {
+            guardandoAjuste = false;
+        }
+    }
+
+    private async Task<string?> ObtenerUsuarioActualAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name;
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private sealed class InventarioFinishedGoodRow
+    {
+        public Guid Id { get; set; }
+        public Guid ClienteId { get; set; }
+        public string ClienteNombre { get; set; } = string.Empty;
+        public string ProductoNombre { get; set; } = string.Empty;
+        public string Sku { get; set; } = string.Empty;
+        public string Talla { get; set; } = string.Empty;
+        public string? Color { get; set; }
+        public decimal CantidadDisponible { get; set; }
+        public decimal CantidadReservada { get; set; }
+        public string? Ubicacion { get; set; }
+        public string? Observaciones { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    private sealed class AjusteFinishedGoodModel
+    {
+        public decimal NuevaExistencia { get; set; }
+        public string? Ubicacion { get; set; }
+        public string? Referencia { get; set; }
+        public string? Observaciones { get; set; }
+    }
+
+    private sealed record ClienteFiltroOption(Guid Id, string Nombre);
+}

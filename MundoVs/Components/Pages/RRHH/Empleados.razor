@@ -1,0 +1,1033 @@
+@page "/rrhh/empleados"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CodigoNegocioService CodigoNegocio
+@rendermode InteractiveServer
+
+<PageTitle>Empleados</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver empleados.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h1 class="display-6 fw-bold"><i class="bi bi-person-vcard me-2"></i>Empleados</h1>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo Empleado</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+    @if (!string.IsNullOrEmpty(ok)) { <div class="alert alert-success">@ok</div> }
+
+    @if (mostrarForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo Empleado" : "Editar Empleado")</h5></div>
+            <div class="card-body">
+                <EditForm Model="editando" OnValidSubmit="Guardar">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Número de empleado</label>
+                            <InputText class="form-control" @bind-Value="editando.NumeroEmpleado" />
+                            <small class="text-muted">Captura el número administrativo del empleado.</small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Código checador</label>
+                            <InputText class="form-control" @bind-Value="editando.CodigoChecador" />
+                            <small class="text-muted">Debe coincidir con el código que envía el reloj.</small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="editando.Nombre" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Apellido Paterno</label>
+                            <InputText class="form-control" @bind-Value="editando.ApellidoPaterno" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Apellido Materno</label>
+                            <InputText class="form-control" @bind-Value="editando.ApellidoMaterno" />
+                        </div>
+                        <div class="col-md-1">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label">Activo</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CURP</label>
+                            <InputText class="form-control" @bind-Value="editando.Curp" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">NSS</label>
+                            <InputText class="form-control" @bind-Value="editando.Nss" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Teléfono</label>
+                            <InputText class="form-control" @bind-Value="editando.Telefono" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email</label>
+                            <InputText class="form-control" @bind-Value="editando.Email" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Dirección</label>
+                            <InputText class="form-control" @bind-Value="editando.Direccion" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Nacimiento</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaNacimiento" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Contratación</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaContratacion" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Posición</label>
+                            <InputSelect class="form-select" @bind-Value="editando.PosicionId">
+                                <option value="">Seleccione...</option>
+                                @foreach (var posicion in posiciones)
+                                {
+                                    <option value="@posicion.Id">@posicion.Nombre</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Departamento</label>
+                            <InputSelect class="form-select" @bind-Value="editando.Departamento">
+                                <option value="">Seleccione...</option>
+                                @foreach (var departamento in DepartamentosDisponibles)
+                                {
+                                    <option value="@departamento">@departamento</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-12"><hr /><h6 class="text-muted">Turno</h6></div>
+                        <div class="col-md-4">
+                            <label class="form-label">Turno vigente</label>
+                            <InputSelect class="form-select" @bind-Value="turnoSeleccionadoId">
+                                <option value="">(sin turno)</option>
+                                @foreach (var turno in turnosBase)
+                                {
+                                    <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Vigente desde</label>
+                            <InputDate class="form-control" @bind-Value="turnoVigenteDesde" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Vigente hasta</label>
+                            <InputDate class="form-control" @bind-Value="turnoVigenteHasta" />
+                            <small class="text-muted">Usa la misma fecha para cambio de un solo día.</small>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Observaciones de turno</label>
+                            <InputText class="form-control" @bind-Value="turnoObservaciones" placeholder="Ej. cambio temporal o reasignación operativa" />
+                        </div>
+
+                        @if (historialTurnos.Count > 0)
+                        {
+                            <div class="col-12">
+                                <details class="mt-2">
+                                    <summary class="text-muted small">Historial de turnos (@historialTurnos.Count)</summary>
+                                    <table class="table table-sm table-bordered mt-1 mb-0">
+                                        <thead class="table-light"><tr><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observaciones</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var h in historialTurnos)
+                                            {
+                                                <tr>
+                                                    <td>@h.NombreTurno</td>
+                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                    <td>@(string.IsNullOrWhiteSpace(h.Observaciones) ? "—" : h.Observaciones)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </details>
+                            </div>
+                        }
+
+                        <div class="col-12">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <div class="card border-0 bg-light h-100">
+                                        <div class="card-body py-2">
+                                            <div class="small text-muted">Vacaciones disponibles</div>
+                                            <div class="fw-bold">@ObtenerSaldoVacaciones(editando.Id).ToString("0.##") días</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card border-0 bg-light h-100">
+                                        <div class="card-body py-2">
+                                            <div class="small text-muted">Banco de horas</div>
+                                            <div class="fw-bold">@FormatearHorasBanco(ObtenerSaldoBancoHoras(editando.Id))</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Sueldo Base</label>
+                            <InputNumber class="form-control" @bind-Value="editando.SueldoSemanal" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Periodicidad</label>
+                            <InputSelect class="form-select" @bind-Value="editando.PeriodicidadPago">
+                                <option value="@PeriodicidadPago.Semanal">Semanal</option>
+                                <option value="@PeriodicidadPago.Quincenal">Quincenal</option>
+                                <option value="@PeriodicidadPago.Mensual">Mensual</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaImss" />
+                                <label class="form-check-label">Aplica IMSS</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaIsr" />
+                                <label class="form-check-label">Aplica ISR</label>
+                            </div>
+                        </div>
+                        <div class="col-12"><hr /><h6 class="text-muted">Infonavit</h6></div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaInfonavit" />
+                                <label class="form-check-label">Aplica Infonavit</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Número de crédito</label>
+                            <InputText class="form-control" @bind-Value="editando.NumeroCreditoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Factor descuento</label>
+                            <InputNumber class="form-control" @bind-Value="editando.FactorDescuentoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
+                            <small class="text-muted">Usa porcentaje si es menor o igual a 1; si es mayor se toma como monto fijo.</small>
+                        </div>
+                        <div class="col-12"><hr /><h6 class="text-muted">Esquema de Pago</h6></div>
+                        <div class="col-md-4">
+                            <label class="form-label">Esquema</label>
+                            <InputSelect class="form-select" @bind-Value="esquemaSeleccionadoId">
+                                <option value="">(sin esquema)</option>
+                                @foreach (var esq in esquemasPago)
+                                {
+                                    <option value="@esq.Id">@esq.Nombre — @TipoEsquemaLabel(esq.Tipo)</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Vigente desde</label>
+                            <InputDate class="form-control" @bind-Value="esquemaVigenteDesde" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Sueldo base override</label>
+                            <InputNumber class="form-control" @bind-Value="esquemaSueldoOverride" />
+                            <small class="text-muted">Dejar en 0 para usar el sugerido</small>
+                        </div>
+
+                        @if (historialEsquemas.Count > 0)
+                        {
+                            <div class="col-12">
+                                <details class="mt-2">
+                                    <summary class="text-muted small">Historial de esquemas (@historialEsquemas.Count)</summary>
+                                    <table class="table table-sm table-bordered mt-1 mb-0">
+                                        <thead class="table-light"><tr><th>Esquema</th><th>Desde</th><th>Hasta</th><th class="text-end">Override</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var h in historialEsquemas)
+                                            {
+                                                <tr>
+                                                    <td>@h.NombreEsquema</td>
+                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                    <td class="text-end">@(h.Override.HasValue ? h.Override.Value.ToString("C2") : "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </details>
+                            </div>
+                        }
+
+                        <div class="col-12">
+                            <label class="form-label">Notas</label>
+                            <InputTextArea class="form-control" @bind-Value="editando.Notas" rows="2" />
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
+                        </div>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-body p-0">
+            @if (_puedeEditar)
+            {
+                <div class="d-flex flex-wrap align-items-center gap-2 px-3 pt-3">
+                    <div class="input-group" style="max-width:420px">
+                        <span class="input-group-text">Turno lote</span>
+                        <InputSelect class="form-select" @bind-Value="turnoBulkSeleccionadoId">
+                            <option value="">(sin turno)</option>
+                            @foreach (var turno in turnosBase)
+                            {
+                                <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <button class="btn btn-outline-primary" @onclick="AplicarTurnoBulk" disabled="@(guardando || empleadosSeleccionados.Count == 0)">
+                        <i class="bi bi-people me-1"></i>Aplicar a selección
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="AlternarSeleccionTodos">
+                        <i class="bi @(EstanTodosSeleccionados ? "bi-x-square" : "bi-check2-square") me-1"></i>@(EstanTodosSeleccionados ? "Quitar selección" : "Seleccionar todos")
+                    </button>
+                    <span class="badge text-bg-light">Seleccionados: @empleadosSeleccionados.Count</span>
+                </div>
+            }
+
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        @if (_puedeEditar)
+                        {
+                            <th class="text-center" style="width:52px">Sel.</th>
+                        }
+                        <th>No. Empleado</th><th>Cód. checador</th><th>Nombre</th><th>Posición</th><th>Depto</th>
+                        <th class="text-end">Vacaciones</th><th class="text-end">Banco horas</th><th class="text-end">Sueldo Base</th><th>Periodicidad</th><th>IMSS</th><th>ISR</th><th>Infonavit</th><th>Esquema</th><th>Turno</th>
+                        <th>F. Contratación</th><th class="text-center">Activo</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in lista)
+                    {
+                        <tr>
+                            @if (_puedeEditar)
+                            {
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input" checked="@empleadosSeleccionados.Contains(e.Id)" @onchange="args => AlternarSeleccionEmpleado(e.Id, args.Value)" />
+                                </td>
+                            }
+                            <td class="fw-semibold">@e.NumeroEmpleado</td>
+                            <td>@(string.IsNullOrWhiteSpace(e.CodigoChecador) ? "—" : e.CodigoChecador)</td>
+                            <td>@e.Nombre @e.ApellidoPaterno @e.ApellidoMaterno</td>
+                            <td>@ObtenerNombreActividad(e)</td>
+                            <td>@(e.Departamento ?? "—")</td>
+                            <td class="text-end">@ObtenerSaldoVacaciones(e.Id).ToString("0.##")</td>
+                            <td class="text-end">@FormatearHorasBanco(ObtenerSaldoBancoHoras(e.Id))</td>
+                            <td class="text-end">@e.SueldoSemanal.ToString("C2")</td>
+                            <td><span class="badge bg-info text-dark">@e.PeriodicidadPago</span></td>
+                            <td><span class="badge @(e.AplicaImss ? "bg-success" : "bg-secondary")">@(e.AplicaImss ? "Sí" : "No")</span></td>
+                            <td><span class="badge @(e.AplicaIsr ? "bg-success" : "bg-secondary")">@(e.AplicaIsr ? "Sí" : "No")</span></td>
+                            <td><span class="badge @(e.AplicaInfonavit ? "bg-warning text-dark" : "bg-secondary")">@(e.AplicaInfonavit ? "Sí" : "No")</span></td>
+                            <td><span class="badge bg-secondary">@ObtenerEsquemaActivo(e.Id)</span></td>
+                            <td><span class="badge bg-light text-dark">@(e.TurnoBase?.Nombre ?? "—")</span></td>
+                            <td class="text-muted small">@(e.FechaContratacion?.ToString("dd/MM/yyyy") ?? "—")</td>
+                            <td class="text-center"><span class="badge @(e.IsActive ? "bg-success" : "bg-secondary")">@(e.IsActive ? "Sí" : "No")</span></td>
+                            <td class="text-end">
+                                @if (_puedeEditar)
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(e)"><i class="bi bi-pencil"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+</div>
+
+@code {
+    private List<Empleado> lista = [];
+    private List<Posicion> posiciones = [];
+    private List<DepartamentoRrhh> departamentos = [];
+    private List<EsquemaPago> esquemasPago = [];
+    private List<TurnoBase> turnosBase = [];
+    private Dictionary<Guid, string> esquemaActivoPorEmpleado = new();
+    private Dictionary<Guid, decimal> vacacionesDisponiblesPorEmpleado = new();
+    private Dictionary<Guid, decimal> bancoHorasPorEmpleado = new();
+    private HashSet<Guid> empleadosSeleccionados = [];
+    private Empleado editando = new();
+    private Guid? esquemaSeleccionadoId;
+    private Guid? turnoSeleccionadoId;
+    private Guid? turnoBulkSeleccionadoId;
+    private DateTime esquemaVigenteDesde = DateTime.Today;
+    private DateTime turnoVigenteDesde = DateTime.Today;
+    private DateTime? turnoVigenteHasta;
+    private decimal? esquemaSueldoOverride;
+    private List<HistorialEsquemaVm> historialEsquemas = [];
+    private List<HistorialTurnoVm> historialTurnos = [];
+    private string? turnoObservaciones;
+    private bool mostrarForm, guardando;
+    private string? error, ok;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private Guid _empresaId;
+    private bool EstanTodosSeleccionados => lista.Count > 0 && empleadosSeleccionados.Count == lista.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+        {
+            await CargarPosiciones();
+            await CargarDepartamentos();
+            await CargarEsquemas();
+            await CargarTurnos();
+            await Cargar();
+        }
+    }
+
+    private async Task CargarPosiciones()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        posiciones = await db.Posiciones
+            .AsNoTracking()
+            .Where(a => a.IsActive)
+            .OrderBy(a => a.Orden)
+            .ThenBy(a => a.Nombre)
+            .ToListAsync();
+    }
+
+    private async Task CargarDepartamentos()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        departamentos = await db.DepartamentosRrhh
+            .AsNoTracking()
+            .Where(d => d.IsActive)
+            .OrderBy(d => d.Orden)
+            .ThenBy(d => d.Nombre)
+            .ToListAsync();
+    }
+
+    private IEnumerable<string> DepartamentosDisponibles
+        => departamentos.Select(d => d.Nombre)
+            .Append(editando.Departamento ?? string.Empty)
+            .Where(nombre => !string.IsNullOrWhiteSpace(nombre))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(nombre => nombre);
+
+    private async Task CargarEsquemas()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            esquemasPago = await db.EsquemasPago.AsNoTracking().OrderBy(e => e.Nombre).ToListAsync();
+        }
+        catch { esquemasPago = []; }
+    }
+
+    private async Task CargarTurnos()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            turnosBase = await db.TurnosBase
+                .AsNoTracking()
+                .OrderByDescending(t => t.IsActive)
+                .ThenBy(t => t.Nombre)
+                .ToListAsync();
+        }
+        catch
+        {
+            turnosBase = [];
+        }
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        lista = await db.Empleados
+            .Include(e => e.TurnoBase)
+            .AsNoTracking()
+            .OrderBy(e => e.Nombre)
+            .ToListAsync();
+
+        try
+        {
+            var hoy = DateTime.Today;
+            var asignaciones = await db.EmpleadosEsquemaPago
+                .Include(a => a.EsquemaPago)
+                .AsNoTracking()
+                .Where(a => a.VigenteDesde <= hoy && (a.VigenteHasta == null || a.VigenteHasta >= hoy))
+                .ToListAsync();
+            esquemaActivoPorEmpleado = asignaciones
+                .GroupBy(a => a.EmpleadoId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.VigenteDesde).First().EsquemaPago.Nombre);
+        }
+        catch { esquemaActivoPorEmpleado = new(); }
+
+        await CargarSaldosEmpleadoAsync(db);
+    }
+
+    private async Task CargarSaldosEmpleadoAsync(CrmDbContext db)
+    {
+        var tablaVacacionesJson = await db.AppConfigs
+            .AsNoTracking()
+            .Where(c => c.Clave == ClavesConfiguracionNomina.TablaVacacionesJson)
+            .Select(c => c.Valor)
+            .FirstOrDefaultAsync();
+
+        var configuracionNomina = new NominaConfiguracion
+        {
+            TablaVacacionesJson = string.IsNullOrWhiteSpace(tablaVacacionesJson)
+                ? NominaConfiguracion.TablaVacacionesDefaultJson
+                : tablaVacacionesJson
+        };
+
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var idsEmpleado = lista.Select(e => e.Id).ToList();
+
+        var vacacionesUsadas = await db.RrhhAusencias
+            .AsNoTracking()
+            .Where(a => idsEmpleado.Contains(a.EmpleadoId)
+                && a.IsActive
+                && a.Tipo == TipoAusenciaRrhh.Vacaciones
+                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
+                && a.FechaFin <= hoy)
+            .GroupBy(a => a.EmpleadoId)
+            .ToDictionaryAsync(g => g.Key, g => (decimal)g.Sum(a => a.Dias));
+
+        bancoHorasPorEmpleado = await db.RrhhBancoHorasMovimientos
+            .AsNoTracking()
+            .Where(m => idsEmpleado.Contains(m.EmpleadoId) && m.IsActive)
+            .GroupBy(m => m.EmpleadoId)
+            .ToDictionaryAsync(g => g.Key, g => g.Sum(m => m.Horas));
+
+        vacacionesDisponiblesPorEmpleado = lista.ToDictionary(
+            e => e.Id,
+            e => CalcularSaldoVacaciones(e, configuracionNomina, vacacionesUsadas.GetValueOrDefault(e.Id)));
+    }
+
+    private static decimal CalcularSaldoVacaciones(Empleado empleado, NominaConfiguracion configuracionNomina, decimal vacacionesUsadas)
+    {
+        if (!empleado.FechaContratacion.HasValue)
+        {
+            return 0m;
+        }
+
+        var anios = (int)Math.Floor((DateTime.Today.Date - empleado.FechaContratacion.Value.Date).TotalDays / 365.25);
+        var dias = configuracionNomina.ObtenerDiasVacacionesPorAntiguedad(anios);
+        return Math.Max(0m, dias - vacacionesUsadas);
+    }
+
+    private decimal ObtenerSaldoVacaciones(Guid empleadoId)
+        => empleadoId != Guid.Empty && vacacionesDisponiblesPorEmpleado.TryGetValue(empleadoId, out var saldo) ? saldo : 0m;
+
+    private decimal ObtenerSaldoBancoHoras(Guid empleadoId)
+        => empleadoId != Guid.Empty && bancoHorasPorEmpleado.TryGetValue(empleadoId, out var saldo) ? saldo : 0m;
+
+    private static string FormatearHorasBanco(decimal horas)
+        => $"{horas:0.##} h";
+
+    private async Task Nuevo()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para crear empleados.";
+            return;
+        }
+
+        error = ok = null;
+        var identificadores = _empresaId == Guid.Empty
+            ? (Codigo: string.Empty, NumeroEmpleado: string.Empty)
+            : await CodigoNegocio.GetNextEmployeeIdentifiersAsync(_empresaId);
+
+        editando = new()
+        {
+            Id = Guid.Empty,
+            Codigo = identificadores.Codigo,
+            NumeroEmpleado = string.Empty,
+            AplicaIsr = false,
+            AplicaInfonavit = false,
+            IsActive = true,
+            FechaContratacion = DateTime.Today
+        };
+        esquemaSeleccionadoId = null;
+        turnoSeleccionadoId = null;
+        esquemaVigenteDesde = DateTime.Today;
+        turnoVigenteDesde = DateTime.Today;
+        turnoVigenteHasta = null;
+        turnoObservaciones = null;
+        esquemaSueldoOverride = null;
+        historialEsquemas = [];
+        historialTurnos = [];
+        mostrarForm = true;
+    }
+
+    private async Task Editar(Empleado e)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar empleados.";
+            return;
+        }
+
+        error = ok = null;
+        editando = new()
+        {
+            Id = e.Id, Codigo = e.Codigo, NumeroEmpleado = e.NumeroEmpleado, CodigoChecador = e.CodigoChecador, Nombre = e.Nombre, ApellidoPaterno = e.ApellidoPaterno,
+            ApellidoMaterno = e.ApellidoMaterno, Curp = e.Curp, Nss = e.Nss,
+            Telefono = e.Telefono, Email = e.Email, Direccion = e.Direccion,
+            FechaNacimiento = e.FechaNacimiento, FechaContratacion = e.FechaContratacion,
+            PosicionId = e.PosicionId,
+            Puesto = e.Puesto, Departamento = e.Departamento,
+            TurnoBaseId = e.TurnoBaseId,
+            SueldoSemanal = e.SueldoSemanal, PeriodicidadPago = e.PeriodicidadPago, TipoNomina = e.TipoNomina,
+            AplicaImss = e.AplicaImss, AplicaIsr = e.AplicaIsr, AplicaInfonavit = e.AplicaInfonavit, NumeroCreditoInfonavit = e.NumeroCreditoInfonavit,
+            FactorDescuentoInfonavit = e.FactorDescuentoInfonavit, IsActive = e.IsActive, Notas = e.Notas
+        };
+
+        turnoSeleccionadoId = e.TurnoBaseId;
+        await CargarHistorialEsquemas(e.Id);
+        await CargarHistorialTurnos(e.Id);
+        mostrarForm = true;
+    }
+
+    private async Task CargarHistorialEsquemas(Guid empleadoId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var asignaciones = await db.EmpleadosEsquemaPago
+            .Include(a => a.EsquemaPago)
+            .AsNoTracking()
+            .Where(a => a.EmpleadoId == empleadoId)
+            .OrderByDescending(a => a.VigenteDesde)
+            .ToListAsync();
+
+        historialEsquemas = asignaciones.Select(a => new HistorialEsquemaVm
+        {
+            NombreEsquema = a.EsquemaPago.Nombre,
+            Desde = a.VigenteDesde,
+            Hasta = a.VigenteHasta,
+            Override = a.SueldoBaseOverride
+        }).ToList();
+
+        var vigente = asignaciones.FirstOrDefault(a => a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today);
+        esquemaSeleccionadoId = vigente?.EsquemaPagoId;
+        esquemaVigenteDesde = vigente?.VigenteDesde ?? DateTime.Today;
+        esquemaSueldoOverride = vigente?.SueldoBaseOverride;
+    }
+
+    private async Task CargarHistorialTurnos(Guid empleadoId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var vigencias = await db.RrhhEmpleadosTurno
+            .Include(v => v.TurnoBase)
+            .AsNoTracking()
+            .Where(v => v.EmpleadoId == empleadoId)
+            .OrderByDescending(v => v.VigenteDesde)
+            .ToListAsync();
+
+        historialTurnos = vigencias.Select(v => new HistorialTurnoVm
+        {
+            NombreTurno = v.TurnoBase.Nombre,
+            Desde = v.VigenteDesde,
+            Hasta = v.VigenteHasta,
+            Observaciones = v.Observaciones
+        }).ToList();
+
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var vigente = vigencias
+            .FirstOrDefault(v => v.VigenteDesde <= hoy && (v.VigenteHasta == null || v.VigenteHasta >= hoy));
+
+        turnoSeleccionadoId = vigente?.TurnoBaseId ?? editando.TurnoBaseId;
+        turnoVigenteDesde = vigente?.VigenteDesde.ToDateTime(TimeOnly.MinValue)
+            ?? editando.FechaContratacion?.Date
+            ?? DateTime.Today;
+        turnoVigenteHasta = vigente?.VigenteHasta?.ToDateTime(TimeOnly.MinValue);
+        turnoObservaciones = vigente?.Observaciones;
+    }
+
+    private async Task Guardar()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar empleados.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editando.Nombre))
+            { error = "El nombre es requerido."; return; }
+
+            var empresaId = _empresaId;
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (editando.Id == Guid.Empty && string.IsNullOrWhiteSpace(editando.Codigo))
+            {
+                var identificadores = await CodigoNegocio.GetNextEmployeeIdentifiersAsync(empresaId);
+                editando.Codigo = identificadores.Codigo;
+            }
+
+            var numeroEmpleado = editando.NumeroEmpleado.Trim();
+            if (string.IsNullOrWhiteSpace(numeroEmpleado))
+            {
+                error = "El número de empleado es requerido.";
+                return;
+            }
+
+            var codigoChecador = string.IsNullOrWhiteSpace(editando.CodigoChecador)
+                ? null
+                : editando.CodigoChecador.Trim();
+
+            var numeroDuplicado = await db.Empleados
+                .AnyAsync(e => e.EmpresaId == empresaId && e.NumeroEmpleado == numeroEmpleado && e.Id != editando.Id);
+            if (numeroDuplicado)
+            {
+                error = "Ya existe un empleado con ese número de empleado.";
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(codigoChecador))
+            {
+                var codigoChecadorDuplicado = await db.Empleados
+                    .AnyAsync(e => e.EmpresaId == empresaId && e.CodigoChecador == codigoChecador && e.Id != editando.Id);
+                if (codigoChecadorDuplicado)
+                {
+                    error = "Ya existe un empleado con ese código checador.";
+                    return;
+                }
+            }
+
+            Guid empId;
+            if (editando.Id == Guid.Empty)
+            {
+                var nuevoEmpleado = new Empleado
+                {
+                    EmpresaId = empresaId, Codigo = editando.Codigo.Trim(), NumeroEmpleado = numeroEmpleado, Nombre = editando.Nombre.Trim(),
+                    ApellidoPaterno = editando.ApellidoPaterno?.Trim(), ApellidoMaterno = editando.ApellidoMaterno?.Trim(),
+                    Curp = editando.Curp?.Trim(), Nss = editando.Nss?.Trim(),
+                    Telefono = editando.Telefono?.Trim(), Email = editando.Email?.Trim(),
+                    Direccion = editando.Direccion?.Trim(), CodigoChecador = codigoChecador, FechaNacimiento = editando.FechaNacimiento,
+                    FechaContratacion = editando.FechaContratacion, PosicionId = editando.PosicionId, Puesto = ObtenerNombrePosicion(editando.PosicionId),
+                    Departamento = editando.Departamento?.Trim(), SueldoSemanal = editando.SueldoSemanal,
+                    PeriodicidadPago = editando.PeriodicidadPago,
+                    TipoNomina = editando.TipoNomina, AplicaImss = editando.AplicaImss, AplicaIsr = editando.AplicaIsr, AplicaInfonavit = editando.AplicaInfonavit,
+                    NumeroCreditoInfonavit = editando.AplicaInfonavit ? editando.NumeroCreditoInfonavit?.Trim() : null,
+                    FactorDescuentoInfonavit = editando.AplicaInfonavit ? editando.FactorDescuentoInfonavit : 0m,
+                    IsActive = editando.IsActive, Notas = editando.Notas?.Trim()
+                };
+
+                db.Empleados.Add(nuevoEmpleado);
+                empId = nuevoEmpleado.Id;
+            }
+            else
+            {
+                var ex = await db.Empleados.FirstOrDefaultAsync(e => e.Id == editando.Id);
+                if (ex == null) return;
+                ex.NumeroEmpleado = numeroEmpleado; ex.Nombre = editando.Nombre.Trim();
+                ex.ApellidoPaterno = editando.ApellidoPaterno?.Trim(); ex.ApellidoMaterno = editando.ApellidoMaterno?.Trim();
+                ex.Curp = editando.Curp?.Trim(); ex.Nss = editando.Nss?.Trim();
+                ex.Telefono = editando.Telefono?.Trim(); ex.Email = editando.Email?.Trim();
+                ex.Direccion = editando.Direccion?.Trim(); ex.CodigoChecador = codigoChecador; ex.FechaNacimiento = editando.FechaNacimiento;
+                ex.FechaContratacion = editando.FechaContratacion; ex.PosicionId = editando.PosicionId; ex.Puesto = ObtenerNombrePosicion(editando.PosicionId);
+                ex.Departamento = editando.Departamento?.Trim(); ex.SueldoSemanal = editando.SueldoSemanal;
+                ex.PeriodicidadPago = editando.PeriodicidadPago;
+                ex.TipoNomina = editando.TipoNomina; ex.AplicaImss = editando.AplicaImss; ex.AplicaIsr = editando.AplicaIsr; ex.AplicaInfonavit = editando.AplicaInfonavit;
+                ex.NumeroCreditoInfonavit = editando.AplicaInfonavit ? editando.NumeroCreditoInfonavit?.Trim() : null;
+                ex.FactorDescuentoInfonavit = editando.AplicaInfonavit ? editando.FactorDescuentoInfonavit : 0m; ex.IsActive = editando.IsActive;
+                ex.Notas = editando.Notas?.Trim(); ex.UpdatedAt = DateTime.UtcNow;
+                empId = ex.Id;
+            }
+
+            await db.SaveChangesAsync();
+
+            await GuardarVigenciaTurnoAsync(
+                db,
+                empresaId,
+                empId,
+                turnoSeleccionadoId,
+                DateOnly.FromDateTime(turnoVigenteDesde.Date),
+                turnoVigenteHasta.HasValue ? DateOnly.FromDateTime(turnoVigenteHasta.Value.Date) : null,
+                turnoObservaciones);
+
+            await SincronizarTurnoBaseActualAsync(db, empresaId, empId);
+            await db.SaveChangesAsync();
+
+            // Guardar asignación de esquema si se seleccionó uno
+            if (esquemaSeleccionadoId.HasValue && esquemaSeleccionadoId.Value != Guid.Empty)
+            {
+                var asignacionExistente = await db.EmpleadosEsquemaPago
+                    .FirstOrDefaultAsync(a => a.EmpleadoId == empId
+                        && a.EsquemaPagoId == esquemaSeleccionadoId.Value
+                        && (a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today));
+
+                if (asignacionExistente == null)
+                {
+                    // Cerrar asignación anterior
+                    var anteriores = await db.EmpleadosEsquemaPago
+                        .Where(a => a.EmpleadoId == empId && a.VigenteHasta == null)
+                        .ToListAsync();
+                    foreach (var ant in anteriores)
+                    {
+                        ant.VigenteHasta = esquemaVigenteDesde.AddDays(-1);
+                        ant.UpdatedAt = DateTime.UtcNow;
+                    }
+
+                    db.EmpleadosEsquemaPago.Add(new EmpleadoEsquemaPago
+                    {
+                        EmpleadoId = empId,
+                        EsquemaPagoId = esquemaSeleccionadoId.Value,
+                        VigenteDesde = esquemaVigenteDesde,
+                        SueldoBaseOverride = esquemaSueldoOverride > 0 ? esquemaSueldoOverride : null
+                    });
+                    await db.SaveChangesAsync();
+                }
+                else if (asignacionExistente.SueldoBaseOverride != esquemaSueldoOverride)
+                {
+                    asignacionExistente.SueldoBaseOverride = esquemaSueldoOverride > 0 ? esquemaSueldoOverride : null;
+                    asignacionExistente.UpdatedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            ok = "Guardado."; mostrarForm = false; await Cargar();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task AplicarTurnoBulk()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para asignar turnos.";
+            return;
+        }
+
+        if (empleadosSeleccionados.Count == 0)
+        {
+            error = "Selecciona al menos un empleado.";
+            return;
+        }
+
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var empleados = await db.Empleados
+                .Where(e => empleadosSeleccionados.Contains(e.Id))
+                .ToListAsync();
+
+            foreach (var empleado in empleados)
+            {
+                await GuardarVigenciaTurnoAsync(db, _empresaId, empleado.Id, turnoBulkSeleccionadoId, DateOnly.FromDateTime(DateTime.Today), null, "Asignación masiva desde RRHH/Empleados.");
+                await SincronizarTurnoBaseActualAsync(db, _empresaId, empleado.Id);
+            }
+
+            await db.SaveChangesAsync();
+            ok = turnoBulkSeleccionadoId.HasValue
+                ? "Turno base aplicado a la selección."
+                : "Se quitó el turno base de la selección.";
+            empleadosSeleccionados.Clear();
+            await Cargar();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void AlternarSeleccionTodos()
+    {
+        if (EstanTodosSeleccionados)
+        {
+            empleadosSeleccionados.Clear();
+            return;
+        }
+
+        empleadosSeleccionados = lista.Select(e => e.Id).ToHashSet();
+    }
+
+    private void AlternarSeleccionEmpleado(Guid empleadoId, object? value)
+    {
+        var seleccionado = value is bool boolValue && boolValue;
+        if (seleccionado)
+        {
+            empleadosSeleccionados.Add(empleadoId);
+            return;
+        }
+
+        empleadosSeleccionados.Remove(empleadoId);
+    }
+
+    private static async Task GuardarVigenciaTurnoAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, Guid? turnoBaseId, DateOnly vigenteDesde, DateOnly? vigenteHasta, string? observaciones)
+    {
+        var empleado = await db.Empleados.FirstOrDefaultAsync(e => e.Id == empleadoId);
+        if (empleado == null)
+        {
+            return;
+        }
+
+        var vigencias = await db.RrhhEmpleadosTurno
+            .Where(v => v.EmpresaId == empresaId && v.EmpleadoId == empleadoId && v.IsActive)
+            .OrderBy(v => v.VigenteDesde)
+            .ToListAsync();
+
+        if (vigencias.Count == 0 && empleado.TurnoBaseId.HasValue)
+        {
+            var inicioInicial = DateOnly.FromDateTime((empleado.FechaContratacion ?? DateTime.Today).Date);
+            var vigenciaInicial = new RrhhEmpleadoTurno
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresaId,
+                EmpleadoId = empleadoId,
+                TurnoBaseId = empleado.TurnoBaseId.Value,
+                VigenteDesde = inicioInicial,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            };
+
+            db.RrhhEmpleadosTurno.Add(vigenciaInicial);
+            vigencias.Add(vigenciaInicial);
+        }
+
+        var observacionesLimpias = string.IsNullOrWhiteSpace(observaciones) ? null : observaciones.Trim();
+        var vigenteHastaNormalizado = vigenteHasta.HasValue && vigenteHasta.Value < vigenteDesde ? vigenteDesde : vigenteHasta;
+        var siguienteVigencia = vigencias
+            .Where(v => v.VigenteDesde > vigenteDesde)
+            .OrderBy(v => v.VigenteDesde)
+            .FirstOrDefault();
+        var nuevoHasta = vigenteHastaNormalizado ?? siguienteVigencia?.VigenteDesde.AddDays(-1);
+        var vigenciaExacta = vigencias.FirstOrDefault(v => v.VigenteDesde == vigenteDesde);
+
+        foreach (var vigente in vigencias.Where(v => v.Id != vigenciaExacta?.Id && v.VigenteDesde <= vigenteDesde && (v.VigenteHasta == null || v.VigenteHasta >= vigenteDesde)))
+        {
+            vigente.VigenteHasta = vigenteDesde.AddDays(-1);
+            vigente.UpdatedAt = DateTime.UtcNow;
+        }
+
+        if (!turnoBaseId.HasValue)
+        {
+            if (vigenciaExacta != null)
+            {
+                db.RrhhEmpleadosTurno.Remove(vigenciaExacta);
+            }
+
+            return;
+        }
+
+        if (vigenciaExacta != null)
+        {
+            vigenciaExacta.TurnoBaseId = turnoBaseId.Value;
+            vigenciaExacta.VigenteHasta = nuevoHasta;
+            vigenciaExacta.Observaciones = observacionesLimpias;
+            vigenciaExacta.UpdatedAt = DateTime.UtcNow;
+            return;
+        }
+
+        db.RrhhEmpleadosTurno.Add(new RrhhEmpleadoTurno
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresaId,
+            EmpleadoId = empleadoId,
+            TurnoBaseId = turnoBaseId.Value,
+            VigenteDesde = vigenteDesde,
+            VigenteHasta = nuevoHasta,
+            Observaciones = observacionesLimpias,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+    }
+
+    private static async Task SincronizarTurnoBaseActualAsync(CrmDbContext db, Guid empresaId, Guid empleadoId)
+    {
+        var empleado = await db.Empleados.FirstOrDefaultAsync(e => e.Id == empleadoId);
+        if (empleado == null)
+        {
+            return;
+        }
+
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var turnoVigente = await db.RrhhEmpleadosTurno
+            .Where(v => v.EmpresaId == empresaId
+                && v.EmpleadoId == empleadoId
+                && v.IsActive
+                && v.VigenteDesde <= hoy
+                && (v.VigenteHasta == null || v.VigenteHasta >= hoy))
+            .OrderByDescending(v => v.VigenteDesde)
+            .FirstOrDefaultAsync();
+
+        empleado.TurnoBaseId = turnoVigente?.TurnoBaseId;
+        empleado.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private string ObtenerEsquemaActivo(Guid empleadoId)
+        => esquemaActivoPorEmpleado.TryGetValue(empleadoId, out var nombre) ? nombre : "—";
+
+    private static string ObtenerEtiquetaTurno(TurnoBase turno)
+        => turno.IsActive ? turno.Nombre : $"{turno.Nombre} (inactivo)";
+
+    private string ObtenerNombreActividad(Empleado empleado)
+        => ObtenerNombrePosicion(empleado.PosicionId) ?? empleado.Puesto ?? "—";
+
+    private static string TipoEsquemaLabel(TipoEsquemaPago tipo) => tipo switch
+    {
+        TipoEsquemaPago.SueldoFijo => "Sueldo Fijo",
+        TipoEsquemaPago.DestajoPorPieza => "Destajo/Pieza",
+        TipoEsquemaPago.DestajoPorOperacion => "Destajo/Op",
+        TipoEsquemaPago.BonoMetaPedidos => "Bono Meta",
+        TipoEsquemaPago.Mixto => "Mixto",
+        _ => tipo.ToString()
+    };
+
+    private string? ObtenerNombrePosicion(Guid? posicionId)
+        => posicionId.HasValue
+            ? posiciones.FirstOrDefault(a => a.Id == posicionId.Value)?.Nombre
+            : null;
+
+    private class HistorialEsquemaVm
+    {
+        public string NombreEsquema { get; set; } = "";
+        public DateTime Desde { get; set; }
+        public DateTime? Hasta { get; set; }
+        public decimal? Override { get; set; }
+    }
+
+    private class HistorialTurnoVm
+    {
+        public string NombreTurno { get; set; } = "";
+        public DateOnly Desde { get; set; }
+        public DateOnly? Hasta { get; set; }
+        public string? Observaciones { get; set; }
+    }
+}

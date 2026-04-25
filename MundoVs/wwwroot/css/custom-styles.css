@@ -1,0 +1,181 @@
+/* MundoVs CRM - Estilos Personalizados */
+/* Paleta: Dark/Gray / Gold #D4AF37 / #F1C768 / #B8832F */
+
+:root {
+    --vs-dark: #111827;
+    --vs-dark-2: #1f2937;
+    --vs-violet: #D4AF37;
+    --vs-fuchsia: #F1C768;
+    --vs-pink: #B8832F;
+    --vs-violet-soft: #fdebaf;
+    --primary-gradient: linear-gradient(135deg, #FCE8A2 0%, #F1C768 50%, #B8832F 100%);
+    --secondary-gradient: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    --success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    --info-gradient: linear-gradient(135deg, #D1D5DB 0%, #6B7280 100%);
+    --shadow-sm: 0 2px 8px rgba(184, 131, 47, 0.08);
+    --shadow-md: 0 5px 20px rgba(184, 131, 47, 0.10);
+    --shadow-lg: 0 10px 40px rgba(184, 131, 47, 0.14);
+    --border-radius: 12px;
+    /* Tokens de marca reutilizables */
+    --brand-gradient: linear-gradient(135deg, #FCE8A2 0%, #F1C768 55%, #B8832F 100%);
+    --accent-gradient: linear-gradient(135deg, #F1C768 0%, #B8832F 100%);
+    --brand-shadow: 0 10px 24px rgba(184, 131, 47, 0.28);
+}
+
+/* ── Botón acento: CTA secundario (fucsia → rosa) ── */
+.btn-accent {
+    background: var(--accent-gradient);
+    background-size: 200% 200%;
+    background-position: 0% 50%;
+    color: #111827;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    padding: 0.6rem 1.2rem;
+    box-shadow: 0 6px 18px rgba(184, 131, 47, 0.25);
+    transition: background-position .35s ease, transform .15s, box-shadow .15s, color .15s;
+}
+
+.btn-accent:hover,
+.btn-accent:focus {
+    background-position: 100% 50%;
+    color: #111827;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(184, 131, 47, 0.35);
+}
+
+/* ── Botón outline primario coherente con la marca ── */
+.btn-outline-primary {
+    color: #B8832F;
+    border: 1.5px solid #B8832F;
+    background: transparent;
+    font-weight: 600;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:active {
+    color: #111827 !important;
+    background: var(--brand-gradient) !important;
+    border-color: transparent !important;
+    box-shadow: var(--brand-shadow);
+}
+
+/* ── Badges semánticos de estado ── */
+.badge-pendiente {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    color: #4b5563;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.4em 0.75em;
+    font-weight: 600;
+}
+
+.badge-proceso {
+    background: var(--accent-gradient);
+    color: #111827;
+    border-radius: 8px;
+    padding: 0.4em 0.75em;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(184, 131, 47, 0.22);
+}
+
+.badge-terminado {
+    background: linear-gradient(135deg, #F1C768 0%, #B8832F 100%);
+    color: #111827;
+    border-radius: 8px;
+    padding: 0.4em 0.75em;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(184, 131, 47, 0.28);
+}
+
+/* Cards mejoradas */
+.card {
+    border: none;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* Botones con mejor estilo */
+.btn {
+    border-radius: 10px;
+    font-weight: 500;
+    padding: 0.6rem 1.2rem;
+    transition: all 0.3s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Tablas modernas */
+.table {
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.table thead {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    color: white;
+}
+
+.table tbody tr {
+    transition: all 0.2s ease;
+}
+
+.table tbody tr:hover {
+    background-color: rgba(124, 58, 237, 0.06);
+    transform: scale(1.01);
+}
+
+/* Forms */
+.form-control, .form-select {
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 0.2rem rgba(124, 58, 237, 0.20);
+}
+
+/* Badges mejorados */
+.badge {
+    border-radius: 8px;
+    padding: 0.5em 0.8em;
+    font-weight: 500;
+}
+
+/* Animaciones suaves */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.card, .stat-card, .quick-action-card {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #ec4899 0%, #7c3aed 100%);
+}

@@ -1,0 +1,567 @@
+﻿@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Routing
+@using MundoVs.Core.Security
+@inject IAppConfigRepository AppConfig
+@inject ModuloStateService ModuloState
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="topbar-shell">
+    <div class="topbar-main">
+        <div class="topbar-brand-group">
+            <button type="button" class="navbar-toggler @(mobileMenuOpen ? "open" : "")" @onclick="ToggleMobileMenu" aria-label="Abrir o cerrar menú lateral" aria-expanded="@mobileMenuOpen" aria-controls="context-nav-shell">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+
+            <a class="sidebar-brand" href="" @onclick="CloseMobileMenu">
+                <span class="brand-mark-wrap">
+                    <img src="/branding/zenith-logo-black.png" alt="Zenith" class="brand-image" />
+                </span>
+            </a>
+        </div>
+
+        @if (isAuthenticated)
+        {
+            <div class="topbar-modules">
+                <NavLink class="topbar-home-link" href="" Match="NavLinkMatch.All" @onclick="CloseMobileMenu">
+                    <i class="bi bi-house-door-fill"></i>
+                    <span>Inicio</span>
+                </NavLink>
+
+                @foreach (var module in GetVisibleModules())
+                {
+                    <button type="button" class="module-chip @(activeModuleId == module.Id ? "active" : "")" @onclick="() => SelectModule(module.Id)">
+                        <i class="@($"bi {module.Icon}")"></i>
+                        <span>@module.Title</span>
+                    </button>
+                }
+            </div>
+
+            <div class="topbar-actions">
+                @if (activeModule is not null)
+                {
+                    <button type="button"
+                            class="topbar-sidebar-toggle"
+                            @onclick="ToggleDesktopMini"
+                            title="@(IsMini ? "Expandir menú" : "Minimizar menú")"
+                            aria-label="@(IsMini ? "Expandir menú lateral" : "Minimizar menú lateral")">
+                        <i class="bi @(IsMini ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-inset")"></i>
+                        <span>@(IsMini ? "Expandir menú" : "Menú mini")</span>
+                    </button>
+                }
+
+                <div class="topbar-user-pill">
+                    <span class="topbar-user-name">@currentUser?.Identity?.Name</span>
+                    <span class="topbar-user-role">@currentUser?.FindFirst(ClaimTypes.Role)?.Value</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (mobileMenuOpen)
+{
+    <button type="button" class="sidebar-backdrop" @onclick="CloseMobileMenu" aria-label="Cerrar menú"></button>
+}
+
+@if (isAuthenticated && activeModule is not null)
+{
+    <aside id="context-nav-shell" class="nav-shell @(mobileMenuOpen ? "open" : "") @(IsMini ? "desktop-mini" : string.Empty)">
+        <div class="context-header">
+            <div class="context-header-top">
+                <span class="context-module-mark" title="@activeModule.Title">
+                    <i class="@($"bi {activeModule.Icon}")"></i>
+                </span>
+                <button type="button"
+                        class="sidebar-mini-toggle"
+                        @onclick="ToggleDesktopMini"
+                        title="@(IsMini ? "Expandir menú" : "Minimizar menú")"
+                        aria-label="@(IsMini ? "Expandir menú lateral" : "Minimizar menú lateral")">
+                    <i class="bi @(IsMini ? "bi-arrows-angle-expand" : "bi-arrows-angle-contract")"></i>
+                </button>
+            </div>
+            <div class="context-copy">
+                <div class="context-eyebrow">Navegación del módulo</div>
+                <div class="context-title">@activeModule.Title</div>
+                <div class="context-hint">@activeModule.Hint</div>
+            </div>
+        </div>
+
+        <nav class="nav flex-column sidebar-nav">
+            @if (activeModuleId == 1)
+            {
+                @if (HasCapacidad("clientes.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="clientes" @onclick="CloseMobileMenu" title="Clientes">
+                        <span class="bi bi-people-fill"></span>
+                        <span>Clientes</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("productos.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="productos" @onclick="CloseMobileMenu" title="Productos">
+                        <span class="bi bi-box-seam-fill"></span>
+                        <span>Productos</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("proveedores.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="proveedores" @onclick="CloseMobileMenu" title="Proveedores">
+                        <span class="bi bi-truck"></span>
+                        <span>Proveedores</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 2)
+            {
+                @if (moduloSerigrafia && HasCapacidad("pedidos.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/pedidos" @onclick="CloseMobileMenu" title="Pedidos">
+                        <span class="bi bi-clipboard-check-fill"></span>
+                        <span>Pedidos</span>
+                    </NavLink>
+                }
+                @if (moduloSerigrafia && HasCapacidad("cotizaciones.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/cotizaciones" @onclick="CloseMobileMenu" title="Cotizaciones">
+                        <span class="bi bi-calculator"></span>
+                        <span>Cotizaciones</span>
+                    </NavLink>
+                }
+                @if (moduloCalzado && HasCapacidad("productos.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="calzado/hormas" @onclick="CloseMobileMenu" title="Hormas">
+                        <span class="bi bi-grid-fill"></span>
+                        <span>Hormas</span>
+                    </NavLink>
+                }
+                @if (moduloSerigrafia && HasCapacidad("serigrafia.editar"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/tipos-proceso" @onclick="CloseMobileMenu" title="Procesos">
+                        <span class="bi bi-diagram-3"></span>
+                        <span>Procesos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/posiciones" @onclick="CloseMobileMenu" title="Posiciones">
+                        <span class="bi bi-person-workspace"></span>
+                        <span>Posiciones</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/pantallas" @onclick="CloseMobileMenu" title="Pantallas">
+                        <span class="bi bi-grid-3x3-gap-fill"></span>
+                        <span>Pantallas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/disenos" @onclick="CloseMobileMenu" title="Diseños">
+                        <span class="bi bi-palette-fill"></span>
+                        <span>Diseños</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/gastos-fijos" @onclick="CloseMobileMenu" title="Gastos Fijos">
+                        <span class="bi bi-building"></span>
+                        <span>Gastos Fijos</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 7)
+            {
+                @if (moduloSerigrafia && (HasCapacidad("inventario.ver") || HasCapacidad("inventario.movimientos") || HasCapacidad("inventario.reportes") || HasCapacidad("serigrafia.editar")))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="inventario" @onclick="CloseMobileMenu" title="Inventario">
+                        <span class="bi bi-boxes"></span>
+                        <span>Inventario</span>
+                    </NavLink>
+                }
+                @if (moduloSerigrafia && (HasCapacidad("inventario.fg.ver") || HasCapacidad("inventario.fg.ajustar") || HasCapacidad("serigrafia.editar")))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="inventario/finished-goods" @onclick="CloseMobileMenu" title="Inventario FG">
+                        <span class="bi bi-box-seam"></span>
+                        <span>Inventario FG</span>
+                    </NavLink>
+                }
+                @if (moduloSerigrafia && HasCapacidad("serigrafia.editar"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="configuracion/tipos-inventario" @onclick="CloseMobileMenu" title="Tipos de Inventario">
+                        <span class="bi bi-tags-fill"></span>
+                        <span>Tipos de Inventario</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/materias-primas" @onclick="CloseMobileMenu" title="Materias Primas">
+                        <span class="bi bi-droplet-fill"></span>
+                        <span>Materias Primas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="serigrafia/insumos" @onclick="CloseMobileMenu" title="Insumos">
+                        <span class="bi bi-box-seam"></span>
+                        <span>Insumos</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 3)
+            {
+                @if (HasCapacidad("contabilidad.dashboard"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="dashboard" @onclick="CloseMobileMenu" title="Dashboard">
+                        <span class="bi bi-speedometer2"></span>
+                        <span>Dashboard</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("contabilidad.estado_resultados"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="contabilidad/estado-resultados" @onclick="CloseMobileMenu" title="Estado de Resultados">
+                        <span class="bi bi-file-earmark-spreadsheet"></span>
+                        <span>Estado de Resultados</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("contabilidad.cuentas_cobrar") || HasCapacidad("facturas.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="contabilidad/facturas" @onclick="CloseMobileMenu" title="Facturas">
+                        <span class="bi bi-receipt-cutoff"></span>
+                        <span>Facturas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="contabilidad/notas-entrega" @onclick="CloseMobileMenu" title="Notas de Entrega">
+                        <span class="bi bi-journal-text"></span>
+                        <span>Notas de Entrega</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("contabilidad.cuentas_cobrar"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="contabilidad/cuentas-por-cobrar" @onclick="CloseMobileMenu" title="Cuentas por Cobrar">
+                        <span class="bi bi-wallet2"></span>
+                        <span>Cuentas por Cobrar</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("cxp.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="contabilidad/cuentas-por-pagar" @onclick="CloseMobileMenu" title="Cuentas por Pagar">
+                        <span class="bi bi-cash-coin"></span>
+                        <span>Cuentas por Pagar</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 4)
+            {
+                @if (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/dashboard" @onclick="CloseMobileMenu" title="Dashboard RH">
+                        <span class="bi bi-speedometer2"></span>
+                        <span>Dashboard</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("empleados.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/empleados" @onclick="CloseMobileMenu" title="Empleados">
+                        <span class="bi bi-person-vcard"></span>
+                        <span>Empleados</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/asistencias" @onclick="CloseMobileMenu" title="Asistencias">
+                        <span class="bi bi-calendar-check"></span>
+                        <span>Asistencias</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/ausencias" @onclick="CloseMobileMenu" title="Ausencias">
+                        <span class="bi bi-calendar-x"></span>
+                        <span>Ausencias</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("nominas.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/banco-horas" @onclick="CloseMobileMenu" title="Banco de Horas">
+                        <span class="bi bi-hourglass-split"></span>
+                        <span>Banco de horas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/vales-destajo" @onclick="CloseMobileMenu" title="Vales de Destajo">
+                        <span class="bi bi-receipt"></span>
+                        <span>Vales de Destajo</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/prenominas" @onclick="CloseMobileMenu" title="Prenóminas">
+                        <span class="bi bi-calendar2-week"></span>
+                        <span>Prenóminas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/bonos-distribuidos" @onclick="CloseMobileMenu" title="Bonos Distribuidos">
+                        <span class="bi bi-percent"></span>
+                        <span>Bonos distribuidos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/nominas" @onclick="CloseMobileMenu" title="Nóminas">
+                        <span class="bi bi-wallet2"></span>
+                        <span>Nóminas</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 5)
+            {
+                @if (HasCapacidad("empresas.editar"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="superadmin/empresas" @onclick="CloseMobileMenu" title="Empresas">
+                        <span class="bi bi-building"></span>
+                        <span>Empresas</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="superadmin/configuracion-archivos" @onclick="CloseMobileMenu" title="Configuración de Archivos">
+                        <span class="bi bi-folder2-open"></span>
+                        <span>Configuración de Archivos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="superadmin/configuracion-facturacion" @onclick="CloseMobileMenu" title="Configuración de Facturación">
+                        <span class="bi bi-sliders"></span>
+                        <span>Configuración de Facturación</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="superadmin/configuracion-nomina" @onclick="CloseMobileMenu" title="Configuración de Nómina">
+                        <span class="bi bi-bank"></span>
+                        <span>Configuración de Nómina</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="superadmin/capacidades" @onclick="CloseMobileMenu" title="Capacidades">
+                        <span class="bi bi-key-fill"></span>
+                        <span>Capacidades</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("usuarios.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="admin/usuarios" @onclick="CloseMobileMenu" title="Usuarios">
+                        <span class="bi bi-people-fill"></span>
+                        <span>Usuarios</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="admin/tipos-usuario" @onclick="CloseMobileMenu" title="Roles y Permisos">
+                        <span class="bi bi-shield-lock"></span>
+                        <span>Roles y Permisos</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("rrhh.marcaciones.auditoria"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/marcaciones" @onclick="CloseMobileMenu" title="Marcaciones (auditoría)">
+                        <span class="bi bi-list-check"></span>
+                        <span>Marcaciones</span>
+                    </NavLink>
+                }
+            }
+            else if (activeModuleId == 6)
+            {
+                @if (HasCapacidad("configuracion.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="configuracion" @onclick="CloseMobileMenu" title="General">
+                        <span class="bi bi-sliders"></span>
+                        <span>General</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="configuracion/archivos" @onclick="CloseMobileMenu" title="Archivos Adjuntos">
+                        <span class="bi bi-folder2-open"></span>
+                        <span>Archivos Adjuntos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="configuracion/nomina" @onclick="CloseMobileMenu" title="Nómina">
+                        <span class="bi bi-wallet2"></span>
+                        <span>Nómina</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="configuracion/bonos" @onclick="CloseMobileMenu" title="Bonos de Nómina">
+                        <span class="bi bi-gift"></span>
+                        <span>Bonos</span>
+                    </NavLink>
+                    @if (HasModulo(ModuloAccesoCatalog.Rrhh) && HasCapacidad("empleados.ver"))
+                    {
+                        <NavLink class="nav-link nav-link-sub" href="configuracion/posiciones" @onclick="CloseMobileMenu" title="Posiciones">
+                            <span class="bi bi-diagram-3"></span>
+                            <span>Posiciones</span>
+                        </NavLink>
+                        <NavLink class="nav-link nav-link-sub" href="configuracion/departamentos" @onclick="CloseMobileMenu" title="Departamentos">
+                            <span class="bi bi-buildings"></span>
+                            <span>Departamentos</span>
+                        </NavLink>
+                    }
+                    @if (moduloCalzado)
+                    {
+                        <NavLink class="nav-link nav-link-sub" href="configuracion/tallas-calzado" @onclick="CloseMobileMenu" title="Tallas Base">
+                            <span class="bi bi-rulers"></span>
+                            <span>Tallas Base</span>
+                        </NavLink>
+                    }
+                }
+
+                @if (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar")))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/turnos" @onclick="CloseMobileMenu" title="Turnos">
+                        <span class="bi bi-clock-history"></span>
+                        <span>Turnos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/checadores" @onclick="CloseMobileMenu" title="Checadores">
+                        <span class="bi bi-hdd-network"></span>
+                        <span>Checadores</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/control-tiempo" @onclick="CloseMobileMenu" title="Control de tiempos">
+                        <span class="bi bi-stopwatch"></span>
+                        <span>Control de tiempos</span>
+                    </NavLink>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/estado-agente" @onclick="CloseMobileMenu" title="Estado del agente">
+                        <span class="bi bi-broadcast-pin"></span>
+                        <span>Estado del agente</span>
+                    </NavLink>
+                }
+
+                @if (HasModulo(ModuloAccesoCatalog.Rrhh) && HasCapacidad("nominas.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/esquemas-pago" @onclick="CloseMobileMenu" title="Esquemas de pago">
+                        <span class="bi bi-cash-stack"></span>
+                        <span>Esquemas de pago</span>
+                    </NavLink>
+                }
+            }
+        </nav>
+
+        <div class="sidebar-user-panel">
+            <div class="sidebar-user-meta">Sesión activa</div>
+            <div class="d-flex align-items-center gap-3">
+                <span class="sidebar-user-avatar">
+                    <i class="bi bi-person-circle"></i>
+                </span>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name">@currentUser?.Identity?.Name</div>
+                    <div class="sidebar-user-role">@currentUser?.FindFirst(ClaimTypes.Role)?.Value</div>
+                </div>
+            </div>
+            <button class="btn btn-sm sidebar-logout-btn w-100" @onclick="Logout" title="Cerrar sesión">
+                <i class="bi bi-box-arrow-right"></i>
+                <span>Cerrar Sesión</span>
+            </button>
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter] public bool IsMini { get; set; }
+    [Parameter] public EventCallback<bool> OnMiniModeChanged { get; set; }
+
+    private readonly Dictionary<int, string[]> sectionRoutes = new()
+    {
+        [1] = ["clientes", "productos", "proveedores"],
+        [2] = ["calzado/hormas", "serigrafia/pedidos", "serigrafia/cotizaciones", "serigrafia/tipos-proceso", "serigrafia/posiciones", "serigrafia/pantallas", "serigrafia/disenos", "serigrafia/gastos-fijos"],
+        [7] = ["inventario", "inventario/finished-goods", "serigrafia/materias-primas", "serigrafia/insumos"],
+        [3] = ["dashboard", "contabilidad/estado-resultados", "contabilidad/facturas", "contabilidad/notas-entrega", "contabilidad/cuentas-por-cobrar", "contabilidad/cuentas-por-pagar"],
+        [4] = ["rrhh/"],
+        [5] = ["admin/", "superadmin/"],
+        [6] = ["configuracion", "configuracion/archivos", "configuracion/tipos-inventario", "rrhh/turnos", "rrhh/checadores", "rrhh/control-tiempo", "rrhh/estado-agente", "rrhh/esquemas-pago"]
+    };
+
+    private readonly Dictionary<int, NavSectionInfo> sections = new()
+    {
+        [1] = new(1, "Catálogos", "Clientes, productos y compras", "bi-journal-bookmark-fill"),
+        [2] = new(2, "Manufactura", "Pedidos, procesos y recursos de producción", "bi-tools"),
+        [7] = new(7, "Logística", "Inventario, insumos y abastecimiento", "bi-boxes"),
+        [3] = new(3, "Contabilidad", "Finanzas, CxC y CxP", "bi-bar-chart-line-fill"),
+        [4] = new(4, "Recursos Humanos", "Equipo, pagos y nómina", "bi-person-vcard"),
+        [5] = new(5, "Administración", "Seguridad y accesos", "bi-shield-lock"),
+        [6] = new(6, "Configuración", "Ajustes, asistencia y parámetros", "bi-gear-fill")
+    };
+
+    private ClaimsPrincipal? currentUser;
+    private bool moduloCalzado;
+    private bool moduloSerigrafia = true;
+    private bool mobileMenuOpen;
+    private int? activeModuleId;
+
+    private bool isAuthenticated => currentUser?.Identity?.IsAuthenticated == true;
+    private NavSectionInfo? activeModule => activeModuleId.HasValue && sections.TryGetValue(activeModuleId.Value, out var section) ? section : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+
+        await CargarModulos();
+        SyncSectionWithCurrentRoute();
+
+        ModuloState.OnChange += OnModuloStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private async Task CargarModulos()
+    {
+        moduloCalzado = string.Equals(await AppConfig.GetValueAsync("Modulo:Calzado"), "true", StringComparison.OrdinalIgnoreCase);
+        moduloSerigrafia = !string.Equals(await AppConfig.GetValueAsync("Modulo:Serigrafia"), "false", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnModuloStateChanged()
+    {
+        moduloCalzado = ModuloState.Calzado;
+        moduloSerigrafia = ModuloState.Serigrafia;
+        SyncSectionWithCurrentRoute();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        mobileMenuOpen = false;
+        SyncSectionWithCurrentRoute(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private IEnumerable<NavSectionInfo> GetVisibleModules()
+        => sections.Values.Where(section => IsSectionVisible(section.Id));
+
+    private bool IsSectionVisible(int sectionId) => sectionId switch
+    {
+        1 => HasModulo(ModuloAccesoCatalog.Catalogos) && (HasCapacidad("clientes.ver") || HasCapacidad("productos.ver") || HasCapacidad("proveedores.ver")),
+        2 => HasModulo(ModuloAccesoCatalog.Manufactura) && ((moduloCalzado && HasCapacidad("productos.ver")) || (moduloSerigrafia && (HasCapacidad("pedidos.ver") || HasCapacidad("cotizaciones.ver") || HasCapacidad("serigrafia.editar")))),
+        7 => HasModulo(ModuloAccesoCatalog.Logistica) && moduloSerigrafia && (HasCapacidad("inventario.ver") || HasCapacidad("inventario.movimientos") || HasCapacidad("inventario.reportes") || HasCapacidad("inventario.fg.ver") || HasCapacidad("inventario.fg.ajustar") || HasCapacidad("inventario.fg.ingresar") || HasCapacidad("serigrafia.editar")),
+        3 => HasModulo(ModuloAccesoCatalog.Contabilidad) && (HasCapacidad("contabilidad.dashboard") || HasCapacidad("contabilidad.estado_resultados") || HasCapacidad("contabilidad.cuentas_cobrar") || HasCapacidad("facturas.ver") || HasCapacidad("cxp.ver")),
+        4 => HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar")),
+        5 => (HasModulo(ModuloAccesoCatalog.Administracion) && HasCapacidad("usuarios.ver")) || (HasModulo(ModuloAccesoCatalog.Plataforma) && HasCapacidad("empresas.editar")),
+        6 => (HasModulo(ModuloAccesoCatalog.Configuracion) && HasCapacidad("configuracion.ver"))
+            || (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar"))),
+        _ => false
+    };
+
+    private bool HasCapacidad(string capacidad)
+        => currentUser?.HasClaim("Capacidad", capacidad) == true;
+
+    private bool HasModulo(string modulo)
+        => currentUser?.HasClaim("Modulo", modulo) == true;
+
+    private void SelectModule(int sectionId)
+    {
+        activeModuleId = sectionId;
+        mobileMenuOpen = true;
+    }
+
+    private void SyncSectionWithCurrentRoute(string? location = null)
+    {
+        var route = Navigation.ToBaseRelativePath(location ?? Navigation.Uri).Trim('/');
+        if (!string.IsNullOrWhiteSpace(route))
+        {
+            var coincidencia = sectionRoutes
+                .Where(section => IsSectionVisible(section.Key))
+                .SelectMany(section => section.Value
+                    .Where(prefix => route.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    .Select(prefix => new { section.Key, Prefix = prefix }))
+                .OrderByDescending(x => x.Prefix.Length)
+                .FirstOrDefault();
+
+            if (coincidencia is not null)
+            {
+                activeModuleId = coincidencia.Key;
+                return;
+            }
+        }
+
+        activeModuleId = GetVisibleModules().Select(s => (int?)s.Id).FirstOrDefault();
+    }
+
+    private void ToggleMobileMenu() => mobileMenuOpen = !mobileMenuOpen;
+
+    private void CloseMobileMenu() => mobileMenuOpen = false;
+
+    private async Task ToggleDesktopMini()
+    {
+        if (OnMiniModeChanged.HasDelegate)
+        {
+            await OnMiniModeChanged.InvokeAsync(!IsMini);
+        }
+    }
+
+    private async Task Logout()
+    {
+        mobileMenuOpen = false;
+        await AuthStateProvider.LogoutAsync();
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+    public void Dispose()
+    {
+        ModuloState.OnChange -= OnModuloStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private sealed record NavSectionInfo(int Id, string Title, string Hint, string Icon);
+}
+

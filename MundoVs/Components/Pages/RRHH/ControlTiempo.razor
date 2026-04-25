@@ -1,0 +1,221 @@
+@page "/rrhh/control-tiempo"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Control de Tiempos</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver control de tiempos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-stopwatch me-2"></i>Control de Tiempos</h1>
+                <p class="text-muted mb-0">Consulta checadores, marcaciones recientes y asistencias que requieren revisión.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary" href="/rrhh/checadores"><i class="bi bi-hdd-network me-1"></i>Checadores</a>
+                <button class="btn btn-outline-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>Actualizar</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Checadores activos</div><div class="fs-4 fw-bold">@checadores.Count(c => c.IsActive)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Marcaciones hoy</div><div class="fs-4 fw-bold">@marcacionesHoy</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Pendientes de procesar</div><div class="fs-4 fw-bold">@marcacionesPendientes</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Asistencias con revisión</div><div class="fs-4 fw-bold">@asistenciasRevision</div></div></div></div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-dark text-white">Checadores</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light"><tr><th>Nombre</th><th>IP</th><th>Últ. sync</th></tr></thead>
+                            <tbody>
+                                @if (checadores.Count == 0)
+                                {
+                                    <tr><td colspan="3" class="text-center text-muted py-3">No hay checadores registrados.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in checadores)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">@item.Nombre</div>
+                                                <div class="small text-muted">@(item.NumeroSerie ?? "Sin serie")</div>
+                                            </td>
+                                            <td class="small">@(string.IsNullOrWhiteSpace(item.Ip) ? "—" : $"{item.Ip}:{item.Puerto}")</td>
+                                            <td class="small">@(item.UltimaSincronizacionUtc?.ToLocalTime().ToString("dd/MM HH:mm") ?? "Nunca")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-8">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-primary text-white">Marcaciones recientes (últimas @RegistrosRecientesMaximos)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light"><tr><th>Fecha</th><th>Empleado</th><th>Código</th><th>Checador</th><th>Estado</th></tr></thead>
+                            <tbody>
+                                @if (marcaciones.Count == 0)
+                                {
+                                    <tr><td colspan="5" class="text-center text-muted py-3">No hay marcaciones registradas.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in marcaciones)
+                                    {
+                                        <tr>
+                                            <td class="small">@item.FechaHoraMarcacionUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>
+                                                <div class="fw-semibold">@(item.Empleado?.NombreCompleto ?? "Sin vincular")</div>
+                                                <div class="small text-muted">@(item.ResultadoProcesamiento ?? "Sin resultado")</div>
+                                            </td>
+                                            <td>@item.CodigoChecador</td>
+                                            <td class="small">@item.Checador.Nombre</td>
+                                            <td><span class="badge @(item.Procesada ? "bg-success" : "bg-warning text-dark")">@(item.Procesada ? "Procesada" : "Pendiente")</span></td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-secondary text-white">Asistencias recientes (últimas @RegistrosRecientesMaximos)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light"><tr><th>Fecha</th><th>Empleado</th><th>Turno</th><th>Entrada</th><th>Salida</th><th>Trabajado</th><th>Retardo</th><th>Extra</th><th>Estatus</th></tr></thead>
+                            <tbody>
+                                @if (asistencias.Count == 0)
+                                {
+                                    <tr><td colspan="9" class="text-center text-muted py-3">No hay asistencias calculadas todavía.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in asistencias)
+                                    {
+                                        <tr>
+                                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td class="fw-semibold">@item.Empleado.NombreCompleto</td>
+                                            <td class="small">@(item.TurnoBase?.Nombre ?? "Sin turno")</td>
+                                            <td>@(item.HoraEntradaReal?.ToString("hh\\:mm") ?? "—")</td>
+                                            <td>@(item.HoraSalidaReal?.ToString("hh\\:mm") ?? "—")</td>
+                                            <td class="small">@FormatearMinutos(item.MinutosTrabajadosNetos)</td>
+                                            <td class="text-end">@item.MinutosRetardo min</td>
+                                            <td class="text-end">@item.MinutosExtra min</td>
+                                            <td><span class="badge @(item.RequiereRevision ? "bg-warning text-dark" : "bg-info text-dark")">@item.Estatus</span></td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RrhhChecador> checadores = [];
+    private List<RrhhMarcacion> marcaciones = [];
+    private List<RrhhAsistencia> asistencias = [];
+    private bool _puedeVer;
+    private bool cargando;
+    private string? error;
+    private int marcacionesHoy;
+    private int marcacionesPendientes;
+    private int asistenciasRevision;
+    private static int RegistrosRecientesMaximos => 100;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+            await CargarAsync();
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+    }
+
+    private async Task CargarAsync()
+    {
+        cargando = true;
+        error = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            checadores = await db.RrhhChecadores
+                .AsNoTracking()
+                .OrderByDescending(c => c.IsActive)
+                .ThenBy(c => c.Nombre)
+                .ToListAsync();
+
+            marcaciones = await db.RrhhMarcaciones
+                .AsNoTracking()
+                .Include(m => m.Checador)
+                .Include(m => m.Empleado)
+                .OrderByDescending(m => m.FechaHoraMarcacionUtc)
+                .Take(RegistrosRecientesMaximos)
+                .ToListAsync();
+
+            asistencias = await db.RrhhAsistencias
+                .AsNoTracking()
+                .Include(a => a.Empleado)
+                .Include(a => a.TurnoBase)
+                .OrderByDescending(a => a.Fecha)
+                .ThenBy(a => a.Empleado.Nombre)
+                .Take(RegistrosRecientesMaximos)
+                .ToListAsync();
+
+            var inicioDia = DateTime.UtcNow.Date;
+            var finDia = inicioDia.AddDays(1);
+            marcacionesHoy = await db.RrhhMarcaciones.CountAsync(m => m.FechaHoraMarcacionUtc >= inicioDia && m.FechaHoraMarcacionUtc < finDia);
+            marcacionesPendientes = await db.RrhhMarcaciones.CountAsync(m => !m.Procesada);
+            asistenciasRevision = await db.RrhhAsistencias.CountAsync(a => a.RequiereRevision);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private static string FormatearMinutos(int minutos)
+    {
+        var horas = minutos / 60;
+        var minutosRestantes = Math.Abs(minutos % 60);
+        return $"{horas}:{minutosRestantes:00} h";
+    }
+}

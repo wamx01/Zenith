@@ -1,0 +1,172 @@
+@page "/superadmin/configuracion-archivos"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Configuración Maestra de Archivos</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_esSuperAdmin)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para administrar la configuración maestra de archivos.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-folder2-open me-2"></i>Configuración Maestra de Archivos</h1>
+                <p class="text-muted mb-0">Define la ruta base y la plantilla usada por default para guardar adjuntos en todas las empresas.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-semibold">Storage</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Proveedor</label>
+                                <InputSelect class="form-select" @bind-Value="configuracion.StorageProvider">
+                                    @foreach (var provider in Enum.GetValues<StorageProviderEnum>())
+                                    {
+                                        <option value="@provider">@provider</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Ruta base física</label>
+                                <InputText class="form-control" @bind-Value="configuracion.BasePath" />
+                                <div class="form-text">Si queda vacía, se usará `wwwroot/uploads`.</div>
+                            </div>
+                            <div>
+                                <label class="form-label">Plantilla de ruta</label>
+                                <InputText class="form-control" @bind-Value="configuracion.PathTemplate" />
+                                <div class="form-text">Placeholders: `{empresa}`, `{cliente}`, `{nota}`, `{documento}`, `{modulo}`, `{entidad}`, `{anio}`, `{mes}`.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100 border-info">
+                        <div class="card-header bg-info-subtle fw-semibold">Vista previa</div>
+                        <div class="card-body">
+                            <div class="mb-2 text-muted small text-uppercase">Ejemplo</div>
+                            <code>@previewPath</code>
+                            <hr />
+                            <div class="text-muted small">La empresa puede usar esta configuración o sobreescribirla desde su propia pantalla de configuración.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar</button>
+                    <a class="btn btn-outline-secondary" href="/superadmin/empresas">Volver</a>
+                </div>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private StorageConfiguracionGlobal configuracion = new() { PathTemplate = StoragePathTemplates.Default };
+    private bool _esSuperAdmin;
+    private bool guardando;
+    private string? error;
+    private string? ok;
+
+    private string previewPath => RenderPreview(configuracion.PathTemplate);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        if (_esSuperAdmin)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracion = await db.StorageConfiguracionesGlobales
+            .IgnoreQueryFilters()
+            .OrderBy(c => c.CreatedAt)
+            .FirstOrDefaultAsync()
+            ?? new StorageConfiguracionGlobal { PathTemplate = StoragePathTemplates.Default };
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existente = await db.StorageConfiguracionesGlobales
+                .IgnoreQueryFilters()
+                .OrderBy(c => c.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (existente == null)
+            {
+                configuracion.Id = configuracion.Id == Guid.Empty ? Guid.NewGuid() : configuracion.Id;
+                configuracion.PathTemplate = Limpiar(configuracion.PathTemplate) ?? StoragePathTemplates.Default;
+                configuracion.BasePath = Limpiar(configuracion.BasePath);
+                configuracion.CreatedAt = DateTime.UtcNow;
+                configuracion.IsActive = true;
+                db.StorageConfiguracionesGlobales.Add(configuracion);
+            }
+            else
+            {
+                existente.StorageProvider = configuracion.StorageProvider;
+                existente.BasePath = Limpiar(configuracion.BasePath);
+                existente.PathTemplate = Limpiar(configuracion.PathTemplate) ?? StoragePathTemplates.Default;
+                existente.UpdatedAt = DateTime.UtcNow;
+                configuracion = existente;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Configuración maestra de archivos guardada.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static string RenderPreview(string? template)
+    {
+        var value = string.IsNullOrWhiteSpace(template) ? StoragePathTemplates.Default : template;
+        return value
+            .Replace("{empresa}", "zenith-demo")
+            .Replace("{cliente}", "cliente-ejemplo")
+            .Replace("{nota}", "not-001")
+            .Replace("{documento}", "not-001")
+            .Replace("{modulo}", "contabilidad")
+            .Replace("{entidad}", "notas-entrega")
+            .Replace("{anio}", DateTime.Today.Year.ToString())
+            .Replace("{mes}", DateTime.Today.Month.ToString("D2"));
+    }
+
+    private static string? Limpiar(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+}

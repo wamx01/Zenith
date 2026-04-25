@@ -1,0 +1,996 @@
+@page "/contabilidad/facturas"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IAppConfigRepository AppConfigRepository
+@inject IFacturacionFiscalService FacturacionFiscalService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Facturas</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver facturas.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-receipt-cutoff me-2"></i>Facturas</h1>
+                <p class="text-muted mb-0">Consulta y registra facturas ligadas a pedidos y una o varias notas del mismo cliente.</p>
+            </div>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="NuevaFactura"><i class="bi bi-plus-circle me-1"></i>Nueva Factura</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+        @if (!configuracionFacturacion.Habilitado)
+        {
+            <div class="alert alert-info">La facturación integrada está deshabilitada. Puedes capturar facturas, pero no emitirlas al proveedor fiscal hasta habilitar la configuración.</div>
+        }
+
+        @if (mostrarFormulario)
+        {
+            <div class="card mb-4">
+                <div class="card-header"><h5 class="mb-0">@(facturaEditando.Id == Guid.Empty ? "Nueva Factura" : "Editar Factura")</h5></div>
+                <div class="card-body">
+                    <EditForm Model="facturaEditando" OnValidSubmit="GuardarAsync">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Folio Interno</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.FolioInterno" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Serie</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.Serie" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Fecha Emisión</label>
+                                <InputDate class="form-control" @bind-Value="facturaEditando.FechaEmision" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Tipo</label>
+                                <InputSelect class="form-select" @bind-Value="facturaEditando.TipoComprobante">
+                                    <option value="@FacturaTipoComprobante.Ingreso">Ingreso</option>
+                                    <option value="@FacturaTipoComprobante.Egreso">Egreso</option>
+                                    <option value="@FacturaTipoComprobante.Pago">Pago</option>
+                                </InputSelect>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Cliente</label>
+                                <select class="form-select" value="@clienteSeleccionado" @onchange="OnClienteChanged">
+                                    <option value="">Selecciona un cliente</option>
+                                    @foreach (var cliente in clientes)
+                                    {
+                                        <option value="@cliente.Id">@cliente.RazonSocial</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Pedido</label>
+                                <select class="form-select" value="@pedidoSeleccionado" @onchange="OnPedidoChanged">
+                                    <option value="">Sin pedido ligado</option>
+                                    @foreach (var pedido in pedidos)
+                                    {
+                                        <option value="@pedido.Id">@pedido.NumeroPedido - @pedido.Cliente.RazonSocial</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Notas de Entrega</label>
+                                <div class="border rounded p-3 bg-light-subtle">
+                                    @if (!Guid.TryParse(clienteSeleccionado, out var clienteFacturacionId))
+                                    {
+                                        <div class="text-muted small">Selecciona primero un cliente para ver sus notas disponibles.</div>
+                                    }
+                                    else if (!ObtenerNotasDisponibles(clienteFacturacionId).Any())
+                                    {
+                                        <div class="text-muted small">No hay notas disponibles para este cliente.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="row g-2">
+                                            @foreach (var nota in ObtenerNotasDisponibles(clienteFacturacionId))
+                                            {
+                                                var seleccionada = notasEntregaSeleccionadasIds.Contains(nota.Id);
+                                                <div class="col-md-6 col-xl-4">
+                                                    <label class="border rounded p-2 bg-white w-100 d-flex align-items-start gap-2 cursor-pointer">
+                                                        <input type="checkbox" class="form-check-input mt-1" checked="@seleccionada" @onchange="e => OnNotaEntregaChecked(nota.Id, e)" />
+                                                        <span>
+                                                            <span class="fw-semibold d-block">@nota.NumeroNota</span>
+                                                            <span class="small text-muted d-block">@nota.FechaNota.ToString("dd/MM/yyyy") · @nota.Total.ToString("C2")</span>
+                                                            <span class="small text-muted d-block">Pedido @nota.Pedido.NumeroPedido</span>
+                                                        </span>
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Método Pago SAT</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.MetodoPagoSat" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Forma Pago SAT</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.FormaPagoSat" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Uso CFDI</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.UsoCfdi" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Lugar Expedición CP</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.LugarExpedicionCp" />
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label">Moneda</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.Moneda" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Subtotal</label>
+                                <InputNumber class="form-control" @bind-Value="facturaEditando.Subtotal" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Impuestos</label>
+                                <InputNumber class="form-control" @bind-Value="facturaEditando.TotalImpuestosTrasladados" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Total</label>
+                                <InputNumber class="form-control" @bind-Value="facturaEditando.Total" />
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Estatus</label>
+                                <InputSelect class="form-select" @bind-Value="facturaEditando.Estatus">
+                                    <option value="@FacturaEstatus.Borrador">Borrador</option>
+                                    <option value="@FacturaEstatus.PendienteTimbrado">Pendiente Timbrado</option>
+                                    <option value="@FacturaEstatus.Timbrado">Timbrado</option>
+                                    <option value="@FacturaEstatus.ErrorTimbrado">Error Timbrado</option>
+                                    <option value="@FacturaEstatus.PagadoParcial">Pagado Parcial</option>
+                                    <option value="@FacturaEstatus.PagadoTotal">Pagado Total</option>
+                                    <option value="@FacturaEstatus.Cancelado">Cancelado</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Observaciones</label>
+                                <InputText class="form-control" @bind-Value="facturaEditando.Observaciones" />
+                            </div>
+
+                            <div class="col-12 d-flex gap-2">
+                                <button class="btn btn-success" type="submit" disabled="@guardando">
+                                    <i class="bi bi-save me-1"></i>Guardar
+                                </button>
+                                <button class="btn btn-outline-secondary" type="button" @onclick="Cancelar">Cancelar</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Folio</th>
+                                <th>Cliente</th>
+                                <th>Pedido</th>
+                                <th>Notas</th>
+                                <th>Fecha</th>
+                                <th>Total</th>
+                                <th>Estatus</th>
+                                <th>UUID</th>
+                                <th class="text-end"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (cargando)
+                            {
+                                <tr>
+                                    <td colspan="9" class="text-center py-4"><span class="spinner-border text-primary" role="status"></span></td>
+                                </tr>
+                            }
+                            else if (!facturas.Any())
+                            {
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted py-4">No hay facturas registradas.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var factura in facturas)
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@factura.FolioInterno</td>
+                                        <td>@factura.Cliente.RazonSocial</td>
+                                        <td>@(factura.Pedido?.NumeroPedido ?? "—")</td>
+                                        <td>@ObtenerResumenNotasFactura(factura)</td>
+                                        <td>@factura.FechaEmision.ToString("dd/MM/yyyy")</td>
+                                        <td>@factura.Total.ToString("C2")</td>
+                                        <td><span class="badge @ObtenerClaseEstatus(factura.Estatus)">@factura.Estatus</span></td>
+                                        <td><code>@(string.IsNullOrWhiteSpace(factura.UuidFiscal) ? "—" : factura.UuidFiscal)</code></td>
+                                        <td class="text-end">
+                                            @if (_puedeEditar)
+                                            {
+                                                @if (PuedeEmitirse(factura))
+                                                {
+                                                    <button class="btn btn-sm btn-outline-success me-2" @onclick="() => EmitirFacturaAsync(factura)" disabled="@(guardando || facturaProcesandoId == factura.Id)">
+                                                        <i class="bi bi-cloud-upload"></i>
+                                                    </button>
+                                                }
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarFactura(factura)"><i class="bi bi-pencil"></i></button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Factura> facturas = [];
+    private List<Cliente> clientes = [];
+    private List<Pedido> pedidos = [];
+    private List<NotaEntrega> notasEntrega = [];
+    private List<FacturaNotaEntrega> facturasNotasEntrega = [];
+    private Factura facturaEditando = new();
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool mostrarFormulario;
+    private bool guardando;
+    private bool cargando = true;
+    private string? error;
+    private string? ok;
+    private string? clienteSeleccionado;
+    private string? pedidoSeleccionado;
+    private HashSet<Guid> notasEntregaSeleccionadasIds = [];
+    private Guid? facturaProcesandoId;
+    private FacturacionConfiguracion configuracionFacturacion = new();
+    private bool preseleccionAplicada;
+
+    [SupplyParameterFromQuery(Name = "clienteId")]
+    public string? ClientePreseleccionado { get; set; }
+
+    [SupplyParameterFromQuery(Name = "notaIds")]
+    public string? NotasPreseleccionadas { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarConfiguracionAsync();
+            await CargarCatalogosAsync();
+            await CargarFacturasAsync();
+            await AplicarPreseleccionDesdeQueryAsync();
+        }
+        cargando = false;
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "contabilidad.cuentas_cobrar")
+            || state.User.HasClaim("Capacidad", "facturas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "contabilidad.cuentas_cobrar")
+            || state.User.HasClaim("Capacidad", "facturas.editar");
+    }
+
+    private async Task CargarConfiguracionAsync()
+    {
+        configuracionFacturacion = new FacturacionConfiguracion
+        {
+            Habilitado = await ObtenerBoolAsync(ClavesConfiguracionFacturacion.Habilitado, false),
+            Proveedor = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.Proveedor, "Facturapi"),
+            ModoPruebas = await ObtenerBoolAsync(ClavesConfiguracionFacturacion.ModoPruebas, true),
+            SerieIngreso = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SerieIngreso, "F"),
+            SerieEgreso = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SerieEgreso, "E"),
+            SeriePago = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SeriePago, "P"),
+            LugarExpedicionCp = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.LugarExpedicionCp, string.Empty),
+            MonedaDefault = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MonedaDefault, "MXN"),
+            MetodoPagoContado = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MetodoPagoContado, "PUE"),
+            FormaPagoContado = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.FormaPagoContado, "03"),
+            MetodoPagoCredito = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MetodoPagoCredito, "PPD"),
+            FormaPagoCredito = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.FormaPagoCredito, "99")
+        };
+    }
+
+    private async Task CargarCatalogosAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        clientes = await db.Clientes.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.RazonSocial).ToListAsync();
+        pedidos = await db.Pedidos.AsNoTracking().Include(p => p.Cliente).Where(p => p.IsActive && p.Estado != EstadoPedidoEnum.Cancelado).OrderByDescending(p => p.FechaPedido).ToListAsync();
+        notasEntrega = await db.NotasEntrega.AsNoTracking().Include(n => n.Cliente).Include(n => n.Pedido).Where(n => n.IsActive && n.Estatus != NotaEntregaEstatus.Cancelada).OrderByDescending(n => n.FechaNota).ToListAsync();
+        facturasNotasEntrega = await db.FacturasNotasEntrega
+            .AsNoTracking()
+            .Include(r => r.Factura)
+            .ToListAsync();
+    }
+
+    private async Task CargarFacturasAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        facturas = await db.Facturas
+            .AsNoTracking()
+            .Include(f => f.Cliente)
+            .Include(f => f.Pedido)
+            .Include(f => f.NotaEntrega)
+            .Include(f => f.NotasEntregaRelacionadas)
+                .ThenInclude(r => r.NotaEntrega)
+            .OrderByDescending(f => f.FechaEmision)
+            .ThenByDescending(f => f.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task NuevaFactura()
+    {
+        error = ok = null;
+        facturaEditando = new Factura
+        {
+            Id = Guid.Empty,
+            FolioInterno = await AppConfigRepository.GetNextCodeAsync("FAC-", "Consecutivo:Factura"),
+            FechaEmision = DateTime.Today,
+            TipoComprobante = FacturaTipoComprobante.Ingreso,
+            Estatus = FacturaEstatus.Borrador,
+            Serie = configuracionFacturacion.SerieIngreso,
+            Moneda = configuracionFacturacion.MonedaDefault,
+            MetodoPagoSat = configuracionFacturacion.MetodoPagoContado,
+            FormaPagoSat = configuracionFacturacion.FormaPagoContado,
+            LugarExpedicionCp = configuracionFacturacion.LugarExpedicionCp
+        };
+        clienteSeleccionado = null;
+        pedidoSeleccionado = null;
+        notasEntregaSeleccionadasIds = [];
+        mostrarFormulario = true;
+    }
+
+    private async Task AplicarPreseleccionDesdeQueryAsync()
+    {
+        if (preseleccionAplicada || !_puedeEditar)
+            return;
+
+        preseleccionAplicada = true;
+
+        var notasIds = (NotasPreseleccionadas ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(valor => Guid.TryParse(valor, out _))
+            .Select(Guid.Parse)
+            .ToHashSet();
+
+        if (!Guid.TryParse(ClientePreseleccionado, out var clienteId) || notasIds.Count == 0)
+            return;
+
+        await NuevaFactura();
+        clienteSeleccionado = clienteId.ToString();
+        notasEntregaSeleccionadasIds = notasEntrega
+            .Where(n => n.ClienteId == clienteId && notasIds.Contains(n.Id) && !n.NoRequiereFactura && PuedeSeleccionarseNota(n.Id))
+            .Select(n => n.Id)
+            .ToHashSet();
+
+        if (notasEntregaSeleccionadasIds.Count == 0)
+        {
+            error = "No se encontraron notas disponibles para precargar en la factura.";
+            return;
+        }
+
+        ActualizarResumenDesdeNotasSeleccionadas();
+    }
+
+    private void EditarFactura(Factura factura)
+    {
+        error = ok = null;
+        facturaEditando = ClonarFactura(factura);
+        clienteSeleccionado = factura.ClienteId.ToString();
+        pedidoSeleccionado = factura.PedidoId?.ToString();
+        notasEntregaSeleccionadasIds = factura.NotasEntregaRelacionadas.Select(r => r.NotaEntregaId).ToHashSet();
+        if (notasEntregaSeleccionadasIds.Count == 0 && factura.NotaEntregaId.HasValue)
+        {
+            notasEntregaSeleccionadasIds.Add(factura.NotaEntregaId.Value);
+        }
+        mostrarFormulario = true;
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+        facturaEditando = new();
+        clienteSeleccionado = null;
+        pedidoSeleccionado = null;
+        notasEntregaSeleccionadasIds = [];
+        error = null;
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para guardar facturas.";
+            return;
+        }
+
+        if (!Guid.TryParse(clienteSeleccionado, out var clienteId))
+        {
+            error = "Selecciona un cliente.";
+            return;
+        }
+
+        PrepararFacturaParaGuardar(clienteId);
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (facturaEditando.Id == Guid.Empty)
+            {
+                facturaEditando.Id = Guid.NewGuid();
+                db.Facturas.Add(facturaEditando);
+            }
+            else
+            {
+                var existing = await db.Facturas.FirstOrDefaultAsync(f => f.Id == facturaEditando.Id);
+                if (existing == null)
+                {
+                    error = "No se encontró la factura a editar.";
+                    return;
+                }
+
+                existing.ClienteId = facturaEditando.ClienteId;
+                existing.PedidoId = facturaEditando.PedidoId;
+                existing.NotaEntregaId = facturaEditando.NotaEntregaId;
+                existing.TipoComprobante = facturaEditando.TipoComprobante;
+                existing.Estatus = facturaEditando.Estatus;
+                existing.Serie = facturaEditando.Serie;
+                existing.FolioInterno = facturaEditando.FolioInterno;
+                existing.FechaEmision = facturaEditando.FechaEmision;
+                existing.Moneda = facturaEditando.Moneda;
+                existing.LugarExpedicionCp = facturaEditando.LugarExpedicionCp;
+                existing.MetodoPagoSat = facturaEditando.MetodoPagoSat;
+                existing.FormaPagoSat = facturaEditando.FormaPagoSat;
+                existing.UsoCfdi = facturaEditando.UsoCfdi;
+                existing.Observaciones = facturaEditando.Observaciones;
+                existing.Subtotal = facturaEditando.Subtotal;
+                existing.TotalImpuestosTrasladados = facturaEditando.TotalImpuestosTrasladados;
+                existing.Total = facturaEditando.Total;
+                existing.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await SincronizarNotasFacturaAsync(db, facturaEditando.Id);
+            await SincronizarDetallesFacturaAsync(db, facturaEditando.Id);
+            await db.SaveChangesAsync();
+            ok = "Factura guardada.";
+            mostrarFormulario = false;
+            facturaEditando = new();
+            notasEntregaSeleccionadasIds = [];
+            await CargarCatalogosAsync();
+            await CargarFacturasAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task SincronizarDetallesFacturaAsync(CrmDbContext db, Guid facturaId)
+    {
+        var factura = await db.Facturas
+            .Include(f => f.Detalles)
+            .FirstOrDefaultAsync(f => f.Id == facturaId);
+
+        if (factura == null)
+        {
+            return;
+        }
+
+        if (factura.Detalles.Any())
+        {
+            db.FacturaDetalles.RemoveRange(factura.Detalles);
+        }
+
+        var notasSeleccionadas = await db.NotasEntrega
+            .AsNoTracking()
+            .Include(n => n.Detalles)
+                .ThenInclude(d => d.Tallas)
+            .Where(n => notasEntregaSeleccionadasIds.Contains(n.Id))
+            .OrderBy(n => n.FechaNota)
+            .ThenBy(n => n.NumeroNota)
+            .ToListAsync();
+
+        var pedidoDetalleTallaIds = notasSeleccionadas
+            .SelectMany(n => n.Detalles)
+            .SelectMany(d => d.Tallas)
+            .Where(t => t.PedidoDetalleTallaId.HasValue)
+            .Select(t => t.PedidoDetalleTallaId!.Value)
+            .Distinct()
+            .ToList();
+
+        var pedidoDetalleIds = notasSeleccionadas
+            .SelectMany(n => n.Detalles)
+            .Where(d => d.PedidoDetalleId.HasValue)
+            .Select(d => d.PedidoDetalleId!.Value)
+            .Distinct()
+            .ToList();
+
+        var snapshotsPedido = await db.PedidosDetalleTalla
+            .AsNoTracking()
+            .Include(t => t.ProductoVariante)
+            .Where(t => pedidoDetalleTallaIds.Contains(t.Id) || pedidoDetalleIds.Contains(t.PedidoDetalleId))
+            .ToListAsync();
+
+        var detallesFactura = ConstruirDetallesFactura(notasSeleccionadas, snapshotsPedido, facturaId);
+        if (detallesFactura.Any())
+        {
+            db.FacturaDetalles.AddRange(detallesFactura);
+        }
+
+        factura.Subtotal = Math.Round(detallesFactura.Sum(d => d.Importe), 2);
+        factura.Total = Math.Round(factura.Subtotal - factura.DescuentoTotal + factura.TotalImpuestosTrasladados - factura.TotalImpuestosRetenidos, 2);
+        factura.JsonSnapshotComercial = ConstruirSnapshotComercialJson(notasSeleccionadas, snapshotsPedido);
+        factura.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private List<FacturaDetalle> ConstruirDetallesFactura(IEnumerable<NotaEntrega> notas, List<PedidoDetalleTalla> snapshotsPedido, Guid facturaId)
+    {
+        var detalles = new List<FacturaDetalle>();
+
+        foreach (var nota in notas)
+        {
+            foreach (var detalleNota in nota.Detalles.OrderBy(d => d.CreatedAt))
+            {
+                if (!detalleNota.Tallas.Any())
+                {
+                    detalles.Add(new FacturaDetalle
+                    {
+                        Id = Guid.NewGuid(),
+                        FacturaId = facturaId,
+                        ReferenciaOrigen = nota.NumeroNota,
+                        Cantidad = detalleNota.Cantidad,
+                        ClaveUnidadSat = "H87",
+                        Unidad = "Pieza",
+                        ClaveProductoServicioSat = "01010101",
+                        Descripcion = detalleNota.Descripcion,
+                        ValorUnitario = detalleNota.PrecioUnitario,
+                        Descuento = 0m,
+                        ObjetoImpuesto = facturaEditando.TotalImpuestosTrasladados > 0 ? "02" : "01",
+                        Importe = detalleNota.Importe,
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+
+                    continue;
+                }
+
+                foreach (var tallaNota in detalleNota.Tallas.OrderBy(t => t.Orden).ThenBy(t => t.Talla))
+                {
+                    var snapshot = ResolverSnapshotPedidoTalla(tallaNota, detalleNota, snapshotsPedido);
+                    var precioUnitario = snapshot?.PrecioUnitario ?? detalleNota.PrecioUnitario;
+                    var importe = Math.Round(tallaNota.Cantidad * precioUnitario, 2);
+
+                    detalles.Add(new FacturaDetalle
+                    {
+                        Id = Guid.NewGuid(),
+                        FacturaId = facturaId,
+                        ReferenciaOrigen = $"{nota.NumeroNota}:{tallaNota.Talla}",
+                        Cantidad = tallaNota.Cantidad,
+                        ClaveUnidadSat = "H87",
+                        Unidad = "Pieza",
+                        ClaveProductoServicioSat = "01010101",
+                        Descripcion = ConstruirDescripcionFacturaDetalle(nota, detalleNota, tallaNota, snapshot),
+                        ValorUnitario = precioUnitario,
+                        Descuento = 0m,
+                        ObjetoImpuesto = facturaEditando.TotalImpuestosTrasladados > 0 ? "02" : "01",
+                        Importe = importe,
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+                }
+            }
+        }
+
+        return detalles;
+    }
+
+    private static PedidoDetalleTalla? ResolverSnapshotPedidoTalla(NotaEntregaDetalleTalla tallaNota, NotaEntregaDetalle detalleNota, IEnumerable<PedidoDetalleTalla> snapshotsPedido)
+    {
+        var snapshot = tallaNota.PedidoDetalleTallaId.HasValue
+            ? snapshotsPedido.FirstOrDefault(t => t.Id == tallaNota.PedidoDetalleTallaId.Value)
+            : null;
+
+        snapshot ??= detalleNota.PedidoDetalleId.HasValue
+            ? snapshotsPedido.FirstOrDefault(t => t.PedidoDetalleId == detalleNota.PedidoDetalleId.Value
+                && string.Equals(t.Talla, tallaNota.Talla, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        return snapshot;
+    }
+
+    private static string ConstruirDescripcionFacturaDetalle(NotaEntrega nota, NotaEntregaDetalle detalleNota, NotaEntregaDetalleTalla tallaNota, PedidoDetalleTalla? snapshot)
+    {
+        var sku = snapshot?.ProductoVariante?.Sku;
+        var descripcionBase = string.IsNullOrWhiteSpace(detalleNota.Descripcion)
+            ? $"Nota {nota.NumeroNota}"
+            : detalleNota.Descripcion.Trim();
+
+        return string.IsNullOrWhiteSpace(sku)
+            ? $"{descripcionBase} · Talla {tallaNota.Talla}"
+            : $"{descripcionBase} · Talla {tallaNota.Talla} · SKU {sku}";
+    }
+
+    private static string ConstruirSnapshotComercialJson(IEnumerable<NotaEntrega> notas, List<PedidoDetalleTalla> snapshotsPedido)
+    {
+        var snapshot = notas
+            .SelectMany(nota => nota.Detalles.SelectMany(detalle => detalle.Tallas.Select(talla => new { nota, detalle, talla })))
+            .Select(x =>
+            {
+                var pedidoSnapshot = ResolverSnapshotPedidoTalla(x.talla, x.detalle, snapshotsPedido);
+                return new FacturaSnapshotComercialItem
+                {
+                    NotaEntregaId = x.nota.Id,
+                    NumeroNota = x.nota.NumeroNota,
+                    PedidoDetalleId = x.detalle.PedidoDetalleId,
+                    PedidoDetalleTallaId = x.talla.PedidoDetalleTallaId,
+                    Talla = x.talla.Talla,
+                    Cantidad = x.talla.Cantidad,
+                    Sku = pedidoSnapshot?.ProductoVariante?.Sku,
+                    PrecioUnitario = pedidoSnapshot?.PrecioUnitario ?? x.detalle.PrecioUnitario,
+                    Importe = Math.Round(x.talla.Cantidad * (pedidoSnapshot?.PrecioUnitario ?? x.detalle.PrecioUnitario), 2),
+                    Descripcion = ConstruirDescripcionFacturaDetalle(x.nota, x.detalle, x.talla, pedidoSnapshot)
+                };
+            })
+            .ToList();
+
+        return System.Text.Json.JsonSerializer.Serialize(snapshot);
+    }
+
+    private void PrepararFacturaParaGuardar(Guid clienteId)
+    {
+        facturaEditando.ClienteId = clienteId;
+        var notasSeleccionadas = notasEntrega.Where(n => notasEntregaSeleccionadasIds.Contains(n.Id)).ToList();
+        var pedidosSeleccionados = notasSeleccionadas.Select(n => n.PedidoId).Distinct().ToList();
+
+        facturaEditando.PedidoId = pedidosSeleccionados.Count == 1
+            ? pedidosSeleccionados[0]
+            : Guid.TryParse(pedidoSeleccionado, out var pedidoId) ? pedidoId : null;
+        facturaEditando.NotaEntregaId = notasSeleccionadas.Count == 1 ? notasSeleccionadas[0].Id : null;
+        facturaEditando.FolioInterno = facturaEditando.FolioInterno.Trim();
+        facturaEditando.Serie = LimpiarTexto(facturaEditando.Serie);
+        facturaEditando.Moneda = string.IsNullOrWhiteSpace(facturaEditando.Moneda) ? configuracionFacturacion.MonedaDefault : facturaEditando.Moneda.Trim().ToUpperInvariant();
+        facturaEditando.LugarExpedicionCp = LimpiarTexto(facturaEditando.LugarExpedicionCp) ?? configuracionFacturacion.LugarExpedicionCp;
+        facturaEditando.MetodoPagoSat = string.IsNullOrWhiteSpace(facturaEditando.MetodoPagoSat) ? configuracionFacturacion.MetodoPagoContado : facturaEditando.MetodoPagoSat.Trim().ToUpperInvariant();
+        facturaEditando.FormaPagoSat = string.IsNullOrWhiteSpace(facturaEditando.FormaPagoSat) ? configuracionFacturacion.FormaPagoContado : facturaEditando.FormaPagoSat.Trim().ToUpperInvariant();
+        facturaEditando.UsoCfdi = LimpiarTexto(facturaEditando.UsoCfdi);
+        facturaEditando.Observaciones = LimpiarTexto(facturaEditando.Observaciones);
+        facturaEditando.DescuentoTotal = 0m;
+        facturaEditando.TotalImpuestosRetenidos = 0m;
+    }
+
+    private Task OnClienteChanged(ChangeEventArgs e)
+    {
+        clienteSeleccionado = e.Value?.ToString();
+        notasEntregaSeleccionadasIds.Clear();
+        if (Guid.TryParse(clienteSeleccionado, out var clienteId))
+        {
+            var cliente = clientes.FirstOrDefault(c => c.Id == clienteId);
+            if (cliente != null)
+            {
+                facturaEditando.UsoCfdi ??= cliente.UsoCfdi;
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task OnPedidoChanged(ChangeEventArgs e)
+    {
+        pedidoSeleccionado = e.Value?.ToString();
+        if (Guid.TryParse(pedidoSeleccionado, out var pedidoId))
+        {
+            var pedido = pedidos.FirstOrDefault(p => p.Id == pedidoId);
+            if (pedido != null)
+            {
+                clienteSeleccionado = pedido.ClienteId.ToString();
+                facturaEditando.Subtotal = pedido.Subtotal;
+                facturaEditando.TotalImpuestosTrasladados = pedido.Impuestos;
+                facturaEditando.Total = pedido.Total;
+                facturaEditando.MetodoPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.MetodoPagoCredito : configuracionFacturacion.MetodoPagoContado;
+                facturaEditando.FormaPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.FormaPagoCredito : configuracionFacturacion.FormaPagoContado;
+                facturaEditando.UsoCfdi ??= pedido.Cliente?.UsoCfdi;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void OnNotaEntregaChecked(Guid notaId, ChangeEventArgs e)
+    {
+        var seleccionada = e.Value is bool value && value;
+        if (seleccionada)
+        {
+            notasEntregaSeleccionadasIds.Add(notaId);
+        }
+        else
+        {
+            notasEntregaSeleccionadasIds.Remove(notaId);
+        }
+
+        ActualizarResumenDesdeNotasSeleccionadas();
+    }
+
+    private void ActualizarResumenDesdeNotasSeleccionadas()
+    {
+        var notasSeleccionadas = notasEntrega
+            .Where(n => notasEntregaSeleccionadasIds.Contains(n.Id))
+            .OrderBy(n => n.FechaNota)
+            .ToList();
+
+        if (!notasSeleccionadas.Any())
+        {
+            facturaEditando.NotaEntregaId = null;
+            return;
+        }
+
+        var primerNota = notasSeleccionadas[0];
+        clienteSeleccionado = primerNota.ClienteId.ToString();
+        pedidoSeleccionado = notasSeleccionadas.Select(n => n.PedidoId).Distinct().Count() == 1
+            ? primerNota.PedidoId.ToString()
+            : null;
+        facturaEditando.NotaEntregaId = notasSeleccionadas.Count == 1 ? primerNota.Id : null;
+        facturaEditando.Subtotal = notasSeleccionadas.Sum(n => n.Subtotal);
+        facturaEditando.TotalImpuestosTrasladados = notasSeleccionadas.Sum(n => n.Impuestos);
+        facturaEditando.Total = notasSeleccionadas.Sum(n => n.Total);
+        facturaEditando.Observaciones = notasSeleccionadas.Count == 1
+            ? $"Nota de entrega {primerNota.NumeroNota}"
+            : $"Notas de entrega: {string.Join(", ", notasSeleccionadas.Select(n => n.NumeroNota))}";
+
+        var pedido = pedidos.FirstOrDefault(p => p.Id == primerNota.PedidoId);
+        if (pedido != null)
+        {
+            facturaEditando.MetodoPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.MetodoPagoCredito : configuracionFacturacion.MetodoPagoContado;
+            facturaEditando.FormaPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.FormaPagoCredito : configuracionFacturacion.FormaPagoContado;
+        }
+
+        if (Guid.TryParse(clienteSeleccionado, out var clienteId))
+        {
+            var cliente = clientes.FirstOrDefault(c => c.Id == clienteId);
+            if (cliente != null)
+            {
+                facturaEditando.UsoCfdi ??= cliente.UsoCfdi;
+            }
+        }
+    }
+
+    private async Task EmitirFacturaAsync(Factura factura)
+    {
+        error = ok = null;
+        facturaProcesandoId = factura.Id;
+
+        try
+        {
+            var resultado = await FacturacionFiscalService.EmitirFacturaAsync(factura.Id);
+            if (resultado.Success)
+            {
+                ok = string.IsNullOrWhiteSpace(resultado.UuidFiscal)
+                    ? resultado.Message
+                    : $"{resultado.Message} UUID: {resultado.UuidFiscal}";
+            }
+            else
+            {
+                error = resultado.Message;
+            }
+
+            await CargarFacturasAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            facturaProcesandoId = null;
+        }
+    }
+
+    private IEnumerable<NotaEntrega> ObtenerNotasDisponibles(Guid clienteId)
+    {
+        return notasEntrega
+            .Where(n => n.ClienteId == clienteId && !n.NoRequiereFactura && PuedeSeleccionarseNota(n.Id))
+            .OrderByDescending(n => n.FechaNota);
+    }
+
+    private bool PuedeSeleccionarseNota(Guid notaId)
+    {
+        var ligadaAOtraFactura = facturasNotasEntrega.Any(r => r.NotaEntregaId == notaId && r.FacturaId != facturaEditando.Id && r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado);
+        return !ligadaAOtraFactura || notasEntregaSeleccionadasIds.Contains(notaId);
+    }
+
+    private async Task SincronizarNotasFacturaAsync(CrmDbContext db, Guid facturaId)
+    {
+        var relacionesActuales = await db.FacturasNotasEntrega
+            .Where(r => r.FacturaId == facturaId)
+            .ToListAsync();
+
+        var notasSeleccionadas = await db.NotasEntrega
+            .Where(n => notasEntregaSeleccionadasIds.Contains(n.Id))
+            .ToListAsync();
+
+        foreach (var relacion in relacionesActuales.Where(r => !notasEntregaSeleccionadasIds.Contains(r.NotaEntregaId)))
+        {
+            db.FacturasNotasEntrega.Remove(relacion);
+        }
+
+        foreach (var nota in notasSeleccionadas)
+        {
+            if (relacionesActuales.All(r => r.NotaEntregaId != nota.Id))
+            {
+                db.FacturasNotasEntrega.Add(new FacturaNotaEntrega
+                {
+                    Id = Guid.NewGuid(),
+                    FacturaId = facturaId,
+                    NotaEntregaId = nota.Id,
+                    Subtotal = nota.Subtotal,
+                    Impuestos = nota.Impuestos,
+                    Total = nota.Total,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
+
+            nota.Estatus = NotaEntregaEstatus.FacturadaTotal;
+            nota.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var notasLiberadas = await db.NotasEntrega
+            .Where(n => relacionesActuales.Select(r => r.NotaEntregaId).Contains(n.Id) && !notasEntregaSeleccionadasIds.Contains(n.Id))
+            .ToListAsync();
+
+        foreach (var nota in notasLiberadas)
+        {
+            var sigueFacturada = await db.FacturasNotasEntrega.AnyAsync(r => r.NotaEntregaId == nota.Id && r.FacturaId != facturaId && r.IsActive);
+            nota.Estatus = sigueFacturada ? NotaEntregaEstatus.FacturadaTotal : NotaEntregaEstatus.Emitida;
+            nota.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task<string> ObtenerTextoAsync(string clave, string valorDefault)
+    {
+        var valor = await AppConfigRepository.GetValueAsync(clave);
+        return string.IsNullOrWhiteSpace(valor) ? valorDefault : valor.Trim();
+    }
+
+    private async Task<bool> ObtenerBoolAsync(string clave, bool valorDefault)
+    {
+        var valor = await AppConfigRepository.GetValueAsync(clave);
+        return bool.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private static Factura ClonarFactura(Factura factura)
+    {
+        return new Factura
+        {
+            Id = factura.Id,
+            EmpresaId = factura.EmpresaId,
+            ClienteId = factura.ClienteId,
+            PedidoId = factura.PedidoId,
+            NotaEntregaId = factura.NotaEntregaId,
+            TipoComprobante = factura.TipoComprobante,
+            Estatus = factura.Estatus,
+            Serie = factura.Serie,
+            FolioInterno = factura.FolioInterno,
+            SerieFiscal = factura.SerieFiscal,
+            FolioFiscal = factura.FolioFiscal,
+            ExternalDocumentId = factura.ExternalDocumentId,
+            UuidFiscal = factura.UuidFiscal,
+            FechaEmision = factura.FechaEmision,
+            FechaTimbrado = factura.FechaTimbrado,
+            Moneda = factura.Moneda,
+            TipoCambio = factura.TipoCambio,
+            LugarExpedicionCp = factura.LugarExpedicionCp,
+            MetodoPagoSat = factura.MetodoPagoSat,
+            FormaPagoSat = factura.FormaPagoSat,
+            UsoCfdi = factura.UsoCfdi,
+            Exportacion = factura.Exportacion,
+            CondicionesPago = factura.CondicionesPago,
+            Observaciones = factura.Observaciones,
+            Subtotal = factura.Subtotal,
+            DescuentoTotal = factura.DescuentoTotal,
+            TotalImpuestosTrasladados = factura.TotalImpuestosTrasladados,
+            TotalImpuestosRetenidos = factura.TotalImpuestosRetenidos,
+            Total = factura.Total,
+            Cancelable = factura.Cancelable,
+            CancellationStatus = factura.CancellationStatus,
+            XmlUrl = factura.XmlUrl,
+            PdfUrl = factura.PdfUrl,
+            AcuseCancelacionUrl = factura.AcuseCancelacionUrl,
+            ErrorCode = factura.ErrorCode,
+            ErrorMessage = factura.ErrorMessage,
+            JsonSnapshotComercial = factura.JsonSnapshotComercial,
+            CreatedAt = factura.CreatedAt,
+            CreatedBy = factura.CreatedBy,
+            UpdatedAt = factura.UpdatedAt,
+            UpdatedBy = factura.UpdatedBy,
+            IsActive = factura.IsActive
+        };
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private static string ObtenerClaseEstatus(FacturaEstatus estatus) => estatus switch
+    {
+        FacturaEstatus.Timbrado => "bg-success",
+        FacturaEstatus.PagadoTotal => "bg-primary",
+        FacturaEstatus.PagadoParcial => "bg-warning text-dark",
+        FacturaEstatus.ErrorTimbrado => "bg-danger",
+        FacturaEstatus.Cancelado => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+
+    private static string ObtenerResumenNotasFactura(Factura factura)
+    {
+        var notas = factura.NotasEntregaRelacionadas
+            .Where(r => r.IsActive)
+            .Select(r => r.NotaEntrega.NumeroNota)
+            .Distinct()
+            .ToList();
+
+        if (notas.Count == 0 && factura.NotaEntrega != null)
+        {
+            return factura.NotaEntrega.NumeroNota;
+        }
+
+        return notas.Count == 0 ? "—" : string.Join(", ", notas);
+    }
+
+    private static bool PuedeEmitirse(Factura factura)
+        => factura.Estatus is FacturaEstatus.Borrador or FacturaEstatus.PendienteTimbrado or FacturaEstatus.ErrorTimbrado;
+
+    private sealed class FacturaSnapshotComercialItem
+    {
+        public Guid NotaEntregaId { get; set; }
+        public string NumeroNota { get; set; } = string.Empty;
+        public Guid? PedidoDetalleId { get; set; }
+        public Guid? PedidoDetalleTallaId { get; set; }
+        public string Talla { get; set; } = string.Empty;
+        public decimal Cantidad { get; set; }
+        public string? Sku { get; set; }
+        public decimal PrecioUnitario { get; set; }
+        public decimal Importe { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+    }
+}

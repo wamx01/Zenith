@@ -1,0 +1,231 @@
+@page "/superadmin/configuracion-facturacion"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@inject IAppConfigRepository AppConfigRepository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IEmpresaContext EmpresaContext
+
+<PageTitle>Configuración de Facturación</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_esSuperAdmin)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para administrar la configuración de facturación.</div>
+    }
+    else if (!_empresaActiva)
+    {
+        <div class="alert alert-info mt-3">No hay una empresa activa para guardar la configuración de facturación.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-sliders me-2"></i>Configuración de Facturación</h1>
+                <p class="text-muted mb-0">Parámetros fiscales y de integración para la empresa activa.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-4">
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-semibold">Integración</div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <InputCheckbox class="form-check-input" @bind-Value="configuracion.Habilitado" />
+                                <label class="form-check-label">Facturación habilitada</label>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <InputCheckbox class="form-check-input" @bind-Value="configuracion.ModoPruebas" />
+                                <label class="form-check-label">Modo pruebas</label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Proveedor</label>
+                                <InputText class="form-control" @bind-Value="configuracion.Proveedor" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">API Key Pruebas</label>
+                                <InputText class="form-control" @bind-Value="configuracion.ApiKeyPruebas" />
+                            </div>
+                            <div>
+                                <label class="form-label">API Key Producción</label>
+                                <InputText class="form-control" @bind-Value="configuracion.ApiKeyProduccion" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-semibold">Series y emisión</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Serie Ingreso</label>
+                                <InputText class="form-control" @bind-Value="configuracion.SerieIngreso" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Serie Egreso</label>
+                                <InputText class="form-control" @bind-Value="configuracion.SerieEgreso" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Serie Pago</label>
+                                <InputText class="form-control" @bind-Value="configuracion.SeriePago" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Lugar Expedición CP</label>
+                                <InputText class="form-control" @bind-Value="configuracion.LugarExpedicionCp" />
+                            </div>
+                            <div>
+                                <label class="form-label">Moneda Default</label>
+                                <InputText class="form-control" @bind-Value="configuracion.MonedaDefault" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-primary">
+                        <div class="card-header bg-primary text-white fw-semibold">Defaults SAT</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Método Pago Contado</label>
+                                <InputText class="form-control" @bind-Value="configuracion.MetodoPagoContado" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Forma Pago Contado</label>
+                                <InputText class="form-control" @bind-Value="configuracion.FormaPagoContado" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Método Pago Crédito</label>
+                                <InputText class="form-control" @bind-Value="configuracion.MetodoPagoCredito" />
+                            </div>
+                            <div>
+                                <label class="form-label">Forma Pago Crédito</label>
+                                <InputText class="form-control" @bind-Value="configuracion.FormaPagoCredito" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar configuración</button>
+                    <a class="btn btn-outline-secondary" href="/superadmin/capacidades">Volver</a>
+                </div>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private FacturacionConfiguracion configuracion = new();
+    private bool _esSuperAdmin;
+    private bool _empresaActiva;
+    private bool guardando;
+    private string? error;
+    private string? ok;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        _empresaActiva = EmpresaContext.EmpresaId != Guid.Empty;
+
+        if (_esSuperAdmin && _empresaActiva)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        configuracion = new FacturacionConfiguracion
+        {
+            Habilitado = await ObtenerBoolAsync(ClavesConfiguracionFacturacion.Habilitado, false),
+            Proveedor = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.Proveedor, "Facturapi"),
+            ModoPruebas = await ObtenerBoolAsync(ClavesConfiguracionFacturacion.ModoPruebas, true),
+            SerieIngreso = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SerieIngreso, "F"),
+            SerieEgreso = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SerieEgreso, "E"),
+            SeriePago = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.SeriePago, "P"),
+            LugarExpedicionCp = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.LugarExpedicionCp, string.Empty),
+            MonedaDefault = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MonedaDefault, "MXN"),
+            MetodoPagoContado = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MetodoPagoContado, "PUE"),
+            FormaPagoContado = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.FormaPagoContado, "03"),
+            MetodoPagoCredito = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.MetodoPagoCredito, "PPD"),
+            FormaPagoCredito = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.FormaPagoCredito, "99"),
+            ApiKeyPruebas = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.ApiKeyPruebas, string.Empty),
+            ApiKeyProduccion = await ObtenerTextoAsync(ClavesConfiguracionFacturacion.ApiKeyProduccion, string.Empty)
+        };
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+
+        if (!_esSuperAdmin)
+        {
+            error = "No tienes permisos para editar la configuración de facturación.";
+            return;
+        }
+
+        if (!_empresaActiva)
+        {
+            error = "No hay una empresa activa para guardar esta configuración.";
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.Habilitado, configuracion.Habilitado.ToString().ToLowerInvariant(), "Habilita la facturación integrada para la empresa activa.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.Proveedor, LimpiarTexto(configuracion.Proveedor) ?? "Facturapi", "Proveedor de integración fiscal.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.ModoPruebas, configuracion.ModoPruebas.ToString().ToLowerInvariant(), "Indica si la integración fiscal opera en modo pruebas.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.SerieIngreso, LimpiarTexto(configuracion.SerieIngreso) ?? "F", "Serie default para CFDI de ingreso.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.SerieEgreso, LimpiarTexto(configuracion.SerieEgreso) ?? "E", "Serie default para CFDI de egreso.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.SeriePago, LimpiarTexto(configuracion.SeriePago) ?? "P", "Serie default para complemento de pago.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.LugarExpedicionCp, LimpiarTexto(configuracion.LugarExpedicionCp) ?? string.Empty, "Código postal de expedición usado por default.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.MonedaDefault, LimpiarTexto(configuracion.MonedaDefault) ?? "MXN", "Moneda usada por default al generar facturas.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.MetodoPagoContado, LimpiarTexto(configuracion.MetodoPagoContado) ?? "PUE", "Método de pago SAT por default para operaciones de contado.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.FormaPagoContado, LimpiarTexto(configuracion.FormaPagoContado) ?? "03", "Forma de pago SAT por default para operaciones de contado.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.MetodoPagoCredito, LimpiarTexto(configuracion.MetodoPagoCredito) ?? "PPD", "Método de pago SAT por default para operaciones a crédito.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.FormaPagoCredito, LimpiarTexto(configuracion.FormaPagoCredito) ?? "99", "Forma de pago SAT por default para operaciones a crédito.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.ApiKeyPruebas, LimpiarTexto(configuracion.ApiKeyPruebas) ?? string.Empty, "Llave de pruebas del proveedor fiscal.");
+            await AppConfigRepository.SetValueAsync(ClavesConfiguracionFacturacion.ApiKeyProduccion, LimpiarTexto(configuracion.ApiKeyProduccion) ?? string.Empty, "Llave de producción del proveedor fiscal.");
+            ok = "Configuración de facturación guardada.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task<string> ObtenerTextoAsync(string clave, string valorDefault)
+    {
+        var valor = await AppConfigRepository.GetValueAsync(clave);
+        return string.IsNullOrWhiteSpace(valor) ? valorDefault : valor.Trim();
+    }
+
+    private async Task<bool> ObtenerBoolAsync(string clave, bool valorDefault)
+    {
+        var valor = await AppConfigRepository.GetValueAsync(clave);
+        return bool.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+}

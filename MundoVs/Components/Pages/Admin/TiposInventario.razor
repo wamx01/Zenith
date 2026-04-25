@@ -1,0 +1,410 @@
+@page "/configuracion/tipos-inventario"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Inventario
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Tipos de Inventario</PageTitle>
+
+<div class="container-fluid px-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-tags-fill"></i> Tipos de Inventario</h2>
+            <p class="text-muted mb-0">Administra los tipos usados para clasificar materias primas e insumos.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <span class="badge text-bg-light border px-3 py-2">Registros: @tiposFiltrados.Count()</span>
+            <span class="badge text-bg-success-subtle border border-success-subtle text-success-emphasis px-3 py-2">Activos: @tipos.Count(t => t.IsActive)</span>
+            <span class="badge text-bg-secondary px-3 py-2">Inactivos: @tipos.Count(t => !t.IsActive)</span>
+            <button class="btn btn-success" @onclick="Nuevo" disabled="@(!categorias.Any())">
+                <i class="bi bi-plus-circle"></i> Nuevo Tipo
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+
+    @if (!string.IsNullOrEmpty(success))
+    {
+        <div class="alert alert-success">@success</div>
+    }
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Categoría</label>
+                    <select class="form-select" @bind="filtroCategoriaId" @bind:after="AplicarFiltro">
+                        <option value="">Todas</option>
+                        @foreach (var categoria in categorias)
+                        {
+                            <option value="@categoria.Id">@categoria.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Buscar</label>
+                    <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltro" placeholder="Nombre o código" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select" @bind="filtroEstado" @bind:after="AplicarFiltro">
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow">
+            <div class="card-header bg-dark text-white">
+                <strong>@(editando.Id == Guid.Empty ? "Nuevo Tipo de Inventario" : "Editar Tipo de Inventario")</strong>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Categoría</label>
+                        <select class="form-select" @bind="editando.CategoriaInventarioId">
+                            <option value="">Seleccione...</option>
+                            @foreach (var categoria in categoriasActivas)
+                            {
+                                <option value="@categoria.Id">@categoria.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Código</label>
+                        <input class="form-control" @bind="editando.Codigo" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Nombre</label>
+                        <input class="form-control" @bind="editando.Nombre" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Orden</label>
+                        <input type="number" class="form-control" @bind="editando.Orden" />
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="activoTipo" @bind="editando.IsActive" />
+                            <label class="form-check-label" for="activoTipo">Activo</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success" @onclick="Guardar"><i class="bi bi-save"></i> Guardar</button>
+                    <button class="btn btn-secondary" @onclick="Cancelar"><i class="bi bi-x-circle"></i> Cancelar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow">
+        <div class="card-body">
+            @if (cargando)
+            {
+                <div class="text-center py-3"><div class="spinner-border"></div></div>
+            }
+            else if (!tiposFiltrados.Any())
+            {
+                <div class="alert alert-info mb-0">No hay tipos de inventario registrados con los filtros actuales.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Categoría</th>
+                                <th>Código</th>
+                                <th>Nombre</th>
+                                <th>Orden</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in tiposFiltrados)
+                            {
+                                <tr>
+                                    <td>@item.CategoriaInventario.Nombre</td>
+                                    <td><strong>@item.Codigo</strong></td>
+                                    <td>@item.Nombre</td>
+                                    <td>@item.Orden</td>
+                                    <td>
+                                        <span class="badge @(item.IsActive ? "bg-success" : "bg-secondary")">@(item.IsActive ? "Activo" : "Inactivo")</span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-primary" @onclick="() => Editar(item)"><i class="bi bi-pencil"></i></button>
+                                            <button class="btn btn-sm @(item.IsActive ? "btn-outline-warning" : "btn-outline-success")" @onclick="() => CambiarEstado(item)">
+                                                <i class="bi @(item.IsActive ? "bi-pause-circle" : "bi-play-circle")"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly List<CategoriaInventario> categorias = [];
+    private List<CategoriaInventario> categoriasActivas = [];
+    private readonly List<TipoInventario> tipos = [];
+    private IEnumerable<TipoInventario> tiposFiltrados = [];
+    private TipoInventario editando = new() { Id = Guid.Empty, IsActive = true, Orden = 1 };
+    private Guid _empresaId;
+    private Guid? filtroCategoriaId;
+    private string textoBusqueda = string.Empty;
+    private string filtroEstado = "activos";
+    private bool mostrarFormulario;
+    private bool cargando = true;
+    private string? error;
+    private string? success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContexto();
+        await Cargar();
+        cargando = false;
+    }
+
+    private async Task CargarContexto()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
+        _ = Guid.TryParse(empresaIdStr, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        error = null;
+        success = null;
+        categorias.Clear();
+        tipos.Clear();
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay una empresa activa en sesión.";
+            tiposFiltrados = [];
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        categorias.AddRange(await db.CategoriasInventario.IgnoreQueryFilters()
+            .Where(c => c.EmpresaId == _empresaId)
+            .OrderBy(c => c.Orden)
+            .ThenBy(c => c.Nombre)
+            .ToListAsync());
+
+        categoriasActivas = categorias.Where(c => c.IsActive).ToList();
+
+        tipos.AddRange(await db.TiposInventario.IgnoreQueryFilters()
+            .Where(t => t.EmpresaId == _empresaId)
+            .Include(t => t.CategoriaInventario)
+            .OrderBy(t => t.CategoriaInventario.Orden)
+            .ThenBy(t => t.Orden)
+            .ThenBy(t => t.Nombre)
+            .ToListAsync());
+
+        AplicarFiltro();
+    }
+
+    private void AplicarFiltro()
+    {
+        IEnumerable<TipoInventario> consulta = tipos;
+
+        if (filtroCategoriaId.HasValue && filtroCategoriaId.Value != Guid.Empty)
+            consulta = consulta.Where(t => t.CategoriaInventarioId == filtroCategoriaId.Value);
+
+        consulta = filtroEstado switch
+        {
+            "inactivos" => consulta.Where(t => !t.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(t => t.IsActive)
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(t =>
+                t.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                t.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        tiposFiltrados = consulta.ToList();
+    }
+
+    private void Nuevo()
+    {
+        error = null;
+        success = null;
+
+        var categoriaInicial = filtroCategoriaId.HasValue && filtroCategoriaId.Value != Guid.Empty
+            ? filtroCategoriaId.Value
+            : categoriasActivas.FirstOrDefault()?.Id ?? Guid.Empty;
+
+        editando = new TipoInventario
+        {
+            Id = Guid.Empty,
+            EmpresaId = _empresaId,
+            CategoriaInventarioId = categoriaInicial,
+            Orden = tipos.Any() ? tipos.Max(t => t.Orden) + 1 : 1,
+            IsActive = true
+        };
+        mostrarFormulario = true;
+    }
+
+    private void Editar(TipoInventario item)
+    {
+        error = null;
+        success = null;
+        editando = new TipoInventario
+        {
+            Id = item.Id,
+            EmpresaId = item.EmpresaId,
+            CategoriaInventarioId = item.CategoriaInventarioId,
+            Codigo = item.Codigo,
+            Nombre = item.Nombre,
+            Orden = item.Orden,
+            IsActive = item.IsActive,
+            CreatedAt = item.CreatedAt,
+            CreatedBy = item.CreatedBy,
+            UpdatedAt = item.UpdatedAt,
+            UpdatedBy = item.UpdatedBy
+        };
+        mostrarFormulario = true;
+    }
+
+    private async Task Guardar()
+    {
+        error = null;
+        success = null;
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay una empresa activa en sesión.";
+            return;
+        }
+
+        if (editando.CategoriaInventarioId == Guid.Empty)
+        {
+            error = "Seleccione una categoría.";
+            return;
+        }
+
+        var codigo = editando.Codigo.Trim().ToUpperInvariant();
+        var nombre = editando.Nombre.Trim();
+
+        if (string.IsNullOrWhiteSpace(codigo) || string.IsNullOrWhiteSpace(nombre))
+        {
+            error = "Código y nombre son requeridos.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var codigoDuplicado = await db.TiposInventario.IgnoreQueryFilters().AnyAsync(t =>
+            t.EmpresaId == _empresaId &&
+            t.CategoriaInventarioId == editando.CategoriaInventarioId &&
+            t.Codigo == codigo &&
+            t.Id != editando.Id);
+
+        if (codigoDuplicado)
+        {
+            error = "Ya existe un tipo con ese código en la categoría seleccionada.";
+            return;
+        }
+
+        var nombreDuplicado = await db.TiposInventario.IgnoreQueryFilters().AnyAsync(t =>
+            t.EmpresaId == _empresaId &&
+            t.CategoriaInventarioId == editando.CategoriaInventarioId &&
+            t.Nombre == nombre &&
+            t.Id != editando.Id);
+
+        if (nombreDuplicado)
+        {
+            error = "Ya existe un tipo con ese nombre en la categoría seleccionada.";
+            return;
+        }
+
+        if (editando.Id == Guid.Empty)
+        {
+            var nuevo = new TipoInventario
+            {
+                EmpresaId = _empresaId,
+                CategoriaInventarioId = editando.CategoriaInventarioId,
+                Codigo = codigo,
+                Nombre = nombre,
+                Orden = editando.Orden,
+                IsActive = editando.IsActive
+            };
+
+            db.TiposInventario.Add(nuevo);
+        }
+        else
+        {
+            var existente = await db.TiposInventario.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == editando.Id && t.EmpresaId == _empresaId);
+            if (existente is null)
+            {
+                error = "No se encontró el tipo a editar.";
+                return;
+            }
+
+            existente.CategoriaInventarioId = editando.CategoriaInventarioId;
+            existente.Codigo = codigo;
+            existente.Nombre = nombre;
+            existente.Orden = editando.Orden;
+            existente.IsActive = editando.IsActive;
+            existente.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+        await Cargar();
+        success = "Tipo de inventario guardado correctamente.";
+        Cancelar();
+    }
+
+    private async Task CambiarEstado(TipoInventario item)
+    {
+        error = null;
+        success = null;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existente = await db.TiposInventario.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == item.Id && t.EmpresaId == _empresaId);
+        if (existente is null)
+        {
+            error = "No se encontró el tipo seleccionado.";
+            return;
+        }
+
+        existente.IsActive = !existente.IsActive;
+        existente.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        await Cargar();
+        success = existente.IsActive ? "Tipo activado correctamente." : "Tipo desactivado correctamente.";
+    }
+
+    private void Cancelar()
+    {
+        editando = new TipoInventario { Id = Guid.Empty, IsActive = true, Orden = 1 };
+        mostrarFormulario = false;
+    }
+}

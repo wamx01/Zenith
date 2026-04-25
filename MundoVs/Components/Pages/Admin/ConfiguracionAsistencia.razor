@@ -1,0 +1,179 @@
+@page "/configuracion/asistencia"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Models
+@using MundoVs.Core.Security
+@inject IAppConfigRepository AppConfig
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Configuración de Asistencia</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver la configuración de asistencia.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-stopwatch me-2"></i>Configuración de Asistencia</h1>
+                <p class="text-muted mb-0">Ajusta la política para descansos no marcados y la zona que requiere confirmación operativa.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-4">
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-primary">
+                        <div class="card-header bg-primary text-white fw-semibold">Coincidencia con jornada bruta</div>
+                        <div class="card-body">
+                            <label class="form-label">Tolerancia en minutos</label>
+                            <InputNumber class="form-control" @bind-Value="configuracion.ToleranciaCoincidenciaBrutaMinutos" />
+                            <div class="form-text">Si el tiempo bruto real cae dentro de este margen, el sistema descuenta automáticamente el descanso no pagado.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-info">
+                        <div class="card-header bg-info-subtle fw-semibold">Coincidencia con jornada neta</div>
+                        <div class="card-body">
+                            <label class="form-label">Tolerancia en minutos</label>
+                            <InputNumber class="form-control" @bind-Value="configuracion.ToleranciaCoincidenciaNetaMinutos" />
+                            <div class="form-text">Si el tiempo bruto real se parece a la jornada neta, el sistema pide confirmación porque puede tratarse de salida temprana en lugar del descanso.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-warning">
+                        <div class="card-header bg-warning-subtle fw-semibold">Zona ambigua</div>
+                        <div class="card-body">
+                            <label class="form-label">Tope superior en minutos</label>
+                            <InputNumber class="form-control" @bind-Value="configuracion.ZonaAmbiguaHastaMinutos" />
+                            <div class="form-text">Entre las tolerancias de coincidencia y este tope, el día queda pendiente de revisión manual.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-success">
+                        <div class="card-header bg-success-subtle fw-semibold">Exceso de descanso tolerado</div>
+                        <div class="card-body">
+                            <label class="form-label">Tolerancia en minutos</label>
+                            <InputNumber class="form-control" @bind-Value="configuracion.ToleranciaExcesoDescansoMinutos" />
+                            <div class="form-text">Si el descanso excede por pocos minutos el tiempo programado, el sistema no descontará ni marcará revisión hasta rebasar este umbral.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 border-danger">
+                        <div class="card-header bg-danger-subtle fw-semibold">Retardo tolerado</div>
+                        <div class="card-body">
+                            <label class="form-label">Tolerancia en minutos</label>
+                            <InputNumber class="form-control" @bind-Value="configuracion.ToleranciaRetardoMinutos" />
+                            <div class="form-text">Si la llegada tarde no rebasa este umbral, no se marca retardo ni descuento. También aplica antes de compensar con salida tardía.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="alert alert-secondary mb-0">
+                        <div class="fw-semibold">Valores recomendados</div>
+                        <div class="small">Por defecto se usa `15 min` para coincidencia con jornada bruta, `15 min` para coincidencia con jornada neta, una zona ambigua hasta `30 min`, `5 min` de tolerancia para exceso de descanso y `5 min` de tolerancia de retardo.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-primary" disabled="@(!_puedeEditar || guardando)">
+                    <i class="bi bi-save me-1"></i>@(guardando ? "Guardando..." : "Guardar configuración")
+                </button>
+                <a class="btn btn-outline-secondary" href="/configuracion">Volver</a>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _esSuperAdmin;
+    private bool guardando;
+    private string? error;
+    private string? ok;
+    private RrhhAsistenciaDescansoSettings configuracion = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (!_puedeVer)
+        {
+            return;
+        }
+
+        configuracion = await RrhhAsistenciaDescansoSettings.LoadAsync(AppConfig);
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _esSuperAdmin = state.User.IsInRole("SuperAdmin");
+        _puedeVer = _esSuperAdmin
+            || (state.User.HasClaim("Modulo", ModuloAccesoCatalog.Rrhh) && state.User.HasClaim("Capacidad", "configuracion.ver"));
+        _puedeEditar = _esSuperAdmin
+            || (state.User.HasClaim("Modulo", ModuloAccesoCatalog.Rrhh) && state.User.HasClaim("Capacidad", "configuracion.editar"));
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = null;
+        ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar la configuración de asistencia.";
+            return;
+        }
+
+        configuracion.Normalize();
+        var minimoZonaAmbigua = Math.Max(configuracion.ToleranciaCoincidenciaBrutaMinutos, configuracion.ToleranciaCoincidenciaNetaMinutos);
+        if (configuracion.ZonaAmbiguaHastaMinutos < minimoZonaAmbigua)
+        {
+            error = $"La zona ambigua debe ser mayor o igual a {minimoZonaAmbigua} min.";
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await AppConfig.SetValueAsync(RrhhAsistenciaDescansoSettings.ToleranciaCoincidenciaBrutaKey, configuracion.ToleranciaCoincidenciaBrutaMinutos.ToString(), "Tolerancia para descontar descanso cuando la jornada se parece al tiempo bruto.");
+            await AppConfig.SetValueAsync(RrhhAsistenciaDescansoSettings.ToleranciaCoincidenciaNetaKey, configuracion.ToleranciaCoincidenciaNetaMinutos.ToString(), "Tolerancia para pedir confirmación cuando la jornada se parece al tiempo neto.");
+            await AppConfig.SetValueAsync(RrhhAsistenciaDescansoSettings.ZonaAmbiguaHastaKey, configuracion.ZonaAmbiguaHastaMinutos.ToString(), "Tope superior de la zona ambigua para descansos no marcados.");
+            await AppConfig.SetValueAsync(RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoKey, configuracion.ToleranciaExcesoDescansoMinutos.ToString(), "Tolerancia para no castigar pequeños excesos de descanso sobre el tiempo programado.");
+            await AppConfig.SetValueAsync(RrhhAsistenciaDescansoSettings.ToleranciaRetardoKey, configuracion.ToleranciaRetardoMinutos.ToString(), "Tolerancia para no marcar retardo en llegadas tarde pequeñas.");
+            ok = "Configuración de asistencia guardada correctamente.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

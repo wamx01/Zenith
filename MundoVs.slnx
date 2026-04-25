@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/NewFolder1/" />
+  <Project Path="../ZkTecoApi_Zenith/ZkTecoApi.csproj" />
+  <Project Path="BenchmarkSuite1/BenchmarkSuite1.csproj" />
+  <Project Path="MundoVs.Tests/MundoVs.Tests.csproj" />
+  <Project Path="MundoVs/MundoVs.csproj" />
+  <Project Path="Zenith.Contracts/Zenith.Contracts.csproj" />
+  <Project Path="Zenith.Workers.Asistencia/Zenith.Workers.Asistencia.csproj" />
+</Solution>

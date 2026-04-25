@@ -1,0 +1,2655 @@
+@page "/rrhh/nominas"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IJSRuntime JSRuntime
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject IAppConfigRepository AppConfig
+@inject INominaCalculator NominaCalculator
+@inject INominaLegalPolicyService NominaLegalPolicy
+@inject INominaResumenBuilder NominaResumenBuilder
+@inject CodigoNegocioService CodigoNegocio
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Nóminas</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver nóminas.</div>
+    }
+    else
+    {
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h1 class="display-6 fw-bold"><i class="bi bi-wallet2 me-2"></i>Nóminas</h1>
+        @if (_puedeEditar)
+        {
+            <button class="btn btn-primary" @onclick="NuevaNomina"><i class="bi bi-plus-circle me-1"></i>Nueva Nómina</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+    @if (!string.IsNullOrEmpty(ok)) { <div class="alert alert-success">@ok</div> }
+
+    @* ══ FORMULARIO NÓMINA ══ *@
+    @if (mostrarForm)
+    {
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nueva Nómina" : "Editar Nómina")</h5></div>
+            <div class="card-body">
+                <EditForm Model="editando" OnValidSubmit="GuardarNomina">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Periodicidad</label>
+                            <InputSelect class="form-select" @bind-Value="editando.PeriodicidadPago" @bind-Value:after="OnPeriodicidadNominaChangedAsync" disabled="@(editando.Id != Guid.Empty || !PuedeModificarNominaEditando)">
+                                @foreach (var periodicidad in PeriodicidadesDisponibles)
+                                {
+                                    <option value="@periodicidad">@periodicidad</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha de referencia</label>
+                            <InputDate class="form-control" @bind-Value="fechaReferenciaNomina" @bind-Value:after="OnFechaReferenciaNominaChangedAsync" disabled="@(editando.Id != Guid.Empty || !PuedeModificarNominaEditando)" />
+                            <div class="form-text">@ObtenerAyudaFechaReferencia(editando.PeriodicidadPago)</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Folio</label>
+                            <InputText class="form-control" @bind-Value="editando.Folio" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Número nómina</label>
+                            <InputText class="form-control" @bind-Value="editando.NumeroNomina" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Periodo</label>
+                            <InputText class="form-control" @bind-Value="editando.Periodo" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Ciclo</label>
+                            <input class="form-control" value="@ObtenerClavePeriodo(editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo)" readonly />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Inicio</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaInicio" disabled="true" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Fin</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaFin" disabled="true" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Estatus</label>
+                            <InputSelect class="form-select" @bind-Value="editando.Estatus" disabled="@(!PuedeModificarNominaEditando)">
+                                @foreach (var e in Enum.GetValues<EstatusNomina>()) { <option value="@e">@e</option> }
+                            </InputSelect>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Fecha Pago</label>
+                            <InputDate class="form-control" @bind-Value="editando.FechaPago" disabled="@(!PuedeModificarNominaEditando)" />
+                        </div>
+                        <div class="col-md-9">
+                            <label class="form-label">Notas</label>
+                            <InputText class="form-control" @bind-Value="editando.Notas" disabled="@(!PuedeModificarNominaEditando)" />
+                        </div>
+                        @if (festivosPeriodo.Count > 0)
+                        {
+                            <div class="col-12">
+                                <div class="alert alert-info py-2 small mb-0">
+                                    <strong>Festivos en el período:</strong>
+                                    @string.Join(", ", festivosPeriodo.OrderBy(f => f.Fecha).Select(f => $"{f.Fecha:dd/MM} {f.Nombre}"))
+                                </div>
+                            </div>
+                        }
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-success" type="submit" disabled="@(guardando || !PuedeModificarNominaEditando)"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
+                        </div>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    @* ══ DETALLE DE NÓMINA (empleados) ══ *@
+    @if (nominaSeleccionada != null)
+    {
+        <div class="card mb-4 border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-people-fill me-1"></i>Detalle — @(string.IsNullOrWhiteSpace(nominaSeleccionada.NumeroNomina) ? nominaSeleccionada.Periodo : $"{nominaSeleccionada.NumeroNomina} · {nominaSeleccionada.Periodo}")</h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-light text-primary">@detallesNomina.Count empleados</span>
+                    <a class="btn btn-sm btn-outline-light" href="/configuracion/nomina"><i class="bi bi-sliders me-1"></i>Config nómina</a>
+                    <a class="btn btn-sm btn-outline-light" href="/rrhh/bonos-distribuidos"><i class="bi bi-percent me-1"></i>Distribución</a>
+                    <button class="btn btn-sm btn-outline-light" @onclick="ImprimirTodosRecibos" disabled="@(detallesNomina.Count == 0)"><i class="bi bi-printer me-1"></i>Imprimir todo</button>
+                    @if (PuedeModificarNominaSeleccionada)
+                    {
+                        <button class="btn btn-sm btn-light" @onclick="RecalcularNominaSeleccionada" disabled="@(guardando || !PuedeModificarNominaSeleccionada)"><i class="bi bi-arrow-repeat me-1"></i>Recalcular</button>
+                    }
+                </div>
+            </div>
+
+            <div class="card-body border-bottom py-2">
+                @if (festivosPeriodo.Count > 0)
+                {
+                    <div class="alert alert-info py-2 small mb-2">
+                        <strong>Festivos del período:</strong>
+                        @string.Join(", ", festivosPeriodo.OrderBy(f => f.Fecha).Select(f => $"{f.Fecha:dd/MM} {f.Nombre}"))
+                    </div>
+                }
+                <div class="d-flex flex-wrap gap-2 small">
+                    <span class="badge text-bg-light">Sueldo base: @resumenNomina.TotalSueldoBase.ToString("C2")</span>
+                    <span class="badge text-bg-light">Destajo: @resumenNomina.TotalDestajo.ToString("C2")</span>
+                    <span class="badge text-bg-light">Bono: @resumenNomina.TotalBono.ToString("C2")</span>
+                    <span class="badge text-bg-light">Festivo trabajado: @resumenNomina.TotalFestivoTrabajado.ToString("C2")</span>
+                     <span class="badge text-bg-light">Descanso trabajado: @resumenNomina.TotalDescansoTrabajado.ToString("C2")</span>
+                    <span class="badge text-bg-light">Prima dominical: @resumenNomina.TotalPrimaDominical.ToString("C2")</span>
+                    <span class="badge text-bg-light">Prima vacacional: @resumenNomina.TotalPrimaVacacional.ToString("C2")</span>
+                    <span class="badge text-bg-light">Comp. salario mín.: @resumenNomina.TotalComplementoSalarioMinimo.ToString("C2")</span>
+                    <span class="badge text-bg-light">Hrs dobles: @resumenNomina.TotalHorasExtraDobles.ToString("0.##")</span>
+                    <span class="badge text-bg-light">Hrs triples: @resumenNomina.TotalHorasExtraTriples.ToString("0.##")</span>
+                    <span class="badge text-bg-light">Hrs banco: @resumenNomina.TotalHorasExtraBanco.ToString("0.##")</span>
+                    <span class="badge text-bg-light">Horas extra: @resumenNomina.TotalHorasExtra.ToString("C2")</span>
+                    <span class="badge text-bg-light">Percep. manuales: @resumenNomina.TotalPercepcionesManuales.ToString("C2")</span>
+                    <span class="badge text-bg-light">IMSS obrero: @resumenNomina.TotalImssObrero.ToString("C2")</span>
+                    <span class="badge text-bg-danger">Infonavit: @resumenNomina.TotalInfonavit.ToString("C2")</span>
+                    <span class="badge text-bg-danger">Deducciones: @resumenNomina.TotalDeducciones.ToString("C2")</span>
+                     <span class="badge text-bg-danger">Desc. minutos: @resumenNomina.TotalDescuentoMinutos.ToString("C2")</span>
+                    <span class="badge text-bg-success">Total: @resumenNomina.TotalNeto.ToString("C2")</span>
+                </div>
+                @if (NominaSeleccionadaRequiereActualizacionPrenomina)
+                {
+                    <div class="alert alert-warning py-2 small mt-2 mb-0">
+                        <strong>Prenómina actualizada:</strong> la prenómina ligada cambió después de esta nómina. Recalcula para traer incidencias e importes actualizados.
+                    </div>
+                }
+                <div class="small text-muted mt-2">Total neto = sueldo base + destajo + bono + festivo trabajado + descanso trabajado + prima dominical + prima vacacional + complemento salario mínimo + horas extra + percepciones manuales - descuentos por minutos - IMSS obrero - Infonavit - deducciones estructuradas.</div>
+            </div>
+
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Empleado</th>
+                            <th>Incidencias</th>
+                            <th>Ingresos</th>
+                            <th>Legal</th>
+                            <th class="text-end">Neto</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in detallesNomina)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">@d.Empleado.Nombre @d.Empleado.ApellidoPaterno</div>
+                                    <div class="small text-muted">@ObtenerNombreEsquema(d.EsquemaPagoId) · @d.Empleado.PeriodicidadPago</div>
+                                    <div class="d-flex flex-wrap gap-1 mt-1">
+                                        @if (TieneFestivosAplicados(d.EmpleadoId))
+                                        {
+                                            <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(d.EmpleadoId)">
+                                                <i class="bi bi-info-circle me-1"></i>Festivos
+                                            </span>
+                                        }
+                                        @if (d.Bonos > 0)
+                                        {
+                                            <span class="badge text-bg-light">Percep. @d.Bonos.ToString("C0")</span>
+                                        }
+                                        @if (d.Deducciones > 0)
+                                        {
+                                            <span class="badge text-bg-light">Deduc. @d.Deducciones.ToString("C0")</span>
+                                        }
+                                        @if (d.MontoInfonavit > 0)
+                                        {
+                                            <span class="badge text-bg-light">Infonavit</span>
+                                        }
+                                    </div>
+                                </td>
+                                <td class="small">
+                                    <div>Trab @d.DiasTrabajados · Pag @d.DiasPagados · Vac @d.DiasVacaciones</div>
+                                    <div>Desc @d.DiasDescansoTrabajado · Dom @d.DiasDomingoTrabajado · Fest @d.DiasFestivoTrabajado</div>
+                                    <div>@ObtenerResumenHorasExtra(d) · Min @ObtenerMinutosDescuentoPreview(d)</div>
+                                </td>
+                                <td class="small">
+                                    <div>Sueldo @d.SueldoBase.ToString("C2")</div>
+                                    <div>Destajo @d.MontoDestajo.ToString("C2") · Bono @d.MontoBono.ToString("C2")</div>
+                                    <div>Comp. mín. @d.ComplementoSalarioMinimo.ToString("C2")</div>
+                                </td>
+                                <td class="small">
+                                    <div>Fest @d.MontoFestivoTrabajado.ToString("C2") · Desc @d.MontoDescansoTrabajado.ToString("C2")</div>
+                                    <div>Dom @d.MontoPrimaDominical.ToString("C2") · Vac @d.MontoPrimaVacacional.ToString("C2")</div>
+                                    <div>IMSS @(d.AplicaImss ? d.CuotaImssObrera.ToString("C2") : "—") · Deduc @d.Deducciones.ToString("C2")</div>
+                                </td>
+                                <td class="text-end fw-bold">@ObtenerTotalPagarPreview(d).ToString("C2")</td>
+                                <td class="text-center">
+                                    <div class="d-flex justify-content-center gap-1">
+                                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => AbrirDetalleEmpleado(d)">
+                                            <i class="bi bi-pencil-square me-1"></i>Detalle
+                                        </button>
+                                        <a class="btn btn-sm btn-outline-secondary" href="@($"/rrhh/nominas/recibo/{d.Id}")" target="_blank" title="Recibo de nómina"><i class="bi bi-printer"></i></a>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-dark">
+                            <td colspan="4" class="text-end fw-bold">TOTAL NÓMINA:</td>
+                            <td class="text-end fw-bold">@resumenNomina.TotalNeto.ToString("C2")</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            @if (detalleModalSeleccionado != null)
+            {
+                var valesModal = ObtenerValesEmpleado(detalleModalSeleccionado.EmpleadoId);
+                <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,.45);" @onclick="CerrarDetalleEmpleado">
+                    <div class="modal-dialog modal-xl modal-dialog-scrollable" @onclick:stopPropagation="true">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <div>
+                                    <h5 class="modal-title mb-1">@detalleModalSeleccionado.Empleado.NombreCompleto</h5>
+                                    <div class="small text-muted">@ObtenerNombreEsquema(detalleModalSeleccionado.EsquemaPagoId) · @detalleModalSeleccionado.Empleado.PeriodicidadPago</div>
+                                </div>
+                                <button type="button" class="btn-close" aria-label="Close" @onclick="CerrarDetalleEmpleado"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="d-flex flex-wrap gap-2 small mb-3">
+                                    <span class="badge text-bg-light">Neto @ObtenerTotalPagarPreview(detalleModalSeleccionado).ToString("C2")</span>
+                                    <span class="badge text-bg-light">Trab @detalleModalSeleccionado.DiasTrabajados</span>
+                                    <span class="badge text-bg-light">Pag @detalleModalSeleccionado.DiasPagados</span>
+                                    <span class="badge text-bg-light">Vac @detalleModalSeleccionado.DiasVacaciones</span>
+                                    <span class="badge text-bg-light">Extra @detalleModalSeleccionado.HorasExtra.ToString("0.##") h</span>
+                                    @if (TieneFestivosAplicados(detalleModalSeleccionado.EmpleadoId))
+                                    {
+                                        <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(detalleModalSeleccionado.EmpleadoId)">
+                                            <i class="bi bi-info-circle me-1"></i>Festivos
+                                        </span>
+                                    }
+                                </div>
+
+                                <div class="d-flex flex-wrap gap-2 mb-3">
+                                    @if (PuedeModificarNominaSeleccionada)
+                                    {
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => EditarPercepcionesDetalleAsync(detalleModalSeleccionado)">
+                                            <i class="bi bi-cash-coin me-1"></i>Percepciones
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => EditarDeduccionesDetalleAsync(detalleModalSeleccionado)">
+                                            <i class="bi bi-dash-circle me-1"></i>Deducciones
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-warning" @onclick="() => AbrirDistribucionBonos(detalleModalSeleccionado)">
+                                            <i class="bi bi-percent me-1"></i>Distribución
+                                        </button>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => GuardarCambiosDetalle(detalleModalSeleccionado)" disabled="@(guardando || !PuedeModificarNominaSeleccionada)">
+                                            <i class="bi bi-save me-1"></i>Guardar detalle
+                                        </button>
+                                    }
+                                    <a class="btn btn-sm btn-outline-secondary" href="@($"/rrhh/nominas/recibo/{detalleModalSeleccionado.Id}")" target="_blank">
+                                        <i class="bi bi-printer me-1"></i>Recibo
+                                    </a>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-lg-6">
+                                        <div class="card h-100">
+                                            <div class="card-header fw-semibold">Incidencias y tiempo</div>
+                                            <div class="card-body">
+                                                <div class="row g-2">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Trabajados</label>
+                                                        <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasTrabajados" disabled="true" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Pagados</label>
+                                                        <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasPagados" disabled="true" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Vacaciones</label>
+                                                        <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasVacaciones" disabled="true" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Horas pagadas equiv.</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtra" @bind-Value:after="OnResumenNominaChangedAsync" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Horas base reales</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBase" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Banco horas</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBanco" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                    <div class="col-12">
+                                                        <div class="small text-muted">Las horas dobles/triples se muestran como tiempo real trabajado. Las horas pagadas equivalentes solo sirven para el cálculo del importe con factor.</div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Retardo</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosRetardo" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Salida ant.</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosSalidaAnticipada" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Desc. manual</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosDescuentoManual" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="card h-100">
+                                            <div class="card-header fw-semibold">Resumen legal y pago</div>
+                                            <div class="card-body">
+                                                <div class="row g-2 small">
+                                                    <div class="col-md-6"><div class="border rounded p-2">Sueldo base<br /><strong>@detalleModalSeleccionado.SueldoBase.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Destajo<br /><strong>@detalleModalSeleccionado.MontoDestajo.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Bono<br /><strong>@detalleModalSeleccionado.MontoBono.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Percepciones<br /><strong>@detalleModalSeleccionado.Bonos.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Festivo<br /><strong>@detalleModalSeleccionado.MontoFestivoTrabajado.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Descanso<br /><strong>@detalleModalSeleccionado.MontoDescansoTrabajado.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Prima dominical<br /><strong>@detalleModalSeleccionado.MontoPrimaDominical.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Prima vacacional<br /><strong>@detalleModalSeleccionado.MontoPrimaVacacional.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">IMSS obrero<br /><strong>@detalleModalSeleccionado.CuotaImssObrera.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Deducciones<br /><strong>@detalleModalSeleccionado.Deducciones.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Infonavit<br /><strong>@detalleModalSeleccionado.MontoInfonavit.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Neto<br /><strong class="text-success">@ObtenerTotalPagarPreview(detalleModalSeleccionado).ToString("C2")</strong></div></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="card">
+                                            <div class="card-header fw-semibold">Vales de destajo</div>
+                                            <div class="card-body">
+                                                @if (!valesModal.Any())
+                                                {
+                                                    <div class="small text-muted">No hay vales ligados en este período.</div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="d-flex flex-column gap-2 small">
+                                                        @foreach (var vale in valesModal)
+                                                        {
+                                                            <div class="border rounded px-2 py-2 bg-light">
+                                                                <div class="fw-semibold">@vale.Folio · @vale.Fecha.ToString("dd/MM/yyyy")</div>
+                                                                <div class="text-muted">@vale.TotalPiezas pz · @vale.Resumen</div>
+                                                                @if (vale.RegistrosOrigen > 0)
+                                                                {
+                                                                    <div class="text-muted">@vale.RegistrosOrigen registro(s) de producción consolidados</div>
+                                                                }
+                                                                <div class="fw-semibold text-success">@vale.TotalImporte.ToString("C2")</div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @if (detallePercepcionSeleccionado?.Id == detalleModalSeleccionado.Id)
+                                    {
+                                        <div class="col-12">
+                                            <div class="card border-success">
+                                                <div class="card-header bg-success-subtle d-flex justify-content-between align-items-center">
+                                                    <strong>Percepciones manuales</strong>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CerrarEditorPercepciones">Cerrar</button>
+                                                </div>
+                                                <div class="card-body">
+                                                    @if (tiposPercepcion.Count == 0)
+                                                    {
+                                                        <div class="alert alert-warning mb-0">No hay tipos de percepción configurados. Configúralos en <a href="/configuracion/nomina">Configuración de Nómina</a>.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="table-responsive mb-3">
+                                                            <table class="table table-sm table-bordered align-middle mb-0">
+                                                                <thead class="table-light">
+                                                                    <tr>
+                                                                        <th>Tipo</th><th>Descripción</th><th>Referencia</th><th>Origen</th><th class="text-end">Importe</th><th></th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @if (percepcionesEditando.Count == 0)
+                                                                    {
+                                                                        <tr><td colspan="6" class="text-center text-muted py-3">No hay percepciones manuales capturadas.</td></tr>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        @foreach (var item in percepcionesEditando.OrderBy(p => p.Orden).ThenBy(p => p.TipoNombre))
+                                                                        {
+                                                                            <tr>
+                                                                                <td><InputSelect class="form-select form-select-sm" @bind-Value="item.TipoPercepcionId" @bind-Value:after="() => OnTipoPercepcionChanged(item)" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var tipo in tiposPercepcion) { <option value="@tipo.Id">@tipo.Nombre</option> }</InputSelect></td>
+                                                                                <td><InputText class="form-control form-control-sm" @bind-Value="item.Descripcion" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td><InputText class="form-control form-control-sm" @bind-Value="item.Referencia" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td><InputSelect class="form-select form-select-sm" @bind-Value="item.Origen" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var origen in Enum.GetValues<OrigenPercepcionNomina>()) { <option value="@origen">@origen</option> }</InputSelect></td>
+                                                                                <td class="text-end"><InputNumber class="form-control form-control-sm text-end" @bind-Value="item.Importe" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" @onclick="() => QuitarPercepcionManual(item)" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-trash"></i></button></td>
+                                                                            </tr>
+                                                                        }
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                        <div class="row g-2 mb-3">
+                                                            <div class="col-md-6">
+                                                                <select class="form-select form-select-sm" @bind="tipoPercepcionSeleccionadoId" disabled="@(!PuedeModificarNominaSeleccionada)">
+                                                                    <option value="">Seleccionar tipo...</option>
+                                                                    @foreach (var tipo in tiposPercepcion)
+                                                                    {
+                                                                        <option value="@tipo.Id">@tipo.Nombre</option>
+                                                                    }
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-2">
+                                                                <button class="btn btn-sm btn-success w-100" @onclick="AgregarPercepcionManual" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-plus"></i></button>
+                                                            </div>
+                                                        </div>
+                                                        <div class="d-flex gap-2">
+                                                        <button class="btn btn-success" @onclick="GuardarPercepcionesDetalleAsync" disabled="@(guardando || !PuedeModificarNominaSeleccionada)"><i class="bi bi-save me-1"></i>Guardar percepciones</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="CerrarEditorPercepciones" disabled="@guardando">Cancelar</button>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (detalleDeduccionSeleccionado?.Id == detalleModalSeleccionado.Id)
+                                    {
+                                        <div class="col-12">
+                                            <div class="card border-danger">
+                                                <div class="card-header bg-danger-subtle d-flex justify-content-between align-items-center">
+                                                    <strong>Deducciones estructuradas</strong>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CerrarEditorDeducciones">Cerrar</button>
+                                                </div>
+                                                <div class="card-body">
+                                                    @if (tiposDeduccion.Count == 0)
+                                                    {
+                                                        <div class="alert alert-warning mb-0">No hay tipos de deducción configurados. Configúralos en <a href="/configuracion/nomina">Configuración de Nómina</a>.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="table-responsive mb-3">
+                                                            <table class="table table-sm table-bordered align-middle mb-0">
+                                                                <thead class="table-light">
+                                                                    <tr>
+                                                                        <th>Tipo</th><th>Descripción</th><th class="text-center">Legal</th><th class="text-end">Importe</th><th></th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @if (deduccionesEditando.Count == 0)
+                                                                    {
+                                                                        <tr><td colspan="5" class="text-center text-muted py-3">No hay deducciones capturadas.</td></tr>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        @foreach (var item in deduccionesEditando.OrderBy(d => d.Orden).ThenBy(d => d.TipoNombre))
+                                                                        {
+                                                                            <tr>
+                                                                                <td><InputSelect class="form-select form-select-sm" @bind-Value="item.TipoDeduccionId" @bind-Value:after="() => OnTipoDeduccionChanged(item)" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var tipo in tiposDeduccion) { <option value="@tipo.Id">@tipo.Nombre</option> }</InputSelect></td>
+                                                                                <td><InputText class="form-control form-control-sm" @bind-Value="item.Descripcion" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="item.EsRetencionLegal" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td class="text-end"><InputNumber class="form-control form-control-sm text-end" @bind-Value="item.Importe" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
+                                                                                <td class="text-end"><button class="btn btn-sm btn-outline-danger" @onclick="() => QuitarDeduccion(item)" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-trash"></i></button></td>
+                                                                            </tr>
+                                                                        }
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                        <div class="row g-2 mb-3">
+                                                            <div class="col-md-6">
+                                                                <select class="form-select form-select-sm" @bind="tipoDeduccionSeleccionadoId" disabled="@(!PuedeModificarNominaSeleccionada)">
+                                                                    <option value="">Seleccionar tipo...</option>
+                                                                    @foreach (var tipo in tiposDeduccion)
+                                                                    {
+                                                                        <option value="@tipo.Id">@tipo.Nombre</option>
+                                                                    }
+                                                                </select>
+                                                            </div>
+                                                            <div class="col-md-2">
+                                                                <button class="btn btn-sm btn-danger w-100" @onclick="AgregarDeduccion" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-plus"></i></button>
+                                                            </div>
+                                                        </div>
+                                                        <div class="d-flex gap-2">
+                                                        <button class="btn btn-danger" @onclick="GuardarDeduccionesDetalleAsync" disabled="@(guardando || !PuedeModificarNominaSeleccionada)"><i class="bi bi-save me-1"></i>Guardar deducciones</button>
+                                                            <button class="btn btn-outline-secondary" @onclick="CerrarEditorDeducciones" disabled="@guardando">Cancelar</button>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <div class="small text-muted me-auto">Los cambios del empleado se aplican con <strong>Guardar detalle</strong> o con los botones de percepciones y deducciones.</div>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="CerrarDetalleEmpleado">Cerrar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* ══ TABLA NÓMINAS ══ *@
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Folio</th><th>Nómina</th><th>Ciclo</th><th>Periodo</th><th>Inicio</th><th>Fin</th><th>Pago</th>
+                        <th class="text-center">Estatus</th><th class="text-end">Total</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var n in nominas)
+                    {
+                        var total = n.Detalles.Sum(d => d.TotalPagar);
+                        <tr class="@(nominaSeleccionada?.Id == n.Id ? "table-active" : "")">
+                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.Folio) ? "—" : n.Folio)</td>
+                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.NumeroNomina) ? "—" : n.NumeroNomina)</td>
+                            <td><span class="badge text-bg-light">@ObtenerClavePeriodo(n.PeriodicidadPago, n.AnioPeriodo, n.NumeroPeriodo)</span></td>
+                            <td class="fw-semibold">@n.Periodo</td>
+                            <td>@n.FechaInicio.ToString("dd/MM/yyyy")</td>
+                            <td>@n.FechaFin.ToString("dd/MM/yyyy")</td>
+                            <td>@(n.FechaPago?.ToString("dd/MM/yyyy") ?? "—")</td>
+                            <td class="text-center">
+                                <div class="d-flex flex-column align-items-center gap-1">
+                                    <span class="badge @EstatusBadge(n.Estatus)">@n.Estatus</span>
+                                    @if (RequiereActualizacionDesdePrenomina(n))
+                                    {
+                                        <span class="badge text-bg-warning">Prenómina cambió</span>
+                                    }
+                                </div>
+                            </td>
+                            <td class="text-end fw-bold">@total.ToString("C2")</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-info me-1" @onclick="() => VerDetalle(n)" title="Ver detalle"><i class="bi bi-eye"></i></button>
+                                @if (_puedeEditar && !EstaBloqueadaNomina(n.Estatus))
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarNomina(n)" title="Editar"><i class="bi bi-pencil"></i></button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+</div>
+
+@code {
+    private List<Nomina> nominas = [];
+    private List<NominaDetalle> detallesNomina = [];
+    private Dictionary<Guid, List<ValeResumenVm>> valesPorEmpleado = [];
+    private Dictionary<Guid, string> esquemaNombrePorId = [];
+    private List<Empleado> empleados = [];
+    private List<NominaPercepcionTipo> tiposPercepcion = [];
+    private List<DeduccionTipoRrhh> tiposDeduccion = [];
+    private NominaConfiguracion configuracionNomina = new();
+    private NominaCorteRrhh corteSemanal = new() { PeriodicidadPago = PeriodicidadPago.Semanal, DiaCorteSemana = DayOfWeek.Sunday, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteQuincenal = new() { PeriodicidadPago = PeriodicidadPago.Quincenal, DiaCorteMes = 15, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteMensual = new() { PeriodicidadPago = PeriodicidadPago.Mensual, DiaCorteMes = 31, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private DateTime fechaReferenciaNomina = DateTime.Today;
+    private List<FestivoRrhh> festivosPeriodo = [];
+    private Dictionary<Guid, List<FestivoAplicadoVm>> festivosAplicadosPorEmpleado = [];
+    private NominaDetalle? detalleModalSeleccionado;
+    private Nomina editando = new();
+    private NominaDetalle editandoDetalle = new();
+    private NominaDetalle? detallePercepcionSeleccionado;
+    private NominaDetalle? detalleDeduccionSeleccionado;
+    private List<PercepcionManualEditor> percepcionesEditando = [];
+    private string tipoPercepcionSeleccionadoId = string.Empty;
+    private List<DeduccionEditor> deduccionesEditando = [];
+    private string tipoDeduccionSeleccionadoId = string.Empty;
+    private Nomina? nominaSeleccionada;
+    private NominaResumenResult resumenNomina = new();
+    private bool mostrarForm, mostrarFormDetalle, guardando;
+    private string? error, ok;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _nominaEditandoBloqueada;
+    private Guid _empresaId;
+    private ReglasPrenominaConfiguracion reglasPrenomina = new();
+    private decimal TotalPercepcionesManualesEditando => percepcionesEditando.Sum(p => p.Importe);
+    private decimal TotalDeduccionesEditando => deduccionesEditando.Sum(d => d.Importe);
+    private bool PuedeModificarNominaEditando => _puedeEditar && !_nominaEditandoBloqueada;
+    private bool PuedeModificarNominaSeleccionada => _puedeEditar && nominaSeleccionada is not null && !EstaBloqueadaNomina(nominaSeleccionada.Estatus);
+    private bool NominaSeleccionadaRequiereActualizacionPrenomina => nominaSeleccionada is not null && RequiereActualizacionDesdePrenomina(nominaSeleccionada);
+    private static IReadOnlyList<PeriodicidadPago> PeriodicidadesDisponibles { get; } = [PeriodicidadPago.Semanal, PeriodicidadPago.Quincenal, PeriodicidadPago.Mensual];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAcceso();
+        if (_puedeVer)
+        {
+            await CargarConfiguracionNominaAsync();
+            await Cargar();
+        }
+    }
+
+    private async Task CargarConfiguracionNominaAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracionNomina = await NominaConfiguracionLoader.LoadAsync(db);
+        reglasPrenomina = configuracionNomina.ObtenerReglasPrenomina();
+
+        corteSemanal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Semanal, 31);
+        corteQuincenal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Quincenal, 15);
+        corteMensual = await CargarCortePeriodoAsync(db, PeriodicidadPago.Mensual, 31);
+    }
+
+    private async Task CargarAcceso()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "nominas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task Cargar()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        nominas = await db.Nominas.Include(n => n.Detalles).Include(n => n.Prenomina).OrderByDescending(n => n.FechaInicio).AsNoTracking().ToListAsync();
+        empleados = await db.Empleados.Where(e => e.IsActive).OrderBy(e => e.Nombre).AsNoTracking().ToListAsync();
+        esquemaNombrePorId = await db.EsquemasPago.AsNoTracking().ToDictionaryAsync(e => e.Id, e => e.Nombre);
+        tiposPercepcion = await db.NominasPercepcionesTipos.Where(t => t.IsActive).OrderBy(t => t.Orden).ThenBy(t => t.Nombre).AsNoTracking().ToListAsync();
+        tiposDeduccion = await db.DeduccionesTiposRrhh.Where(t => t.IsActive).OrderBy(t => t.Orden).ThenBy(t => t.Nombre).AsNoTracking().ToListAsync();
+    }
+
+    private async Task CargarDetalles()
+    {
+        if (nominaSeleccionada == null)
+        {
+            detallesNomina = [];
+            RecalcularResumenNomina();
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        detallesNomina = await db.NominaDetalles
+            .Include(d => d.Empleado)
+                .ThenInclude(e => e.Posicion)
+                    .ThenInclude(p => p!.BonoEstructuraRrhh)
+                        .ThenInclude(e => e!.Detalles)
+                            .ThenInclude(d => d.BonoRubroRrhh)
+            .Where(d => d.NominaId == nominaSeleccionada.Id)
+            .OrderBy(d => d.Empleado.Nombre)
+            .AsNoTracking()
+            .ToListAsync();
+        await CargarFestivosAplicadosAsync(nominaSeleccionada.FechaInicio, nominaSeleccionada.FechaFin, detallesNomina.Select(d => d.EmpleadoId));
+        RecalcularResumenNomina();
+    }
+
+    private async Task CargarDesgloseValesAsync()
+    {
+        valesPorEmpleado = [];
+
+        if (nominaSeleccionada == null)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var inicio = nominaSeleccionada.FechaInicio.Date;
+        var fin = nominaSeleccionada.FechaFin.Date;
+
+        var vales = await db.ValesDestajo
+            .Include(v => v.Detalles).ThenInclude(d => d.TipoProceso)
+            .Include(v => v.Detalles).ThenInclude(d => d.RegistrosOrigen)
+            .Where(v => v.IsActive
+                && (v.Estatus == EstatusValeDestajo.Aprobado
+                    || v.Estatus == EstatusValeDestajo.EnNomina
+                    || v.Estatus == EstatusValeDestajo.Pagado)
+                && v.Fecha >= inicio && v.Fecha <= fin)
+            .OrderBy(v => v.EmpleadoId)
+            .ThenBy(v => v.Fecha)
+            .AsNoTracking()
+            .ToListAsync();
+
+        valesPorEmpleado = vales
+            .GroupBy(v => v.EmpleadoId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(v => new ValeResumenVm
+                {
+                    Folio = v.Folio,
+                    Fecha = v.Fecha,
+                    TotalPiezas = v.Detalles.Sum(d => d.Cantidad),
+                    TotalImporte = v.Detalles.Sum(d => d.Importe),
+                    RegistrosOrigen = v.Detalles.Sum(d => d.RegistrosOrigen.Count),
+                    Resumen = string.Join(" + ", v.Detalles.Select(d => $"{d.TipoProceso?.Nombre} {d.Cantidad}pz"))
+                }).ToList());
+    }
+
+    private async Task NuevaNomina()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para crear nóminas.";
+            return;
+        }
+
+        error = ok = null;
+        editando = new()
+        {
+            Id = Guid.Empty,
+            Folio = null,
+            PeriodicidadPago = PeriodicidadPago.Semanal
+        };
+        fechaReferenciaNomina = DateTime.Today;
+        _nominaEditandoBloqueada = false;
+        await AplicarPeriodoNominaAsync(editando.PeriodicidadPago, fechaReferenciaNomina);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existente = await BuscarNominaExistenteAsync(db, editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo);
+        if (existente != null)
+        {
+            await EditarNomina(existente);
+            ok = $"Ya existe una nómina activa para el ciclo {ObtenerClavePeriodo(existente.PeriodicidadPago, existente.AnioPeriodo, existente.NumeroPeriodo)}. Se abrió el registro actual.";
+            return;
+        }
+
+        mostrarForm = true;
+    }
+
+    private async Task EditarNomina(Nomina n)
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar nóminas.";
+            return;
+        }
+
+        if (EstaBloqueadaNomina(n.Estatus))
+        {
+            error = ObtenerMensajeBloqueoNomina(n.Estatus);
+            return;
+        }
+
+        error = ok = null;
+        _nominaEditandoBloqueada = false;
+        editando = new()
+        {
+            Id = n.Id, Folio = n.Folio, NumeroNomina = n.NumeroNomina, PeriodicidadPago = n.PeriodicidadPago, AnioPeriodo = n.AnioPeriodo, NumeroPeriodo = n.NumeroPeriodo, Periodo = n.Periodo, FechaInicio = n.FechaInicio,
+            FechaFin = n.FechaFin, FechaPago = n.FechaPago,
+            Estatus = n.Estatus, Notas = n.Notas
+        };
+        await CargarFestivosPeriodoAsync(n.FechaInicio, n.FechaFin);
+        mostrarForm = true;
+    }
+
+    private async Task VerDetalle(Nomina n)
+    {
+        nominaSeleccionada = n;
+        detalleModalSeleccionado = null;
+        detallePercepcionSeleccionado = null;
+        percepcionesEditando = [];
+        tipoPercepcionSeleccionadoId = string.Empty;
+        detalleDeduccionSeleccionado = null;
+        deduccionesEditando = [];
+        tipoDeduccionSeleccionadoId = string.Empty;
+        await CargarFestivosPeriodoAsync(n.FechaInicio, n.FechaFin);
+        await CargarDetalles();
+        await CargarDesgloseValesAsync();
+        mostrarForm = false;
+    }
+
+    private void AbrirDistribucionBonos(NominaDetalle detalle)
+    {
+        error = ok = null;
+        if (nominaSeleccionada == null)
+            return;
+
+        var estructura = detalle.Empleado.Posicion?.BonoEstructuraRrhh;
+        if (detalle.Empleado.PosicionId is not Guid posicionId || estructura?.TipoCaptura != TipoCapturaBonoNomina.TotalDistribuido)
+        {
+            error = "Este empleado no usa bono distribuido. La distribución solo aplica a posiciones con esquema total distribuido.";
+            return;
+        }
+
+        var inicio = Uri.EscapeDataString(nominaSeleccionada.FechaInicio.ToString("yyyy-MM-dd"));
+        var fin = Uri.EscapeDataString(nominaSeleccionada.FechaFin.ToString("yyyy-MM-dd"));
+        var empleadoId = Uri.EscapeDataString(detalle.EmpleadoId.ToString());
+        var posicion = Uri.EscapeDataString(posicionId.ToString());
+        Navigation.NavigateTo($"/rrhh/bonos-distribuidos?inicio={inicio}&fin={fin}&posicionId={posicion}&empleadoId={empleadoId}&autocargar=true");
+    }
+
+    private async Task EditarPercepcionesDetalleAsync(NominaDetalle detalle)
+    {
+        error = ok = null;
+        detalleDeduccionSeleccionado = null;
+        deduccionesEditando = [];
+        tipoDeduccionSeleccionadoId = string.Empty;
+        detallePercepcionSeleccionado = detalle;
+        tipoPercepcionSeleccionadoId = string.Empty;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var percepciones = await db.NominasPercepciones
+            .AsNoTracking()
+            .Include(p => p.TipoPercepcion)
+            .Where(p => p.NominaDetalleId == detalle.Id && p.IsActive)
+            .OrderBy(p => p.CreatedAt)
+            .ToListAsync();
+
+        percepcionesEditando = percepciones.Select((p, index) => new PercepcionManualEditor
+        {
+            Id = p.Id,
+            TipoPercepcionId = p.TipoPercepcionId,
+            TipoNombre = p.TipoPercepcion.Nombre,
+            Descripcion = p.Descripcion,
+            Referencia = p.Referencia,
+            Importe = p.Importe,
+            Origen = p.Origen,
+            Observaciones = p.Observaciones,
+            Orden = index + 1
+        }).ToList();
+    }
+
+    private async Task EditarDeduccionesDetalleAsync(NominaDetalle detalle)
+    {
+        error = ok = null;
+        detallePercepcionSeleccionado = null;
+        percepcionesEditando = [];
+        tipoPercepcionSeleccionadoId = string.Empty;
+        detalleDeduccionSeleccionado = detalle;
+        tipoDeduccionSeleccionadoId = string.Empty;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var deducciones = await db.NominasDeducciones
+            .AsNoTracking()
+            .Include(d => d.TipoDeduccion)
+            .Where(d => d.NominaDetalleId == detalle.Id && d.IsActive)
+            .OrderBy(d => d.CreatedAt)
+            .ToListAsync();
+
+        deduccionesEditando = deducciones.Select((d, index) => new DeduccionEditor
+        {
+            Id = d.Id,
+            TipoDeduccionId = d.TipoDeduccionId,
+            TipoNombre = d.TipoDeduccion.Nombre,
+            Descripcion = d.Descripcion,
+            Importe = d.Importe,
+            EsRetencionLegal = d.EsRetencionLegal,
+            Observaciones = d.Observaciones,
+            Orden = index + 1
+        }).ToList();
+    }
+
+    private void AgregarPercepcionManual()
+    {
+        if (!PuedeModificarNominaSeleccionada)
+            return;
+
+        if (!Guid.TryParse(tipoPercepcionSeleccionadoId, out var tipoId))
+            return;
+
+        var tipo = tiposPercepcion.FirstOrDefault(t => t.Id == tipoId);
+        if (tipo == null)
+            return;
+
+        percepcionesEditando.Add(new PercepcionManualEditor
+        {
+            TipoPercepcionId = tipo.Id,
+            TipoNombre = tipo.Nombre,
+            Descripcion = tipo.Nombre,
+            Origen = OrigenPercepcionNomina.Manual,
+            Orden = percepcionesEditando.Count + 1
+        });
+
+        tipoPercepcionSeleccionadoId = string.Empty;
+    }
+
+    private void QuitarPercepcionManual(PercepcionManualEditor item)
+    {
+        if (!PuedeModificarNominaSeleccionada)
+            return;
+
+        percepcionesEditando.Remove(item);
+        for (var i = 0; i < percepcionesEditando.Count; i++)
+            percepcionesEditando[i].Orden = i + 1;
+    }
+
+    private Task OnTipoPercepcionChanged(PercepcionManualEditor item)
+    {
+        var tipo = tiposPercepcion.FirstOrDefault(t => t.Id == item.TipoPercepcionId);
+        if (tipo != null)
+            item.TipoNombre = tipo.Nombre;
+
+        return Task.CompletedTask;
+    }
+
+    private void AgregarDeduccion()
+    {
+        if (!PuedeModificarNominaSeleccionada)
+            return;
+
+        if (!Guid.TryParse(tipoDeduccionSeleccionadoId, out var tipoId))
+            return;
+
+        var tipo = tiposDeduccion.FirstOrDefault(t => t.Id == tipoId);
+        if (tipo == null)
+            return;
+
+        deduccionesEditando.Add(new DeduccionEditor
+        {
+            TipoDeduccionId = tipo.Id,
+            TipoNombre = tipo.Nombre,
+            Descripcion = tipo.Nombre,
+            EsRetencionLegal = tipo.EsLegal,
+            Orden = deduccionesEditando.Count + 1
+        });
+
+        tipoDeduccionSeleccionadoId = string.Empty;
+    }
+
+    private void QuitarDeduccion(DeduccionEditor item)
+    {
+        if (!PuedeModificarNominaSeleccionada)
+            return;
+
+        deduccionesEditando.Remove(item);
+        for (var i = 0; i < deduccionesEditando.Count; i++)
+            deduccionesEditando[i].Orden = i + 1;
+    }
+
+    private Task OnTipoDeduccionChanged(DeduccionEditor item)
+    {
+        var tipo = tiposDeduccion.FirstOrDefault(t => t.Id == item.TipoDeduccionId);
+        if (tipo != null)
+        {
+            item.TipoNombre = tipo.Nombre;
+            item.EsRetencionLegal = tipo.EsLegal;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarPercepcionesDetalleAsync()
+    {
+        if (detallePercepcionSeleccionado == null)
+            return;
+
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nominaActual = await db.NominaDetalles
+                .Where(d => d.Id == detallePercepcionSeleccionado.Id)
+                .Join(db.Nominas, d => d.NominaId, n => n.Id, (d, n) => n)
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+
+            if (nominaActual == null)
+            {
+                error = "No se encontró la nómina del detalle.";
+                return;
+            }
+
+            if (EstaBloqueadaNomina(nominaActual.Estatus))
+            {
+                error = ObtenerMensajeBloqueoNomina(nominaActual.Estatus);
+                return;
+            }
+
+            var existentes = await db.NominasPercepciones
+                .Where(p => p.NominaDetalleId == detallePercepcionSeleccionado.Id)
+                .ToListAsync();
+
+            var idsEditor = percepcionesEditando.Where(p => p.Id != Guid.Empty).Select(p => p.Id).ToHashSet();
+            var eliminar = existentes.Where(p => !idsEditor.Contains(p.Id)).ToList();
+            if (eliminar.Count > 0)
+                db.NominasPercepciones.RemoveRange(eliminar);
+
+            foreach (var item in percepcionesEditando)
+            {
+                if (item.Importe < 0)
+                {
+                    error = "Las percepciones manuales no pueden tener importe negativo.";
+                    return;
+                }
+
+                var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(p => p.Id == item.Id);
+                if (entity == null)
+                {
+                    entity = new NominaPercepcion
+                    {
+                        EmpresaId = _empresaId,
+                        NominaDetalleId = detallePercepcionSeleccionado.Id,
+                        TipoPercepcionId = item.TipoPercepcionId,
+                        Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
+                        Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim(),
+                        Importe = item.Importe,
+                        Origen = item.Origen,
+                        Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    };
+                    db.NominasPercepciones.Add(entity);
+                }
+                else
+                {
+                    entity.TipoPercepcionId = item.TipoPercepcionId;
+                    entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
+                    entity.Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim();
+                    entity.Importe = item.Importe;
+                    entity.Origen = item.Origen;
+                    entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
+                    entity.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            var nominaDetalle = await db.NominaDetalles.FirstAsync(d => d.Id == detallePercepcionSeleccionado.Id);
+            nominaDetalle.Bonos = TotalPercepcionesManualesEditando;
+
+            await db.SaveChangesAsync();
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+
+            detallePercepcionSeleccionado = detallesNomina.FirstOrDefault(d => d.Id == detallePercepcionSeleccionado.Id);
+            if (detallePercepcionSeleccionado != null)
+                await EditarPercepcionesDetalleAsync(detallePercepcionSeleccionado);
+
+            ok = "Percepciones manuales guardadas.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task GuardarDeduccionesDetalleAsync()
+    {
+        if (detalleDeduccionSeleccionado == null)
+            return;
+
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nominaActual = await db.NominaDetalles
+                .Where(d => d.Id == detalleDeduccionSeleccionado.Id)
+                .Join(db.Nominas, d => d.NominaId, n => n.Id, (d, n) => n)
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+
+            if (nominaActual == null)
+            {
+                error = "No se encontró la nómina del detalle.";
+                return;
+            }
+
+            if (EstaBloqueadaNomina(nominaActual.Estatus))
+            {
+                error = ObtenerMensajeBloqueoNomina(nominaActual.Estatus);
+                return;
+            }
+
+            var existentes = await db.NominasDeducciones
+                .Where(d => d.NominaDetalleId == detalleDeduccionSeleccionado.Id)
+                .ToListAsync();
+
+            var idsEditor = deduccionesEditando.Where(d => d.Id != Guid.Empty).Select(d => d.Id).ToHashSet();
+            var eliminar = existentes.Where(d => !idsEditor.Contains(d.Id)).ToList();
+            if (eliminar.Count > 0)
+                db.NominasDeducciones.RemoveRange(eliminar);
+
+            foreach (var item in deduccionesEditando)
+            {
+                if (item.Importe < 0)
+                {
+                    error = "Las deducciones no pueden tener importe negativo.";
+                    return;
+                }
+
+                var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(d => d.Id == item.Id);
+                if (entity == null)
+                {
+                    entity = new NominaDeduccion
+                    {
+                        EmpresaId = _empresaId,
+                        NominaDetalleId = detalleDeduccionSeleccionado.Id,
+                        TipoDeduccionId = item.TipoDeduccionId,
+                        Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
+                        Importe = item.Importe,
+                        EsRetencionLegal = item.EsRetencionLegal,
+                        Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    };
+                    db.NominasDeducciones.Add(entity);
+                }
+                else
+                {
+                    entity.TipoDeduccionId = item.TipoDeduccionId;
+                    entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
+                    entity.Importe = item.Importe;
+                    entity.EsRetencionLegal = item.EsRetencionLegal;
+                    entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
+                    entity.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            var nominaDetalle = await db.NominaDetalles.FirstAsync(d => d.Id == detalleDeduccionSeleccionado.Id);
+            nominaDetalle.Deducciones = TotalDeduccionesEditando;
+            nominaDetalle.ConceptoDeducciones = deduccionesEditando.Count switch
+            {
+                0 => null,
+                1 => deduccionesEditando[0].TipoNombre,
+                _ => "Deducciones estructuradas"
+            };
+
+            await db.SaveChangesAsync();
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+
+            detalleDeduccionSeleccionado = detallesNomina.FirstOrDefault(d => d.Id == detalleDeduccionSeleccionado.Id);
+            if (detalleDeduccionSeleccionado != null)
+                await EditarDeduccionesDetalleAsync(detalleDeduccionSeleccionado);
+
+            ok = "Deducciones estructuradas guardadas.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task CargarTiposDeduccionBaseAsync()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (!await db.DeduccionesTiposRrhh.AnyAsync(t => t.IsActive))
+            {
+                var tiposBase = new[]
+                {
+                    new DeduccionTipoRrhh { Clave = "INFONAVIT", Nombre = "Infonavit", EsLegal = true, AfectaRecibo = true, Orden = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new DeduccionTipoRrhh { Clave = "PRESTAMO", Nombre = "Préstamo", EsLegal = false, AfectaRecibo = true, Orden = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new DeduccionTipoRrhh { Clave = "CAJA_AHORRO", Nombre = "Caja de ahorro", EsLegal = false, AfectaRecibo = true, Orden = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new DeduccionTipoRrhh { Clave = "HERRAMIENTA", Nombre = "Herramienta", EsLegal = false, AfectaRecibo = true, Orden = 4, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new DeduccionTipoRrhh { Clave = "PENSION", Nombre = "Pensión alimenticia", EsLegal = true, AfectaRecibo = true, Orden = 5, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new DeduccionTipoRrhh { Clave = "OTRAS", Nombre = "Otras deducciones", EsLegal = false, AfectaRecibo = true, Orden = 6, CreatedAt = DateTime.UtcNow, IsActive = true }
+                };
+
+                db.DeduccionesTiposRrhh.AddRange(tiposBase);
+                await db.SaveChangesAsync();
+            }
+
+            await Cargar();
+            ok = "Tipos base de deducción cargados.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task CargarTiposPercepcionBaseAsync()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (!await db.NominasPercepcionesTipos.AnyAsync(t => t.IsActive))
+            {
+                var tiposBase = new[]
+                {
+                    new NominaPercepcionTipo { Clave = "COMISION", Nombre = "Comisión", Categoria = CategoriaPercepcionNomina.Comision, AfectaBaseImss = true, AfectaBaseIsr = true, Orden = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new NominaPercepcionTipo { Clave = "DESTAJO_MANUAL", Nombre = "Destajo manual", Categoria = CategoriaPercepcionNomina.DestajoManual, AfectaBaseImss = true, AfectaBaseIsr = true, Orden = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new NominaPercepcionTipo { Clave = "BONO_MANUAL", Nombre = "Bono manual", Categoria = CategoriaPercepcionNomina.BonoManual, AfectaBaseImss = true, AfectaBaseIsr = true, Orden = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new NominaPercepcionTipo { Clave = "OTRO_INGRESO", Nombre = "Otro ingreso", Categoria = CategoriaPercepcionNomina.OtroIngreso, AfectaBaseImss = true, AfectaBaseIsr = true, Orden = 4, CreatedAt = DateTime.UtcNow, IsActive = true }
+                };
+
+                db.NominasPercepcionesTipos.AddRange(tiposBase);
+                await db.SaveChangesAsync();
+            }
+
+            await Cargar();
+            ok = "Tipos base de percepción cargados.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static void SincronizarBonosDistribuidos(CrmDbContext db, List<NominaBono> existentes, NominaDetalle detalle, BonoDistribucionEmpleadoRrhh distribucion, Guid empresaId)
+    {
+        var montoAsignado = distribucion.Detalles.Where(d => d.IsActive).Sum(d => d.MontoAsignado);
+        var actual = existentes.FirstOrDefault(b => b.NominaDetalleId == detalle.Id);
+        if (actual == null)
+        {
+            actual = new NominaBono
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresaId,
+                NominaDetalleId = detalle.Id,
+                TipoCaptura = TipoCapturaBonoNomina.TotalDistribuido,
+                MontoTotal = montoAsignado,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true,
+                Detalles = []
+            };
+            db.NominasBonos.Add(actual);
+            existentes.Add(actual);
+        }
+
+        actual.TipoCaptura = TipoCapturaBonoNomina.TotalDistribuido;
+        actual.MontoTotal = montoAsignado;
+        actual.IsActive = true;
+        actual.UpdatedAt = DateTime.UtcNow;
+
+        var detallesActuales = actual.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
+        var rubrosDistribuidos = distribucion.Detalles
+            .Where(d => d.IsActive && d.BonoRubroRrhh.IsActive)
+            .OrderBy(d => d.Orden)
+            .ThenBy(d => d.BonoRubroRrhh.Nombre)
+            .ToList();
+
+        foreach (var eliminar in actual.Detalles.Where(d => rubrosDistribuidos.All(r => r.BonoRubroRrhhId != d.BonoRubroRrhhId)).ToList())
+            db.NominasBonosDetalle.Remove(eliminar);
+
+        var orden = 1;
+        foreach (var rubro in rubrosDistribuidos)
+        {
+            if (!detallesActuales.TryGetValue(rubro.BonoRubroRrhhId, out var detalleBono))
+            {
+                detalleBono = new NominaBonoDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    NominaBono = actual,
+                    BonoRubroRrhhId = rubro.BonoRubroRrhhId,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasBonosDetalle.Add(detalleBono);
+                actual.Detalles.Add(detalleBono);
+            }
+
+            detalleBono.Porcentaje = rubro.Porcentaje;
+            detalleBono.Importe = rubro.MontoAsignado;
+            detalleBono.Orden = orden++;
+            detalleBono.IsActive = true;
+            detalleBono.UpdatedAt = DateTime.UtcNow;
+        }
+
+        detalle.MontoBono = montoAsignado;
+    }
+
+    private async Task CargarRubrosBaseAsync()
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (!await db.BonosRubrosRrhh.AnyAsync(r => r.IsActive))
+            {
+                var baseRubros = new[]
+                {
+                    new BonoRubroRrhh { EmpresaId = _empresaId, Clave = "PUNTUALIDAD", Nombre = "Puntualidad", Orden = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new BonoRubroRrhh { EmpresaId = _empresaId, Clave = "ASISTENCIA", Nombre = "Asistencia", Orden = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new BonoRubroRrhh { EmpresaId = _empresaId, Clave = "PRODUCTIVIDAD", Nombre = "Productividad", Orden = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new BonoRubroRrhh { EmpresaId = _empresaId, Clave = "CALIDAD", Nombre = "Calidad", Orden = 4, CreatedAt = DateTime.UtcNow, IsActive = true },
+                    new BonoRubroRrhh { EmpresaId = _empresaId, Clave = "META", Nombre = "Meta semanal", Orden = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+                };
+
+                db.BonosRubrosRrhh.AddRange(baseRubros);
+                await db.SaveChangesAsync();
+            }
+
+            await Cargar();
+            ok = "Rubros base de bono cargados.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void CerrarEditorPercepciones()
+    {
+        detallePercepcionSeleccionado = null;
+        percepcionesEditando = [];
+        tipoPercepcionSeleccionadoId = string.Empty;
+    }
+
+    private void CerrarEditorDeducciones()
+    {
+        detalleDeduccionSeleccionado = null;
+        deduccionesEditando = [];
+        tipoDeduccionSeleccionadoId = string.Empty;
+    }
+
+    private async Task ImprimirTodosRecibos()
+    {
+        if (nominaSeleccionada == null || detallesNomina.Count == 0)
+        {
+            return;
+        }
+
+        await JSRuntime.InvokeVoidAsync("open", $"/api/nomina/{nominaSeleccionada.Id}/recibos/pdf", "_blank");
+    }
+
+    private async Task OnPeriodicidadNominaChangedAsync()
+    {
+        if (editando.Id != Guid.Empty)
+            return;
+
+        await AplicarPeriodoNominaAsync(editando.PeriodicidadPago, fechaReferenciaNomina);
+    }
+
+    private async Task OnFechaReferenciaNominaChangedAsync()
+    {
+        if (editando.Id != Guid.Empty)
+            return;
+
+        await AplicarPeriodoNominaAsync(editando.PeriodicidadPago, fechaReferenciaNomina);
+    }
+
+    private async Task CargarFestivosPeriodoAsync(DateTime inicio, DateTime fin)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        festivosPeriodo = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive && f.Fecha >= inicio.Date && f.Fecha <= fin.Date)
+            .OrderBy(f => f.Fecha)
+            .ToListAsync();
+    }
+
+    private async Task CargarFestivosAplicadosAsync(DateTime inicio, DateTime fin, IEnumerable<Guid> empleadoIds)
+    {
+        var ids = empleadoIds.Distinct().Where(id => id != Guid.Empty).ToList();
+        if (ids.Count == 0)
+        {
+            festivosAplicadosPorEmpleado = [];
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var festivosPorFecha = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive && f.Fecha >= inicio.Date && f.Fecha <= fin.Date && f.AplicaPrimaEspecial)
+            .GroupBy(f => DateOnly.FromDateTime(f.Fecha.Date))
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.OrderByDescending(f => f.FactorPago).First());
+
+        if (festivosPorFecha.Count == 0)
+        {
+            festivosAplicadosPorEmpleado = [];
+            return;
+        }
+
+        var fechasFestivas = festivosPorFecha.Keys.ToHashSet();
+        var asistencias = await db.RrhhAsistencias
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.EmpleadoId)
+                && a.Fecha >= DateOnly.FromDateTime(inicio)
+                && a.Fecha <= DateOnly.FromDateTime(fin)
+                && fechasFestivas.Contains(a.Fecha)
+                && (a.Estatus == RrhhAsistenciaEstatus.AsistenciaNormal
+                    || a.Estatus == RrhhAsistenciaEstatus.Retardo
+                    || a.Estatus == RrhhAsistenciaEstatus.Incompleta
+                    || a.Estatus == RrhhAsistenciaEstatus.DescansoTrabajado))
+            .Select(a => new { a.EmpleadoId, a.Fecha })
+            .ToListAsync();
+
+        festivosAplicadosPorEmpleado = asistencias
+            .GroupBy(a => a.EmpleadoId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(a => a.Fecha)
+                    .Select(a =>
+                    {
+                        var festivo = festivosPorFecha[a.Fecha];
+                        var usaFallback = festivo.FactorPago <= 0m;
+                        return new FestivoAplicadoVm
+                        {
+                            Fecha = a.Fecha,
+                            Nombre = festivo.Nombre,
+                            Factor = configuracionNomina.ObtenerFactorFestivoTrabajado(festivo.FactorPago),
+                            UsaFallback = usaFallback
+                        };
+                    })
+                    .ToList());
+    }
+
+    private async Task RecalcularNominaSeleccionada()
+    {
+        if (nominaSeleccionada == null)
+        {
+            return;
+        }
+
+        if (!PuedeModificarNominaSeleccionada)
+        {
+            error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+            ok = null;
+            return;
+        }
+
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            await SincronizarNominaAsync(nominaSeleccionada.Id);
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+            ok = "Nómina recalculada con sueldo base y vales de destajo.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void AgregarEmpleado()
+    {
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para modificar nóminas.";
+            return;
+        }
+
+        if (nominaSeleccionada != null && EstaBloqueadaNomina(nominaSeleccionada.Estatus))
+        {
+            error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+            return;
+        }
+
+        error = ok = null;
+        editandoDetalle = new();
+        mostrarFormDetalle = true;
+    }
+
+    private async Task OnEmpleadoSeleccionado(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var empId))
+        {
+            editandoDetalle.EmpleadoId = empId;
+            var emp = empleados.FirstOrDefault(x => x.Id == empId);
+            if (emp != null)
+            {
+                var diasPeriodo = Math.Max(1, ((nominaSeleccionada?.FechaFin ?? DateTime.Today).Date - (nominaSeleccionada?.FechaInicio ?? DateTime.Today).Date).Days + 1);
+                editandoDetalle.SueldoBase = NominaLegalPolicy.CalcularSueldoBasePeriodo(emp, null, diasPeriodo, configuracionNomina);
+            }
+        }
+    }
+
+    private async Task SincronizarNominaAsync(Guid nominaId, Guid? prenominaAnteriorId = null)
+    {
+        await CargarConfiguracionNominaAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var nomina = await db.Nominas.FirstOrDefaultAsync(n => n.Id == nominaId);
+        if (nomina == null)
+        {
+            return;
+        }
+
+        var inicio = nomina.FechaInicio.Date;
+        var fin = nomina.FechaFin.Date;
+
+        var prenomina = await ObtenerPrenominaParaNominaAsync(db, nomina.EmpresaId, nomina.PeriodicidadPago, nomina.AnioPeriodo, nomina.NumeroPeriodo);
+        if (prenomina == null)
+        {
+            throw new InvalidOperationException(ObtenerMensajePrenominaRequerida());
+        }
+
+        prenomina = await db.Prenominas
+            .Include(p => p.Detalles)
+                .ThenInclude(d => d.BonosRapidos)
+                    .ThenInclude(b => b.BonoRubroRrhh)
+            .Include(p => p.Detalles)
+                .ThenInclude(d => d.PercepcionesRapidas)
+                    .ThenInclude(p => p.TipoPercepcion)
+            .FirstOrDefaultAsync(p => p.Id == prenomina.Id);
+
+        if (!string.IsNullOrWhiteSpace(prenomina.SnapshotConfiguracionJson))
+        {
+            try
+            {
+                var snapshotConfig = System.Text.Json.JsonSerializer.Deserialize<NominaConfiguracion>(prenomina.SnapshotConfiguracionJson);
+                if (snapshotConfig != null)
+                {
+                    configuracionNomina = snapshotConfig;
+                }
+            }
+            catch
+            {
+                // Si el snapshot no se puede deserializar, se mantiene la configuración viva cargada arriba.
+            }
+        }
+
+        nomina.PrenominaId = prenomina.Id;
+        await AplicarEstadoPrenominaDesdeNominaAsync(db, nomina, prenomina);
+        if (prenominaAnteriorId.HasValue && prenominaAnteriorId.Value != prenomina.Id)
+            await LiberarPrenominaAnteriorAsync(db, prenominaAnteriorId.Value, nomina.Id);
+
+        var prenominaPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d);
+
+        var empleadosActivos = await db.Empleados
+            .Where(e => e.IsActive && e.PeriodicidadPago == nomina.PeriodicidadPago)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ToListAsync();
+
+        var detallesExistentes = await db.NominaDetalles
+            .Where(d => d.NominaId == nominaId)
+            .ToListAsync();
+
+        var detallesPorEmpleado = detallesExistentes
+            .GroupBy(d => d.EmpleadoId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var detalleIdsExistentes = detallesExistentes.Select(d => d.Id).ToList();
+        var prenominaBonosPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d.BonosRapidos.Where(b => b.IsActive && b.Importe > 0).OrderBy(b => b.BonoRubroRrhh.Orden).ThenBy(b => b.BonoRubroRrhh.Nombre).ToList());
+        var prenominaPercepcionesPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d.PercepcionesRapidas.Where(p => p.IsActive && p.Importe > 0).OrderBy(p => p.TipoPercepcion.Orden).ThenBy(p => p.TipoPercepcion.Nombre).ToList());
+        var montoBonoPorDetalle = detalleIdsExistentes.Count == 0
+            ? new Dictionary<Guid, decimal>()
+            : await db.NominasBonos
+                .Include(b => b.Detalles)
+                .Where(b => b.IsActive && detalleIdsExistentes.Contains(b.NominaDetalleId))
+                .ToDictionaryAsync(b => b.NominaDetalleId, b => b.Detalles.Where(d => d.IsActive).Sum(d => d.Importe));
+        var montoPercepcionesPorDetalle = detalleIdsExistentes.Count == 0
+            ? new Dictionary<Guid, decimal>()
+            : await db.NominasPercepciones
+                .Where(p => p.IsActive && detalleIdsExistentes.Contains(p.NominaDetalleId))
+                .GroupBy(p => p.NominaDetalleId)
+                .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Importe));
+        var deduccionesPorDetalle = detalleIdsExistentes.Count == 0
+            ? new Dictionary<Guid, decimal>()
+            : await db.NominasDeducciones
+                .Where(d => d.IsActive && detalleIdsExistentes.Contains(d.NominaDetalleId))
+                .GroupBy(d => d.NominaDetalleId)
+                .ToDictionaryAsync(g => g.Key, g => g.Sum(d => d.Importe));
+        var conceptosDeduccionPorDetalle = detalleIdsExistentes.Count == 0
+            ? new Dictionary<Guid, string?>()
+            : await db.NominasDeducciones
+                .Include(d => d.TipoDeduccion)
+                .Where(d => d.IsActive && detalleIdsExistentes.Contains(d.NominaDetalleId))
+                .GroupBy(d => d.NominaDetalleId)
+                .ToDictionaryAsync(
+                    g => g.Key,
+                    g => g.Count() == 1
+                        ? g.Select(d => d.TipoDeduccion.Nombre).FirstOrDefault()
+                        : "Deducciones estructuradas");
+        var bonosNominaExistentes = detalleIdsExistentes.Count == 0
+            ? new List<NominaBono>()
+            : await db.NominasBonos
+                .Include(b => b.Detalles)
+                .Where(b => detalleIdsExistentes.Contains(b.NominaDetalleId))
+                .ToListAsync();
+        var bonosDistribuidosPeriodo = await db.BonosDistribucionesPeriodoRrhh
+            .AsNoTracking()
+            .Include(b => b.BonoEstructuraRrhh)
+                .ThenInclude(e => e.Detalles)
+                    .ThenInclude(d => d.BonoRubroRrhh)
+            .Include(b => b.Detalles)
+                .ThenInclude(d => d.Detalles)
+                    .ThenInclude(r => r.BonoRubroRrhh)
+            .Where(b => b.IsActive && b.FechaInicio == inicio && b.FechaFin == fin)
+            .ToListAsync();
+        var bonosDistribuidosPorEmpleado = bonosDistribuidosPeriodo
+            .SelectMany(b => b.Detalles.Where(d => d.IsActive), (b, d) => new { Captura = b, Detalle = d })
+            .ToDictionary(x => x.Detalle.EmpleadoId, x => x);
+        var percepcionesNominaExistentes = detalleIdsExistentes.Count == 0
+            ? new List<NominaPercepcion>()
+            : await db.NominasPercepciones
+                .Where(p => detalleIdsExistentes.Contains(p.NominaDetalleId))
+                .ToListAsync();
+        if (detalleIdsExistentes.Count > 0)
+        {
+            var movimientosBancoNomina = await db.RrhhBancoHorasMovimientos
+                .Where(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra
+                    && m.NominaDetalleId.HasValue
+                    && detalleIdsExistentes.Contains(m.NominaDetalleId.Value))
+                .ToListAsync();
+
+            if (movimientosBancoNomina.Count > 0)
+            {
+                db.RrhhBancoHorasMovimientos.RemoveRange(movimientosBancoNomina);
+            }
+        }
+
+        if (detalleIdsExistentes.Count > 0)
+        {
+            var valesLigadosActuales = await db.ValesDestajo
+                .Where(v => v.NominaDetalleId.HasValue
+                    && detalleIdsExistentes.Contains(v.NominaDetalleId.Value)
+                    && v.Estatus == EstatusValeDestajo.EnNomina)
+                .ToListAsync();
+
+            foreach (var vale in valesLigadosActuales)
+            {
+                vale.NominaDetalleId = null;
+                vale.Estatus = EstatusValeDestajo.Aprobado;
+                vale.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // Load approved vales for the period
+        var valesAprobados = await db.ValesDestajo
+            .Include(v => v.Detalles)
+            .Where(v => v.IsActive
+                && (v.Estatus == EstatusValeDestajo.Aprobado
+                    || (v.Estatus == EstatusValeDestajo.EnNomina
+                        && v.NominaDetalleId.HasValue
+                        && detalleIdsExistentes.Contains(v.NominaDetalleId.Value)))
+                && v.Fecha >= inicio && v.Fecha <= fin)
+            .ToListAsync();
+
+        var valesPorEmp = valesAprobados
+            .GroupBy(v => v.EmpleadoId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        // Load active scheme assignments
+        var asignaciones = await db.EmpleadosEsquemaPago
+            .Include(a => a.EsquemaPago)
+            .Where(a => a.VigenteDesde <= fin && (a.VigenteHasta == null || a.VigenteHasta >= inicio))
+            .ToListAsync();
+
+        var esquemaPorEmp = asignaciones
+            .GroupBy(a => a.EmpleadoId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.VigenteDesde).First());
+
+        var festivosPeriodo = await db.FestivosRrhh
+            .AsNoTracking()
+            .Where(f => f.IsActive && f.Fecha >= inicio && f.Fecha <= fin && f.AplicaPrimaEspecial)
+            .ToListAsync();
+
+        var factoresFestivoPorFecha = festivosPeriodo
+            .GroupBy(f => DateOnly.FromDateTime(f.Fecha.Date))
+            .ToDictionary(
+                g => g.Key,
+                g => configuracionNomina.ObtenerFactorFestivoTrabajado(g.OrderByDescending(f => f.FactorPago).Select(f => (decimal?)f.FactorPago).FirstOrDefault()));
+
+        var fechasFestivas = factoresFestivoPorFecha.Keys.ToList();
+        var sumaFactorFestivoPorEmpleado = new Dictionary<Guid, decimal>();
+        if (fechasFestivas.Count > 0)
+        {
+            var empleadoIds = empleadosActivos.Select(e => e.Id).ToList();
+            var asistenciasFestivoTrabajado = await db.RrhhAsistencias
+                .AsNoTracking()
+                .Where(a => empleadoIds.Contains(a.EmpleadoId)
+                    && a.Fecha >= DateOnly.FromDateTime(inicio)
+                    && a.Fecha <= DateOnly.FromDateTime(fin)
+                    && fechasFestivas.Contains(a.Fecha)
+                    && (a.Estatus == RrhhAsistenciaEstatus.AsistenciaNormal
+                        || a.Estatus == RrhhAsistenciaEstatus.Retardo
+                        || a.Estatus == RrhhAsistenciaEstatus.Incompleta
+                        || a.Estatus == RrhhAsistenciaEstatus.DescansoTrabajado))
+                .Select(a => new { a.EmpleadoId, a.Fecha })
+                .ToListAsync();
+
+            sumaFactorFestivoPorEmpleado = asistenciasFestivoTrabajado
+                .GroupBy(a => a.EmpleadoId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Sum(a => factoresFestivoPorFecha.TryGetValue(a.Fecha, out var factor) ? factor : configuracionNomina.ObtenerFactorFestivoTrabajado()));
+        }
+
+        foreach (var empleado in empleadosActivos)
+        {
+            var esNuevo = false;
+            if (!detallesPorEmpleado.TryGetValue(empleado.Id, out var detalle))
+            {
+                esNuevo = true;
+                detalle = new NominaDetalle
+                {
+                    NominaId = nominaId,
+                    EmpleadoId = empleado.Id
+                };
+
+                db.NominaDetalles.Add(detalle);
+                detallesPorEmpleado[empleado.Id] = detalle;
+            }
+
+            var asignacion = esquemaPorEmp.GetValueOrDefault(empleado.Id);
+            var esquema = asignacion?.EsquemaPago;
+            var incidencia = prenominaPorEmpleado.GetValueOrDefault(empleado.Id);
+            var diasPagados = incidencia?.DiasPagados ?? 0;
+            var diasTrabajados = incidencia?.DiasTrabajados ?? 0;
+            var diasVacaciones = incidencia?.DiasVacaciones ?? 0;
+            var horasExtra = incidencia?.HorasExtra ?? detalle.HorasExtra;
+            detalle.EsquemaPagoId = esquema?.Id;
+            detalle.TipoPago = empleado.TipoNomina;
+            detalle.DiasTrabajados = diasTrabajados;
+            detalle.DiasPagados = diasPagados;
+            detalle.DiasVacaciones = diasVacaciones;
+            detalle.DiasFaltaJustificada = incidencia?.DiasFaltaJustificada ?? 0;
+            detalle.DiasFaltaInjustificada = incidencia?.DiasFaltaInjustificada ?? 0;
+            detalle.DiasIncapacidad = incidencia?.DiasIncapacidad ?? 0;
+            detalle.DiasDescansoTrabajado = incidencia?.DiasDescansoTrabajado ?? 0;
+            detalle.DiasConMarcacion = incidencia?.DiasConMarcacion ?? 0;
+            detalle.DiasDomingoTrabajado = incidencia?.DiasDomingoTrabajado ?? 0;
+            detalle.DiasFestivoTrabajado = incidencia?.DiasFestivoTrabajado ?? 0;
+            detalle.HorasExtraBase = incidencia?.HorasExtraBase ?? detalle.HorasExtraBase;
+            detalle.HorasExtraBanco = incidencia?.HorasBancoAcumuladas ?? detalle.HorasExtraBanco;
+            detalle.MinutosRetardo = incidencia?.MinutosRetardo ?? 0;
+            detalle.MinutosSalidaAnticipada = incidencia?.MinutosSalidaAnticipada ?? 0;
+            detalle.MinutosDescuentoManual = incidencia?.MinutosDescuentoManual ?? 0;
+            detalle.AplicaImss = empleado.AplicaImss && (incidencia?.AplicaImss ?? true);
+            detalle.HorasExtra = horasExtra;
+
+            var sueldoReferencia = NominaLegalPolicy.ObtenerSueldoReferencia(empleado, asignacion);
+            var incluyeSueldoBase = NominaLegalPolicy.IncluyeSueldoBase(asignacion);
+            if (incluyeSueldoBase)
+            {
+                detalle.SueldoBase = NominaLegalPolicy.CalcularSueldoBasePeriodo(sueldoReferencia, empleado.PeriodicidadPago, diasPagados, configuracionNomina);
+            }
+            else
+            {
+                detalle.SueldoBase = 0;
+            }
+
+            if (valesPorEmp.TryGetValue(empleado.Id, out var valesEmp))
+            {
+                detalle.TotalPiezas = valesEmp.Sum(v => v.Detalles.Sum(d => d.Cantidad));
+                detalle.MontoDestajo = valesEmp.Sum(v => v.Detalles.Sum(d => d.Importe));
+
+                // Link vales to this detalle and set status
+                foreach (var vale in valesEmp.Where(v => v.Estatus == EstatusValeDestajo.Aprobado))
+                {
+                    vale.NominaDetalleId = detalle.Id;
+                    vale.Estatus = EstatusValeDestajo.EnNomina;
+                }
+            }
+            else
+            {
+                detalle.TotalPiezas = 0;
+                detalle.MontoDestajo = 0;
+            }
+
+            detalle.ComplementoSalarioMinimo = NominaLegalPolicy.CalcularComplementoSalarioMinimo(detalle.SueldoBase, detalle.MontoDestajo, diasPagados, configuracionNomina);
+
+            var bonosPrenomina = prenominaBonosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
+            var bonoDistribuido = bonosDistribuidosPorEmpleado.GetValueOrDefault(empleado.Id);
+            var percepcionesPrenomina = prenominaPercepcionesPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
+            var montoBono = bonosPrenomina.Count > 0
+                ? bonosPrenomina.Sum(b => b.Importe)
+                : bonoDistribuido?.Detalle.MontoAsignado ?? montoBonoPorDetalle.GetValueOrDefault(detalle.Id);
+            var percepcionesManual = percepcionesPrenomina.Count > 0 ? percepcionesPrenomina.Sum(p => p.Importe) : montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual) ? totalPercepcionesManual : detalle.Bonos;
+            var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : detalle.Deducciones;
+            detalle.ConceptoDeducciones = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : detalle.ConceptoDeducciones;
+            var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
+            var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
+                ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
+                : configuracionNomina.ObtenerFactorFestivoTrabajado();
+
+            var aniosServicio = CalcularAniosServicio(empleado, fin);
+            var horasExtraBase = Math.Max(0m, detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra);
+            var horasExtraPagables = Math.Max(0m, detalle.HorasExtra);
+            detalle.HorasExtraDobles = Math.Min(9m, Math.Min(horasExtraBase, horasExtraPagables));
+            detalle.HorasExtraTriples = Math.Max(0m, Math.Min(horasExtraBase, horasExtraPagables) - detalle.HorasExtraDobles);
+            var resultado = NominaCalculator.Calculate(new NominaCalculationInput
+            {
+                Empleado = empleado,
+                Configuracion = configuracionNomina,
+                SueldoReferencia = incluyeSueldoBase ? sueldoReferencia : 0m,
+                DiasPagados = diasPagados,
+                DiasVacaciones = diasVacaciones,
+                DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
+                DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
+                DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
+                MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual,
+                AplicaImss = detalle.AplicaImss,
+                AplicaIsr = empleado.AplicaIsr,
+                HorasExtraBase = detalle.HorasExtraBase,
+                HorasExtraDobles = detalle.HorasExtraDobles,
+                HorasExtraTriples = detalle.HorasExtraTriples,
+                HorasExtraBanco = detalle.HorasExtraBanco,
+                HorasExtra = detalle.HorasExtra,
+                MontoDestajo = detalle.MontoDestajo,
+                MontoBono = detalle.MontoBono,
+                MontoPercepcionesManuales = percepcionesManual,
+                MontoDeducciones = totalDeducciones,
+                ComplementoSalarioMinimo = detalle.ComplementoSalarioMinimo,
+                FactorFestivo = factorFestivoAplicado,
+                AniosServicio = CalcularAniosServicio(empleado, nominaSeleccionada?.FechaFin ?? DateTime.Today)
+            });
+
+            AplicarResultadoCalculo(detalle, resultado);
+
+            if (bonosPrenomina.Count > 0)
+                SincronizarBonosPrenomina(db, bonosNominaExistentes, detalle, bonosPrenomina, nomina.EmpresaId);
+            else if (bonoDistribuido is not null)
+                SincronizarBonosDistribuidos(db, bonosNominaExistentes, detalle, bonoDistribuido.Detalle, nomina.EmpresaId);
+
+            if (percepcionesPrenomina.Count > 0)
+                SincronizarPercepcionesPrenomina(db, percepcionesNominaExistentes, detalle, percepcionesPrenomina, nomina.EmpresaId);
+        }
+
+        nomina.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    private static Task AplicarEstadoPrenominaDesdeNominaAsync(CrmDbContext db, Nomina nomina, Prenomina prenomina)
+    {
+        if (nomina.Estatus != EstatusNomina.Cancelada)
+        {
+            prenomina.Estatus = EstatusPrenomina.Aplicada;
+            prenomina.FechaCierre ??= DateTime.UtcNow;
+            prenomina.UpdatedAt = DateTime.UtcNow;
+            return Task.CompletedTask;
+        }
+
+        return LiberarPrenominaAnteriorAsync(db, prenomina.Id, nomina.Id);
+    }
+
+    private static async Task LiberarPrenominaAnteriorAsync(CrmDbContext db, Guid prenominaId, Guid nominaActualId)
+    {
+        var prenomina = await db.Prenominas.FirstOrDefaultAsync(p => p.Id == prenominaId);
+        if (prenomina == null)
+            return;
+
+        var tieneOtraNominaActiva = await db.Nominas.AnyAsync(n => n.Id != nominaActualId && n.PrenominaId == prenominaId && n.Estatus != EstatusNomina.Cancelada);
+        if (tieneOtraNominaActiva)
+            return;
+
+        if (prenomina.Estatus == EstatusPrenomina.Aplicada)
+            prenomina.Estatus = EstatusPrenomina.Cerrada;
+
+        prenomina.UpdatedAt = DateTime.UtcNow;
+    }
+
+    private async Task GuardarCambiosDetalle(NominaDetalle detalle)
+    {
+        error = ok = null;
+        guardando = true;
+
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para modificar nóminas.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existente = await db.NominaDetalles.FirstOrDefaultAsync(x => x.Id == detalle.Id);
+            if (existente == null)
+            {
+                error = "No se encontró el detalle de nómina.";
+                return;
+            }
+
+            var nominaActual = await db.Nominas.AsNoTracking().FirstOrDefaultAsync(n => n.Id == existente.NominaId);
+            if (nominaActual == null)
+            {
+                error = "No se encontró la nómina del detalle.";
+                return;
+            }
+
+            if (EstaBloqueadaNomina(nominaActual.Estatus))
+            {
+                error = ObtenerMensajeBloqueoNomina(nominaActual.Estatus);
+                return;
+            }
+
+            existente.HorasExtra = detalle.HorasExtra;
+            existente.HorasExtraBase = detalle.HorasExtraBase;
+            existente.HorasExtraBanco = detalle.HorasExtraBanco;
+            existente.MinutosRetardo = detalle.MinutosRetardo;
+            existente.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
+            existente.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
+            existente.Bonos = detalle.Bonos;
+            existente.Deducciones = detalle.Deducciones;
+
+            var empleado = await db.Empleados.FirstOrDefaultAsync(x => x.Id == existente.EmpleadoId);
+
+            if (empleado != null)
+            {
+                AplicarResultadoCalculo(existente, CalcularResultadoPreview(existente, empleado));
+            }
+
+            await db.SaveChangesAsync();
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+            ok = "Detalle de nómina actualizado.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task GuardarNomina()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para guardar nóminas.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editando.Periodo)) { error = "Periodo es requerido."; return; }
+
+            var empresaId = _empresaId;
+            if (empresaId == Guid.Empty) { error = "No hay empresa activa."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var periodoActual = NominaPeriodoHelper.ObtenerPeriodo(editando.PeriodicidadPago, editando.FechaFin == default ? DateTime.Today : editando.FechaFin, ObtenerCortePeriodo(editando.PeriodicidadPago));
+            editando.PeriodicidadPago = periodoActual.PeriodicidadPago;
+            editando.AnioPeriodo = periodoActual.AnioPeriodo;
+            editando.NumeroPeriodo = periodoActual.NumeroPeriodo;
+            editando.Periodo = periodoActual.Periodo;
+            editando.NumeroNomina = periodoActual.NumeroNomina;
+            editando.FechaInicio = periodoActual.Inicio;
+            editando.FechaFin = periodoActual.Fin;
+
+            var periodo = editando.Periodo.Trim();
+            var numeroNomina = string.IsNullOrWhiteSpace(editando.NumeroNomina) ? null : editando.NumeroNomina.Trim();
+            var prenomina = await ObtenerPrenominaParaNominaAsync(db, empresaId, editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo);
+            if (prenomina == null)
+            {
+                error = ObtenerMensajePrenominaRequerida();
+                return;
+            }
+
+            if (await db.Nominas.AnyAsync(n => n.EmpresaId == empresaId
+                && n.Id != editando.Id
+                && n.PeriodicidadPago == editando.PeriodicidadPago
+                && n.AnioPeriodo == editando.AnioPeriodo
+                && n.NumeroPeriodo == editando.NumeroPeriodo))
+            {
+                error = "Ya existe una nómina para ese período calendario y periodicidad.";
+                return;
+            }
+
+            if (editando.Id == Guid.Empty)
+            {
+                editando.Folio = string.IsNullOrWhiteSpace(editando.Folio)
+                    ? await CodigoNegocio.GetNextPeriodFolioAsync(empresaId, "NOM", "Consecutivo:Nomina", editando.FechaInicio)
+                    : editando.Folio.Trim();
+                var nueva = new Nomina
+                {
+                    EmpresaId = empresaId, Folio = editando.Folio, NumeroNomina = numeroNomina, PeriodicidadPago = editando.PeriodicidadPago, AnioPeriodo = editando.AnioPeriodo, NumeroPeriodo = editando.NumeroPeriodo, Periodo = periodo,
+                    FechaInicio = editando.FechaInicio, FechaFin = editando.FechaFin,
+                    FechaPago = editando.FechaPago, Estatus = editando.Estatus, Notas = editando.Notas?.Trim(),
+                    PrenominaId = prenomina.Id
+                };
+                db.Nominas.Add(nueva);
+                await db.SaveChangesAsync();
+                await SincronizarNominaAsync(nueva.Id);
+                await AuditService.LogAsync("Crear nómina", nameof(Nomina), nueva.Id, $"Nómina {nueva.Periodo} creada.", empresaId);
+                ok = "Nómina guardada."; mostrarForm = false; await Cargar();
+                return;
+            }
+            else
+            {
+                var ex = await db.Nominas.FirstOrDefaultAsync(n => n.Id == editando.Id);
+                if (ex == null) return;
+                if (EstaBloqueadaNomina(ex.Estatus))
+                {
+                    error = ObtenerMensajeBloqueoNomina(ex.Estatus);
+                    _nominaEditandoBloqueada = true;
+                    return;
+                }
+
+                var prenominaAnteriorId = ex.PrenominaId;
+                ex.Folio = string.IsNullOrWhiteSpace(editando.Folio) ? ex.Folio : editando.Folio.Trim();
+                ex.NumeroNomina = numeroNomina;
+                ex.PeriodicidadPago = editando.PeriodicidadPago;
+                ex.AnioPeriodo = editando.AnioPeriodo;
+                ex.NumeroPeriodo = editando.NumeroPeriodo;
+                ex.Periodo = periodo; ex.FechaInicio = editando.FechaInicio;
+                ex.FechaFin = editando.FechaFin; ex.FechaPago = editando.FechaPago;
+                ex.Estatus = editando.Estatus; ex.Notas = editando.Notas?.Trim(); ex.PrenominaId = prenomina.Id; ex.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await SincronizarNominaAsync(ex.Id, prenominaAnteriorId);
+                await AuditService.LogAsync("Editar nómina", nameof(Nomina), ex.Id, $"Nómina {ex.Periodo} actualizada.", empresaId);
+                ok = "Nómina guardada."; mostrarForm = false; await Cargar();
+                return;
+            }
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task GuardarDetalle()
+    {
+        error = ok = null; guardando = true;
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para modificar nóminas.";
+                return;
+            }
+
+            if (nominaSeleccionada != null && EstaBloqueadaNomina(nominaSeleccionada.Estatus))
+            {
+                error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+                return;
+            }
+
+            if (nominaSeleccionada == null || editandoDetalle.EmpleadoId == Guid.Empty)
+            { error = "Seleccione un empleado."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var empleado = await db.Empleados.AsNoTracking().FirstOrDefaultAsync(e => e.Id == editandoDetalle.EmpleadoId);
+            if (empleado == null)
+            {
+                error = "No se encontró el empleado seleccionado.";
+                return;
+            }
+
+            if (empleado.PeriodicidadPago != nominaSeleccionada.PeriodicidadPago)
+            {
+                error = "El empleado no coincide con la periodicidad de esta nómina.";
+                return;
+            }
+
+            db.NominaDetalles.Add(new NominaDetalle
+            {
+                NominaId = nominaSeleccionada.Id, EmpleadoId = editandoDetalle.EmpleadoId,
+                SueldoBase = editandoDetalle.SueldoBase,
+                HorasExtra = editandoDetalle.HorasExtra, MontoHorasExtra = editandoDetalle.MontoHorasExtra,
+                Bonos = editandoDetalle.Bonos, Deducciones = editandoDetalle.Deducciones,
+                ConceptoDeducciones = editandoDetalle.ConceptoDeducciones, Notas = editandoDetalle.Notas
+            });
+            await db.SaveChangesAsync();
+            ok = "Empleado agregado."; mostrarFormDetalle = false;
+            await Cargar(); await CargarDetalles();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task EliminarDetalle(Guid id)
+    {
+        error = ok = null;
+        try
+        {
+            if (!_puedeEditar)
+            {
+                error = "No tienes permisos para modificar nóminas.";
+                return;
+            }
+
+            if (nominaSeleccionada != null && EstaBloqueadaNomina(nominaSeleccionada.Estatus))
+            {
+                error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var d = await db.NominaDetalles.FirstOrDefaultAsync(x => x.Id == id);
+            if (d != null) { db.NominaDetalles.Remove(d); await db.SaveChangesAsync(); }
+            await Cargar(); await CargarDetalles();
+        }
+        catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
+    }
+
+    private static string EstatusBadge(EstatusNomina e) => e switch
+    {
+        EstatusNomina.Borrador => "bg-secondary",
+        EstatusNomina.Aprobada => "bg-info",
+        EstatusNomina.Pagada => "bg-success",
+        EstatusNomina.Cancelada => "bg-danger",
+        _ => "bg-light"
+    };
+
+    private static bool EstaBloqueadaNomina(EstatusNomina estatus)
+        => estatus is EstatusNomina.Pagada or EstatusNomina.Cancelada;
+
+    private static bool RequiereActualizacionDesdePrenomina(Nomina nomina)
+        => nomina.Estatus == EstatusNomina.Borrador
+            && nomina.Prenomina is not null
+            && ObtenerFechaUltimaActualizacionPrenomina(nomina.Prenomina) > ObtenerFechaUltimaSincronizacionNomina(nomina);
+
+    private static DateTime ObtenerFechaUltimaSincronizacionNomina(Nomina nomina)
+        => nomina.UpdatedAt ?? nomina.CreatedAt;
+
+    private static DateTime ObtenerFechaUltimaActualizacionPrenomina(Prenomina prenomina)
+        => prenomina.UpdatedAt ?? prenomina.CreatedAt;
+
+    private static string ObtenerMensajeBloqueoNomina(EstatusNomina estatus)
+        => estatus switch
+        {
+            EstatusNomina.Pagada => "La nómina pagada no se puede modificar.",
+            EstatusNomina.Cancelada => "La nómina cancelada no se puede modificar.",
+            _ => "La nómina no se puede modificar."
+        };
+
+    private string ObtenerNombreEsquema(Guid? esquemaPagoId)
+        => esquemaPagoId.HasValue && esquemaNombrePorId.TryGetValue(esquemaPagoId.Value, out var nombre) ? nombre : "—";
+
+    private decimal ObtenerMontoHorasExtraPreview(NominaDetalle detalle)
+        => resumenNomina.Detalles.TryGetValue(detalle.Id, out var resumenDetalle)
+            ? resumenDetalle.MontoHorasExtraPreview
+            : detalle.MontoHorasExtra;
+
+    private string ObtenerResumenHorasExtra(NominaDetalle detalle)
+    {
+        var horasBase = detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra;
+        var horasDobles = ObtenerHorasExtraDoblesPreview(detalle);
+        var horasTriples = ObtenerHorasExtraTriplesPreview(detalle);
+
+        if (horasDobles <= 0 && horasTriples <= 0)
+        {
+            return $"Extra base {horasBase:0.##} h";
+        }
+
+        var partes = new List<string>();
+        if (horasBase > 0)
+        {
+            partes.Add($"Base {horasBase:0.##} h");
+        }
+
+        if (horasDobles > 0)
+        {
+            partes.Add($"Dobles {horasDobles:0.##} h");
+        }
+
+        if (horasTriples > 0)
+        {
+            partes.Add($"Triples {horasTriples:0.##} h");
+        }
+
+        return string.Join(" · ", partes);
+    }
+
+    private decimal ObtenerHorasExtraDoblesPreview(NominaDetalle detalle)
+        => resumenNomina.Detalles.TryGetValue(detalle.Id, out var resumenDetalle)
+            ? resumenDetalle.HorasExtraDoblesPreview
+            : detalle.HorasExtraDobles;
+
+    private decimal ObtenerHorasExtraTriplesPreview(NominaDetalle detalle)
+        => resumenNomina.Detalles.TryGetValue(detalle.Id, out var resumenDetalle)
+            ? resumenDetalle.HorasExtraTriplesPreview
+            : detalle.HorasExtraTriples;
+
+    private decimal ObtenerTotalPagarPreview(NominaDetalle detalle)
+        => resumenNomina.Detalles.TryGetValue(detalle.Id, out var resumenDetalle)
+            ? resumenDetalle.TotalPagarPreview
+            : detalle.TotalPagar;
+
+    private bool TieneFestivosAplicados(Guid empleadoId)
+        => festivosAplicadosPorEmpleado.TryGetValue(empleadoId, out var festivos) && festivos.Count > 0;
+
+    private string ObtenerTextoFestivosAplicados(Guid empleadoId)
+        => !festivosAplicadosPorEmpleado.TryGetValue(empleadoId, out var festivos) || festivos.Count == 0
+            ? "—"
+            : string.Join(", ", festivos.Select(f => $"{f.Fecha:dd/MM} {f.Nombre} x{f.Factor:0.##}{(f.UsaFallback ? " (global)" : string.Empty)}"));
+
+    private void AbrirDetalleEmpleado(NominaDetalle detalle)
+    {
+        detalleModalSeleccionado = detalle;
+        if (detallePercepcionSeleccionado?.Id != detalle.Id)
+            CerrarEditorPercepciones();
+        if (detalleDeduccionSeleccionado?.Id != detalle.Id)
+            CerrarEditorDeducciones();
+    }
+
+    private void CerrarDetalleEmpleado()
+    {
+        detalleModalSeleccionado = null;
+        CerrarEditorPercepciones();
+        CerrarEditorDeducciones();
+    }
+
+    private void SincronizarDetalleModalSeleccionado()
+    {
+        if (detalleModalSeleccionado == null)
+            return;
+
+        detalleModalSeleccionado = detallesNomina.FirstOrDefault(d => d.Id == detalleModalSeleccionado.Id);
+        if (detalleModalSeleccionado == null)
+        {
+            CerrarEditorPercepciones();
+            CerrarEditorDeducciones();
+        }
+    }
+
+    private int ObtenerMinutosDescuentoPreview(NominaDetalle detalle)
+        => detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual;
+
+    private Task OnResumenNominaChangedAsync()
+    {
+        RecalcularResumenNomina();
+        return Task.CompletedTask;
+    }
+
+    private void RecalcularResumenNomina()
+    {
+        resumenNomina = detallesNomina.Count == 0
+            ? new NominaResumenResult()
+            : NominaResumenBuilder.Build(new NominaResumenInput
+            {
+                Detalles = detallesNomina,
+                Configuracion = configuracionNomina,
+                FechaReferencia = nominaSeleccionada?.FechaFin ?? DateTime.Today
+            });
+    }
+
+    private decimal ObtenerSueldoReferenciaDesdeDetalle(Empleado empleado, NominaDetalle detalle)
+    {
+        if (detalle.DiasPagados > 0 && detalle.SueldoBase > 0)
+        {
+            var diasBase = Math.Max(1, configuracionNomina.ObtenerDiasBase(empleado.PeriodicidadPago));
+            return Math.Round((detalle.SueldoBase / detalle.DiasPagados) * diasBase, 2);
+        }
+
+        return empleado.SueldoSemanal;
+    }
+    private int CalcularAniosServicio(Empleado empleado, DateTime fechaReferencia)
+    {
+        if (!empleado.FechaContratacion.HasValue)
+        {
+            return 0;
+        }
+
+        return Math.Max(0, (int)Math.Floor((fechaReferencia.Date - empleado.FechaContratacion.Value.Date).TotalDays / 365.25));
+    }
+
+    private (decimal obrera, decimal patronal) CalcularCuotasImss(bool aplicaImss, decimal sueldoDiario, int diasPagados, int aniosServicio)
+    {
+        if (!aplicaImss || sueldoDiario <= 0 || diasPagados <= 0)
+        {
+            return (0m, 0m);
+        }
+
+        var diasVacacionesAnuales = configuracionNomina.ObtenerDiasVacacionesPorAntiguedad(aniosServicio);
+        var factorAguinaldo = (configuracionNomina.DiasAguinaldoMinimo * sueldoDiario) / 365m;
+        var factorVacaciones = (diasVacacionesAnuales * configuracionNomina.PrimaVacacionalMinima * sueldoDiario) / 365m;
+        var sdi = sueldoDiario + factorAguinaldo + factorVacaciones;
+        var tope = Math.Max(0m, configuracionNomina.TopeSbcEnUma) * Math.Max(0m, configuracionNomina.UmaDiaria);
+        var minimo = Math.Max(0m, configuracionNomina.SalarioMinimoGeneral);
+        var sbc = sdi;
+
+        if (tope > 0)
+        {
+            sbc = Math.Min(sbc, tope);
+        }
+
+        if (minimo > 0)
+        {
+            sbc = Math.Max(sbc, minimo);
+        }
+
+        var basePeriodo = sbc * diasPagados;
+        var obrera = Math.Round(basePeriodo * Math.Max(0m, configuracionNomina.TasaImssObrera), 2);
+        var patronal = Math.Round(basePeriodo * (Math.Max(0m, configuracionNomina.TasaImssPatronal) + Math.Max(0m, configuracionNomina.PrimaRiesgoTrabajo)), 2);
+        return (obrera, patronal);
+    }
+
+    private NominaCalculationResult CalcularResultadoPreview(NominaDetalle detalle)
+        => detalle.Empleado == null
+            ? new NominaCalculationResult { MontoHorasExtra = detalle.MontoHorasExtra, TotalPagar = detalle.TotalPagar }
+            : CalcularResultadoPreview(detalle, detalle.Empleado);
+
+    private NominaCalculationResult CalcularResultadoPreview(NominaDetalle detalle, Empleado empleado)
+    {
+        var sueldoReferencia = ObtenerSueldoReferenciaDesdeDetalle(empleado, detalle);
+        var diasBase = Math.Max(1, configuracionNomina.ObtenerDiasBase(empleado.PeriodicidadPago));
+        var sueldoDiario = sueldoReferencia <= 0 ? 0m : sueldoReferencia / diasBase;
+        var factorFestivo = detalle.DiasFestivoTrabajado > 0 && sueldoDiario > 0
+            ? Math.Max(0m, Math.Round(detalle.MontoFestivoTrabajado / (detalle.DiasFestivoTrabajado * sueldoDiario), 4))
+            : configuracionNomina.ObtenerFactorFestivoTrabajado();
+
+        return NominaCalculator.Calculate(new NominaCalculationInput
+        {
+            Empleado = empleado,
+            Configuracion = configuracionNomina,
+            SueldoReferencia = sueldoReferencia,
+            SueldoBaseOverride = detalle.SueldoBase,
+            DiasPagados = detalle.DiasPagados,
+            DiasVacaciones = detalle.DiasVacaciones,
+            DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
+            DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
+            DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
+            MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual,
+            AplicaImss = detalle.AplicaImss,
+            AplicaIsr = empleado.AplicaIsr,
+            HorasExtra = detalle.HorasExtra,
+            MontoDestajo = detalle.MontoDestajo,
+            MontoBono = detalle.MontoBono,
+            MontoPercepcionesManuales = detalle.Bonos,
+            MontoDeducciones = detalle.Deducciones,
+            ComplementoSalarioMinimo = NominaLegalPolicy.CalcularComplementoSalarioMinimo(detalle.SueldoBase, detalle.MontoDestajo, detalle.DiasPagados, configuracionNomina),
+            FactorFestivo = factorFestivo,
+            AniosServicio = CalcularAniosServicio(empleado, nominaSeleccionada?.FechaFin ?? DateTime.Today)
+        });
+    }
+
+    private static void AplicarResultadoCalculo(NominaDetalle detalle, NominaCalculationResult resultado)
+    {
+        detalle.SueldoBase = resultado.SueldoBase;
+        detalle.MontoBono = resultado.MontoBono;
+        detalle.MontoFestivoTrabajado = resultado.MontoFestivoTrabajado;
+        detalle.MontoDescansoTrabajado = resultado.MontoDescansoTrabajado;
+        detalle.MontoPrimaDominical = resultado.MontoPrimaDominical;
+        detalle.MontoPrimaVacacional = resultado.MontoPrimaVacacional;
+        detalle.ComplementoSalarioMinimo = resultado.ComplementoSalarioMinimo;
+        detalle.MontoHorasExtra = resultado.MontoHorasExtra;
+        detalle.Bonos = resultado.MontoPercepcionesManuales;
+        detalle.Deducciones = resultado.MontoDeducciones;
+        detalle.MontoDescuentoMinutos = resultado.MontoDescuentoMinutos;
+        detalle.CuotaImssObrera = resultado.CuotaImssObrera;
+        detalle.CuotaImssPatronal = resultado.CuotaImssPatronal;
+        detalle.MontoInfonavit = resultado.MontoInfonavit;
+        detalle.RetencionIsr = resultado.RetencionIsr;
+        detalle.SubsidioEmpleo = resultado.SubsidioEmpleo;
+        detalle.AguinaldoProvision = resultado.AguinaldoProvision;
+        detalle.PrimaVacacionalProvision = resultado.PrimaVacacionalProvision;
+    }
+
+    private static void SincronizarBonosPrenomina(CrmDbContext db, List<NominaBono> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaBono> bonosPrenomina, Guid empresaId)
+    {
+        var actual = existentes.FirstOrDefault(b => b.NominaDetalleId == detalle.Id);
+        if (actual == null)
+        {
+            actual = new NominaBono
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresaId,
+                NominaDetalleId = detalle.Id,
+                TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true,
+                Detalles = []
+            };
+            db.NominasBonos.Add(actual);
+            existentes.Add(actual);
+        }
+
+        actual.TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte;
+        actual.MontoTotal = bonosPrenomina.Sum(b => b.Importe);
+        actual.Observaciones = "Generado desde prenómina";
+        actual.IsActive = true;
+        actual.UpdatedAt = DateTime.UtcNow;
+
+        var existentesDetalle = actual.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
+        foreach (var eliminar in actual.Detalles.Where(d => bonosPrenomina.All(x => x.BonoRubroRrhhId != d.BonoRubroRrhhId)).ToList())
+            db.NominasBonosDetalle.Remove(eliminar);
+
+        var orden = 1;
+        foreach (var bono in bonosPrenomina)
+        {
+            if (!existentesDetalle.TryGetValue(bono.BonoRubroRrhhId, out var detalleBono))
+            {
+                detalleBono = new NominaBonoDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    NominaBono = actual,
+                    BonoRubroRrhhId = bono.BonoRubroRrhhId,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasBonosDetalle.Add(detalleBono);
+                actual.Detalles.Add(detalleBono);
+            }
+
+            detalleBono.Importe = bono.Importe;
+            detalleBono.Porcentaje = actual.MontoTotal <= 0 ? 0m : Math.Round((bono.Importe / actual.MontoTotal) * 100m, 2);
+            detalleBono.Orden = orden++;
+            detalleBono.IsActive = true;
+            detalleBono.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static void SincronizarPercepcionesPrenomina(CrmDbContext db, List<NominaPercepcion> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaPercepcion> percepcionesPrenomina, Guid empresaId)
+    {
+        var existentesDetalle = existentes.Where(p => p.NominaDetalleId == detalle.Id).ToDictionary(p => p.TipoPercepcionId, p => p);
+        foreach (var eliminar in existentes.Where(p => p.NominaDetalleId == detalle.Id && percepcionesPrenomina.All(x => x.TipoPercepcionId != p.TipoPercepcionId)).ToList())
+            db.NominasPercepciones.Remove(eliminar);
+
+        foreach (var percepcion in percepcionesPrenomina)
+        {
+            if (!existentesDetalle.TryGetValue(percepcion.TipoPercepcionId, out var actual))
+            {
+                actual = new NominaPercepcion
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = empresaId,
+                    NominaDetalleId = detalle.Id,
+                    TipoPercepcionId = percepcion.TipoPercepcionId,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasPercepciones.Add(actual);
+                existentes.Add(actual);
+            }
+
+            actual.Importe = percepcion.Importe;
+            actual.Referencia = percepcion.Referencia;
+            actual.Observaciones = string.IsNullOrWhiteSpace(percepcion.Observaciones) ? "Generado desde prenómina" : percepcion.Observaciones;
+            actual.Origen = OrigenPercepcionNomina.Manual;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task<int> ObtenerEnteroConfigAsync(string clave, int valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return int.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private async Task<decimal> ObtenerDecimalConfigAsync(string clave, decimal valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return decimal.TryParse(valor, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var resultado)
+            ? resultado
+            : valorDefault;
+    }
+
+    private static Task<Prenomina?> ObtenerPrenominaCerradaAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => db.Prenominas
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(p => p.EmpresaId == empresaId
+                && p.PeriodicidadPago == periodicidadPago
+                && p.AnioPeriodo == anioPeriodo
+                && p.NumeroPeriodo == numeroPeriodo
+                && (p.Estatus == EstatusPrenomina.Cerrada || p.Estatus == EstatusPrenomina.Aplicada));
+
+    private Task<Prenomina?> ObtenerPrenominaParaNominaAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => reglasPrenomina.RequierePrenominaCerradaParaNomina
+            ? ObtenerPrenominaCerradaAsync(db, empresaId, periodicidadPago, anioPeriodo, numeroPeriodo)
+            : ObtenerPrenominaPeriodoAsync(db, empresaId, periodicidadPago, anioPeriodo, numeroPeriodo);
+
+    private string ObtenerMensajePrenominaRequerida()
+        => reglasPrenomina.RequierePrenominaCerradaParaNomina
+            ? "Debes cerrar una prenómina del mismo periodo antes de guardar la nómina."
+            : "Debes guardar una prenómina del mismo periodo antes de guardar la nómina.";
+
+    private static Task<Prenomina?> ObtenerPrenominaPeriodoAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => db.Prenominas
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(p => p.EmpresaId == empresaId
+                && p.PeriodicidadPago == periodicidadPago
+                && p.AnioPeriodo == anioPeriodo
+                && p.NumeroPeriodo == numeroPeriodo
+                && p.Estatus != EstatusPrenomina.Cancelada);
+
+    private async Task AplicarPeriodoNominaAsync(PeriodicidadPago periodicidad, DateTime? fechaReferencia = null)
+    {
+        var referencia = (fechaReferencia ?? fechaReferenciaNomina).Date;
+        if (referencia == default)
+            referencia = DateTime.Today;
+
+        var periodo = NominaPeriodoHelper.ObtenerPeriodo(periodicidad, referencia, ObtenerCortePeriodo(periodicidad));
+        fechaReferenciaNomina = referencia;
+        editando.PeriodicidadPago = periodo.PeriodicidadPago;
+        editando.AnioPeriodo = periodo.AnioPeriodo;
+        editando.NumeroPeriodo = periodo.NumeroPeriodo;
+        editando.NumeroNomina = periodo.NumeroNomina;
+        editando.Periodo = periodo.Periodo;
+        editando.FechaInicio = periodo.Inicio;
+        editando.FechaFin = periodo.Fin;
+        await CargarFestivosPeriodoAsync(periodo.Inicio, periodo.Fin);
+    }
+
+    private static string ObtenerAyudaFechaReferencia(PeriodicidadPago periodicidadPago)
+        => periodicidadPago switch
+        {
+            PeriodicidadPago.Quincenal => "Elige cualquier fecha dentro de la quincena que quieres trabajar.",
+            PeriodicidadPago.Mensual => "Elige cualquier fecha dentro del mes o período mensual deseado.",
+            _ => "Elige cualquier fecha dentro de la semana que quieres trabajar."
+        };
+
+    private NominaCorteRrhh ObtenerCortePeriodo(PeriodicidadPago periodicidad)
+        => periodicidad switch
+        {
+            PeriodicidadPago.Quincenal => corteQuincenal,
+            PeriodicidadPago.Mensual => corteMensual,
+            _ => corteSemanal
+        };
+
+    private async Task<NominaCorteRrhh> CargarCortePeriodoAsync(CrmDbContext db, PeriodicidadPago periodicidad, int diaCorteMesDefault)
+        => await db.NominaCortesRrhh
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == periodicidad && c.IsActive)
+            ?? new NominaCorteRrhh
+            {
+                EmpresaId = _empresaId,
+                PeriodicidadPago = periodicidad,
+                DiaCorteSemana = DayOfWeek.Sunday,
+                DiaCorteMes = diaCorteMesDefault,
+                DiaPagoSugerido = DayOfWeek.Friday,
+                IsActive = true
+            };
+
+    private Task<Nomina?> BuscarNominaExistenteAsync(CrmDbContext db, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => db.Nominas
+            .Include(n => n.Detalles)
+            .Include(n => n.Prenomina)
+            .AsNoTracking()
+            .OrderByDescending(n => n.CreatedAt)
+            .FirstOrDefaultAsync(n => n.EmpresaId == _empresaId
+                && n.PeriodicidadPago == periodicidadPago
+                && n.AnioPeriodo == anioPeriodo
+                && n.NumeroPeriodo == numeroPeriodo
+                && n.Estatus != EstatusNomina.Cancelada);
+
+    private static string ObtenerClavePeriodo(PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
+        => $"{ObtenerPrefijoPeriodicidad(periodicidadPago)} {anioPeriodo}-{numeroPeriodo:00}";
+
+    private static string ObtenerPrefijoPeriodicidad(PeriodicidadPago periodicidadPago)
+        => periodicidadPago switch
+        {
+            PeriodicidadPago.Quincenal => "QNA",
+            PeriodicidadPago.Mensual => "MES",
+            _ => "SEM"
+        };
+
+    private async Task<string> ObtenerTextoConfigAsync(string clave, string valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return string.IsNullOrWhiteSpace(valor) ? valorDefault : valor;
+    }
+
+    private async Task<bool> ObtenerBooleanoConfigAsync(string clave, bool valorDefault)
+    {
+        var valor = await AppConfig.GetValueAsync(clave);
+        return bool.TryParse(valor, out var resultado) ? resultado : valorDefault;
+    }
+
+    private List<ValeResumenVm> ObtenerValesEmpleado(Guid empleadoId)
+        => valesPorEmpleado.TryGetValue(empleadoId, out var vales) ? vales : [];
+
+    private sealed class ValeResumenVm
+    {
+        public string Folio { get; set; } = string.Empty;
+        public DateTime Fecha { get; set; }
+        public int TotalPiezas { get; set; }
+        public decimal TotalImporte { get; set; }
+        public int RegistrosOrigen { get; set; }
+        public string Resumen { get; set; } = string.Empty;
+    }
+
+    private sealed class PercepcionManualEditor
+    {
+        public Guid Id { get; set; }
+        public Guid TipoPercepcionId { get; set; }
+        public string TipoNombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public string? Referencia { get; set; }
+        public decimal Importe { get; set; }
+        public OrigenPercepcionNomina Origen { get; set; } = OrigenPercepcionNomina.Manual;
+        public string? Observaciones { get; set; }
+        public int Orden { get; set; }
+    }
+
+    private sealed class DeduccionEditor
+    {
+        public Guid Id { get; set; }
+        public Guid TipoDeduccionId { get; set; }
+        public string TipoNombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public decimal Importe { get; set; }
+        public bool EsRetencionLegal { get; set; }
+        public string? Observaciones { get; set; }
+        public int Orden { get; set; }
+    }
+
+    private sealed class FestivoAplicadoVm
+    {
+        public DateOnly Fecha { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Factor { get; set; }
+        public bool UsaFallback { get; set; }
+    }
+}

@@ -1,0 +1,206 @@
+@page "/configuracion/archivos"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IEmpresaContext EmpresaContext
+
+<PageTitle>Configuración de Archivos</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para administrar la configuración de archivos.</div>
+    }
+    else if (!_empresaActiva)
+    {
+        <div class="alert alert-info mt-3">No hay una empresa activa para guardar esta configuración.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-folder2-open me-2"></i>Archivos Adjuntos</h1>
+                <p class="text-muted mb-0">Cada empresa puede usar la configuración maestra o definir su propia ruta y plantilla de almacenamiento.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        <EditForm Model="configuracion" OnValidSubmit="GuardarAsync">
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card h-100">
+                        <div class="card-header fw-semibold">Configuración de la empresa</div>
+                        <div class="card-body">
+                            <div class="form-check form-switch mb-3">
+                                <InputCheckbox class="form-check-input" @bind-Value="configuracion.UsaConfiguracionGlobal" disabled="@(!_puedeEditar)" />
+                                <label class="form-check-label">Usar configuración maestra</label>
+                            </div>
+
+                            @if (!configuracion.UsaConfiguracionGlobal)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Proveedor</label>
+                                    <InputSelect class="form-select" @bind-Value="configuracion.StorageProvider" disabled="@(!_puedeEditar)">
+                                        @foreach (var provider in Enum.GetValues<StorageProviderEnum>())
+                                        {
+                                            <option value="@provider">@provider</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Ruta base física</label>
+                                    <InputText class="form-control" @bind-Value="configuracion.BasePath" disabled="@(!_puedeEditar)" />
+                                    <div class="form-text">Si queda vacía, se usará `wwwroot/uploads`.</div>
+                                </div>
+                                <div>
+                                    <label class="form-label">Plantilla de ruta</label>
+                                    <InputText class="form-control" @bind-Value="configuracion.PathTemplate" disabled="@(!_puedeEditar)" />
+                                    <div class="form-text">Placeholders: `{empresa}`, `{cliente}`, `{nota}`, `{documento}`, `{modulo}`, `{entidad}`, `{anio}`, `{mes}`.</div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="alert alert-light border mb-0">La empresa heredará la ruta base y plantilla configuradas por el administrador general.</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card h-100 border-info">
+                        <div class="card-header bg-info-subtle fw-semibold">Vista previa efectiva</div>
+                        <div class="card-body">
+                            <div class="mb-2 text-muted small text-uppercase">Ruta ejemplo</div>
+                            <code>@previewPath</code>
+                            <hr />
+                            <div class="text-muted small">La ruta previa usa la plantilla efectiva actual, ya sea heredada o propia.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@(!_puedeEditar || guardando)"><i class="bi bi-save me-1"></i>Guardar</button>
+                    <a class="btn btn-outline-secondary" href="/configuracion">Volver</a>
+                </div>
+            </div>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private EmpresaStorageConfiguracion configuracion = new() { UsaConfiguracionGlobal = true, PathTemplate = StoragePathTemplates.Default };
+    private StorageConfiguracionGlobal? configuracionGlobal;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _empresaActiva;
+    private bool guardando;
+    private string? error;
+    private string? ok;
+
+    private string previewPath => RenderPreview(configuracion.UsaConfiguracionGlobal ? configuracionGlobal?.PathTemplate : configuracion.PathTemplate);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "configuracion.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "configuracion.editar");
+        _empresaActiva = EmpresaContext.EmpresaId != Guid.Empty;
+
+        if (_puedeVer && _empresaActiva)
+        {
+            await CargarAsync();
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        configuracionGlobal = await db.StorageConfiguracionesGlobales
+            .IgnoreQueryFilters()
+            .OrderBy(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        configuracion = await db.EmpresasStorageConfiguracion
+            .FirstOrDefaultAsync(c => c.EmpresaId == EmpresaContext.EmpresaId)
+            ?? new EmpresaStorageConfiguracion
+            {
+                EmpresaId = EmpresaContext.EmpresaId,
+                UsaConfiguracionGlobal = true,
+                PathTemplate = configuracionGlobal?.PathTemplate ?? StoragePathTemplates.Default
+            };
+    }
+
+    private async Task GuardarAsync()
+    {
+        error = ok = null;
+        if (!_puedeEditar || EmpresaContext.EmpresaId == Guid.Empty)
+            return;
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existente = await db.EmpresasStorageConfiguracion
+                .FirstOrDefaultAsync(c => c.EmpresaId == EmpresaContext.EmpresaId);
+
+            if (existente == null)
+            {
+                configuracion.EmpresaId = EmpresaContext.EmpresaId;
+                configuracion.Id = configuracion.Id == Guid.Empty ? Guid.NewGuid() : configuracion.Id;
+                configuracion.BasePath = Limpiar(configuracion.BasePath);
+                configuracion.PathTemplate = Limpiar(configuracion.PathTemplate) ?? StoragePathTemplates.Default;
+                configuracion.CreatedAt = DateTime.UtcNow;
+                configuracion.IsActive = true;
+                db.EmpresasStorageConfiguracion.Add(configuracion);
+            }
+            else
+            {
+                existente.UsaConfiguracionGlobal = configuracion.UsaConfiguracionGlobal;
+                existente.StorageProvider = configuracion.StorageProvider;
+                existente.BasePath = Limpiar(configuracion.BasePath);
+                existente.PathTemplate = Limpiar(configuracion.PathTemplate) ?? StoragePathTemplates.Default;
+                existente.UpdatedAt = DateTime.UtcNow;
+                configuracion = existente;
+            }
+
+            await db.SaveChangesAsync();
+            ok = "Configuración de archivos guardada para la empresa activa.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private static string RenderPreview(string? template)
+    {
+        var value = string.IsNullOrWhiteSpace(template) ? StoragePathTemplates.Default : template;
+        return value
+            .Replace("{empresa}", "empresa-demo")
+            .Replace("{cliente}", "cliente-ejemplo")
+            .Replace("{nota}", "not-001")
+            .Replace("{documento}", "not-001")
+            .Replace("{modulo}", "contabilidad")
+            .Replace("{entidad}", "notas-entrega")
+            .Replace("{anio}", DateTime.Today.Year.ToString())
+            .Replace("{mes}", DateTime.Today.Month.ToString("D2"));
+    }
+
+    private static string? Limpiar(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+}

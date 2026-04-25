@@ -1,0 +1,372 @@
+@page "/configuracion"
+@rendermode InteractiveServer
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Core.Security
+@inject CustomAuthStateProvider AuthStateProvider
+@inject IWebHostEnvironment Env
+
+<PageTitle>Configuración</PageTitle>
+
+<style>
+    .config-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+        height: 100%;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        overflow: hidden;
+    }
+
+    .config-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        text-decoration: none;
+    }
+
+    .config-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+
+    .config-header {
+        background: linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        margin-bottom: 2rem;
+    }
+
+    .module-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 50px;
+    }
+
+    .saving-indicator {
+        display: inline-block;
+        animation: pulse 1s infinite;
+    }
+
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+    }
+</style>
+
+@if (!_authLoaded)
+{
+    <div class="container-fluid px-4 py-4">
+        <div class="spinner-border text-primary" role="status"></div>
+    </div>
+}
+else if (!_puedeVer)
+{
+    <div class="container-fluid px-4 py-4">
+        <div class="alert alert-warning mb-0">No tienes permisos para acceder a la configuración.</div>
+    </div>
+}
+else
+{
+<div class="container-fluid px-4">
+    <div class="config-header">
+        <h1 class="display-5 mb-2"><i class="bi bi-gear-fill"></i> Configuración del Sistema</h1>
+        <p class="mb-0 opacity-75">Administra los módulos y parámetros del CRM</p>
+    </div>
+
+    @if (!_puedeEditar)
+    {
+        <div class="alert alert-info">Tienes acceso de solo lectura a esta pantalla.</div>
+    }
+
+    <div class="row mb-4">
+        <div class="col-12 mb-3">
+            <h3><i class="bi bi-sliders text-primary"></i> Catálogos Generales</h3>
+            <p class="text-muted">Configure clasificaciones reutilizables para distintas áreas del sistema.</p>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/configuracion/archivos" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-folder2-open text-warning"></i>
+                </div>
+                <h5>Archivos Adjuntos</h5>
+                <p class="text-muted small mb-0">Define dónde se guardan los archivos de esta empresa y cómo se organizan.</p>
+            </a>
+        </div>
+
+        @if (_puedeCatalogos)
+        {
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/productos" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-box-seam-fill text-success"></i>
+                </div>
+                <h5>Productos</h5>
+                <p class="text-muted small mb-0">Catálogo de productos finales.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/clientes/productos" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-link-45deg text-warning"></i>
+                </div>
+                <h5>Productos por Cliente</h5>
+                <p class="text-muted small mb-0">Asigna catálogos comerciales por cliente.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/clientes" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-people-fill text-info"></i>
+                </div>
+                <h5>Clientes</h5>
+                <p class="text-muted small mb-0">Gestión de clientes y datos comerciales.</p>
+            </a>
+        </div>
+        }
+
+        @if (_puedeAdministracion)
+        {
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/admin/usuarios" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-people-fill text-danger"></i>
+                </div>
+                <h5>Usuarios</h5>
+                <p class="text-muted small mb-0">Gestión de usuarios de la empresa.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/admin/tipos-usuario" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-shield-lock text-dark"></i>
+                </div>
+                <h5>Roles y Permisos</h5>
+                <p class="text-muted small mb-0">Tipos de usuario y capacidades por empresa.</p>
+            </a>
+        </div>
+        }
+
+        @if (_puedeRrhh)
+        {
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/configuracion/posiciones" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-diagram-3 text-primary"></i>
+                </div>
+                <h5>Posiciones</h5>
+                <p class="text-muted small mb-0">Catálogo de posiciones para empleados y esquemas.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/configuracion/departamentos" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-buildings text-secondary"></i>
+                </div>
+                <h5>Departamentos</h5>
+                <p class="text-muted small mb-0">Lista de departamentos para organizar personal y asistencia.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/configuracion/nomina" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-wallet2 text-primary"></i>
+                </div>
+                <h5>Configuración de Nómina</h5>
+                <p class="text-muted small mb-0">Días base, horas base y factor para calcular horas extra.</p>
+            </a>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <a href="/configuracion/bonos" class="config-card card p-4 text-center">
+                <div class="config-icon">
+                    <i class="bi bi-gift text-warning"></i>
+                </div>
+                <h5>Bonos de Nómina</h5>
+                <p class="text-muted small mb-0">Rubros, estructuras por posición y montos distribuidos por puesto.</p>
+            </a>
+        </div>
+
+    <div class="col-lg-3 col-md-6 mb-3">
+        <a href="/configuracion/asistencia" class="config-card card p-4 text-center">
+            <div class="config-icon">
+                <i class="bi bi-stopwatch text-info"></i>
+            </div>
+            <h5>Configuración de Asistencia</h5>
+            <p class="text-muted small mb-0">Límites para descansos no marcados, zona ambigua y revisión operativa.</p>
+        </a>
+    </div>
+        }
+    </div>
+
+    <hr class="my-4" />
+
+    <!-- Datos de la Empresa -->
+    <div class="row mb-4">
+        <div class="col-12 mb-3">
+            <h3><i class="bi bi-building text-dark"></i> Datos de la Empresa</h3>
+            <p class="text-muted">Logo y datos que aparecen en reportes e impresiones.</p>
+        </div>
+
+        <div class="col-lg-6 col-md-8 mb-3">
+            <div class="card p-4" style="border-radius:15px;border:2px solid #e9ecef;">
+                <label class="form-label fw-semibold"><i class="bi bi-image me-1"></i> Logo de la empresa</label>
+
+                @if (!string.IsNullOrEmpty(logoUrl))
+                {
+                    <div class="mb-3 text-center">
+                        <img src="@logoUrl" alt="Logo" style="max-height:120px;max-width:100%;object-fit:contain;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem;background:#fafbfc;" />
+                    </div>
+                }
+
+                <InputFile OnChange="OnLogoSelected" accept="image/png,image/jpeg,image/webp" class="form-control form-control-sm" disabled="@(!_puedeEditar || subiendoLogo)" />
+                <small class="text-muted mt-1 d-block">PNG, JPG o WebP. Máximo 2 MB.</small>
+
+                @if (!string.IsNullOrEmpty(logoMensaje))
+                {
+                    <div class="alert @(logoError ? "alert-danger" : "alert-success") mt-2 py-1 px-2 small mb-0">@logoMensaje</div>
+                }
+
+                @if (subiendoLogo)
+                {
+                    <span class="saving-indicator mt-2 text-muted small">
+                        <i class="bi bi-arrow-repeat"></i> Subiendo...
+                    </span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Volver -->
+    <div class="row mt-5">
+        <div class="col-12 text-center">
+            <a href="/" class="btn btn-lg btn-outline-primary">
+                <i class="bi bi-arrow-left-circle"></i> Volver al Inicio
+            </a>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    private bool _authLoaded;
+    private bool _puedeVer;
+    private bool _puedeEditar;
+    private bool _puedeCatalogos;
+    private bool _puedeAdministracion;
+    private bool _puedeRrhh;
+
+    private string? logoUrl;
+    private string? logoMensaje;
+    private bool logoError;
+    private bool subiendoLogo;
+
+    private const long MaxLogoSize = 2 * 1024 * 1024; // 2 MB
+    private static readonly string[] AllowedExtensions = [".png", ".jpg", ".jpeg", ".webp"];
+    private static readonly string[] AllowedContentTypes = ["image/png", "image/jpeg", "image/webp"];
+
+    [Inject] private IAppConfigRepository AppConfig { get; set; } = default!;
+    [Inject] private IEmpresaContext EmpresaContext { get; set; } = default!;
+    [Inject] private ITenantFileStorageService TenantFileStorage { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        _authLoaded = true;
+
+        if (!_puedeVer)
+            return;
+
+        var logoPath = await AppConfig.GetValueAsync("CompanyLogo");
+        if (!string.IsNullOrEmpty(logoPath)) logoUrl = logoPath;
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.IsInRole("SuperAdmin")
+            || state.User.HasClaim("Capacidad", "configuracion.ver");
+        _puedeEditar = state.User.IsInRole("SuperAdmin")
+            || state.User.HasClaim("Capacidad", "configuracion.editar");
+        _puedeCatalogos = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Catalogos);
+        _puedeAdministracion = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Administracion)
+            && state.User.HasClaim("Capacidad", "usuarios.ver");
+        _puedeRrhh = state.User.HasClaim("Modulo", ModuloAccesoCatalog.Rrhh)
+            && state.User.HasClaim("Capacidad", "configuracion.ver");
+    }
+
+    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    {
+        if (!_puedeEditar)
+        {
+            logoMensaje = "No tienes permisos para actualizar el logo.";
+            logoError = true;
+            return;
+        }
+
+        logoMensaje = null;
+        logoError = false;
+        subiendoLogo = true;
+        StateHasChanged();
+
+        try
+        {
+            var file = e.File;
+            var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+
+            if (!AllowedExtensions.Contains(ext))
+            {
+                logoMensaje = "Formato no permitido. Use PNG, JPG o WebP.";
+                logoError = true;
+                return;
+            }
+
+            if (!AllowedContentTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+            {
+                logoMensaje = "Tipo de archivo no permitido. Use una imagen PNG, JPG o WebP válida.";
+                logoError = true;
+                return;
+            }
+
+            if (file.Size > MaxLogoSize)
+            {
+                logoMensaje = "El archivo excede el límite de 2 MB.";
+                logoError = true;
+                return;
+            }
+
+            var oldPath = await AppConfig.GetValueAsync("CompanyLogo");
+            if (EmpresaContext.EmpresaId == Guid.Empty)
+            {
+                logoMensaje = "No hay una empresa activa en sesión.";
+                logoError = true;
+                return;
+            }
+
+            await using var stream = file.OpenReadStream(MaxLogoSize);
+            var relativePath = await TenantFileStorage.SaveAsync(EmpresaContext.EmpresaId, "logos", "logo", ext, stream, oldPath);
+            await AppConfig.SetValueAsync("CompanyLogo", relativePath, "Logo de la empresa");
+
+            logoUrl = relativePath;
+            logoMensaje = "Logo actualizado correctamente.";
+        }
+        catch (Exception)
+        {
+            logoMensaje = "No fue posible actualizar el logo. Intenta nuevamente o contacta al administrador.";
+            logoError = true;
+        }
+        finally
+        {
+            subiendoLogo = false;
+        }
+    }
+}

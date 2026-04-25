@@ -1,0 +1,416 @@
+@page "/serigrafia/tipos-proceso"
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Serigrafia
+@using MundoVs.Core.Interfaces
+@inject IRepository<TipoProceso> TipoProcesoRepository
+@inject IRepository<Posicion> PosicionRepository
+@rendermode InteractiveServer
+
+<PageTitle>Tipos de Proceso</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 class="display-6 mb-1"><i class="bi bi-diagram-3"></i> Tipos de Proceso</h1>
+            <p class="text-muted mb-0">Organiza procesos, estaciones y estatus con una vista compacta y fácil de filtrar.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button class="btn btn-primary" @onclick="NuevoTipo">
+                <i class="bi bi-plus-circle"></i> Nuevo
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-danger py-2 mb-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>@error
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(success))
+    {
+        <div class="alert alert-success py-2 mb-3">
+            <i class="bi bi-check-circle me-1"></i>@success
+        </div>
+    }
+
+    <div class="row g-3 mb-4 tp-kpis">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tp-kpi-card">
+                <div class="card-body">
+                    <div class="tp-kpi-label">Registros visibles</div>
+                    <div class="tp-kpi-value">@tiposFiltrados.Count()</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tp-kpi-card tp-kpi-card--success">
+                <div class="card-body">
+                    <div class="tp-kpi-label">Activos</div>
+                    <div class="tp-kpi-value">@tiposProcesoLista.Count(t => t.Activo)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tp-kpi-card tp-kpi-card--muted">
+                <div class="card-body">
+                    <div class="tp-kpi-label">Inactivos</div>
+                    <div class="tp-kpi-value">@tiposProcesoLista.Count(t => !t.Activo)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100 tp-kpi-card tp-kpi-card--info">
+                <div class="card-body">
+                    <div class="tp-kpi-label">Con posición</div>
+                    <div class="tp-kpi-value">@tiposProcesoLista.Count(t => t.PosicionId.HasValue)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between">
+            <span class="fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</span>
+            <button type="button" class="btn btn-sm btn-link text-muted p-0" @onclick="LimpiarFiltros">Limpiar</button>
+        </div>
+        <div class="card-body pt-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-5 col-md-6">
+                    <label class="form-label">Buscar</label>
+                    <input class="form-control" @bind="textoBusqueda" @bind:after="AplicarFiltrosTipos" placeholder="Nombre, descripción o posición" />
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">Estado</label>
+                    <select class="form-select" @bind="filtroEstado" @bind:after="AplicarFiltrosTipos">
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4 border-0 shadow-sm tp-form-card">
+            <div class="card-header bg-primary text-white">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div>
+                        <h5 class="mb-0">@(tipoEditando.Id == Guid.Empty ? "Nuevo Tipo" : "Editar Tipo")</h5>
+                        <div class="small opacity-75">Configura nombre, orden, posición y estado operativo.</div>
+                    </div>
+                    <span class="badge rounded-pill bg-white text-primary px-3 py-2">Tarifa/min: @ObtenerTarifaPorMinuto(tipoEditando).ToString("N4")</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <EditForm Model="tipoEditando" OnValidSubmit="GuardarTipo">
+                    <div class="row g-3">
+                        <div class="col-lg-5 col-md-6">
+                            <label class="form-label">Nombre</label>
+                            <InputText class="form-control" @bind-Value="tipoEditando.Nombre" />
+                        </div>
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label">Orden</label>
+                            <InputNumber class="form-control" @bind-Value="tipoEditando.Orden" />
+                        </div>
+                        <div class="col-lg-3 col-md-6">
+                            <label class="form-label">Posición</label>
+                            <InputSelect class="form-select" @bind-Value="tipoEditando.PosicionId">
+                                <option value="">Seleccione...</option>
+                                @foreach (var posicion in posiciones)
+                                {
+                                    <option value="@posicion.Id">@posicion.Nombre</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label">Tarifa posición/min</label>
+                            <input class="form-control" value="@ObtenerTarifaPorMinuto(tipoEditando).ToString("N4")" readonly />
+                        </div>
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label">Activo</label>
+                            <div class="form-check form-switch pt-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="tipoEditando.Activo" />
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                        <label class="form-label">Descripción</label>
+                            <InputTextArea class="form-control" rows="2" @bind-Value="tipoEditando.Descripcion" />
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-save"></i> Guardar
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="CancelarEdicion">
+                            <i class="bi bi-x-circle"></i> Cancelar
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            @if (tiposProceso == null)
+            {
+                <div class="text-center py-5">
+                    <div class="spinner-border" role="status"></div>
+                    <div class="text-muted small mt-2">Cargando tipos de proceso…</div>
+                </div>
+            }
+            else if (!tiposFiltrados.Any())
+            {
+                <div class="tp-empty-state text-center py-5">
+                    <div class="tp-empty-icon mb-2"><i class="bi bi-sliders2-vertical"></i></div>
+                    <div class="fw-semibold">No hay tipos de proceso con los filtros actuales.</div>
+                    <div class="text-muted small">Ajusta la búsqueda o el estado para encontrar registros.</div>
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle tp-table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Estado</th>
+                                <th>Orden</th>
+                                <th>Nombre</th>
+                                <th>Descripción</th>
+                                <th>Posición</th>
+                                <th>Tarifa/Min</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tipo in tiposFiltrados.OrderBy(t => t.Orden))
+                            {
+                                <tr class="@(!tipo.Activo ? "table-light opacity-75" : string.Empty)">
+                                    <td>
+                                        <span class="badge @(tipo.Activo ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(tipo.Activo ? "Activo" : "Inactivo")</span>
+                                    </td>
+                                    <td>@tipo.Orden</td>
+                                    <td>
+                                        <div class="fw-semibold">@tipo.Nombre</div>
+                                    </td>
+                                    <td class="text-muted">@(string.IsNullOrWhiteSpace(tipo.Descripcion) ? "—" : tipo.Descripcion)</td>
+                                    <td>@(tipo.Posicion?.Nombre ?? "—")</td>
+                                    <td>$@ObtenerTarifaPorMinuto(tipo).ToString("N4")</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button class="btn btn-outline-primary" @onclick="() => EditarTipo(tipo)" title="Editar tipo">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-outline-danger" @onclick="() => EliminarTipo(tipo)" title="Desactivar tipo">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .tp-kpi-card { border-radius: 14px; }
+    .tp-kpi-card .card-body { padding: .9rem 1rem; }
+    .tp-kpi-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; margin-bottom: .2rem; }
+    .tp-kpi-value { font-size: 1.7rem; font-weight: 800; line-height: 1; color: #1f2937; }
+    .tp-kpi-card--success { background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); }
+    .tp-kpi-card--muted { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); }
+    .tp-kpi-card--info { background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); }
+    .tp-form-card { border-radius: 14px; overflow: hidden; }
+    .tp-table thead th { white-space: nowrap; font-size: .78rem; }
+    .tp-table tbody td { vertical-align: middle; }
+    .tp-empty-state { border: 1px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; }
+    .tp-empty-icon { font-size: 1.8rem; color: #64748b; }
+
+    @@media (max-width: 991px)
+    {
+        .tp-kpi-value { font-size: 1.4rem; }
+    }
+</style>
+
+@code {
+    private IEnumerable<TipoProceso>? tiposProceso;
+    private List<TipoProceso> tiposProcesoLista = [];
+    private IEnumerable<TipoProceso> tiposFiltrados = [];
+    private IEnumerable<Posicion> posiciones = [];
+    private TipoProceso tipoEditando = new();
+    private bool mostrarFormulario;
+    private string textoBusqueda = string.Empty;
+    private string filtroEstado = "activos";
+    private string? error;
+    private string? success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            posiciones = (await PosicionRepository.GetAllAsync())
+                .Where(a => a.IsActive)
+                .OrderBy(a => a.Nombre)
+                .ToList();
+            await CargarTipos();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudieron cargar los catálogos. {ex.Message}";
+        }
+    }
+
+    private async Task CargarTipos()
+    {
+        success = null;
+        tiposProcesoLista = (await TipoProcesoRepository.GetAllAsync())
+            .OrderBy(t => t.Orden)
+            .ToList();
+
+        tiposProceso = tiposProcesoLista;
+
+        foreach (var tipo in tiposProcesoLista)
+        {
+            if (tipo.PosicionId.HasValue)
+            {
+                tipo.Posicion = posiciones.FirstOrDefault(a => a.Id == tipo.PosicionId.Value);
+            }
+        }
+
+        AplicarFiltrosTipos();
+    }
+
+    private void AplicarFiltrosTipos()
+    {
+        IEnumerable<TipoProceso> consulta = tiposProcesoLista;
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(t =>
+                t.Nombre.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (t.Descripcion?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (t.Posicion?.Nombre?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        consulta = filtroEstado switch
+        {
+            "inactivos" => consulta.Where(t => !t.Activo),
+            "todos" => consulta,
+            _ => consulta.Where(t => t.Activo)
+        };
+
+        tiposFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltros()
+    {
+        textoBusqueda = string.Empty;
+        filtroEstado = "activos";
+        AplicarFiltrosTipos();
+    }
+
+    private void NuevoTipo()
+    {
+        error = null;
+        success = null;
+        tipoEditando = new TipoProceso { Activo = true };
+        mostrarFormulario = true;
+    }
+
+    private void EditarTipo(TipoProceso tipo)
+    {
+        error = null;
+        success = null;
+        tipoEditando = new TipoProceso
+        {
+            Id = tipo.Id,
+            EmpresaId = tipo.EmpresaId,
+            Nombre = tipo.Nombre,
+            Descripcion = tipo.Descripcion,
+            PosicionId = tipo.PosicionId,
+            Activo = tipo.Activo,
+            Orden = tipo.Orden,
+            CreatedAt = tipo.CreatedAt,
+            CreatedBy = tipo.CreatedBy,
+            UpdatedBy = tipo.UpdatedBy,
+            IsActive = tipo.IsActive
+        };
+        mostrarFormulario = true;
+    }
+
+    private async Task GuardarTipo()
+    {
+        error = null;
+        success = null;
+
+        try
+        {
+            if (tipoEditando.Id == Guid.Empty)
+            {
+                await TipoProcesoRepository.AddAsync(tipoEditando);
+                success = "Tipo de proceso creado correctamente.";
+            }
+            else
+            {
+                tipoEditando.UpdatedAt = DateTime.UtcNow;
+                await TipoProcesoRepository.UpdateAsync(tipoEditando);
+                success = "Tipo de proceso actualizado correctamente.";
+            }
+
+            await CargarTipos();
+            CancelarEdicion();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo guardar el tipo de proceso. {ex.Message}";
+        }
+    }
+
+    private async Task EliminarTipo(TipoProceso tipo)
+    {
+        error = null;
+        success = null;
+
+        try
+        {
+            tipo.IsActive = false;
+            tipo.Activo = false;
+            tipo.UpdatedAt = DateTime.UtcNow;
+            await TipoProcesoRepository.UpdateAsync(tipo);
+            success = "Tipo de proceso desactivado correctamente.";
+            await CargarTipos();
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo desactivar el tipo de proceso. {ex.Message}";
+        }
+    }
+
+    private void CancelarEdicion()
+    {
+        tipoEditando = new();
+        mostrarFormulario = false;
+    }
+
+    private decimal ObtenerTarifaPorMinuto(TipoProceso tipo)
+    {
+        if (tipo.PosicionId.HasValue)
+        {
+            return posiciones.FirstOrDefault(a => a.Id == tipo.PosicionId.Value)?.TarifaPorMinuto ?? 0m;
+        }
+
+        return 0m;
+    }
+}

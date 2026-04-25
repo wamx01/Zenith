@@ -1,0 +1,369 @@
+@page "/contabilidad/notas-entrega"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Notas de Entrega</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver notas de entrega.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+            <div>
+                <h1 class="display-6 fw-bold"><i class="bi bi-journal-text me-2"></i>Notas de Entrega</h1>
+                <p class="text-muted mb-0">Consulta notas por cliente y separa las que ya fueron facturadas, no requieren factura o ya están pagadas.</p>
+            </div>
+            <div style="min-width:280px;max-width:360px;width:100%;">
+                <label class="form-label small text-muted mb-1">Cliente</label>
+                <select class="form-select" value="@clienteSeleccionado" @onchange="OnClienteChanged">
+                    <option value="">Todos los clientes</option>
+                    @foreach (var cliente in clientes)
+                    {
+                        <option value="@cliente.Id">@cliente.RazonSocial</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card border-warning h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase">Pendientes factura</div>
+                        <div class="fs-4 fw-bold text-warning-emphasis">@notasPendientesFactura.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-primary h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase">Facturadas</div>
+                        <div class="fs-4 fw-bold text-primary">@notasFacturadas.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-secondary h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase">No requiere factura</div>
+                        <div class="fs-4 fw-bold text-secondary">@notasSinFactura.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success h-100">
+                    <div class="card-body">
+                        <div class="text-muted small text-uppercase">Pagadas</div>
+                        <div class="fs-4 fw-bold text-success">@notasPagadas.Count</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div class="text-muted small">
+                @if (notasSeleccionadasParaFactura.Count == 0)
+                {
+                    <span>Selecciona notas pendientes del mismo cliente para crear una factura.</span>
+                }
+                else
+                {
+                    <span>@notasSeleccionadasParaFactura.Count nota(s) seleccionada(s) para facturar.</span>
+                }
+            </div>
+            <button class="btn btn-primary" @onclick="CrearFacturaConSeleccionadas" disabled="@(notasSeleccionadasParaFactura.Count == 0)">
+                <i class="bi bi-receipt-cutoff me-1"></i>Crear factura con seleccionadas
+            </button>
+        </div>
+
+        @RenderSection("Pendientes de factura", notasPendientesFactura, "warning", true)
+        @RenderSection("Facturadas", notasFacturadas, "primary", false)
+        @RenderSection("No requiere factura", notasSinFactura, "secondary", false)
+        @RenderSection("Pagadas", notasPagadas, "success", false)
+    }
+</div>
+
+@code {
+    private List<Cliente> clientes = [];
+    private List<NotaEntregaViewModel> notas = [];
+    private List<NotaEntregaViewModel> notasPendientesFactura = [];
+    private List<NotaEntregaViewModel> notasFacturadas = [];
+    private List<NotaEntregaViewModel> notasSinFactura = [];
+    private List<NotaEntregaViewModel> notasPagadas = [];
+    private HashSet<Guid> notasSeleccionadasParaFactura = [];
+    private Guid? clienteSeleccionadoParaFactura;
+    private string? clienteSeleccionado;
+    private bool _puedeVer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarDatosAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "contabilidad.cuentas_cobrar")
+            || state.User.HasClaim("Capacidad", "facturas.ver");
+    }
+
+    private async Task CargarDatosAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        clientes = await db.Clientes
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.RazonSocial)
+            .ToListAsync();
+
+        var notasQuery = db.NotasEntrega
+            .AsNoTracking()
+            .Include(n => n.Cliente)
+            .Include(n => n.Pedido)
+            .Include(n => n.Detalles)
+            .Include(n => n.FacturasRelacionadas)
+                .ThenInclude(r => r.Factura)
+            .Where(n => n.IsActive && n.Estatus != NotaEntregaEstatus.Cancelada);
+
+        if (Guid.TryParse(clienteSeleccionado, out var clienteId))
+        {
+            notasQuery = notasQuery.Where(n => n.ClienteId == clienteId);
+        }
+
+        notas = await notasQuery
+            .OrderByDescending(n => n.FechaNota)
+            .Select(n => new NotaEntregaViewModel
+            {
+                Id = n.Id,
+                ClienteId = n.ClienteId,
+                NumeroNota = n.NumeroNota,
+                ClienteNombre = n.Cliente.RazonSocial,
+                PedidoNumero = n.Pedido.NumeroPedido,
+                FechaNota = n.FechaNota,
+                Estatus = n.Estatus,
+                NoRequiereFactura = n.NoRequiereFactura,
+                PdfUrl = n.PdfUrl,
+                Total = n.Total,
+                Piezas = n.Detalles.Sum(d => d.Cantidad),
+                Facturas = n.FacturasRelacionadas
+                    .Where(r => r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado)
+                    .Select(r => new FacturaNotaResumen
+                    {
+                        Folio = r.Factura.FolioFiscal ?? r.Factura.FolioInterno,
+                        Estatus = r.Factura.Estatus
+                    })
+                    .ToList()
+            })
+            .ToListAsync();
+
+        notasSeleccionadasParaFactura.RemoveWhere(id => notas.All(n => n.Id != id));
+        if (notasSeleccionadasParaFactura.Count == 0)
+            clienteSeleccionadoParaFactura = null;
+
+        ClasificarNotas();
+    }
+
+    private void ClasificarNotas()
+    {
+        notasSinFactura = notas
+            .Where(n => n.NoRequiereFactura)
+            .OrderByDescending(n => n.FechaNota)
+            .ToList();
+
+        notasPagadas = notas
+            .Where(n => !n.NoRequiereFactura && n.Facturas.Any() && n.Facturas.All(f => f.Estatus == FacturaEstatus.PagadoTotal))
+            .OrderByDescending(n => n.FechaNota)
+            .ToList();
+
+        notasFacturadas = notas
+            .Where(n => !n.NoRequiereFactura && n.Facturas.Any() && n.Facturas.Any(f => f.Estatus != FacturaEstatus.PagadoTotal))
+            .OrderByDescending(n => n.FechaNota)
+            .ToList();
+
+        notasPendientesFactura = notas
+            .Where(n => !n.NoRequiereFactura && !n.Facturas.Any())
+            .OrderByDescending(n => n.FechaNota)
+            .ToList();
+    }
+
+    private async Task OnClienteChanged(ChangeEventArgs e)
+    {
+        clienteSeleccionado = e.Value?.ToString();
+        notasSeleccionadasParaFactura.Clear();
+        clienteSeleccionadoParaFactura = null;
+        await CargarDatosAsync();
+    }
+
+    private RenderFragment RenderSection(string titulo, IReadOnlyCollection<NotaEntregaViewModel> items, string color, bool permitirSeleccion) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "card mb-4");
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", $"card-header bg-{color}-subtle fw-semibold");
+        builder.AddContent(4, $"{titulo} ({items.Count})");
+        builder.CloseElement();
+        builder.OpenElement(5, "div");
+        builder.AddAttribute(6, "class", "card-body p-0");
+
+        if (items.Count == 0)
+        {
+            builder.OpenElement(7, "div");
+            builder.AddAttribute(8, "class", "text-muted px-3 py-4");
+            builder.AddContent(9, "Sin registros en esta categoría.");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(10, "div");
+            builder.AddAttribute(11, "class", "table-responsive");
+            builder.OpenElement(12, "table");
+            builder.AddAttribute(13, "class", "table table-hover mb-0 align-middle");
+            builder.AddMarkupContent(14, permitirSeleccion
+                ? "<thead class=\"table-light\"><tr><th style=\"width:40px\"></th><th>Nota</th><th>Cliente</th><th>Pedido</th><th>Fecha</th><th class=\"text-center\">Piezas</th><th class=\"text-end\">Total</th><th>Estatus</th><th>Factura</th><th>Cobro</th><th>PDF</th></tr></thead>"
+                : "<thead class=\"table-light\"><tr><th>Nota</th><th>Cliente</th><th>Pedido</th><th>Fecha</th><th class=\"text-center\">Piezas</th><th class=\"text-end\">Total</th><th>Estatus</th><th>Factura</th><th>Cobro</th><th>PDF</th></tr></thead>");
+            builder.OpenElement(15, "tbody");
+
+            var seq = 16;
+            foreach (var item in items)
+            {
+                builder.OpenElement(seq++, "tr");
+                if (permitirSeleccion)
+                {
+                    builder.OpenElement(seq++, "td");
+                    builder.OpenElement(seq++, "input");
+                    builder.AddAttribute(seq++, "type", "checkbox");
+                    builder.AddAttribute(seq++, "class", "form-check-input");
+                    builder.AddAttribute(seq++, "checked", notasSeleccionadasParaFactura.Contains(item.Id));
+                    builder.AddAttribute(seq++, "disabled", !PuedeSeleccionarNota(item));
+                    builder.AddAttribute(seq++, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnSeleccionNotaChanged(item, e)));
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+                builder.AddMarkupContent(seq++, $"<td class=\"fw-semibold\">{item.NumeroNota}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{item.ClienteNombre}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{item.PedidoNumero}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{item.FechaNota:dd/MM/yyyy}</td>");
+                builder.AddMarkupContent(seq++, $"<td class=\"text-center\">{item.Piezas:0.##}</td>");
+                builder.AddMarkupContent(seq++, $"<td class=\"text-end\">{item.Total:C2}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{ObtenerBadgeEstatusNota(item)}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{ObtenerResumenFacturas(item)}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{ObtenerResumenCobro(item)}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{ObtenerResumenPdf(item)}</td>");
+                builder.CloseElement();
+            }
+
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private void OnSeleccionNotaChanged(NotaEntregaViewModel nota, ChangeEventArgs e)
+    {
+        var seleccionada = e.Value is bool valor && valor;
+
+        if (seleccionada)
+        {
+            if (clienteSeleccionadoParaFactura.HasValue && clienteSeleccionadoParaFactura != nota.ClienteId)
+                return;
+
+            clienteSeleccionadoParaFactura = nota.ClienteId;
+            notasSeleccionadasParaFactura.Add(nota.Id);
+        }
+        else
+        {
+            notasSeleccionadasParaFactura.Remove(nota.Id);
+            if (notasSeleccionadasParaFactura.Count == 0)
+                clienteSeleccionadoParaFactura = null;
+        }
+    }
+
+    private bool PuedeSeleccionarNota(NotaEntregaViewModel nota)
+        => !clienteSeleccionadoParaFactura.HasValue || clienteSeleccionadoParaFactura == nota.ClienteId || notasSeleccionadasParaFactura.Contains(nota.Id);
+
+    private void CrearFacturaConSeleccionadas()
+    {
+        if (!clienteSeleccionadoParaFactura.HasValue || notasSeleccionadasParaFactura.Count == 0)
+            return;
+
+        var notas = string.Join(",", notasSeleccionadasParaFactura);
+        NavigationManager.NavigateTo($"/contabilidad/facturas?clienteId={clienteSeleccionadoParaFactura.Value}&notaIds={notas}");
+    }
+
+    private static string ObtenerBadgeEstatusNota(NotaEntregaViewModel item)
+    {
+        if (item.NoRequiereFactura)
+            return "<span class='badge bg-secondary'>No requerida</span>";
+
+        return item.Estatus switch
+        {
+            NotaEntregaEstatus.FacturadaTotal => "<span class='badge bg-primary'>Facturada</span>",
+            NotaEntregaEstatus.FacturadaParcial => "<span class='badge bg-warning text-dark'>Facturada parcial</span>",
+            NotaEntregaEstatus.Emitida => "<span class='badge bg-info text-dark'>Emitida</span>",
+            _ => $"<span class='badge bg-light text-dark'>{item.Estatus}</span>"
+        };
+    }
+
+    private static string ObtenerResumenFacturas(NotaEntregaViewModel item)
+        => item.Facturas.Count == 0 ? "—" : string.Join(", ", item.Facturas.Select(f => f.Folio));
+
+    private static string ObtenerResumenCobro(NotaEntregaViewModel item)
+    {
+        if (item.NoRequiereFactura)
+            return "No aplica";
+
+        if (item.Facturas.Count == 0)
+            return "Pendiente";
+
+        if (item.Facturas.All(f => f.Estatus == FacturaEstatus.PagadoTotal))
+            return "Pagada";
+
+        if (item.Facturas.Any(f => f.Estatus == FacturaEstatus.PagadoParcial))
+            return "Pago parcial";
+
+        return "Facturada";
+    }
+
+    private static string ObtenerResumenPdf(NotaEntregaViewModel item)
+        => string.IsNullOrWhiteSpace(item.PdfUrl)
+            ? "<span class='text-muted'>Pendiente</span>"
+            : $"<a class='btn btn-sm btn-outline-danger' href='{item.PdfUrl}' target='_blank' download><i class='bi bi-file-earmark-pdf'></i></a>";
+
+    private sealed class NotaEntregaViewModel
+    {
+        public Guid Id { get; set; }
+        public Guid ClienteId { get; set; }
+        public string NumeroNota { get; set; } = string.Empty;
+        public string ClienteNombre { get; set; } = string.Empty;
+        public string PedidoNumero { get; set; } = string.Empty;
+        public DateTime FechaNota { get; set; }
+        public NotaEntregaEstatus Estatus { get; set; }
+        public bool NoRequiereFactura { get; set; }
+        public string? PdfUrl { get; set; }
+        public decimal Piezas { get; set; }
+        public decimal Total { get; set; }
+        public List<FacturaNotaResumen> Facturas { get; set; } = [];
+    }
+
+    private sealed class FacturaNotaResumen
+    {
+        public string Folio { get; set; } = string.Empty;
+        public FacturaEstatus Estatus { get; set; }
+    }
+}

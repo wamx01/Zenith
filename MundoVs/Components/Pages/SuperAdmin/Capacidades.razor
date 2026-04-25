@@ -1,0 +1,343 @@
+@page "/superadmin/capacidades"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Auth
+@using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Capacidades</PageTitle>
+
+<div class="container-fluid px-4">
+    <AuthorizeView>
+        <Authorized Context="auth">
+            @if (!auth.User.IsInRole("SuperAdmin"))
+            {
+                <div class="alert alert-warning mt-3">No tienes permisos para administrar capacidades.</div>
+            }
+            else
+            {
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <h1 class="display-6 fw-bold"><i class="bi bi-key-fill me-2"></i>Capacidades</h1>
+                        <p class="text-muted mb-0">Catálogo global de permisos (capabilities) usados por roles.</p>
+                    </div>
+                    <button class="btn btn-primary" @onclick="NuevaCapacidad"><i class="bi bi-plus-circle me-1"></i>Nueva Capacidad</button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(mensajeError))
+                {
+                    <div class="alert alert-danger">@mensajeError</div>
+                }
+                @if (!string.IsNullOrEmpty(mensajeOk))
+                {
+                    <div class="alert alert-success">@mensajeOk</div>
+                }
+
+                @if (mostrarFormulario)
+                {
+                    <div class="card mb-4">
+                        <div class="card-header"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nueva Capacidad" : "Editar Capacidad")</h5></div>
+                        <div class="card-body">
+                            <EditForm Model="editando" OnValidSubmit="Guardar">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Clave</label>
+                                        <InputText class="form-control" @bind-Value="editando.Clave" />
+                                        <small class="text-muted">Ej: <code>almacen.ver</code>, <code>compras.editar</code></small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Nombre</label>
+                                        <InputText class="form-control" @bind-Value="editando.Nombre" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Módulo</label>
+                                        <InputText class="form-control" @bind-Value="editando.Modulo" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">Descripción</label>
+                                        <InputText class="form-control" @bind-Value="editando.Descripcion" />
+                                    </div>
+
+                                    <div class="col-12 d-flex gap-2">
+                                        <button class="btn btn-success" type="submit" disabled="@guardando">
+                                            @if (guardando)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                                <span>Guardando...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Guardar</span>
+                                            }
+                                        </button>
+                                        <button class="btn btn-outline-secondary" type="button" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
+                                    </div>
+                                </div>
+                            </EditForm>
+                        </div>
+                    </div>
+                }
+
+                <div class="card">
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Módulo</th>
+                                    <th>Clave</th>
+                                    <th>Nombre</th>
+                                    <th>Descripción</th>
+                                    <th class="text-end"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (cargando)
+                                {
+                                    <tr>
+                                        <td colspan="5" class="text-center py-4">
+                                            <span class="spinner-border text-primary" role="status"></span>
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var c in capacidades)
+                                    {
+                                        <tr>
+                                            <td class="text-muted">@c.Modulo</td>
+                                            <td><code>@c.Clave</code></td>
+                                            <td class="fw-semibold">@c.Nombre</td>
+                                            <td class="text-muted">@(string.IsNullOrWhiteSpace(c.Descripcion) ? "—" : c.Descripcion)</td>
+                                            <td class="text-end">
+                                                <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => Editar(c)"><i class="bi bi-pencil"></i></button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => Eliminar(c.Id)" disabled="@guardando"><i class="bi bi-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </Authorized>
+        <NotAuthorized>
+            <div class="alert alert-warning mt-3">Debes iniciar sesión.</div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private List<Capacidad> capacidades = [];
+    private Capacidad editando = new();
+    private bool mostrarFormulario;
+    private bool cargando = true;
+    private bool guardando;
+    private string? mensajeError;
+    private string? mensajeOk;
+    private bool _esSuperAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _esSuperAdmin = await EsSuperAdmin();
+        if (_esSuperAdmin)
+            await Cargar();
+        cargando = false;
+    }
+
+    private async Task Cargar()
+    {
+        mensajeError = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        capacidades = await db.Capacidades.AsNoTracking()
+            .OrderBy(c => c.Modulo)
+            .ThenBy(c => c.Clave)
+            .ToListAsync();
+    }
+
+    private async Task<bool> EsSuperAdmin()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.IsInRole("SuperAdmin");
+    }
+
+    private void NuevaCapacidad()
+    {
+        if (!_esSuperAdmin)
+        {
+            mensajeError = "No tienes permisos.";
+            return;
+        }
+
+        mensajeError = null;
+        mensajeOk = null;
+        editando = new() { Id = Guid.Empty };
+        mostrarFormulario = true;
+    }
+
+    private void Editar(Capacidad c)
+    {
+        if (!_esSuperAdmin)
+        {
+            mensajeError = "No tienes permisos.";
+            return;
+        }
+
+        mensajeError = null;
+        mensajeOk = null;
+        editando = new()
+        {
+            Id = c.Id,
+            Clave = c.Clave,
+            Nombre = c.Nombre,
+            Modulo = c.Modulo,
+            Descripcion = c.Descripcion
+        };
+        mostrarFormulario = true;
+    }
+
+    private void Cancelar()
+    {
+        mostrarFormulario = false;
+        mensajeError = null;
+    }
+
+    private async Task Guardar()
+    {
+        mensajeError = null;
+        mensajeOk = null;
+        guardando = true;
+
+        try
+        {
+            if (!await EsSuperAdmin())
+            {
+                mensajeError = "No tienes permisos.";
+                return;
+            }
+
+            var clave = (editando.Clave ?? "").Trim().ToLowerInvariant();
+            var nombre = (editando.Nombre ?? "").Trim();
+            var modulo = (editando.Modulo ?? "").Trim();
+            var descripcion = string.IsNullOrWhiteSpace(editando.Descripcion) ? null : editando.Descripcion.Trim();
+
+            if (string.IsNullOrWhiteSpace(clave) || string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(modulo))
+            {
+                mensajeError = "Clave, nombre y módulo son requeridos.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var duplicada = await db.Capacidades.AnyAsync(c => c.Clave == clave && c.Id != editando.Id);
+            if (duplicada)
+            {
+                mensajeError = "Ya existe una capacidad con esa clave.";
+                return;
+            }
+
+            if (editando.Id == Guid.Empty)
+            {
+                var nueva = new Capacidad
+                {
+                    Clave = clave,
+                    Nombre = nombre,
+                    Modulo = modulo,
+                    Descripcion = descripcion
+                };
+                db.Capacidades.Add(nueva);
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Crear capacidad", nameof(Capacidad), nueva.Id, $"Capacidad {nueva.Clave} creada.");
+            }
+            else
+            {
+                var existing = await db.Capacidades.FirstOrDefaultAsync(c => c.Id == editando.Id);
+                if (existing == null)
+                {
+                    mensajeError = "No se encontró la capacidad.";
+                    return;
+                }
+
+                existing.Clave = clave;
+                existing.Nombre = nombre;
+                existing.Modulo = modulo;
+                existing.Descripcion = descripcion;
+                await db.SaveChangesAsync();
+                await AuditService.LogAsync("Editar capacidad", nameof(Capacidad), existing.Id, $"Capacidad {existing.Clave} actualizada.");
+                mensajeOk = "Guardado correctamente.";
+                mostrarFormulario = false;
+                await Cargar();
+                return;
+            }
+
+            await db.SaveChangesAsync();
+
+            mensajeOk = "Guardado correctamente.";
+            mostrarFormulario = false;
+            await Cargar();
+        }
+        catch (DbUpdateException ex)
+        {
+            mensajeError = ex.InnerException?.Message ?? ex.Message;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task Eliminar(Guid id)
+    {
+        mensajeError = null;
+        mensajeOk = null;
+        guardando = true;
+
+        try
+        {
+            if (!await EsSuperAdmin())
+            {
+                mensajeError = "No tienes permisos.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var enUso = await db.TipoUsuarioCapacidades.AnyAsync(tc => tc.CapacidadId == id);
+            if (enUso)
+            {
+                mensajeError = "No se puede eliminar: esta capacidad está asignada a uno o más roles.";
+                return;
+            }
+
+            var cap = await db.Capacidades.FirstOrDefaultAsync(c => c.Id == id);
+            if (cap == null) return;
+
+            db.Capacidades.Remove(cap);
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Eliminar capacidad", nameof(Capacidad), cap.Id, $"Capacidad {cap.Clave} eliminada.");
+
+            mensajeOk = "Eliminado correctamente.";
+            await Cargar();
+        }
+        catch (DbUpdateException ex)
+        {
+            mensajeError = ex.InnerException?.Message ?? ex.Message;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+}

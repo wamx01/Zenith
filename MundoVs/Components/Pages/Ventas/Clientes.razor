@@ -1,0 +1,1298 @@
+@page "/clientes"
+@using Microsoft.EntityFrameworkCore
+@using MundoVs.Core.Entities.Calzado
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Services
+@using MundoVs.Infrastructure.Data
+@inject IClienteRepository ClienteRepository
+@inject CodigoNegocioService CodigoNegocio
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Clientes</PageTitle>
+
+<div class="container-fluid cat-page">
+    <div class="d-flex align-items-start justify-content-between mb-2">
+        <div>
+            <div class="cat-title"><i class="bi bi-people-fill me-1"></i>Clientes</div>
+            <div class="cat-subtitle">Gestión de clientes, datos fiscales y configuración comercial</div>
+        </div>
+        <button class="btn btn-sm btn-primary" @onclick="NuevoCliente">
+            <i class="bi bi-plus-circle me-1"></i>Nuevo
+        </button>
+    </div>
+
+    <div class="cat-kpi mb-2">
+        <span class="cat-kpi-chip">Total: @clientes.Count</span>
+        <span class="cat-kpi-chip active">Activos: @clientes.Count(c => c.IsActive)</span>
+        <span class="cat-kpi-chip inactive">Inactivos: @clientes.Count(c => !c.IsActive)</span>
+        @if (textoBusquedaClientes.Length > 0 || filtroIndustriaClientes.Length > 0 || filtroEstadoClientes != "activos")
+        {
+            <span class="cat-kpi-chip filtered">Filtrados: @clientesFiltrados.Count()</span>
+        }
+    </div>
+
+    <div class="cat-filter-bar mb-3">
+        <div>
+            <label>Buscar</label>
+            <div class="input-group" style="width:260px">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input class="form-control" @bind="textoBusquedaClientes" @bind:after="AplicarFiltrosClientes" placeholder="Código, razón social, RFC..." />
+            </div>
+        </div>
+        <div>
+            <label>Industria</label>
+            <select class="form-select" style="width:140px" @bind="filtroIndustriaClientes" @bind:after="AplicarFiltrosClientes">
+                <option value="">Todas</option>
+                <option value="@IndustriaEnum.Calzado.ToString()">Calzado</option>
+                <option value="@IndustriaEnum.Serigrafia.ToString()">Serigrafía</option>
+                <option value="@IndustriaEnum.Ambas.ToString()">Ambas</option>
+            </select>
+        </div>
+        <div>
+            <label>Estado</label>
+            <select class="form-select" style="width:120px" @bind="filtroEstadoClientes" @bind:after="AplicarFiltrosClientes">
+                <option value="activos">Activos</option>
+                <option value="inactivos">Inactivos</option>
+                <option value="todos">Todos</option>
+            </select>
+        </div>
+        <div class="d-flex align-items-end">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LimpiarFiltrosClientes">
+                <i class="bi bi-x-circle me-1"></i>Limpiar
+            </button>
+        </div>
+    </div>
+
+    @if (mostrarFormulario)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>@(clienteEditando.Id == Guid.Empty ? "Nuevo Cliente" : "Editar Cliente")</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="clienteEditando" OnValidSubmit="GuardarCliente">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                        <label class="form-label">Código</label>
+                        <InputText class="form-control" @bind-Value="clienteEditando.Codigo" readonly />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">RFC/CIF</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.RfcCif" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Razón Social</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.RazonSocial" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nombre Comercial</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.NombreComercial" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Email</label>
+                            <InputText type="email" class="form-control" @bind-Value="clienteEditando.Email" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Teléfono</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.Telefono" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Email Facturación</label>
+                            <InputText type="email" class="form-control" @bind-Value="clienteEditando.EmailFacturacion" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Email Cobranza</label>
+                            <InputText type="email" class="form-control" @bind-Value="clienteEditando.EmailCobranza" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Dirección</label>
+                        <InputText class="form-control" @bind-Value="clienteEditando.Direccion" />
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Ciudad</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.Ciudad" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Estado</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.Estado" />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Código Postal</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.CodigoPostal" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">País</label>
+                            <InputText class="form-control" @bind-Value="clienteEditando.Pais" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Industria</label>
+                            <InputSelect class="form-select" @bind-Value="clienteEditando.Industria">
+                                <option value="@IndustriaEnum.Calzado">Calzado</option>
+                                <option value="@IndustriaEnum.Serigrafia">Serigrafía</option>
+                                <option value="@IndustriaEnum.Ambas">Ambas</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 bg-light mb-3">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                <h6 class="mb-0">Reglas sugeridas de variación comercial</h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AgregarReglaVariacionPrecio">
+                                    <i class="bi bi-plus-circle me-1"></i>Regla
+                                </button>
+                            </div>
+
+                            <div class="small text-muted mb-3">
+                                Estas reglas son sugerencias por cliente para cotización. No guardan precio final; solo indican si una dimensión o valor propone un ajuste porcentual sobre el precio base cotizado.
+                            </div>
+
+                            @if (reglasVariacionCliente.Any())
+                            {
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Dimensión</th>
+                                                <th>Valor</th>
+                                                <th>Orden</th>
+                                                <th class="text-center">Permite variación</th>
+                                                <th class="text-end">% sugerido</th>
+                                                <th class="text-center">Activa</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var regla in reglasVariacionCliente.OrderBy(r => r.Orden).ThenBy(r => r.Dimension).ThenBy(r => r.Valor))
+                                            {
+                                                <tr>
+                                                    <td><InputText class="form-control form-control-sm" @bind-Value="regla.Dimension" placeholder="Talla, Color, etc." /></td>
+                                                    <td><InputText class="form-control form-control-sm" @bind-Value="regla.Valor" placeholder="22, Rojo, etc." /></td>
+                                                    <td><InputNumber class="form-control form-control-sm" @bind-Value="regla.Orden" /></td>
+                                                    <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="regla.PermiteVariacionPrecio" /></td>
+                                                    <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="regla.PorcentajeVariacionSugerido" /></td>
+                                                    <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="regla.Activa" /></td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarReglaVariacionPrecio(regla.LocalKey)">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-muted small mb-3">No hay reglas sugeridas configuradas para este cliente.</div>
+                            }
+
+                            <h6 class="mb-3">Datos fiscales y crédito</h6>
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Régimen Fiscal</label>
+                                    <InputText class="form-control" @bind-Value="clienteEditando.RegimenFiscalReceptor" />
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Uso CFDI</label>
+                                    <InputText class="form-control" @bind-Value="clienteEditando.UsoCfdi" />
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">CP Fiscal</label>
+                                    <InputText class="form-control" @bind-Value="clienteEditando.DomicilioFiscalCp" />
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Días de Crédito</label>
+                                    <InputNumber class="form-control" @bind-Value="clienteEditando.DiasCredito" />
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Límite de Crédito</label>
+                                    <InputNumber class="form-control" @bind-Value="clienteEditando.LimiteCredito" />
+                                </div>
+                                <div class="col-md-4 mb-3 d-flex align-items-end">
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="clienteEditando.RfcValidado" />
+                                        <label class="form-check-label">RFC validado</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 bg-light mb-3">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                <h6 class="mb-0">Configuración de tallas y fracciones</h6>
+                                <span class="text-muted small">Catálogo base por empresa · override opcional por cliente</span>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(configuracionCalzadoError))
+                            {
+                                <div class="alert alert-warning py-2">@configuracionCalzadoError</div>
+                            }
+
+                            <div class="small text-muted mb-3">
+                                <strong>Ajuste %</strong> es la variación relativa de una talla respecto a la talla base. Hoy se guarda como referencia de la corrida/fracción.
+                            </div>
+
+                            <div class="row g-4">
+                                    <div class="col-12 col-xl-5">
+                                        <div class="border rounded p-3 bg-white h-100">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <strong>Tallas base de la empresa</strong>
+                                                <a class="btn btn-sm btn-outline-primary" href="/configuracion/tallas-calzado">
+                                                    <i class="bi bi-sliders me-1"></i>Catálogo base
+                                                </a>
+                                            </div>
+
+                                            @if (!tallasCliente.Any())
+                                            {
+                                                <div class="alert alert-warning py-2 mb-0">No hay tallas base configuradas para la empresa.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="form-check form-switch mb-3">
+                                                    <InputCheckbox class="form-check-input" @bind-Value="usarCatalogoBaseCliente" />
+                                                    <label class="form-check-label">Usar catálogo base completo para este cliente</label>
+                                                </div>
+
+                                                @if (usarCatalogoBaseCliente)
+                                                {
+                                                    <div class="small text-muted mb-2">Este cliente heredará automáticamente todas las tallas activas de la empresa.</div>
+                                                    <div class="d-flex flex-wrap gap-2">
+                                                        @foreach (var talla in tallasCliente.Where(t => t.ActivaCatalogo).OrderBy(t => t.OrdenCatalogo).ThenBy(t => t.Talla))
+                                                        {
+                                                            <span class="badge rounded-pill bg-light text-dark border">@talla.Talla <span class="text-muted">@talla.SistemaNumeracion</span></span>
+                                                        }
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="small text-muted mb-2">Selecciona sólo las tallas que este cliente utiliza y define una talla base.</div>
+                                                    <div class="table-responsive">
+                                                        <table class="table table-sm align-middle mb-0">
+                                                            <thead class="table-light">
+                                                                <tr>
+                                                                    <th>Talla</th>
+                                                                    <th>Sistema</th>
+                                                                    <th>Orden base</th>
+                                                                    <th>Usar</th>
+                                                                    <th>Orden cliente</th>
+                                                                    <th>Base</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var talla in tallasCliente.OrderBy(t => t.OrdenCatalogo).ThenBy(t => t.Talla))
+                                                                {
+                                                                    <tr>
+                                                                        <td class="fw-semibold">@talla.Talla</td>
+                                                                        <td>@talla.SistemaNumeracion</td>
+                                                                        <td>@talla.OrdenCatalogo</td>
+                                                                        <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="talla.Seleccionada" /></td>
+                                                                        <td><InputNumber class="form-control form-control-sm" @bind-Value="talla.OrdenCliente" disabled="@(!talla.Seleccionada)" /></td>
+                                                                        <td class="text-center">
+                                                                            <InputRadioGroup @bind-Value="tallaBaseSeleccionada">
+                                                                                <InputRadio class="form-check-input" Value="@talla.CatalogoTallaCalzadoId" disabled="@(!talla.Seleccionada)" />
+                                                                            </InputRadioGroup>
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-xl-7">
+                                        <div class="border rounded p-3 bg-white h-100">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <strong>Fracciones del cliente</strong>
+                                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AgregarFraccionCliente">
+                                                    <i class="bi bi-plus-circle me-1"></i>Fracción
+                                                </button>
+                                            </div>
+
+                                            @if (!fraccionesCliente.Any())
+                                            {
+                                                <div class="text-muted small">Define las fracciones reutilizables con sus unidades por talla y ajuste porcentual opcional.</div>
+                                            }
+                                            else
+                                            {
+                                                @foreach (var fraccion in fraccionesCliente)
+                                                {
+                                                    <div class="border rounded p-3 mb-3 bg-light-subtle">
+                                                        <div class="row g-2 align-items-end mb-2">
+                                                            <div class="col-md-3">
+                                                                <label class="form-label small mb-1">Código</label>
+                                                                <InputText class="form-control form-control-sm" @bind-Value="fraccion.Codigo" />
+                                                            </div>
+                                                            <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Nombre</label>
+                                                                <InputText class="form-control form-control-sm" @bind-Value="fraccion.Nombre" />
+                                                            </div>
+                                                            <div class="col-md-3">
+                                                                <label class="form-label small mb-1">Unidades por fracción</label>
+                                                                <InputNumber class="form-control form-control-sm" @bind-Value="fraccion.UnidadesPorFraccion" />
+                                                            </div>
+                                                            <div class="col-md-1 text-center">
+                                                                <label class="form-label small mb-1">Activa</label>
+                                                                <div><InputCheckbox class="form-check-input" @bind-Value="fraccion.Activa" /></div>
+                                                            </div>
+                                                            <div class="col-md-1 text-end">
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFraccionCliente(fraccion.LocalKey)"><i class="bi bi-trash"></i></button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="d-flex align-items-center justify-content-between mb-2">
+                                                            <span class="small fw-semibold text-muted">Detalle por talla</span>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AgregarDetalleFraccion(fraccion.LocalKey)">
+                                                                <i class="bi bi-plus-circle me-1"></i>Detalle
+                                                            </button>
+                                                        </div>
+
+                                                        @if (!fraccion.Detalles.Any())
+                                                        {
+                                                            <div class="text-muted small">Agrega las tallas y unidades de la fracción.</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="table-responsive">
+                                                                <table class="table table-sm align-middle mb-0">
+                                                                    <thead class="table-light">
+                                                                        <tr>
+                                                                            <th>Talla</th>
+                                                                            <th>Orden</th>
+                                                                            <th>Unidades</th>
+                                                                            <th>Ajuste %</th>
+                                                                            <th></th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        @foreach (var detalle in fraccion.Detalles.OrderBy(d => d.Orden).ThenBy(d => d.Talla))
+                                                                        {
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <InputSelect class="form-select form-select-sm" @bind-Value="detalle.Talla">
+                                                                                        <option value="">Seleccione...</option>
+                                                                                        @foreach (var tallaDisponible in ObtenerTallasDisponiblesParaDetalle(fraccion, detalle))
+                                                                                        {
+                                                                                            <option value="@tallaDisponible">@tallaDisponible</option>
+                                                                                        }
+                                                                                    </InputSelect>
+                                                                                </td>
+                                                                                <td><InputNumber class="form-control form-control-sm" @bind-Value="detalle.Orden" /></td>
+                                                                                <td><InputNumber class="form-control form-control-sm" @bind-Value="detalle.Unidades" /></td>
+                                                                                <td><InputNumber class="form-control form-control-sm" @bind-Value="detalle.PorcentajeVariacion" /></td>
+                                                                                <td class="text-end">
+                                                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDetalleFraccion(fraccion.LocalKey, detalle.LocalKey)"><i class="bi bi-trash"></i></button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        }
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                            }
+
+                                        </div>
+                                    </div>
+                                </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-save"></i> Guardar
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="CancelarEdicion">
+                            <i class="bi bi-x-circle"></i> Cancelar
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            @if (clientes == null)
+            {
+                <div class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Cargando...</span></div>
+                    <div class="text-muted small mt-1">Cargando clientes...</div>
+                </div>
+            }
+            else if (!clientesFiltrados.Any())
+            {
+                <div class="text-center py-4 text-muted small"><i class="bi bi-inbox me-1"></i>Sin registros con los filtros actuales.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 cat-table">
+                        <thead>
+                            <tr>
+                                <th style="width:70px">Acciones</th>
+                                <th style="width:72px">Estado</th>
+                                <th>Código</th>
+                                <th>Razón Social</th>
+                                <th>RFC/CIF</th>
+                                <th>Email</th>
+                                <th>Teléfono</th>
+                                <th>Industria</th>
+                                <th>Ciudad</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cliente in clientesFiltrados)
+                            {
+                                <tr class="@(!cliente.IsActive ? "cat-row-inactive" : string.Empty)">
+                                    <td class="cat-actions">
+                                        <button class="cat-btn-edit me-1" @onclick="async () => await EditarCliente(cliente)" title="Editar"><i class="bi bi-pencil"></i></button>
+                                        <button class="cat-btn-delete" @onclick="() => EliminarCliente(cliente)" title="Desactivar"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                    <td><span class="@(cliente.IsActive ? "cat-badge-active" : "cat-badge-inactive")">@(cliente.IsActive ? "Activo" : "Inactivo")</span></td>
+                                    <td class="fw-semibold text-primary-emphasis">@cliente.Codigo</td>
+                                    <td>@cliente.RazonSocial</td>
+                                    <td class="text-muted">@cliente.RfcCif</td>
+                                    <td>@cliente.Email</td>
+                                    <td>@cliente.Telefono</td>
+                                    <td>
+                                        <span class="badge bg-@ObtenerColorIndustria(cliente.Industria)" style="font-size:0.68rem">@cliente.Industria</span>
+                                    </td>
+                                    <td>@cliente.Ciudad</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .cat-page { padding: 0.65rem 0.9rem; }
+    .cat-title { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
+    .cat-subtitle { font-size: 0.74rem; color: #6c757d; }
+    .cat-kpi { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .cat-kpi-chip { font-size: 0.73rem; padding: 0.18rem 0.6rem; border-radius: 999px; border: 1px solid #dee2e6; background: #f8f9fa; color: #495057; font-weight: 600; }
+    .cat-kpi-chip.active { background: #d1e7dd; border-color: #a3cfbb; color: #146c43; }
+    .cat-kpi-chip.inactive { background: #e9ecef; border-color: #ced4da; color: #6c757d; }
+    .cat-kpi-chip.filtered { background: #cfe2ff; border-color: #9ec5fe; color: #084298; }
+    .cat-filter-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: flex-end; }
+    .cat-filter-bar label { display: block; font-size: 0.68rem; font-weight: 700; color: #6c757d; margin-bottom: 0.15rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cat-filter-bar .form-control,
+    .cat-filter-bar .form-select { font-size: 0.8rem; padding: 0.22rem 0.5rem; height: 28px; }
+    .cat-filter-bar .input-group-text { font-size: 0.78rem; padding: 0.22rem 0.5rem; height: 28px; background: #f8f9fa; }
+    .cat-filter-bar .btn { font-size: 0.78rem; padding: 0.22rem 0.6rem; height: 28px; }
+    .cat-table { font-size: 0.81rem; }
+    .cat-table thead tr th { background: #1e3a5f !important; color: #fff !important; font-size: 0.69rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border: none; padding: 0.38rem 0.6rem; }
+    .cat-table tbody tr td { padding: 0.28rem 0.6rem; vertical-align: middle; border-color: #f0f2f5; }
+    .cat-table tbody tr:hover td { background-color: #f5f8ff; }
+    .cat-row-inactive td { opacity: 0.5; }
+    .cat-badge-active { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #d1e7dd; color: #146c43; border: 1px solid #a3cfbb; font-weight: 600; white-space: nowrap; }
+    .cat-badge-inactive { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #e9ecef; color: #6c757d; border: 1px solid #ced4da; font-weight: 600; white-space: nowrap; }
+    .cat-actions { white-space: nowrap; }
+    .cat-btn-edit, .cat-btn-delete { background: transparent; border-radius: 4px; padding: 0.14rem 0.38rem; font-size: 0.73rem; line-height: 1; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .cat-btn-edit { border: 1px solid #0d6efd; color: #0d6efd; }
+    .cat-btn-edit:hover { background: #0d6efd; color: #fff; }
+    .cat-btn-delete { border: 1px solid #dc3545; color: #dc3545; }
+    .cat-btn-delete:hover { background: #dc3545; color: #fff; }
+</style>
+
+@code {
+    private List<Cliente> clientes = [];
+    private IEnumerable<Cliente> clientesFiltrados = [];
+    private Cliente clienteEditando = new();
+    private bool mostrarFormulario = false;
+    private List<ReglaVariacionClienteEditor> reglasVariacionCliente = [];
+    private List<TallaClienteEditor> tallasCliente = [];
+    private List<FraccionClienteEditor> fraccionesCliente = [];
+    private Guid? tallaBaseSeleccionada;
+    private Guid _empresaId;
+    private bool usarCatalogoBaseCliente = true;
+    private string? configuracionCalzadoError;
+    private string textoBusquedaClientes = string.Empty;
+    private string filtroIndustriaClientes = string.Empty;
+    private string filtroEstadoClientes = "activos";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarContextoAsync();
+        await CargarClientes();
+    }
+
+    private async Task CargarContextoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarClientes()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        clientes = await db.Clientes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(c => c.EmpresaId == _empresaId)
+            .OrderBy(c => c.RazonSocial)
+            .ToListAsync();
+        AplicarFiltrosClientes();
+    }
+
+    private void AplicarFiltrosClientes()
+    {
+        IEnumerable<Cliente> consulta = clientes;
+
+        if (!string.IsNullOrWhiteSpace(textoBusquedaClientes))
+        {
+            var texto = textoBusquedaClientes.Trim();
+            consulta = consulta.Where(c =>
+                c.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || c.RazonSocial.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || c.RfcCif.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || c.Email.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (c.Ciudad?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtroIndustriaClientes)
+            && Enum.TryParse<IndustriaEnum>(filtroIndustriaClientes, out var industria))
+        {
+            consulta = consulta.Where(c => c.Industria == industria);
+        }
+
+        consulta = filtroEstadoClientes switch
+        {
+            "inactivos" => consulta.Where(c => !c.IsActive),
+            "todos" => consulta,
+            _ => consulta.Where(c => c.IsActive)
+        };
+
+        clientesFiltrados = consulta.ToList();
+    }
+
+    private void LimpiarFiltrosClientes()
+    {
+        textoBusquedaClientes = string.Empty;
+        filtroIndustriaClientes = string.Empty;
+        filtroEstadoClientes = "activos";
+        AplicarFiltrosClientes();
+    }
+
+    private async Task NuevoCliente()
+    {
+        clienteEditando = new Cliente
+        {
+            Pais = "México",
+            Codigo = _empresaId == Guid.Empty ? string.Empty : await CodigoNegocio.GetNextEntityCodeAsync(_empresaId, "CLI", "Consecutivo:Cliente")
+        };
+        reglasVariacionCliente = [];
+        tallasCliente = [];
+        fraccionesCliente = [];
+        tallaBaseSeleccionada = null;
+        configuracionCalzadoError = null;
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarCliente(Cliente cliente)
+    {
+        clienteEditando = ClonarCliente(cliente);
+        await CargarReglasVariacionPrecioAsync(cliente.Id);
+        await CargarConfiguracionCalzadoAsync(cliente.Id);
+        configuracionCalzadoError = null;
+        mostrarFormulario = true;
+    }
+
+    private async Task GuardarCliente()
+    {
+        if (clienteEditando.Id == Guid.Empty && string.IsNullOrWhiteSpace(clienteEditando.Codigo))
+        {
+            clienteEditando.Codigo = await CodigoNegocio.GetNextEntityCodeAsync(_empresaId, "CLI", "Consecutivo:Cliente");
+        }
+
+        PrepararClienteParaGuardar();
+
+        if (!ValidarReglasVariacionPrecio())
+        {
+            return;
+        }
+
+        if (clienteEditando.RfcValidado)
+        {
+            clienteEditando.FechaValidacionRfc ??= DateTime.UtcNow;
+        }
+        else
+        {
+            clienteEditando.FechaValidacionRfc = null;
+        }
+
+        if (clienteEditando.Id == Guid.Empty)
+        {
+            await ClienteRepository.AddAsync(clienteEditando);
+        }
+        else
+        {
+            clienteEditando.UpdatedAt = DateTime.UtcNow;
+            await ClienteRepository.UpdateAsync(clienteEditando);
+        }
+
+        await GuardarReglasVariacionPrecioAsync(clienteEditando.Id);
+
+        if (EsClienteCalzado())
+        {
+            if (!ValidarConfiguracionCalzado())
+            {
+                return;
+            }
+
+            await GuardarConfiguracionCalzadoAsync(clienteEditando.Id);
+        }
+
+        await CargarClientes();
+        CancelarEdicion();
+    }
+
+    private async Task EliminarCliente(Cliente cliente)
+    {
+        cliente.IsActive = false;
+        cliente.UpdatedAt = DateTime.UtcNow;
+        await ClienteRepository.UpdateAsync(cliente);
+        await CargarClientes();
+    }
+
+    private void CancelarEdicion()
+    {
+        clienteEditando = new();
+        reglasVariacionCliente = [];
+        tallasCliente = [];
+        fraccionesCliente = [];
+        tallaBaseSeleccionada = null;
+        usarCatalogoBaseCliente = true;
+        configuracionCalzadoError = null;
+        mostrarFormulario = false;
+    }
+
+    private bool EsClienteCalzado()
+        => clienteEditando.Industria is IndustriaEnum.Calzado or IndustriaEnum.Ambas;
+
+    private void AgregarReglaVariacionPrecio()
+    {
+        var siguienteOrden = reglasVariacionCliente.Count == 0 ? 1 : reglasVariacionCliente.Max(r => r.Orden) + 1;
+        reglasVariacionCliente.Add(new ReglaVariacionClienteEditor
+        {
+            Orden = siguienteOrden,
+            Dimension = "Talla",
+            PermiteVariacionPrecio = true,
+            Activa = true
+        });
+    }
+
+    private void EliminarReglaVariacionPrecio(string localKey)
+        => reglasVariacionCliente.RemoveAll(r => r.LocalKey == localKey);
+
+    private void AgregarFraccionCliente()
+    {
+        var fraccion = new FraccionClienteEditor
+        {
+            Activa = true,
+            UnidadesPorFraccion = 12
+        };
+
+        fraccion.Codigo = GenerarCodigoFraccion(fraccion.LocalKey);
+        fraccionesCliente.Add(fraccion);
+
+        configuracionCalzadoError = null;
+    }
+
+    private void EliminarFraccionCliente(string localKey)
+    {
+        fraccionesCliente.RemoveAll(f => f.LocalKey == localKey);
+        configuracionCalzadoError = null;
+    }
+
+    private void AgregarDetalleFraccion(string fraccionKey)
+    {
+        var fraccion = fraccionesCliente.FirstOrDefault(f => f.LocalKey == fraccionKey);
+        if (fraccion == null)
+        {
+            return;
+        }
+
+        var tallaDisponible = ObtenerTallasDisponiblesCliente()
+            .Where(t => !fraccion.Detalles.Any(d => string.Equals(d.Talla, t.Talla, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(t => t.OrdenCliente)
+            .ThenBy(t => t.Talla)
+            .Select(t => t.Talla.Trim())
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(tallaDisponible))
+        {
+            configuracionCalzadoError = "Ya no hay tallas disponibles para agregar en esta fracción.";
+            return;
+        }
+
+        var siguienteOrden = fraccion.Detalles.Count == 0 ? 1 : fraccion.Detalles.Max(d => d.Orden) + 1;
+        fraccion.Detalles.Add(new FraccionDetalleClienteEditor { Orden = siguienteOrden, Unidades = 1, Talla = tallaDisponible });
+        configuracionCalzadoError = null;
+    }
+
+    private void EliminarDetalleFraccion(string fraccionKey, string detalleKey)
+    {
+        var fraccion = fraccionesCliente.FirstOrDefault(f => f.LocalKey == fraccionKey);
+        fraccion?.Detalles.RemoveAll(d => d.LocalKey == detalleKey);
+        configuracionCalzadoError = null;
+    }
+
+    private IEnumerable<string> ObtenerTallasDisponiblesParaDetalle(FraccionClienteEditor fraccion, FraccionDetalleClienteEditor detalle)
+    {
+        var ocupadas = fraccion.Detalles
+            .Where(d => d.LocalKey != detalle.LocalKey && !string.IsNullOrWhiteSpace(d.Talla))
+            .Select(d => d.Talla.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return ObtenerTallasDisponiblesCliente()
+            .Where(t => !string.IsNullOrWhiteSpace(t.Talla) && (!ocupadas.Contains(t.Talla.Trim()) || string.Equals(t.Talla, detalle.Talla, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(t => t.OrdenCliente)
+            .ThenBy(t => t.Talla)
+            .Select(t => t.Talla.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private bool ValidarConfiguracionCalzado()
+    {
+        configuracionCalzadoError = null;
+
+        var tallasValidas = ObtenerTallasDisponiblesCliente()
+            .Select(t => t.Talla.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!usarCatalogoBaseCliente)
+        {
+            var tallasSeleccionadas = ObtenerTallasDisponiblesCliente().ToList();
+            if (!tallasSeleccionadas.Any())
+            {
+                configuracionCalzadoError = "Selecciona al menos una talla para el cliente o usa el catálogo base completo.";
+                return false;
+            }
+
+            if (!tallaBaseSeleccionada.HasValue || !tallasSeleccionadas.Any(t => t.CatalogoTallaCalzadoId == tallaBaseSeleccionada.Value))
+            {
+                configuracionCalzadoError = "Selecciona una talla base válida para el cliente.";
+                return false;
+            }
+        }
+
+        foreach (var fraccion in fraccionesCliente.Where(f => !string.IsNullOrWhiteSpace(f.Codigo) || !string.IsNullOrWhiteSpace(f.Nombre)))
+        {
+            var etiquetaFraccion = ObtenerEtiquetaFraccion(fraccion);
+            var detallesValidos = fraccion.Detalles
+                .Where(d => !string.IsNullOrWhiteSpace(d.Talla))
+                .ToList();
+
+            var tallasRepetidas = detallesValidos
+                .GroupBy(d => d.Talla.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+
+            if (tallasRepetidas.Any())
+            {
+                configuracionCalzadoError = $"La fracción '{etiquetaFraccion}' tiene tallas repetidas: {string.Join(", ", tallasRepetidas)}.";
+                return false;
+            }
+
+            var tallaInvalida = detallesValidos.FirstOrDefault(d => !tallasValidas.Contains(d.Talla.Trim()));
+            if (tallaInvalida != null)
+            {
+                configuracionCalzadoError = $"La talla '{tallaInvalida.Talla}' de la fracción '{etiquetaFraccion}' no existe en las tallas disponibles del cliente.";
+                return false;
+            }
+
+            var totalUnidades = detallesValidos.Sum(d => Math.Max(0, d.Unidades));
+            if (totalUnidades > fraccion.UnidadesPorFraccion)
+            {
+                configuracionCalzadoError = $"La fracción '{etiquetaFraccion}' suma {totalUnidades} unidades y no puede exceder {fraccion.UnidadesPorFraccion}.";
+                return false;
+            }
+
+            if (fraccion.UnidadesPorFraccion > 0 && detallesValidos.Any() && totalUnidades != fraccion.UnidadesPorFraccion)
+            {
+                configuracionCalzadoError = $"La fracción '{etiquetaFraccion}' suma {totalUnidades} unidades y debe cuadrar con {fraccion.UnidadesPorFraccion}.";
+                return false;
+            }
+        }
+
+        var codigosDuplicados = fraccionesCliente
+            .Where(f => !string.IsNullOrWhiteSpace(f.Codigo) || !string.IsNullOrWhiteSpace(f.Nombre))
+            .Select(f => NormalizarCodigoFraccion(f))
+            .GroupBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (codigosDuplicados.Any())
+        {
+            configuracionCalzadoError = $"Hay códigos de fracción duplicados: {string.Join(", ", codigosDuplicados)}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidarReglasVariacionPrecio()
+    {
+        var duplicadas = reglasVariacionCliente
+            .Where(r => !string.IsNullOrWhiteSpace(r.Dimension) && !string.IsNullOrWhiteSpace(r.Valor))
+            .GroupBy(r => $"{r.Dimension.Trim().ToUpperInvariant()}|{r.Valor.Trim().ToUpperInvariant()}")
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key.Replace("|", " = "))
+            .ToList();
+
+        if (duplicadas.Any())
+        {
+            configuracionCalzadoError = $"Hay reglas de variación duplicadas: {string.Join(", ", duplicadas)}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task CargarReglasVariacionPrecioAsync(Guid clienteId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        reglasVariacionCliente = await db.ClientesReglasVariacionPrecio
+            .AsNoTracking()
+            .Where(r => r.ClienteId == clienteId && r.IsActive)
+            .OrderBy(r => r.Orden)
+            .ThenBy(r => r.Dimension)
+            .ThenBy(r => r.Valor)
+            .Select(r => new ReglaVariacionClienteEditor
+            {
+                Id = r.Id,
+                Dimension = r.Dimension,
+                Valor = r.Valor,
+                Orden = r.Orden,
+                PermiteVariacionPrecio = r.PermiteVariacionPrecio,
+                PorcentajeVariacionSugerido = r.PorcentajeVariacionSugerido,
+                Activa = r.Activa
+            })
+            .ToListAsync();
+    }
+
+    private async Task GuardarReglasVariacionPrecioAsync(Guid clienteId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var existentes = await db.ClientesReglasVariacionPrecio
+            .Where(r => r.ClienteId == clienteId)
+            .ToListAsync();
+
+        if (existentes.Count > 0)
+        {
+            db.ClientesReglasVariacionPrecio.RemoveRange(existentes);
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var regla in reglasVariacionCliente.Where(r => !string.IsNullOrWhiteSpace(r.Dimension) && !string.IsNullOrWhiteSpace(r.Valor)))
+        {
+            db.ClientesReglasVariacionPrecio.Add(new ClienteReglaVariacionPrecio
+            {
+                Id = Guid.NewGuid(),
+                ClienteId = clienteId,
+                Dimension = regla.Dimension.Trim(),
+                Valor = regla.Valor.Trim(),
+                Orden = regla.Orden,
+                PermiteVariacionPrecio = regla.PermiteVariacionPrecio,
+                PorcentajeVariacionSugerido = regla.PorcentajeVariacionSugerido,
+                Activa = regla.Activa,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private async Task CargarConfiguracionCalzadoAsync(Guid clienteId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        tallasCliente = await db.CatalogoTallasCalzado
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => new TallaClienteEditor
+            {
+                CatalogoTallaCalzadoId = t.Id,
+                Talla = t.Talla,
+                SistemaNumeracion = t.SistemaNumeracion,
+                OrdenCatalogo = t.Orden,
+                OrdenCliente = t.Orden,
+                ActivaCatalogo = t.Activa,
+                Seleccionada = t.Activa
+            })
+            .ToListAsync();
+
+        var overrides = await db.ClientesTallasCalzado
+            .AsNoTracking()
+            .Where(t => t.ClienteId == clienteId && t.IsActive)
+            .ToListAsync();
+
+        usarCatalogoBaseCliente = !overrides.Any();
+        tallaBaseSeleccionada = overrides.FirstOrDefault(t => t.EsTallaBaseDefault)?.CatalogoTallaCalzadoId;
+
+        if (overrides.Any())
+        {
+            var overridesPorCatalogo = overrides.ToDictionary(t => t.CatalogoTallaCalzadoId);
+            foreach (var talla in tallasCliente)
+            {
+                if (overridesPorCatalogo.TryGetValue(talla.CatalogoTallaCalzadoId, out var overrideTalla))
+                {
+                    talla.Seleccionada = overrideTalla.Activa;
+                    talla.OrdenCliente = overrideTalla.Orden;
+                }
+                else
+                {
+                    talla.Seleccionada = false;
+                }
+            }
+        }
+
+        fraccionesCliente = await db.ClientesFraccionesCalzado
+            .AsNoTracking()
+            .Include(f => f.Detalles)
+            .Where(f => f.ClienteId == clienteId)
+            .OrderBy(f => f.Nombre)
+            .Select(f => new FraccionClienteEditor
+            {
+                Codigo = f.Codigo,
+                Nombre = f.Nombre,
+                UnidadesPorFraccion = f.UnidadesPorFraccion,
+                Activa = f.Activa,
+                Detalles = f.Detalles
+                    .OrderBy(d => d.Orden)
+                    .ThenBy(d => d.Talla)
+                    .Select(d => new FraccionDetalleClienteEditor
+                    {
+                        Talla = d.Talla,
+                        Orden = d.Orden,
+                        Unidades = d.Unidades,
+                        PorcentajeVariacion = d.PorcentajeVariacion
+                    })
+                    .ToList()
+            })
+            .ToListAsync();
+    }
+
+    private async Task GuardarConfiguracionCalzadoAsync(Guid clienteId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var detallesExistentes = await db.ClientesFraccionesCalzadoDetalle.Where(d => d.ClienteFraccionCalzado.ClienteId == clienteId).ToListAsync();
+        var fraccionesExistentes = await db.ClientesFraccionesCalzado.Where(f => f.ClienteId == clienteId).ToListAsync();
+        var tallasExistentes = await db.ClientesTallasCalzado.Where(t => t.ClienteId == clienteId).ToListAsync();
+
+        if (detallesExistentes.Count > 0)
+            db.ClientesFraccionesCalzadoDetalle.RemoveRange(detallesExistentes);
+        if (fraccionesExistentes.Count > 0)
+            db.ClientesFraccionesCalzado.RemoveRange(fraccionesExistentes);
+        if (tallasExistentes.Count > 0)
+            db.ClientesTallasCalzado.RemoveRange(tallasExistentes);
+
+        await db.SaveChangesAsync();
+
+        var tallasValidas = ObtenerTallasDisponiblesCliente().ToList();
+
+        var tallaMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var talla in tallasValidas)
+        {
+            tallaMap[talla.Talla] = talla.CatalogoTallaCalzadoId;
+        }
+
+        if (!usarCatalogoBaseCliente)
+        {
+            foreach (var talla in tallasValidas)
+            {
+                db.ClientesTallasCalzado.Add(new ClienteTallaCalzado
+                {
+                    Id = Guid.NewGuid(),
+                    ClienteId = clienteId,
+                    CatalogoTallaCalzadoId = talla.CatalogoTallaCalzadoId,
+                    Talla = talla.Talla.Trim(),
+                    Orden = talla.OrdenCliente,
+                    PorcentajeVariacionDefault = 0m,
+                    Activa = true,
+                    EsTallaBaseDefault = talla.CatalogoTallaCalzadoId == tallaBaseSeleccionada,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
+        }
+
+        foreach (var fraccion in fraccionesCliente.Where(f => !string.IsNullOrWhiteSpace(f.Codigo) && !string.IsNullOrWhiteSpace(f.Nombre)))
+        {
+            var codigoFraccion = NormalizarCodigoFraccion(fraccion);
+            var fraccionEntity = new ClienteFraccionCalzado
+            {
+                Id = Guid.NewGuid(),
+                ClienteId = clienteId,
+                Codigo = codigoFraccion,
+                Nombre = fraccion.Nombre.Trim(),
+                UnidadesPorFraccion = fraccion.UnidadesPorFraccion,
+                Activa = fraccion.Activa,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            };
+
+            db.ClientesFraccionesCalzado.Add(fraccionEntity);
+
+            foreach (var detalle in fraccion.Detalles.Where(d => !string.IsNullOrWhiteSpace(d.Talla)))
+            {
+                db.ClientesFraccionesCalzadoDetalle.Add(new ClienteFraccionCalzadoDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    ClienteFraccionCalzadoId = fraccionEntity.Id,
+                    CatalogoTallaCalzadoId = tallaMap.TryGetValue(detalle.Talla.Trim(), out var tallaId) ? tallaId : null,
+                    Talla = detalle.Talla.Trim(),
+                    Orden = detalle.Orden,
+                    Unidades = detalle.Unidades,
+                    PorcentajeVariacion = detalle.PorcentajeVariacion,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private void PrepararClienteParaGuardar()
+    {
+        clienteEditando.Codigo = clienteEditando.Codigo.Trim();
+        clienteEditando.RfcCif = clienteEditando.RfcCif.Trim();
+        clienteEditando.RazonSocial = clienteEditando.RazonSocial.Trim();
+        clienteEditando.NombreComercial = LimpiarTexto(clienteEditando.NombreComercial);
+        clienteEditando.Email = clienteEditando.Email.Trim();
+        clienteEditando.EmailFacturacion = LimpiarTexto(clienteEditando.EmailFacturacion) ?? clienteEditando.Email;
+        clienteEditando.EmailCobranza = LimpiarTexto(clienteEditando.EmailCobranza) ?? clienteEditando.EmailFacturacion;
+        clienteEditando.Telefono = LimpiarTexto(clienteEditando.Telefono);
+        clienteEditando.Direccion = LimpiarTexto(clienteEditando.Direccion);
+        clienteEditando.Ciudad = LimpiarTexto(clienteEditando.Ciudad);
+        clienteEditando.Estado = LimpiarTexto(clienteEditando.Estado);
+        clienteEditando.CodigoPostal = LimpiarTexto(clienteEditando.CodigoPostal);
+        clienteEditando.Pais = LimpiarTexto(clienteEditando.Pais) ?? "México";
+        clienteEditando.RegimenFiscalReceptor = LimpiarTexto(clienteEditando.RegimenFiscalReceptor);
+        clienteEditando.UsoCfdi = LimpiarTexto(clienteEditando.UsoCfdi);
+        clienteEditando.DomicilioFiscalCp = LimpiarTexto(clienteEditando.DomicilioFiscalCp) ?? clienteEditando.CodigoPostal;
+    }
+
+    private static Cliente ClonarCliente(Cliente cliente)
+    {
+        return new Cliente
+        {
+            Id = cliente.Id,
+            EmpresaId = cliente.EmpresaId,
+            Codigo = cliente.Codigo,
+            RazonSocial = cliente.RazonSocial,
+            NombreComercial = cliente.NombreComercial,
+            RfcCif = cliente.RfcCif,
+            Email = cliente.Email,
+            EmailFacturacion = cliente.EmailFacturacion,
+            EmailCobranza = cliente.EmailCobranza,
+            Telefono = cliente.Telefono,
+            Direccion = cliente.Direccion,
+            Ciudad = cliente.Ciudad,
+            Estado = cliente.Estado,
+            CodigoPostal = cliente.CodigoPostal,
+            Pais = cliente.Pais,
+            DomicilioFiscalCp = cliente.DomicilioFiscalCp,
+            RegimenFiscalReceptor = cliente.RegimenFiscalReceptor,
+            UsoCfdi = cliente.UsoCfdi,
+            RfcValidado = cliente.RfcValidado,
+            FechaValidacionRfc = cliente.FechaValidacionRfc,
+            DiasCredito = cliente.DiasCredito,
+            LimiteCredito = cliente.LimiteCredito,
+            Industria = cliente.Industria,
+            CreatedAt = cliente.CreatedAt,
+            CreatedBy = cliente.CreatedBy,
+            UpdatedAt = cliente.UpdatedAt,
+            UpdatedBy = cliente.UpdatedBy,
+            IsActive = cliente.IsActive
+        };
+    }
+
+    private static string? LimpiarTexto(string? valor)
+        => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
+    private static string ObtenerEtiquetaFraccion(FraccionClienteEditor fraccion)
+        => !string.IsNullOrWhiteSpace(fraccion.Nombre)
+            ? fraccion.Nombre.Trim()
+            : !string.IsNullOrWhiteSpace(fraccion.Codigo)
+                ? fraccion.Codigo.Trim()
+                : "sin nombre";
+
+    private string NormalizarCodigoFraccion(FraccionClienteEditor fraccion)
+    {
+        var codigo = LimpiarTexto(fraccion.Codigo);
+        if (!string.IsNullOrWhiteSpace(codigo))
+        {
+            fraccion.Codigo = codigo.ToUpperInvariant();
+            return fraccion.Codigo;
+        }
+
+        fraccion.Codigo = GenerarCodigoFraccion(fraccion.LocalKey);
+        return fraccion.Codigo;
+    }
+
+    private string GenerarCodigoFraccion(string localKey)
+    {
+        var baseCliente = ObtenerPrefijoFraccionCliente();
+        var sufijo = localKey.Length >= 6
+            ? localKey[..6].ToUpperInvariant()
+            : localKey.ToUpperInvariant();
+
+        var codigo = $"FRAC-{baseCliente}-{sufijo}";
+        var codigosExistentes = fraccionesCliente
+            .Where(f => !string.Equals(f.LocalKey, localKey, StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.Codigo?.Trim())
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!codigosExistentes.Contains(codigo))
+        {
+            return codigo;
+        }
+
+        var codigoAlterno = $"FRAC-{baseCliente}-{Guid.NewGuid():N[..6].ToUpperInvariant()}";
+        return codigoAlterno;
+    }
+
+    private string ObtenerPrefijoFraccionCliente()
+    {
+        var origen = LimpiarTexto(clienteEditando.Codigo)
+            ?? LimpiarTexto(clienteEditando.NombreComercial)
+            ?? LimpiarTexto(clienteEditando.RazonSocial)
+            ?? "CLIENTE";
+
+        var caracteres = origen
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToUpperInvariant)
+            .Take(10)
+            .ToArray();
+
+        return caracteres.Length == 0 ? "CLIENTE" : new string(caracteres);
+    }
+
+    private async Task CargarCatalogoTallasEmpresaAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        tallasCliente = await db.CatalogoTallasCalzado
+            .AsNoTracking()
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => new TallaClienteEditor
+            {
+                CatalogoTallaCalzadoId = t.Id,
+                Talla = t.Talla,
+                SistemaNumeracion = t.SistemaNumeracion,
+                OrdenCatalogo = t.Orden,
+                OrdenCliente = t.Orden,
+                ActivaCatalogo = t.Activa,
+                Seleccionada = t.Activa
+            })
+            .ToListAsync();
+    }
+
+    private IEnumerable<TallaClienteEditor> ObtenerTallasDisponiblesCliente()
+        => usarCatalogoBaseCliente
+            ? tallasCliente.Where(t => t.ActivaCatalogo)
+            : tallasCliente.Where(t => t.ActivaCatalogo && t.Seleccionada);
+
+    private string ObtenerColorIndustria(IndustriaEnum industria)
+    {
+        return industria switch
+        {
+            IndustriaEnum.Calzado => "primary",
+            IndustriaEnum.Serigrafia => "success",
+            IndustriaEnum.Ambas => "info",
+            _ => "secondary"
+        };
+    }
+
+    private sealed class TallaClienteEditor
+    {
+        public Guid CatalogoTallaCalzadoId { get; set; }
+        public string Talla { get; set; } = string.Empty;
+        public SistemaNumeracionCalzadoEnum SistemaNumeracion { get; set; }
+        public int OrdenCatalogo { get; set; }
+        public int OrdenCliente { get; set; }
+        public bool Seleccionada { get; set; } = true;
+        public bool ActivaCatalogo { get; set; } = true;
+    }
+
+    private sealed class ReglaVariacionClienteEditor
+    {
+        public string LocalKey { get; set; } = Guid.NewGuid().ToString("N");
+        public Guid Id { get; set; }
+        public string Dimension { get; set; } = string.Empty;
+        public string Valor { get; set; } = string.Empty;
+        public int Orden { get; set; }
+        public bool PermiteVariacionPrecio { get; set; } = true;
+        public decimal PorcentajeVariacionSugerido { get; set; }
+        public bool Activa { get; set; } = true;
+    }
+
+    private sealed class FraccionClienteEditor
+    {
+        public string LocalKey { get; set; } = Guid.NewGuid().ToString("N");
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public decimal UnidadesPorFraccion { get; set; }
+        public bool Activa { get; set; } = true;
+        public List<FraccionDetalleClienteEditor> Detalles { get; set; } = [];
+    }
+
+    private sealed class FraccionDetalleClienteEditor
+    {
+        public string LocalKey { get; set; } = Guid.NewGuid().ToString("N");
+        public string Talla { get; set; } = string.Empty;
+        public int Orden { get; set; }
+        public decimal Unidades { get; set; }
+        public decimal PorcentajeVariacion { get; set; }
+    }
+}

@@ -1,0 +1,148 @@
+﻿@inherits LayoutComponentBase
+@using MundoVs.Core.Services
+@using MundoVs.Core.Security
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<MainLayout> Logger
+@implements IDisposable
+
+@if (!_authChecked)
+{
+    <div class="d-flex align-items-center justify-content-center" style="height:100vh">
+        <div class="spinner-border text-primary" role="status"></div>
+    </div>
+}
+else
+{
+    <div class="page @(_sidebarMini ? "sidebar-mini" : string.Empty)">
+        <NavMenu IsMini="_sidebarMini" OnMiniModeChanged="OnMiniModeChanged" />
+
+        <main class="app-main @(_sidebarMini ? "app-main--mini" : string.Empty)">
+            <article class="content px-4">
+                @Body
+            </article>
+        </main>
+    </div>
+
+    <div id="blazor-error-ui" data-nosnippet>
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+}
+
+@code {
+    private bool _authChecked;
+    private bool _sidebarMini;
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            await ValidarRutaActualAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error durante validación de autenticación en MainLayout.");
+            Navigation.NavigateTo("/login", replace: true);
+        }
+    }
+
+    private async Task<AuthenticationState> EsperarAutenticacionAsync()
+    {
+        AuthenticationState? ultimoEstado = null;
+
+        for (var intento = 1; intento <= 10; intento++)
+        {
+            ultimoEstado = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (ultimoEstado.User.Identity?.IsAuthenticated == true)
+            {
+                Logger.LogInformation("Autenticación restaurada en intento {Intento} para {Usuario}", intento, ultimoEstado.User.Identity?.Name);
+                return ultimoEstado;
+            }
+
+            await Task.Delay(150);
+        }
+
+        Logger.LogWarning("No se pudo restaurar autenticación después de varios intentos.");
+        return ultimoEstado ?? new AuthenticationState(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()));
+    }
+
+    private async Task Logout()
+    {
+        await AuthStateProvider.LogoutAsync();
+        Navigation.NavigateTo("/login");
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        try
+        {
+            await InvokeAsync(() => ValidarRutaActualAsync(e.Location));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error validando acceso por ruta en MainLayout.");
+        }
+    }
+
+    private async Task ValidarRutaActualAsync(string? location = null)
+    {
+        var state = await EsperarAutenticacionAsync();
+        var rutaActual = Navigation.ToBaseRelativePath(location ?? Navigation.Uri);
+
+        Logger.LogInformation(
+            "MainLayout auth check. Ruta: {Ruta}. Authenticated: {Authenticated}. Usuario: {Usuario}",
+            rutaActual,
+            state.User.Identity?.IsAuthenticated == true,
+            state.User.Identity?.Name ?? "(anon)");
+
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Logger.LogWarning("MainLayout redirige a /login porque el usuario no está autenticado.");
+            Navigation.NavigateTo("/login", replace: true);
+            return;
+        }
+
+        var requiereCambioPassword = string.Equals(state.User.FindFirst("RequirePasswordChange")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+        if (requiereCambioPassword && !string.Equals(rutaActual, "auth/cambiar-password-inicial", StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.LogInformation("MainLayout redirige a cambio de password inicial para {Usuario}", state.User.Identity?.Name);
+            Navigation.NavigateTo("/auth/cambiar-password-inicial", replace: true);
+            return;
+        }
+
+        var moduloRuta = ModuloAccesoCatalog.ResolverModuloRuta(rutaActual);
+        if (!string.IsNullOrWhiteSpace(moduloRuta) && !state.User.HasClaim("Modulo", moduloRuta))
+        {
+            Logger.LogWarning("MainLayout bloqueó la ruta {Ruta} por módulo no habilitado: {Modulo}.", rutaActual, moduloRuta);
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        if (!_authChecked)
+        {
+            _authChecked = true;
+            StateHasChanged();
+        }
+    }
+
+    private Task OnMiniModeChanged(bool isMini)
+    {
+        _sidebarMini = isMini;
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}
