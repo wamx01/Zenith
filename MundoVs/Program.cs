@@ -152,6 +152,8 @@ QuestPDF.Settings.License = LicenseType.Community;
 
 using (var scope = app.Services.CreateScope())
 {
+    var db = scope.ServiceProvider.GetRequiredService<CrmDbContext>();
+    await db.Database.MigrateAsync();
     var satCatalogInitializer = scope.ServiceProvider.GetRequiredService<INominaSatCatalogInitializer>();
     await satCatalogInitializer.SeedAsync();
 }
