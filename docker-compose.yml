@@ -37,6 +37,8 @@ services:
       Auth__UseHttpsRedirection: false
       Logging__LogLevel__Default: Information
       Logging__LogLevel__Microsoft__AspNetCore: Warning
+      Bootstrap__SuperAdmin__Email: ${BOOTSTRAP_SUPERADMIN_EMAIL:-}
+      Bootstrap__SuperAdmin__Password: ${BOOTSTRAP_SUPERADMIN_PASSWORD:-}
     depends_on:
       mariadb:
         condition: service_healthy

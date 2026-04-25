@@ -563,7 +563,15 @@ using (var scope = app.Services.CreateScope())
 
             // Seed Empresa default + Auth: tipos de usuario, capacidades y usuario admin
             var empresaDefault = await SeedEmpresaDefault(db);
-            await SeedAuth(db, scope.ServiceProvider.GetRequiredService<IAuthService>(), empresaDefault.Id);
+            var authServiceForSeed = scope.ServiceProvider.GetRequiredService<IAuthService>();
+            await SeedAuth(db, authServiceForSeed, empresaDefault.Id);
+            await EnsureBootstrapSuperAdmin(
+                db,
+                authServiceForSeed,
+                builder.Configuration["Bootstrap:SuperAdmin:Email"],
+                builder.Configuration["Bootstrap:SuperAdmin:Password"],
+                empresaDefault.Id,
+                logger);
             await SincronizarSuscripcionesEmpresas(db);
         }
         else
@@ -728,6 +736,76 @@ static Task WriteHealthResponse(HttpContext context, HealthReport report, bool i
     {
         status = report.Status.ToString()
     }));
+}
+
+static async Task EnsureBootstrapSuperAdmin(
+    CrmDbContext db,
+    IAuthService authService,
+    string? email,
+    string? password,
+    Guid empresaId,
+    ILogger logger)
+{
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+    {
+        return;
+    }
+
+    var emailNormalizado = email.Trim().ToLowerInvariant();
+
+    if (password.Length < 8)
+    {
+        logger.LogWarning("Bootstrap SuperAdmin: la contraseña configurada es demasiado corta (<8). Se omite.");
+        return;
+    }
+
+    var superTipo = await db.TiposUsuario
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(t => t.EmpresaId == empresaId && t.Nombre == "SuperAdmin");
+
+    if (superTipo == null)
+    {
+        logger.LogWarning("Bootstrap SuperAdmin: no se encontró el TipoUsuario 'SuperAdmin' para la empresa {EmpresaId}.", empresaId);
+        return;
+    }
+
+    var usuario = await db.Usuarios
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(u => u.Email == emailNormalizado);
+
+    var hash = authService.HashPassword(password);
+
+    if (usuario == null)
+    {
+        db.Usuarios.Add(new Usuario
+        {
+            NombreCompleto = "Bootstrap SuperAdmin",
+            Email = emailNormalizado,
+            PasswordHash = hash,
+            TipoUsuarioId = superTipo.Id,
+            EmpresaId = empresaId,
+            RequiereCambioPassword = false,
+            IsActive = true,
+            IntentosFallidos = 0,
+            BloqueadoHastaUtc = null,
+            CreatedAt = DateTime.UtcNow
+        });
+        logger.LogInformation("Bootstrap SuperAdmin: se creó el usuario {Email} desde variables de entorno.", emailNormalizado);
+    }
+    else
+    {
+        usuario.PasswordHash = hash;
+        usuario.TipoUsuarioId = superTipo.Id;
+        usuario.EmpresaId = empresaId;
+        usuario.IsActive = true;
+        usuario.RequiereCambioPassword = false;
+        usuario.IntentosFallidos = 0;
+        usuario.BloqueadoHastaUtc = null;
+        usuario.UpdatedAt = DateTime.UtcNow;
+        logger.LogInformation("Bootstrap SuperAdmin: se reseteó el usuario {Email} desde variables de entorno.", emailNormalizado);
+    }
+
+    await db.SaveChangesAsync();
 }
 
 static async Task<Empresa> SeedEmpresaDefault(CrmDbContext db)
