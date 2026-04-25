@@ -4,10 +4,10 @@ services:
     container_name: mundovs-mariadb
     restart: unless-stopped
     environment:
-      MARIADB_DATABASE: ${MARIADB_DATABASE}
-      MARIADB_USER: ${MARIADB_USER}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-CrmMundoVs}
+      MARIADB_USER: ${MARIADB_USER:-zenith_user}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-zenith-app-pass-2026}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-zenith-root-pass-2026}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -31,7 +31,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Hosting__Urls: http://+:5130
-      ConnectionStrings__ZenithConnection: Server=mariadb;Port=3306;Database=${MARIADB_DATABASE};User=${MARIADB_USER};Password=${MARIADB_PASSWORD};CharSet=utf8mb4;
+      ConnectionStrings__ZenithConnection: Server=mariadb;Port=3306;Database=${MARIADB_DATABASE:-CrmMundoVs};User=${MARIADB_USER:-zenith_user};Password=${MARIADB_PASSWORD:-zenith-app-pass-2026};CharSet=utf8mb4;
       Auth__CookieSecurePolicy: Always
       Auth__SameSite: Lax
       Auth__UseHttpsRedirection: false
