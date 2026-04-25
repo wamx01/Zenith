@@ -41,6 +41,7 @@
 
 ## Deployment Guidelines
 - Para tareas de publicación/despliegue, responder solo con los comandos exactos sin explicación adicional.
+- Cuando el usuario pida comandos para Docker o despliegue, dar una instrucción por línea y no agrupar múltiples comandos en una sola línea.
 
 ## User Preferences
 - El usuario prefiere optimizaciones robustas y bien hechas sobre mejoras rápidas o parciales, especialmente en el flujo de corrección de checador.

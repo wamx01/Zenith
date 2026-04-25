@@ -185,11 +185,11 @@ CREATE TABLE IF NOT EXISTS `CotizacionDetalles` (
     KEY `IX_CotizacionDetalles_GastoFijoId` (`GastoFijoId`),
     KEY `IX_CotizacionDetalles_InsumoId` (`InsumoId`),
     KEY `IX_CotizacionDetalles_MateriaPrimaId` (`MateriaPrimaId`),
-    CONSTRAINT `FK_CotizacionDetalles_CotizacionesSerigrafia_CotizacionSerigrafiaId` FOREIGN KEY (`CotizacionSerigrafiaId`) REFERENCES `CotizacionesSerigrafia` (`Id`) ON DELETE CASCADE,
-    CONSTRAINT `FK_CotizacionDetalles_ActividadesManoObra_ActividadManoObraId` FOREIGN KEY (`ActividadManoObraId`) REFERENCES `ActividadesManoObra` (`Id`) ON DELETE SET NULL,
-    CONSTRAINT `FK_CotizacionDetalles_GastosFijos_GastoFijoId` FOREIGN KEY (`GastoFijoId`) REFERENCES `GastosFijos` (`Id`) ON DELETE SET NULL,
-    CONSTRAINT `FK_CotizacionDetalles_Insumos_InsumoId` FOREIGN KEY (`InsumoId`) REFERENCES `Insumos` (`Id`) ON DELETE SET NULL,
-    CONSTRAINT `FK_CotizacionDetalles_MateriasPrimas_MateriaPrimaId` FOREIGN KEY (`MateriaPrimaId`) REFERENCES `MateriasPrimas` (`Id`) ON DELETE SET NULL
+    CONSTRAINT `FK_CotDet_CotSer` FOREIGN KEY (`CotizacionSerigrafiaId`) REFERENCES `CotizacionesSerigrafia` (`Id`) ON DELETE CASCADE,
+    CONSTRAINT `FK_CotDet_ActMO` FOREIGN KEY (`ActividadManoObraId`) REFERENCES `ActividadesManoObra` (`Id`) ON DELETE SET NULL,
+    CONSTRAINT `FK_CotDet_GasFix` FOREIGN KEY (`GastoFijoId`) REFERENCES `GastosFijos` (`Id`) ON DELETE SET NULL,
+    CONSTRAINT `FK_CotDet_Insumo` FOREIGN KEY (`InsumoId`) REFERENCES `Insumos` (`Id`) ON DELETE SET NULL,
+    CONSTRAINT `FK_CotDet_MatPri` FOREIGN KEY (`MateriaPrimaId`) REFERENCES `MateriasPrimas` (`Id`) ON DELETE SET NULL
 ) CHARACTER SET=utf8mb4;
 ");
 
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS `EscalaSerigrafiaTallas` (
     `IsActive` tinyint(1) NOT NULL,
     PRIMARY KEY (`Id`),
     KEY `IX_EscalaSerigrafiaTallas_EscalaSerigrafiaId` (`EscalaSerigrafiaId`),
-    CONSTRAINT `FK_EscalaSerigrafiaTallas_EscalasSerigrafia_EscalaSerigrafiaId` FOREIGN KEY (`EscalaSerigrafiaId`) REFERENCES `EscalasSerigrafia` (`Id`) ON DELETE CASCADE
+    CONSTRAINT `FK_EscalaTall_Escala` FOREIGN KEY (`EscalaSerigrafiaId`) REFERENCES `EscalasSerigrafia` (`Id`) ON DELETE CASCADE
 ) CHARACTER SET=utf8mb4;
 ");
 
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS `PedidoSerigrafiaTallas` (
     `IsActive` tinyint(1) NOT NULL,
     PRIMARY KEY (`Id`),
     KEY `IX_PedidoSerigrafiaTallas_PedidoSerigrafiaId` (`PedidoSerigrafiaId`),
-    CONSTRAINT `FK_PedidoSerigrafiaTallas_PedidosSerigrafia_PedidoSerigrafiaId` FOREIGN KEY (`PedidoSerigrafiaId`) REFERENCES `PedidosSerigrafia` (`Id`) ON DELETE CASCADE
+    CONSTRAINT `FK_PedTall_Pedido` FOREIGN KEY (`PedidoSerigrafiaId`) REFERENCES `PedidosSerigrafia` (`Id`) ON DELETE CASCADE
 ) CHARACTER SET=utf8mb4;
 ");
 
