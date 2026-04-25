@@ -12,6 +12,7 @@ namespace MundoVs.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql("ALTER TABLE `CotizacionDetalles` DROP FOREIGN KEY IF EXISTS `FK_CotizacionDetalles_ActividadesManoObra_ActividadManoObraId`;");
+            migrationBuilder.Sql("ALTER TABLE `CotizacionDetalles` DROP FOREIGN KEY IF EXISTS `FK_CotDet_ActMO`;");
             migrationBuilder.Sql("ALTER TABLE `CotizacionDetalles` DROP FOREIGN KEY IF EXISTS `FK_CotizacionDetalles_Posiciones_PosicionId`;");
             migrationBuilder.Sql("ALTER TABLE `Empleados` DROP FOREIGN KEY IF EXISTS `FK_Empleados_ActividadesManoObra_ActividadManoObraId`;");
             migrationBuilder.Sql("ALTER TABLE `Empleados` DROP FOREIGN KEY IF EXISTS `FK_Empleados_Posiciones_PosicionId`;");
