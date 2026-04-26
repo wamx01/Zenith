@@ -238,7 +238,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosSalidaPosterior = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaRetardo && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaRetardo).TotalMinutes))
             : 0;
-        var minutosRetardo = minutosSalidaPosterior > 0
+        var salidaPosteriorCalificaExtra = minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
+        var minutosRetardo = salidaPosteriorCalificaExtra
             ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, minutosSalidaPosterior, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra)
             : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
