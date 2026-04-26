@@ -474,6 +474,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     private static int ObtenerMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
         => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 30;
 
+    /// <summary>
+    /// Determina el retardo operativo que debe reportarse en días con posible tiempo extra.
+    /// Si la salida tardía ya califica para extra, no aplica la tolerancia para evitar regalar tiempo extra sobre una entrada tardía.
+    /// </summary>
     private static int ObtenerMinutosRetardoReportables(
         int minutosRetardoBrutos,
         int minutosSalidaPosterior,
