@@ -44,25 +44,20 @@ services:
       - mundovs_uploads:/app/wwwroot/uploads
     networks:
       - mundovs-network
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mundovs.rule=Host(`arzmec.com.mx`)"
+      - "traefik.http.routers.mundovs.entrypoints=websecure"
+      - "traefik.http.routers.mundovs.tls=true"
+      - "traefik.http.routers.mundovs.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mundovs.loadbalancer.server.port=5130"
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://localhost:5130/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    depends_on:
-      mundovs:
-        condition: service_healthy
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - mundovs-network
 
 volumes:
   mariadb_data:
@@ -71,3 +66,5 @@ volumes:
 networks:
   mundovs-network:
     driver: bridge
+  dokploy-network:
+    external: true
