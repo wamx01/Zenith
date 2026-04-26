@@ -229,12 +229,16 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         var entradaReal = analisisJornada.EntradaReal;
         var salidaReal = analisisJornada.SalidaReal;
+        var minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
         var minutosEntradaAnticipada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramadaAnticipada - entradaReal.Value).TotalMinutes))
             : 0;
-        var minutosRetardo = detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
-            ? ObtenerMinutosRetardoAplicables(Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramada).TotalMinutes)), configuracionDescansos)
+        var minutosRetardoBrutos = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaRetardo && entradaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramadaRetardo).TotalMinutes))
             : 0;
+        var minutosRetardo = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaRetardo && salidaReal.HasValue
+            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaRetardo).TotalMinutes)), configuracionDescansos, minutosMinimosTiempoExtra)
+            : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
             : 0;
@@ -369,8 +373,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosEntradaAnticipada = analisisJornada.EntradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes))
             : 0;
-        var minutosRetardo = analisisJornada.EntradaReal.HasValue
-            ? ObtenerMinutosRetardoAplicables(Math.Max(0, (int)Math.Round((analisisJornada.EntradaReal.Value - entradaProgramada).TotalMinutes)), configuracionDescansos)
+        var minutosRetardoBrutos = analisisJornada.EntradaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((analisisJornada.EntradaReal.Value - entradaProgramada).TotalMinutes))
             : 0;
         var minutosSalidaPosterior = analisisJornada.SalidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes))
@@ -386,9 +390,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             minutosSalidaPosterior = 0;
         }
 
-        if (minutosRetardo > 0 && minutosSalidaPosterior > 0)
+        if (minutosRetardoBrutos > 0 && minutosSalidaPosterior > 0)
         {
-            minutosSalidaPosterior = Math.Max(0, minutosSalidaPosterior - minutosRetardo);
+            minutosSalidaPosterior = Math.Max(0, minutosSalidaPosterior - minutosRetardoBrutos);
             if (minutosSalidaPosterior < minutosMinimosTiempoExtra)
             {
                 minutosSalidaPosterior = 0;
@@ -465,6 +469,22 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
     private static int ObtenerMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
         => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 30;
+
+    private static int ObtenerMinutosRetardoReportables(
+        int minutosRetardoBrutos,
+        int minutosSalidaPosterior,
+        RrhhAsistenciaDescansoSettings configuracionDescansos,
+        int minutosMinimosTiempoExtra)
+    {
+        if (minutosRetardoBrutos <= 0)
+        {
+            return 0;
+        }
+
+        return minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra)
+            ? minutosRetardoBrutos
+            : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
+    }
 
     private static int ObtenerMinutosRetardoAplicables(int minutosRetardo, RrhhAsistenciaDescansoSettings configuracionDescansos)
         => minutosRetardo <= Math.Max(0, configuracionDescansos.ToleranciaRetardoMinutos)

@@ -105,6 +105,35 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_CuandoSalidaTardiaAlcanzaUmbral_NoPerdonaRetardoToleradoNiRegalaExtraCompleto()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 5, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 30, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.Equal(5, asistencia.MinutosRetardo);
+        Assert.Equal(0, asistencia.MinutosExtra);
+        Assert.Equal(RrhhAsistenciaEstatus.Retardo, asistencia.Estatus);
+        Assert.Contains("Retardo de 5 min.", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ProcesarMarcacionesPendientesAsync_SiRetardoRebasaTolerancia_SiLoMarca()
     {
         await using var db = CreateDbContext();
