@@ -1,7 +1,6 @@
 services:
   mariadb:
     image: mariadb:11.4
-    container_name: mundovs-mariadb
     restart: unless-stopped
     environment:
       MARIADB_DATABASE: ${MARIADB_DATABASE:-CrmMundoVs}
@@ -26,7 +25,6 @@ services:
     build:
       context: .
       dockerfile: MundoVs/Dockerfile
-    container_name: mundovs-app
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -55,7 +53,6 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: mundovs-nginx
     restart: unless-stopped
     depends_on:
       mundovs:
