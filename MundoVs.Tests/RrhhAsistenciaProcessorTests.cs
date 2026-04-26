@@ -105,7 +105,7 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
-    public async Task ProcesarMarcacionesPendientesAsync_CuandoSalidaTardiaAlcanzaUmbral_NoPerdonaRetardoToleradoNiRegalaExtraCompleto()
+    public async Task ProcesarMarcacionesPendientesAsync_MixedRetardoAndOvertime_PreservesRetardoAndNetsOvertime()
     {
         await using var db = CreateDbContext();
         var empresa = CreateEmpresa();

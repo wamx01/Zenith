@@ -229,15 +229,17 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         var entradaReal = analisisJornada.EntradaReal;
         var salidaReal = analisisJornada.SalidaReal;
-        var minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
         var minutosEntradaAnticipada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramadaAnticipada - entradaReal.Value).TotalMinutes))
             : 0;
         var minutosRetardoBrutos = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaRetardo && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramadaRetardo).TotalMinutes))
             : 0;
-        var minutosRetardo = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaRetardo && salidaReal.HasValue
-            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaRetardo).TotalMinutes)), configuracionDescansos, minutosMinimosTiempoExtra)
+        var minutosSalidaPosterior = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaRetardo && salidaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaRetardo).TotalMinutes))
+            : 0;
+        var minutosRetardo = minutosSalidaPosterior > 0
+            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, minutosSalidaPosterior, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra)
             : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
@@ -392,6 +394,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         if (minutosRetardoBrutos > 0 && minutosSalidaPosterior > 0)
         {
+            // Si la jornada también empezó tarde, ese desfase no debe inflar el tiempo extra del mismo día.
             minutosSalidaPosterior = Math.Max(0, minutosSalidaPosterior - minutosRetardoBrutos);
             if (minutosSalidaPosterior < minutosMinimosTiempoExtra)
             {
