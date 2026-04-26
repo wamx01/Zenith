@@ -47,7 +47,7 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.mundovs.rule=Host(`arzmec.com.mx`)"
+      - "traefik.http.routers.mundovs.rule=Host(`${TRAEFIK_DOMAIN:-arzmec.com.mx}`)"
       - "traefik.http.routers.mundovs.entrypoints=websecure"
       - "traefik.http.routers.mundovs.tls=true"
       - "traefik.http.routers.mundovs.tls.certresolver=letsencrypt"
