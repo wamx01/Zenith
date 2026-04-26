@@ -20,7 +20,6 @@ WORKDIR /app
 COPY --from=build /app/publish .
 RUN mkdir -p /app/wwwroot/uploads
 
-ENV ASPNETCORE_URLS=http://+:5130
-EXPOSE 5130
+EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "MundoVs.dll"]

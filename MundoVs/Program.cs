@@ -26,10 +26,18 @@ using Zenith.Contracts.Asistencia;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var configuredUrls = builder.Configuration["Hosting:Urls"];
-if (!string.IsNullOrWhiteSpace(configuredUrls))
+var configuredPort = builder.Configuration["PORT"];
+if (int.TryParse(configuredPort, out var port) && port > 0)
 {
-    builder.WebHost.UseUrls(configuredUrls);
+    builder.WebHost.UseUrls($"http://+:{port}");
+}
+else
+{
+    var configuredUrls = builder.Configuration["Hosting:Urls"];
+    if (!string.IsNullOrWhiteSpace(configuredUrls))
+    {
+        builder.WebHost.UseUrls(configuredUrls);
+    }
 }
 
 var cookieSecurePolicy = ParseCookieSecurePolicy(builder.Configuration["Auth:CookieSecurePolicy"]);
