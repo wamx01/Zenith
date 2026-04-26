@@ -11,6 +11,7 @@
 7. [Primer acceso con SuperAdmin bootstrap](#primer-acceso-con-superadmin-bootstrap)
 8. [Validaciones posteriores](#validaciones-posteriores)
 9. [Mantenimiento operativo](#mantenimiento-operativo)
+10. [Troubleshooting: nginx en restart loop](#troubleshooting-nginx-en-restart-loop)
 
 ## Objetivo
 
@@ -133,7 +134,9 @@ nano .env
 
 ### 3. Revisar `nginx/default.conf`
 
-Debe apuntar al dominio real y al upstream `http://mundovs:5130`.
+El archivo apunta al upstream `http://mundovs:5130` usando el nombre de servicio Docker Compose.
+El `resolver 127.0.0.11` ya está configurado para resolver nombres por petición en lugar de al arranque,
+lo que evita errores `host not found in upstream` en Dokploy.
 
 Si se requiere editarlo:
 
@@ -234,3 +237,66 @@ Capacidad sugerida:
 - `KVM 2` puede servir para arranque ligero
 - si suben PDFs, concurrencia o uso de RRHH/Nómina, vigilar RAM y CPU
 - si aparece swapping o lentitud sostenida, subir a `KVM 4`
+
+## Troubleshooting: nginx en restart loop
+
+### Síntoma
+
+```
+[emerg] 1#1: host not found in upstream "mundovs" in /etc/nginx/conf.d/default.conf:12
+```
+
+El contenedor `nginx` reinicia continuamente con `ExitCode: 1`.
+
+### Causa raíz
+
+El nginx estándar resuelve los nombres de upstream **en el momento de arranque** (al cargar la
+configuración). Si en ese instante el servicio `mundovs` todavía no está registrado en el DNS interno
+de Docker (o si Dokploy reinicia nginx de forma independiente del servicio app), nginx falla con
+`[emerg]` y entra en restart loop.
+
+### Solución implementada
+
+`nginx/default.conf` ahora incluye:
+
+```nginx
+resolver 127.0.0.11 valid=30s ipv6=off;
+```
+
+Y cada `proxy_pass` usa una variable en lugar de la URL literal:
+
+```nginx
+set $backend http://mundovs:5130;
+proxy_pass $backend;
+```
+
+Esto hace que nginx resuelva el hostname por petición usando el DNS interno de Docker
+(`127.0.0.11`), en lugar de resolverlo una sola vez al arrancar. Si el servicio app aún no está
+disponible al iniciar nginx, nginx arranca correctamente de todos modos y sólo devolverá un `502`
+temporal hasta que el backend esté listo.
+
+`docker-compose.yml` eliminó los `container_name` explícitos de todos los servicios, de modo que
+el nombre resolvible en la red Docker (`mundovs`) coincide exactamente con el nombre de servicio
+declarado en el compose, sin ambigüedad.
+
+### Validación post-deploy
+
+```powershell
+# 1. Todos los contenedores deben estar en estado "running" (no "restarting")
+docker compose ps
+
+# 2. nginx debe levantar sin errores
+docker compose logs --tail=50 nginx
+
+# 3. Health checks deben responder 200
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/health/live
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1/health/ready
+
+# 4. La app debe cargar desde el dominio público
+curl -I http://tu-dominio
+```
+
+Resultado esperado:
+- `docker compose ps` → todos los servicios en `running`
+- `/health/live` → `200`
+- `/health/ready` → `200` (indica que la app y la DB están listos)
