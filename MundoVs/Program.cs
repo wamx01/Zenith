@@ -35,6 +35,7 @@ if (!string.IsNullOrWhiteSpace(configuredUrls))
 var cookieSecurePolicy = ParseCookieSecurePolicy(builder.Configuration["Auth:CookieSecurePolicy"]);
 var cookieSameSite = ParseSameSiteMode(builder.Configuration["Auth:SameSite"]);
 var useHttpsRedirection = builder.Configuration.GetValue("Auth:UseHttpsRedirection", true);
+var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -153,7 +154,17 @@ QuestPDF.Settings.License = LicenseType.Community;
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CrmDbContext>();
-    await db.Database.MigrateAsync();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
+    if (applyMigrationsOnStartup)
+    {
+        await db.Database.MigrateAsync();
+    }
+    else
+    {
+        logger.LogInformation("EF Core migrations on startup are disabled by configuration.");
+    }
+
     var satCatalogInitializer = scope.ServiceProvider.GetRequiredService<INominaSatCatalogInitializer>();
     await satCatalogInitializer.SeedAsync();
 }
