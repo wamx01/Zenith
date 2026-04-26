@@ -240,7 +240,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             : 0;
         var salidaPosteriorCalificaExtra = minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
         var minutosRetardo = salidaPosteriorCalificaExtra
-            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, minutosSalidaPosterior, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra)
+            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, salidaPosteriorCalificaExtra, configuracionDescansos)
             : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
@@ -477,19 +477,19 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     /// <summary>
     /// Determina el retardo operativo que debe reportarse en días con posible tiempo extra.
     /// Si la salida tardía ya califica para extra, no aplica la tolerancia para evitar regalar tiempo extra sobre una entrada tardía.
+    /// En jornadas sin extra calificable, conserva la tolerancia normal de retardo.
     /// </summary>
     private static int ObtenerMinutosRetardoReportables(
         int minutosRetardoBrutos,
-        int minutosSalidaPosterior,
-        RrhhAsistenciaDescansoSettings configuracionDescansos,
-        int minutosMinimosTiempoExtra)
+        bool salidaPosteriorCalificaExtra,
+        RrhhAsistenciaDescansoSettings configuracionDescansos)
     {
         if (minutosRetardoBrutos <= 0)
         {
             return 0;
         }
 
-        return minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra)
+        return salidaPosteriorCalificaExtra
             ? minutosRetardoBrutos
             : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
     }
