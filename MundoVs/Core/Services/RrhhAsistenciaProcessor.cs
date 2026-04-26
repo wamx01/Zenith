@@ -232,15 +232,15 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosEntradaAnticipada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramadaAnticipada - entradaReal.Value).TotalMinutes))
             : 0;
-        var minutosRetardoBrutos = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaRetardo && entradaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramadaRetardo).TotalMinutes))
+        var minutosRetardoBrutos = detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramada).TotalMinutes))
             : 0;
-        var minutosSalidaPosterior = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaRetardo && salidaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaRetardo).TotalMinutes))
+        var minutosSalidaPosterior = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaPosterior && salidaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((salidaReal.Value - salidaProgramadaPosterior).TotalMinutes))
             : 0;
-        var salidaPosteriorCalificaExtra = minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
-        var minutosRetardo = salidaPosteriorCalificaExtra
-            ? ObtenerMinutosRetardoReportables(minutosRetardoBrutos, salidaPosteriorCalificaExtra, configuracionDescansos)
+        var salidaPosteriorCalificaParaTiempoExtra = minutosSalidaPosterior >= ObtenerMinutosMinimosTiempoExtra(configuracionNomina.MinutosMinimosTiempoExtra);
+        var minutosRetardo = salidaPosteriorCalificaParaTiempoExtra
+            ? minutosRetardoBrutos
             : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
@@ -473,26 +473,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
     private static int ObtenerMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
         => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 30;
-
-    /// <summary>
-    /// Determina el retardo operativo que debe reportarse en días con posible tiempo extra.
-    /// Si la salida tardía ya califica para extra, no aplica la tolerancia para evitar regalar tiempo extra sobre una entrada tardía.
-    /// En jornadas sin extra calificable, conserva la tolerancia normal de retardo.
-    /// </summary>
-    private static int ObtenerMinutosRetardoReportables(
-        int minutosRetardoBrutos,
-        bool salidaPosteriorCalificaExtra,
-        RrhhAsistenciaDescansoSettings configuracionDescansos)
-    {
-        if (minutosRetardoBrutos <= 0)
-        {
-            return 0;
-        }
-
-        return salidaPosteriorCalificaExtra
-            ? minutosRetardoBrutos
-            : ObtenerMinutosRetardoAplicables(minutosRetardoBrutos, configuracionDescansos);
-    }
 
     private static int ObtenerMinutosRetardoAplicables(int minutosRetardo, RrhhAsistenciaDescansoSettings configuracionDescansos)
         => minutosRetardo <= Math.Max(0, configuracionDescansos.ToleranciaRetardoMinutos)
