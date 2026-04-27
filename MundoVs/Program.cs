@@ -576,7 +576,6 @@ using (var scope = app.Services.CreateScope())
         var db = scope.ServiceProvider.GetRequiredService<CrmDbContext>();
         if (await db.Database.CanConnectAsync())
         {
-            await db.Database.ExecuteSqlRawAsync("UPDATE `Pedidos` SET `TipoPrecio` = 1 WHERE `TipoPrecio` = 0");
 
             await SeedPlanes(db);
 
