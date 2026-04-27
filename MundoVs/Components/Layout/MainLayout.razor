@@ -34,6 +34,9 @@ else
 @code {
     private bool _authChecked;
     private bool _sidebarMini;
+    private bool _disposed;
+    private bool _redirectingToLogin;
+    private static readonly string[] PublicRoutes = ["login", "auth/recuperar-password"];
 
     protected override void OnInitialized()
     {
@@ -52,52 +55,73 @@ else
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error durante validación de autenticación en MainLayout.");
-            Navigation.NavigateTo("/login", replace: true);
+            RedirigirALogin();
         }
     }
 
     private async Task<AuthenticationState> EsperarAutenticacionAsync()
     {
-        AuthenticationState? ultimoEstado = null;
-
-        for (var intento = 1; intento <= 10; intento++)
+        var estado = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (estado.User.Identity?.IsAuthenticated == true)
         {
-            ultimoEstado = await AuthStateProvider.GetAuthenticationStateAsync();
-            if (ultimoEstado.User.Identity?.IsAuthenticated == true)
-            {
-                Logger.LogInformation("Autenticación restaurada en intento {Intento} para {Usuario}", intento, ultimoEstado.User.Identity?.Name);
-                return ultimoEstado;
-            }
-
-            await Task.Delay(150);
+            Logger.LogInformation("Autenticación restaurada para {Usuario}", estado.User.Identity?.Name);
         }
 
-        Logger.LogWarning("No se pudo restaurar autenticación después de varios intentos.");
-        return ultimoEstado ?? new AuthenticationState(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity()));
+        return estado;
     }
 
     private async Task Logout()
     {
         await AuthStateProvider.LogoutAsync();
-        Navigation.NavigateTo("/login");
+        RedirigirALogin();
     }
 
-    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        try
+        if (_disposed || _redirectingToLogin)
         {
-            await InvokeAsync(() => ValidarRutaActualAsync(e.Location));
+            return;
         }
-        catch (Exception ex)
+
+        var rutaActual = Navigation.ToBaseRelativePath(e.Location);
+        if (EsRutaPublica(rutaActual))
         {
-            Logger.LogError(ex, "Error validando acceso por ruta en MainLayout.");
+            return;
         }
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                if (_disposed || _redirectingToLogin)
+                {
+                    return;
+                }
+
+                await ValidarRutaActualAsync(e.Location);
+            }
+            catch (Exception ex)
+            {
+                if (!_disposed)
+                {
+                    Logger.LogError(ex, "Error validando acceso por ruta en MainLayout.");
+                }
+            }
+        });
     }
 
     private async Task ValidarRutaActualAsync(string? location = null)
     {
-        var state = await EsperarAutenticacionAsync();
         var rutaActual = Navigation.ToBaseRelativePath(location ?? Navigation.Uri);
+
+        if (EsRutaPublica(rutaActual))
+        {
+            Logger.LogInformation("MainLayout omite validación de autenticación para ruta pública: {Ruta}", rutaActual);
+            MarcarAutenticacionVerificada();
+            return;
+        }
+
+        var state = await EsperarAutenticacionAsync();
 
         Logger.LogInformation(
             "MainLayout auth check. Ruta: {Ruta}. Authenticated: {Authenticated}. Usuario: {Usuario}",
@@ -108,7 +132,7 @@ else
         if (state.User.Identity?.IsAuthenticated != true)
         {
             Logger.LogWarning("MainLayout redirige a /login porque el usuario no está autenticado.");
-            Navigation.NavigateTo("/login", replace: true);
+            RedirigirALogin();
             return;
         }
 
@@ -128,9 +152,36 @@ else
             return;
         }
 
-        if (!_authChecked)
+        MarcarAutenticacionVerificada();
+    }
+
+    private static bool EsRutaPublica(string rutaActual)
+    {
+        var rutaNormalizada = (rutaActual ?? string.Empty).Trim('/');
+        return PublicRoutes.Any(ruta => string.Equals(rutaNormalizada, ruta, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void RedirigirALogin()
+    {
+        if (_disposed || _redirectingToLogin)
         {
-            _authChecked = true;
+            return;
+        }
+
+        _redirectingToLogin = true;
+        Navigation.NavigateTo("/login", replace: true);
+    }
+
+    private void MarcarAutenticacionVerificada()
+    {
+        if (_authChecked)
+        {
+            return;
+        }
+
+        _authChecked = true;
+        if (!_disposed)
+        {
             StateHasChanged();
         }
     }
@@ -143,6 +194,7 @@ else
 
     public void Dispose()
     {
+        _disposed = true;
         Navigation.LocationChanged -= OnLocationChanged;
     }
 }

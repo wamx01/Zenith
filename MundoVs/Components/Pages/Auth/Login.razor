@@ -751,8 +751,12 @@
             }
 
             var destino = string.IsNullOrWhiteSpace(loginResult.RedirectUrl) ? "/" : loginResult.RedirectUrl;
-            Logger.LogInformation("Login completado. Redirigiendo a {Destino}", destino);
-            Navigation.NavigateTo(destino, forceLoad: true);
+            Logger.LogInformation("Login completado. Redirigiendo a {Destino} con recarga para reconstruir el circuito autenticado.", destino);
+            Navigation.NavigateTo(destino, new NavigationOptions
+            {
+                ForceLoad = true,
+                ReplaceHistoryEntry = true
+            });
         }
         catch (Exception ex)
         {

@@ -3098,6 +3098,11 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<NominaCorteRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<FestivoRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<BonoRubroRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<BonoEstructuraRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<BonoEstructuraDetalleRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.BonoEstructuraRrhh.EmpresaId == _empresaId);
+        modelBuilder.Entity<BonoDistribucionPeriodoRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<BonoDistribucionEmpleadoRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.BonoDistribucionPeriodoRrhh.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
+        modelBuilder.Entity<BonoDistribucionEmpleadoDetalleRrhh>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.BonoDistribucionEmpleadoRrhh.BonoDistribucionPeriodoRrhh.EmpresaId == _empresaId && e.BonoRubroRrhh.EmpresaId == _empresaId));
         modelBuilder.Entity<NominaBono>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<NominaBonoDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.NominaBono.EmpresaId == _empresaId);
         modelBuilder.Entity<NominaPercepcionTipo>().HasQueryFilter(e => e.IsActive);
@@ -3109,8 +3114,14 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<RrhhAsistencia>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhLogChecador>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<Empleado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<RrhhAusencia>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
+        modelBuilder.Entity<RrhhBancoHorasMovimiento>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
+        modelBuilder.Entity<RrhhEmpleadoTurno>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId && e.TurnoBase.EmpresaId == _empresaId));
+        modelBuilder.Entity<RrhhEstadoAgente>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<Prenomina>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<PrenominaDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Prenomina.EmpresaId == _empresaId);
+        modelBuilder.Entity<PrenominaBono>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.PrenominaDetalle.Prenomina.EmpresaId == _empresaId && e.BonoRubroRrhh.EmpresaId == _empresaId));
+        modelBuilder.Entity<PrenominaPercepcion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.PrenominaDetalle.Prenomina.EmpresaId == _empresaId);
         modelBuilder.Entity<Nomina>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<NominaDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Nomina.EmpresaId == _empresaId);
         modelBuilder.Entity<EsquemaPago>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
@@ -3118,5 +3129,6 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<EmpleadoEsquemaPago>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Empleado.EmpresaId == _empresaId);
         modelBuilder.Entity<ValeDestajo>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<ValeDestajoDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.ValeDestajo.EmpresaId == _empresaId);
+        modelBuilder.Entity<CatalogoTallaCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
     }
 }
