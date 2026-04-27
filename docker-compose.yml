@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      Hosting__Urls: http://+:${APP_PORT:-8080}
+      ASPNETCORE_HTTP_PORTS: ${APP_PORT:-8080}
       ConnectionStrings__ZenithConnection: ${ZENITH_CONNECTION_STRING}
       Auth__CookieSecurePolicy: Always
       Auth__SameSite: Lax

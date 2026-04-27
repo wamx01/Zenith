@@ -12,7 +12,7 @@ También aclara qué significa cada configuración importante, especialmente:
 - `WorkerApiKey`
 - `ApiKey`
 - `IntervaloSegundos`
-- `Hosting:Urls`
+- `ASPNETCORE_URLS` o `ASPNETCORE_HTTP_PORTS`
 - `Auth:CookieSecurePolicy`
 - `Auth:UseHttpsRedirection`
 
@@ -200,7 +200,7 @@ Si vas a controlar el comportamiento desde central, usa la configuración de `Ze
 
 ---
 
-## 6. `Hosting:Urls`
+## 6. Puertos y URLs de hosting
 Define en qué puerto y dirección escucha cada app.
 
 ### Para qué sirve
@@ -208,7 +208,8 @@ Sirve especialmente en publicación, porque evita recompilar solo para cambiar e
 
 ### Dónde vive
 #### En `Zenith`
-- `Hosting:Urls` en `MundoVs/appsettings.json`
+- `ASPNETCORE_URLS`
+- `ASPNETCORE_HTTP_PORTS`
 
 #### En `ZkTecoApi`
 - `Hosting:Urls` en `..\ZkTecoApi_Zenith\appsettings.json`
@@ -221,7 +222,8 @@ Sirve especialmente en publicación, porque evita recompilar solo para cambiar e
 
 ### Recomendación
 #### Para `Zenith` publicado
-- `http://*:5130` o el puerto real que quieras exponer detrás de IIS/proxy
+- preferir `ASPNETCORE_HTTP_PORTS=8080` o el puerto real que quieras exponer detrás de proxy
+- usar `ASPNETCORE_URLS` solo si necesitas forzar URLs explícitas y aceptas que eso sobreescriba `HTTP_PORTS` / `HTTPS_PORTS`
 
 #### Para `ZkTecoApi` publicado
 - `http://*:5370`

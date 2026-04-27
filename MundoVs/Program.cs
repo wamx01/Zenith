@@ -1,3 +1,4 @@
+using System.Globalization;
 using MundoVs.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -24,22 +25,21 @@ using System.Security.Cryptography;
 using System.Text;
 using Zenith.Contracts.Asistencia;
 
+var platformPort = Environment.GetEnvironmentVariable("PORT");
+var httpPorts = Environment.GetEnvironmentVariable("HTTP_PORTS")
+    ?? Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS");
+if (int.TryParse(platformPort, out var port) && port > 0 && string.IsNullOrWhiteSpace(httpPorts))
+{
+    Environment.SetEnvironmentVariable("ASPNETCORE_HTTP_PORTS", port.ToString(CultureInfo.InvariantCulture));
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
-var configuredPort = builder.Configuration["PORT"];
-if (int.TryParse(configuredPort, out var port) && port > 0)
+var configuredUrls = builder.Configuration["URLS"]
+    ?? builder.Configuration["ASPNETCORE_URLS"];
+if (!string.IsNullOrWhiteSpace(configuredUrls))
 {
-    builder.WebHost.UseUrls($"http://+:{port}");
-}
-else
-{
-    var configuredUrls = builder.Configuration["URLS"]
-        ?? builder.Configuration["ASPNETCORE_URLS"]
-        ?? builder.Configuration["Hosting:Urls"];
-    if (!string.IsNullOrWhiteSpace(configuredUrls))
-    {
-        builder.WebHost.UseUrls(configuredUrls);
-    }
+    builder.WebHost.UseUrls(configuredUrls);
 }
 
 var cookieSecurePolicy = ParseCookieSecurePolicy(builder.Configuration["Auth:CookieSecurePolicy"]);

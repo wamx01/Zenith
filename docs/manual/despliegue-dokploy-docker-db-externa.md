@@ -40,7 +40,7 @@ Usa como base el archivo `.env.dokploy.example`.
 Variables mínimas:
 
 - `ASPNETCORE_ENVIRONMENT=Production`
-- `Hosting__Urls=http://+:8080`
+- `ASPNETCORE_HTTP_PORTS=8080` para no sobreescribir `HTTPS_PORTS`
 - `ConnectionStrings__ZenithConnection=Server=...;Port=3306;Database=...;User=...;Password=...;CharSet=utf8mb4;`
 - `Database__ApplyMigrationsOnStartup=true`
 - `Auth__CookieSecurePolicy=Always`
