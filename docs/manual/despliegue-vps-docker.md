@@ -34,7 +34,7 @@ Internet
 Nginx :80
   |
   v
-MundoVs :5130
+MundoVs :8080
   |
   v
 MariaDB :3306 (solo red interna Docker)
@@ -134,7 +134,7 @@ nano .env
 
 ### 3. Revisar `nginx/default.conf`
 
-El archivo apunta al upstream `http://mundovs:5130` usando el nombre de servicio Docker Compose.
+El archivo apunta al upstream `http://mundovs:8080` usando el nombre de servicio Docker Compose.
 El `resolver 127.0.0.11` ya está configurado para resolver nombres por petición en lugar de al arranque,
 lo que evita errores `host not found in upstream` en Dokploy.
 
@@ -266,7 +266,7 @@ resolver 127.0.0.11 valid=30s ipv6=off;
 Y cada `proxy_pass` usa una variable en lugar de la URL literal:
 
 ```nginx
-set $backend http://mundovs:5130;
+set $backend http://mundovs:8080;
 proxy_pass $backend;
 ```
 

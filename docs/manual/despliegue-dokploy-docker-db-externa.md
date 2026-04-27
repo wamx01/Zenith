@@ -18,7 +18,7 @@ Internet
 Dokploy / Reverse Proxy :443
   |
   v
-MundoVs :5130
+MundoVs :8080
   |
   +--> /app/wwwroot/uploads (volumen persistente)
   |
@@ -40,7 +40,7 @@ Usa como base el archivo `.env.dokploy.example`.
 Variables mínimas:
 
 - `ASPNETCORE_ENVIRONMENT=Production`
-- `Hosting__Urls=http://+:5130`
+- `Hosting__Urls=http://+:8080`
 - `ConnectionStrings__ZenithConnection=Server=...;Port=3306;Database=...;User=...;Password=...;CharSet=utf8mb4;`
 - `Database__ApplyMigrationsOnStartup=true`
 - `Auth__CookieSecurePolicy=Always`
@@ -59,7 +59,7 @@ Opcionales:
 
 - tipo: `Dockerfile`
 - ruta del `Dockerfile`: `MundoVs/Dockerfile`
-- puerto interno: `5130`
+- puerto interno: `8080`
 - rama: la rama a publicar
 
 ### Volumen para adjuntos
@@ -73,6 +73,7 @@ Sin este volumen, los adjuntos se perderán cuando `Dokploy` recree el contenedo
 ### Dominio y TLS
 
 - asignar el dominio público de `Zenith`
+- usar el dominio raíz en `TRAEFIK_DOMAIN`; el compose también enruta `www.<dominio>`
 - activar `SSL`
 - mantener `UseHttpsRedirection=true` para respetar `X-Forwarded-Proto`
 
