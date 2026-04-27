@@ -43,7 +43,7 @@ else
 var cookieSecurePolicy = ParseCookieSecurePolicy(builder.Configuration["Auth:CookieSecurePolicy"]);
 var cookieSameSite = ParseSameSiteMode(builder.Configuration["Auth:SameSite"]);
 var useHttpsRedirection = builder.Configuration.GetValue("Auth:UseHttpsRedirection", true);
-var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true);
+var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", false);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
