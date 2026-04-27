@@ -33,7 +33,9 @@ if (int.TryParse(configuredPort, out var port) && port > 0)
 }
 else
 {
-    var configuredUrls = builder.Configuration["Hosting:Urls"];
+    var configuredUrls = builder.Configuration["URLS"]
+        ?? builder.Configuration["ASPNETCORE_URLS"]
+        ?? builder.Configuration["Hosting:Urls"];
     if (!string.IsNullOrWhiteSpace(configuredUrls))
     {
         builder.WebHost.UseUrls(configuredUrls);
