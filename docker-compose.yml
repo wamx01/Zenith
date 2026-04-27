@@ -27,7 +27,6 @@ services:
       dockerfile: MundoVs/Dockerfile
     restart: unless-stopped
     environment:
-      APP_PORT: ${APP_PORT:-8080}
       ASPNETCORE_ENVIRONMENT: Production
       Hosting__Urls: http://+:${APP_PORT:-8080}
       ConnectionStrings__ZenithConnection: ${ZENITH_CONNECTION_STRING}
