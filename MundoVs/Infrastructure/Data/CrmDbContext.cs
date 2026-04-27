@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Entities.Auth;
 using MundoVs.Core.Entities.Calzado;
@@ -204,7 +205,27 @@ public class CrmDbContext : DbContext
         ConfigurarNominas(modelBuilder);
         ConfigurarEsquemasPago(modelBuilder);
         ConfigurarAuth(modelBuilder);
+        NormalizarNombresTablasMinusculas(modelBuilder);
         ConfigurarQueryFilters(modelBuilder);
+    }
+
+    private static void NormalizarNombresTablasMinusculas(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (entityType.IsOwned())
+            {
+                continue;
+            }
+
+            var tableName = entityType.GetTableName();
+            if (string.IsNullOrWhiteSpace(tableName))
+            {
+                continue;
+            }
+
+            entityType.SetTableName(tableName.ToLowerInvariant());
+        }
     }
 
     private void ConfigurarAuditoria(ModelBuilder modelBuilder)
