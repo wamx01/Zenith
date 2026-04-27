@@ -88,6 +88,12 @@
                             </InputSelect>
                             <div class="form-text">Se usa para interpretar la hora que envía el checador y convertirla a UTC.</div>
                         </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <div class="form-check mb-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                <label class="form-check-label ms-2">Checador activo</label>
+                            </div>
+                        </div>
                         <div class="col-md-12 d-flex gap-2 mt-3">
                             <button class="btn btn-success" @onclick="Guardar" disabled="@guardando"><i class="bi bi-save me-1"></i>Guardar</button>
                             <button class="btn btn-outline-secondary" @onclick="Cancelar" disabled="@guardando">Cancelar</button>
@@ -242,7 +248,12 @@
                                     <td class="text-end">
                                         @if (_puedeEditar)
                                         {
-                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)"><i class="bi bi-pencil"></i></button>
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <button class="btn btn-outline-primary" @onclick="() => Editar(item.Id)"><i class="bi bi-pencil"></i></button>
+                                                <button class="btn @(item.IsActive ? "btn-outline-warning" : "btn-outline-success")" @onclick="() => CambiarActivoAsync(item.Id)">
+                                                    <i class="bi @(item.IsActive ? "bi-pause-circle" : "bi-play-circle")"></i>
+                                                </button>
+                                            </div>
                                         }
                                     </td>
                                 </tr>
@@ -478,6 +489,39 @@
         {
             guardando = false;
         }
+    }
+
+    private async Task CambiarActivoAsync(Guid id)
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para modificar checadores.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var checador = await db.RrhhChecadores.FirstOrDefaultAsync(c => c.Id == id && c.EmpresaId == _empresaId);
+        if (checador == null)
+        {
+            error = "No se encontró el checador.";
+            return;
+        }
+
+        checador.IsActive = !checador.IsActive;
+        checador.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        ok = checador.IsActive ? "Checador habilitado." : "Checador deshabilitado.";
+
+        if (editando.Id == checador.Id)
+        {
+            editando.IsActive = checador.IsActive;
+        }
+
+        await CargarAsync();
+        await OnChecadorCorreccionChangedAsync();
     }
 
     private static string? LimpiarTexto(string? valor)
