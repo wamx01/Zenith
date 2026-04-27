@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      Hosting__Urls: http://+:5130
+      Hosting__Urls: http://+:${APP_PORT:-8080}
       ConnectionStrings__ZenithConnection: ${ZENITH_CONNECTION_STRING}
       Auth__CookieSecurePolicy: Always
       Auth__SameSite: Lax
@@ -51,9 +51,9 @@ services:
       - "traefik.http.routers.mundovs.entrypoints=websecure"
       - "traefik.http.routers.mundovs.tls=true"
       - "traefik.http.routers.mundovs.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mundovs.loadbalancer.server.port=5130"
+      - "traefik.http.services.mundovs.loadbalancer.server.port=${APP_PORT:-8080}"
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://localhost:5130/health/ready || exit 1"]
+      test: ["CMD-SHELL", "curl --fail http://localhost:${APP_PORT:-8080}/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
