@@ -27,6 +27,10 @@ using System.Text;
 using Zenith.Contracts.Asistencia;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Environment.IsEnvironment("Cloud"))
+{
+    builder.Configuration.AddJsonFile("appsettings.Cloud.json", optional: true, reloadOnChange: true);
+}
 var defaultCulture = new CultureInfo("es-MX");
 CultureInfo.DefaultThreadCurrentCulture = defaultCulture;
 CultureInfo.DefaultThreadCurrentUICulture = defaultCulture;
