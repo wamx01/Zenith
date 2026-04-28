@@ -28,6 +28,7 @@ public class NominaCalculationInput
     public decimal ComplementoSalarioMinimo { get; init; }
     public decimal FactorFestivo { get; init; } = 2m;
     public int AniosServicio { get; init; }
+    public decimal? DiasVacacionesAnualesOverride { get; init; }
     public bool AplicaSalarioMinimoFrontera { get; init; }
 }
 
@@ -57,5 +58,9 @@ public class NominaCalculationResult
     public decimal SubsidioEmpleo { get; init; }
     public decimal AguinaldoProvision { get; init; }
     public decimal PrimaVacacionalProvision { get; init; }
+    public decimal TotalObligacionesTerceros { get; init; }
+    public decimal TotalAportacionesPatronales { get; init; }
+    public decimal TotalProvisiones { get; init; }
+    public decimal CostoEmpresa { get; init; }
     public decimal TotalPagar { get; init; }
 }

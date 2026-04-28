@@ -19,12 +19,18 @@ public class NominaConfiguracion
     public int HorasBaseQuincenal { get; set; } = 96;
     public int HorasBaseMensual { get; set; } = 208;
     public decimal UmaDiaria { get; set; } = 113.14m;
-    public decimal SalarioMinimoGeneral { get; set; } = 278.80m;
-    public decimal SalarioMinimoFrontera { get; set; } = 419.88m;
+    public decimal SalarioMinimoGeneral { get; set; } = 315.04m;
+    public decimal SalarioMinimoFrontera { get; set; } = 440.87m;
     public decimal TasaImssObrera { get; set; } = 0.025m;
     public decimal TasaImssPatronal { get; set; } = 0.18m;
     public decimal PrimaRiesgoTrabajo { get; set; } = 0.005m;
     public decimal PrimaVacacionalMinima { get; set; } = 0.25m;
+    public TipoCicloVacacionalRrhh TipoCicloVacacional { get; set; } = TipoCicloVacacionalRrhh.AniversarioContratacion;
+    public FormaPagoPrimaVacacionalRrhh FormaPagoPrimaVacacional { get; set; } = FormaPagoPrimaVacacionalRrhh.AlTomarVacaciones;
+    public PoliticaPrimerCicloVacacionalRrhh PoliticaPrimerCicloVacacional { get; set; } = PoliticaPrimerCicloVacacionalRrhh.Completo;
+    public int MesInicioCicloVacacional { get; set; } = 1;
+    public int DiaInicioCicloVacacional { get; set; } = 1;
+    public int MesesMinimosPrimerAnioVacacional { get; set; } = 12;
     public int DiasAguinaldoMinimo { get; set; } = 15;
     public decimal TopeSbcEnUma { get; set; } = 25m;
     public bool RetencionIsrHabilitada { get; set; } = true;
@@ -57,6 +63,13 @@ public class NominaConfiguracion
             : FactorFestivoTrabajado;
 
         return factor > 0m ? factor : 2m;
+    }
+
+    public DateTime ObtenerFechaInicioCicloVacacional(int anio)
+    {
+        var mes = Math.Clamp(MesInicioCicloVacacional <= 0 ? 1 : MesInicioCicloVacacional, 1, 12);
+        var dia = Math.Clamp(DiaInicioCicloVacacional <= 0 ? 1 : DiaInicioCicloVacacional, 1, DateTime.DaysInMonth(anio, mes));
+        return new DateTime(anio, mes, dia);
     }
 
     public int ObtenerDiasVacacionesPorAntiguedad(int aniosServicio)
@@ -223,6 +236,25 @@ public sealed class ReglasPrenominaConfiguracion
     public bool RequierePrenominaCerradaParaNomina { get; set; } = true;
 }
 
+public enum TipoCicloVacacionalRrhh
+{
+    AniversarioContratacion = 1,
+    CorteFijoAnual = 2
+}
+
+public enum FormaPagoPrimaVacacionalRrhh
+{
+    AlTomarVacaciones = 1,
+    Anual = 2,
+    Manual = 3
+}
+
+public enum PoliticaPrimerCicloVacacionalRrhh
+{
+    Completo = 1,
+    Proporcional = 2
+}
+
 public enum PeriodicidadPago
 {
     Semanal = 1,
@@ -253,6 +285,12 @@ public static class ClavesConfiguracionNomina
     public const string TasaImssPatronal = "Nomina:IMSS:TasaPatronal";
     public const string PrimaRiesgoTrabajo = "Nomina:IMSS:PrimaRiesgoTrabajo";
     public const string PrimaVacacionalMinima = "Nomina:PrimaVacacional:Minima";
+    public const string TipoCicloVacacional = "Nomina:Vacaciones:TipoCiclo";
+    public const string FormaPagoPrimaVacacional = "Nomina:Vacaciones:FormaPagoPrima";
+    public const string PoliticaPrimerCicloVacacional = "Nomina:Vacaciones:PoliticaPrimerCiclo";
+    public const string MesInicioCicloVacacional = "Nomina:Vacaciones:Corte:MesInicio";
+    public const string DiaInicioCicloVacacional = "Nomina:Vacaciones:Corte:DiaInicio";
+    public const string MesesMinimosPrimerAnioVacacional = "Nomina:Vacaciones:MesesMinimosPrimerAnio";
     public const string DiasAguinaldoMinimo = "Nomina:Aguinaldo:DiasMinimos";
     public const string TopeSbcEnUma = "Nomina:IMSS:TopeSbcEnUma";
     public const string TablaVacacionesJson = "Nomina:Vacaciones:TablaJson";

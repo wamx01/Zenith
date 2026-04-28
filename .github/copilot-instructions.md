@@ -38,6 +38,7 @@
 
 ## Human Resources Guidelines
 - Los permisos parciales con goce deben descontarse del banco de horas del empleado.
+- Las capturas fijas de IMSS/ISR deben manejarse por empleado, no como configuración general.
 
 ## Deployment Guidelines
 - Para tareas de publicación/despliegue, responder solo con los comandos exactos sin explicación adicional.

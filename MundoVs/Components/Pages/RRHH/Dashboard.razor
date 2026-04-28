@@ -1,11 +1,13 @@
 @page "/rrhh/dashboard"
 @using System.Globalization
+@using System.Text
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Dashboard RH</PageTitle>
@@ -51,9 +53,30 @@
                         <div class="small text-muted mb-1">Empresa</div>
                         <div class="form-control bg-light">@empresaEtiqueta</div>
                     </div>
+                    <div class="col-md-3 col-lg-2">
+                        <label class="form-label">Periodicidad</label>
+                        <InputSelect class="form-select" @bind-Value="filtroPeriodicidad">
+                            <option value="">Todas</option>
+                            @foreach (var periodicidad in Enum.GetValues<PeriodicidadPago>())
+                            {
+                                <option value="@periodicidad.ToString()">@periodicidad</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <label class="form-label">Empleado</label>
+                        <InputSelect class="form-select" @bind-Value="filtroEmpleadoId">
+                            <option value="">Todos</option>
+                            @foreach (var empleado in empleadosFiltro)
+                            {
+                                <option value="@empleado.Id.ToString()">@empleado.NombreCompleto</option>
+                            }
+                        </InputSelect>
+                    </div>
                     <div class="col-lg-4 d-flex gap-2 flex-wrap">
                         <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar</button>
                         <button class="btn btn-outline-secondary" @onclick="RestablecerPeriodoAsync" disabled="@cargando">Mes actual</button>
+                        <button class="btn btn-outline-success" @onclick="ExportarCostosCsvAsync" disabled="@(cargando || costosPorEmpleadoFiltrados.Count == 0)"><i class="bi bi-download me-1"></i>CSV costos</button>
                     </div>
                 </div>
             </div>
@@ -118,6 +141,63 @@
 
         @if (_puedeVerNominas)
         {
+            <div class="row g-3 mb-4">
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">Neto pagado</div>
+                            <div class="fs-5 fw-bold text-success">@resumen.TotalNominaPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">Pago al empleado</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">Costo empresa</div>
+                            <div class="fs-5 fw-bold">@resumen.TotalCostoEmpresaPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">Neto + patronal + provisiones</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">Horas extra</div>
+                            <div class="fs-5 fw-bold">@resumen.TotalHorasExtraMontoPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">@resumen.HorasExtraPeriodo.ToString("0.##") h</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">Provisiones</div>
+                            <div class="fs-5 fw-bold">@resumen.TotalProvisionesPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">Reserva acumulada</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">IMSS total</div>
+                            <div class="fs-5 fw-bold">@resumen.TotalImssPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">Obr. @resumen.TotalImssObreroPeriodo.ToString("C0") · Pat. @resumen.TotalImssPatronalPeriodo.ToString("C0")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body py-3">
+                            <div class="small text-muted text-uppercase">ISR</div>
+                            <div class="fs-5 fw-bold">@resumen.TotalIsrPeriodo.ToString("C0")</div>
+                            <div class="small text-muted">Retención acumulada</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="row g-3 mb-4">
                 <div class="col-lg-4">
                     <div class="card border-0 shadow-sm h-100 rh-trend-card">
@@ -542,6 +622,59 @@
                 </div>
             </div>
         </div>
+
+        @if (_puedeVerNominas)
+        {
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
+                    <span>Costos por empleado</span>
+                    <span class="badge bg-light text-primary">@costosPorEmpleadoFiltrados.Count empleado(s)</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Empleado</th>
+                                    <th class="text-end">Horas extra</th>
+                                    <th class="text-end">Provisión</th>
+                                    <th class="text-end">IMSS obrero</th>
+                                    <th class="text-end">IMSS patronal</th>
+                                    <th class="text-end">ISR</th>
+                                    <th class="text-end">Neto</th>
+                                    <th class="text-end">Costo empresa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (costosPorEmpleadoFiltrados.Count == 0)
+                                {
+                                    <tr><td colspan="8" class="text-center text-muted py-3">No hay detalles de nómina en el rango seleccionado.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in costosPorEmpleadoFiltrados)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">@item.Empleado</div>
+                                                <div class="small text-muted">@item.Periodicidad · @item.Periodos periodo(s)</div>
+                                            </td>
+                                            <td class="text-end">@item.HorasExtra.ToString("C2")</td>
+                                            <td class="text-end">@item.Provisiones.ToString("C2")</td>
+                                            <td class="text-end">@item.ImssObrero.ToString("C2")</td>
+                                            <td class="text-end">@item.ImssPatronal.ToString("C2")</td>
+                                            <td class="text-end">@item.Isr.ToString("C2")</td>
+                                            <td class="text-end fw-semibold text-success">@item.Neto.ToString("C2")</td>
+                                            <td class="text-end fw-semibold">@item.CostoEmpresa.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
     }
 </div>
 
@@ -563,7 +696,12 @@
     private List<NominaResumenVm> nominasRecientes = [];
     private List<NominaPagadaSemanaVm> nominasPagadasPorSemana = [];
     private List<BonoAreaVm> bonosPorArea = [];
+    private List<CostoEmpleadoVm> costosPorEmpleado = [];
+    private List<CostoEmpleadoVm> costosPorEmpleadoFiltrados = [];
+    private List<EmpleadoFiltroVm> empleadosFiltro = [];
     private List<DashboardAlertaVm> alertas = [];
+    private string filtroPeriodicidad = string.Empty;
+    private string filtroEmpleadoId = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -623,6 +761,18 @@
                     AplicaImss = e.AplicaImss,
                     AplicaInfonavit = e.AplicaInfonavit,
                     PeriodicidadPago = e.PeriodicidadPago
+                })
+                .ToListAsync();
+
+            empleadosFiltro = await db.Empleados
+                .AsNoTracking()
+                .Where(e => e.EmpresaId == _empresaId && e.IsActive)
+                .OrderBy(e => e.Nombre)
+                .ThenBy(e => e.ApellidoPaterno)
+                .Select(e => new EmpleadoFiltroVm
+                {
+                    Id = e.Id,
+                    NombreCompleto = e.NombreCompleto
                 })
                 .ToListAsync();
 
@@ -753,6 +903,11 @@
         var totalNominaAnterior = nominasPrevias.Sum(n => n.TotalNomina);
         var totalBonosAnterior = detallesNominaPrevios.Sum(d => d.MontoBono);
         var totalHorasExtraAnterior = detallesNominaPrevios.Sum(d => d.MontoHorasExtra);
+        var totalProvisiones = detallesNomina.Sum(d => d.TotalProvisiones);
+        var totalImssObrero = detallesNomina.Sum(d => d.CuotaImssObrera);
+        var totalImssPatronal = detallesNomina.Sum(d => d.CuotaImssPatronal);
+        var totalIsr = detallesNomina.Sum(d => d.RetencionIsr);
+        var totalCostoEmpresa = detallesNomina.Sum(d => d.CostoEmpresa);
         var nominasPagadas = detallesNomina
             .Where(d => d.Nomina.Estatus == EstatusNomina.Pagada)
             .GroupBy(d => ObtenerInicioSemana((d.Nomina.FechaPago ?? d.Nomina.FechaFin).Date))
@@ -822,6 +977,28 @@
             })
             .ToList();
 
+        costosPorEmpleado = detallesNomina
+            .GroupBy(d => new { d.EmpleadoId, Nombre = d.Empleado.NombreCompleto, d.Empleado.PeriodicidadPago })
+            .Select(g => new CostoEmpleadoVm
+            {
+                EmpleadoId = g.Key.EmpleadoId,
+                Empleado = g.Key.Nombre,
+                Periodicidad = g.Key.PeriodicidadPago.ToString(),
+                Periodos = g.Select(x => x.NominaId).Distinct().Count(),
+                HorasExtra = g.Sum(x => x.MontoHorasExtra),
+                Provisiones = g.Sum(x => x.TotalProvisiones),
+                ImssObrero = g.Sum(x => x.CuotaImssObrera),
+                ImssPatronal = g.Sum(x => x.CuotaImssPatronal),
+                Isr = g.Sum(x => x.RetencionIsr),
+                Neto = g.Sum(x => x.TotalPagar),
+                CostoEmpresa = g.Sum(x => x.CostoEmpresa)
+            })
+            .OrderByDescending(x => x.CostoEmpresa)
+            .ThenBy(x => x.Empleado)
+            .ToList();
+
+        AplicarFiltrosCostos();
+
         nominasRecientes = nominas
             .Take(6)
             .Select(n => new NominaResumenVm
@@ -860,6 +1037,12 @@
             TotalBonosPeriodo = totalBonos,
             TotalHorasExtraMontoPeriodo = totalHorasExtraMonto,
             TotalDeduccionesMontoPeriodo = totalDeduccionesMonto,
+            TotalProvisionesPeriodo = totalProvisiones,
+            TotalImssObreroPeriodo = totalImssObrero,
+            TotalImssPatronalPeriodo = totalImssPatronal,
+            TotalImssPeriodo = totalImssObrero + totalImssPatronal,
+            TotalIsrPeriodo = totalIsr,
+            TotalCostoEmpresaPeriodo = totalCostoEmpresa,
             PorcentajeBonosSobreNomina = CalcularPorcentaje(totalBonos, nominas.Sum(n => n.TotalNomina)),
             PorcentajeHorasExtraSobreNomina = CalcularPorcentaje(totalHorasExtraMonto, nominas.Sum(n => n.TotalNomina)),
             PorcentajeDeduccionesSobreNomina = CalcularPorcentaje(totalDeduccionesMonto, nominas.Sum(n => n.TotalNomina)),
@@ -913,6 +1096,54 @@
 
     private static decimal CalcularHorasBanco(IEnumerable<MovimientoBancoResumenRaw> movimientos)
         => Math.Round(movimientos.Sum(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo ? -m.Horas : m.Horas), 2);
+
+    private void AplicarFiltrosCostos()
+    {
+        IEnumerable<CostoEmpleadoVm> query = costosPorEmpleado;
+
+        if (!string.IsNullOrWhiteSpace(filtroPeriodicidad))
+            query = query.Where(x => string.Equals(x.Periodicidad, filtroPeriodicidad, StringComparison.OrdinalIgnoreCase));
+
+        if (Guid.TryParse(filtroEmpleadoId, out var empleadoId))
+            query = query.Where(x => x.EmpleadoId == empleadoId);
+
+        costosPorEmpleadoFiltrados = query
+            .OrderByDescending(x => x.CostoEmpresa)
+            .ThenBy(x => x.Empleado)
+            .ToList();
+    }
+
+    private async Task ExportarCostosCsvAsync()
+    {
+        if (costosPorEmpleadoFiltrados.Count == 0)
+            return;
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Empleado,Periodicidad,Periodos,HorasExtra,Provisiones,ImssObrero,ImssPatronal,ISR,Neto,CostoEmpresa");
+
+        foreach (var item in costosPorEmpleadoFiltrados)
+        {
+            builder.AppendLine(string.Join(',',
+                EscapeCsv(item.Empleado),
+                EscapeCsv(item.Periodicidad),
+                item.Periodos.ToString(CultureInfo.InvariantCulture),
+                item.HorasExtra.ToString("0.00", CultureInfo.InvariantCulture),
+                item.Provisiones.ToString("0.00", CultureInfo.InvariantCulture),
+                item.ImssObrero.ToString("0.00", CultureInfo.InvariantCulture),
+                item.ImssPatronal.ToString("0.00", CultureInfo.InvariantCulture),
+                item.Isr.ToString("0.00", CultureInfo.InvariantCulture),
+                item.Neto.ToString("0.00", CultureInfo.InvariantCulture),
+                item.CostoEmpresa.ToString("0.00", CultureInfo.InvariantCulture)));
+        }
+
+        await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", $"rh-costos-{filtroDesde:yyyyMMdd}-{filtroHasta:yyyyMMdd}.csv", builder.ToString());
+    }
+
+    private static string EscapeCsv(string? value)
+    {
+        var texto = value ?? string.Empty;
+        return $"\"{texto.Replace("\"", "\"\"")}\"";
+    }
 
     private decimal MaxTotalNominaSemanal => nominasPagadasPorSemana.Count == 0 ? 0m : nominasPagadasPorSemana.Max(n => n.TotalPagado);
 
@@ -1012,6 +1243,12 @@
         public decimal TotalBonosPeriodo { get; set; }
         public decimal TotalHorasExtraMontoPeriodo { get; set; }
         public decimal TotalDeduccionesMontoPeriodo { get; set; }
+        public decimal TotalProvisionesPeriodo { get; set; }
+        public decimal TotalImssObreroPeriodo { get; set; }
+        public decimal TotalImssPatronalPeriodo { get; set; }
+        public decimal TotalImssPeriodo { get; set; }
+        public decimal TotalIsrPeriodo { get; set; }
+        public decimal TotalCostoEmpresaPeriodo { get; set; }
         public decimal PorcentajeBonosSobreNomina { get; set; }
         public decimal PorcentajeHorasExtraSobreNomina { get; set; }
         public decimal PorcentajeDeduccionesSobreNomina { get; set; }
@@ -1076,6 +1313,27 @@
         public decimal TotalBonos { get; set; }
         public decimal Porcentaje { get; set; }
         public int Empleados { get; set; }
+    }
+
+    private sealed class CostoEmpleadoVm
+    {
+        public Guid EmpleadoId { get; set; }
+        public string Empleado { get; set; } = string.Empty;
+        public string Periodicidad { get; set; } = string.Empty;
+        public int Periodos { get; set; }
+        public decimal HorasExtra { get; set; }
+        public decimal Provisiones { get; set; }
+        public decimal ImssObrero { get; set; }
+        public decimal ImssPatronal { get; set; }
+        public decimal Isr { get; set; }
+        public decimal Neto { get; set; }
+        public decimal CostoEmpresa { get; set; }
+    }
+
+    private sealed class EmpleadoFiltroVm
+    {
+        public Guid Id { get; set; }
+        public string NombreCompleto { get; set; } = string.Empty;
     }
 
     private sealed class DashboardAlertaVm

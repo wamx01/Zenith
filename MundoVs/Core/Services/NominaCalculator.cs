@@ -13,11 +13,14 @@ public class NominaCalculator : INominaCalculator
         var montoFestivoTrabajado = CalcularMontoFestivoTrabajado(input.DiasFestivoTrabajado, sueldoDiario, input.FactorFestivo);
         var montoDescansoTrabajado = CalcularMontoDescansoTrabajado(input.DiasDescansoTrabajado, sueldoDiario, input.Configuracion.FactorDescansoTrabajado);
         var montoPrimaDominical = CalcularMontoPrimaDominical(input.DiasDomingoTrabajado, sueldoDiario);
-        var montoPrimaVacacional = Math.Round(sueldoDiario * input.DiasVacaciones * input.Configuracion.PrimaVacacionalMinima, 2);
+        var montoPrimaVacacional = input.Configuracion.FormaPagoPrimaVacacional == FormaPagoPrimaVacacionalRrhh.AlTomarVacaciones
+            ? Math.Round(sueldoDiario * input.DiasVacaciones * input.Configuracion.PrimaVacacionalMinima, 2)
+            : 0m;
         var (horasDobles, horasTriples) = ObtenerHorasExtraLegales(input);
         var montoHorasExtra = CalcularMontoHorasExtra(input.Empleado, horasDobles, horasTriples, input.SueldoReferencia, input.Configuracion);
         var montoDescuentoMinutos = CalcularMontoDescuentoMinutos(input.Empleado, input.MinutosDescuento, sueldoDiario, input.Configuracion);
-        var cuotasImss = CalcularCuotasImss(input.AplicaImss, sueldoDiario, input.DiasPagados, input.AniosServicio, input.Configuracion, input.AplicaSalarioMinimoFrontera);
+        var diasVacacionesAnuales = input.DiasVacacionesAnualesOverride ?? input.Configuracion.ObtenerDiasVacacionesPorAntiguedad(input.AniosServicio);
+        var cuotasImss = CalcularCuotasImss(input.AplicaImss, sueldoDiario, input.DiasPagados, diasVacacionesAnuales, input.Configuracion, input.AplicaSalarioMinimoFrontera);
         var montoInfonavit = CalcularMontoInfonavit(input.Empleado, sueldoBase);
 
         // Base gravable ISR = todas las percepciones ordinarias gravadas.
@@ -29,7 +32,11 @@ public class NominaCalculator : INominaCalculator
         var (retencionIsr, subsidioEmpleo) = (input.AplicaIsr && input.Configuracion.RetencionIsrHabilitada)
             ? CalcularIsrYSubsidio(totalPercepciones, input.Empleado.PeriodicidadPago, input.DiasPagados, input.Configuracion)
             : (0m, 0m);
-        var (aguinaldoProv, primaVacProv) = CalcularProvisiones(sueldoDiario, input.DiasPagados, input.AniosServicio, input.Configuracion);
+        var (aguinaldoProv, primaVacProv) = CalcularProvisiones(sueldoDiario, input.DiasPagados, diasVacacionesAnuales, input.Configuracion);
+        var totalObligacionesTerceros = retencionIsr + cuotasImss.obrera + montoInfonavit;
+        var totalAportacionesPatronales = cuotasImss.patronal;
+        var totalProvisiones = aguinaldoProv + primaVacProv;
+        var costoEmpresa = totalPercepciones + subsidioEmpleo + totalAportacionesPatronales + totalProvisiones;
 
         return new NominaCalculationResult
         {
@@ -57,6 +64,10 @@ public class NominaCalculator : INominaCalculator
             SubsidioEmpleo = subsidioEmpleo,
             AguinaldoProvision = aguinaldoProv,
             PrimaVacacionalProvision = primaVacProv,
+            TotalObligacionesTerceros = totalObligacionesTerceros,
+            TotalAportacionesPatronales = totalAportacionesPatronales,
+            TotalProvisiones = totalProvisiones,
+            CostoEmpresa = costoEmpresa,
             TotalPagar = sueldoBase + input.MontoDestajo + input.MontoBono + montoFestivoTrabajado + montoDescansoTrabajado + montoPrimaDominical + montoPrimaVacacional
                 + input.ComplementoSalarioMinimo + montoHorasExtra + input.MontoPercepcionesManuales + subsidioEmpleo
                 - input.MontoDeducciones - montoDescuentoMinutos - cuotasImss.obrera - montoInfonavit - retencionIsr
@@ -133,12 +144,11 @@ public class NominaCalculator : INominaCalculator
         return Math.Round(sueldoDiario * (minutosDescuento / minutosJornadaBase), 2);
     }
 
-    private static (decimal obrera, decimal patronal) CalcularCuotasImss(bool aplicaImss, decimal sueldoDiario, int diasPagados, int aniosServicio, NominaConfiguracion configuracion, bool aplicaSalarioMinimoFrontera)
+    private static (decimal obrera, decimal patronal) CalcularCuotasImss(bool aplicaImss, decimal sueldoDiario, int diasPagados, decimal diasVacacionesAnuales, NominaConfiguracion configuracion, bool aplicaSalarioMinimoFrontera)
     {
         if (!aplicaImss || sueldoDiario <= 0 || diasPagados <= 0)
             return (0m, 0m);
 
-        var diasVacacionesAnuales = configuracion.ObtenerDiasVacacionesPorAntiguedad(aniosServicio);
         var factorAguinaldo = (configuracion.DiasAguinaldoMinimo * sueldoDiario) / 365m;
         var factorVacaciones = (diasVacacionesAnuales * configuracion.PrimaVacacionalMinima * sueldoDiario) / 365m;
         var sdi = sueldoDiario + factorAguinaldo + factorVacaciones;
@@ -195,7 +205,7 @@ public class NominaCalculator : INominaCalculator
         return (0m, Math.Round(subsidio - isrCausado, 2));
     }
 
-    private static (decimal aguinaldo, decimal primaVacacional) CalcularProvisiones(decimal sueldoDiario, int diasPagados, int aniosServicio, NominaConfiguracion configuracion)
+    private static (decimal aguinaldo, decimal primaVacacional) CalcularProvisiones(decimal sueldoDiario, int diasPagados, decimal diasVacacionesAnuales, NominaConfiguracion configuracion)
     {
         if (sueldoDiario <= 0 || diasPagados <= 0)
             return (0m, 0m);
@@ -203,8 +213,7 @@ public class NominaCalculator : INominaCalculator
         // Aguinaldo proporcional: (días_aguinaldo * sueldoDiario / 365) * diasPagados
         var aguinaldo = Math.Round((configuracion.DiasAguinaldoMinimo * sueldoDiario / 365m) * diasPagados, 2);
         // Prima vacacional proporcional: (díasVacaciones * 25% * sueldoDiario / 365) * diasPagados
-        var diasVacaciones = configuracion.ObtenerDiasVacacionesPorAntiguedad(Math.Max(1, aniosServicio));
-        var primaVac = Math.Round((diasVacaciones * configuracion.PrimaVacacionalMinima * sueldoDiario / 365m) * diasPagados, 2);
+        var primaVac = Math.Round((diasVacacionesAnuales * configuracion.PrimaVacacionalMinima * sueldoDiario / 365m) * diasPagados, 2);
         return (aguinaldo, primaVac);
     }
 }

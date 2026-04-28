@@ -16,15 +16,20 @@ using MundoVs.Core.Security;
 using Microsoft.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 using QuestPDF.Infrastructure;
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Zenith.Contracts.Asistencia;
 
 var builder = WebApplication.CreateBuilder(args);
+var defaultCulture = new CultureInfo("es-MX");
+CultureInfo.DefaultThreadCurrentCulture = defaultCulture;
+CultureInfo.DefaultThreadCurrentUICulture = defaultCulture;
 
 var configuredPort = builder.Configuration["PORT"];
 if (int.TryParse(configuredPort, out var port) && port > 0)
@@ -149,6 +154,12 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         };
     });
 builder.Services.AddAuthorization();
+builder.Services.Configure<RequestLocalizationOptions>(options =>
+{
+    options.DefaultRequestCulture = new RequestCulture(defaultCulture);
+    options.SupportedCultures = [defaultCulture];
+    options.SupportedUICultures = [defaultCulture];
+});
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -188,6 +199,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseForwardedHeaders();
+app.UseRequestLocalization();
 
 app.Use(async (context, next) =>
 {

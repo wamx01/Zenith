@@ -36,15 +36,18 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             .GroupBy(v => v.EmpleadoId)
             .ToDictionaryAsync(g => g.Key, g => g.Sum(v => v.Detalles.Sum(d => d.Importe)), cancellationToken);
 
-        var vacacionesUsadas = await db.RrhhAusencias
+        var vacacionesHistoricas = await db.RrhhAusencias
             .AsNoTracking()
             .Where(a => ids.Contains(a.EmpleadoId)
                 && a.IsActive
                 && a.Tipo == TipoAusenciaRrhh.Vacaciones
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.FechaFin < DateOnly.FromDateTime(inicio))
+            .ToListAsync(cancellationToken);
+
+        var vacacionesHistoricasPorEmpleado = vacacionesHistoricas
             .GroupBy(a => a.EmpleadoId)
-            .ToDictionaryAsync(g => g.Key, g => g.Sum(a => a.Dias), cancellationToken);
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         var ausenciasPeriodo = await db.RrhhAusencias
             .AsNoTracking()
@@ -73,7 +76,10 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             var diasTrabajados = resumen.TieneAsistencias ? resumen.DiasTrabajados : Math.Max(0, diasPeriodo - vacacionesPeriodo - permisosConGoce - permisosSinGoce);
             var faltasInjustificadas = resumen.TieneAsistencias ? resumen.DiasFaltaInjustificada : 0;
             var diasPagados = Math.Max(0, diasPeriodo - permisosSinGoce - faltasInjustificadas);
-            var diasVacacionesDisponibles = _nominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, inicio, vacacionesUsadas.GetValueOrDefault(empleado.Id), configuracion);
+            var cicloVacacional = _nominaLegalPolicy.ObtenerCicloVacacional(empleado, inicio, configuracion);
+            var vacacionesUsadasCiclo = (vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [])
+                .Sum(a => CalcularDiasAusenciaEnRango(a, DateOnly.FromDateTime(cicloVacacional.InicioCiclo), DateOnly.FromDateTime(cicloVacacional.FinCiclo)));
+            var diasVacacionesDisponibles = _nominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, inicio, vacacionesUsadasCiclo, configuracion);
             var montoDestajoEmpleado = montoDestajo.GetValueOrDefault(empleado.Id);
             var asignacion = esquemasPorEmpleado.GetValueOrDefault(empleado.Id);
 
@@ -112,6 +118,16 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         }
 
         return snapshots;
+    }
+
+    private static int CalcularDiasAusenciaEnRango(RrhhAusencia ausencia, DateOnly inicio, DateOnly fin)
+    {
+        var inicioReal = ausencia.FechaInicio > inicio ? ausencia.FechaInicio : inicio;
+        var finReal = ausencia.FechaFin < fin ? ausencia.FechaFin : fin;
+        if (finReal < inicioReal)
+            return 0;
+
+        return (finReal.DayNumber - inicioReal.DayNumber) + 1;
     }
 
     public async Task<Dictionary<Guid, EmpleadoEsquemaPago>> ObtenerEsquemasPagoPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, IReadOnlyCollection<Guid> empleadoIds, CancellationToken cancellationToken = default)

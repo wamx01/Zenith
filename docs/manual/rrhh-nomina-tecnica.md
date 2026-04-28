@@ -245,6 +245,55 @@ Los importes terminan en `NominaDetalle` y el total del documento se agrega en `
 **Fórmula**
 - `montoPrimaVacacional = sueldoDiario * diasVacaciones * PrimaVacacionalMinima`
 
+**Política por empresa**
+- `AlTomarVacaciones`: se paga en la nómina del período cuando existen días de vacaciones.
+- `Anual` o `Manual`: no se paga automáticamente al tomar vacaciones; la provisión sigue acumulándose aparte.
+
+### 8.1 Ciclo vacacional reconocido
+**Fuente:** `NominaLegalPolicyService`
+
+**Opciones configurables**
+- `AniversarioContratacion`
+- `CorteFijoAnual`
+
+**Campos configurables por empresa**
+- `MesInicioCicloVacacional`
+- `DiaInicioCicloVacacional`
+- `MesesMinimosPrimerAnioVacacional`
+- `PoliticaPrimerCicloVacacional = Completo | Proporcional`
+
+**Ejemplo base**
+- fecha de ingreso: `28/04/2026`
+- corte anual: `01/01`
+
+#### Escenario A: corte `01/01`, mínimo `12` meses, primer ciclo `Completo`
+
+| Período | Año reconocido | Días de vacaciones |
+|---------|----------------|--------------------|
+| 01/01/2027 - 31/12/2027 | Año 0 | 0 |
+| 01/01/2028 - 31/12/2028 | Año 1 | 12 |
+| 01/01/2029 - 31/12/2029 | Año 2 | 14 |
+| 01/01/2030 - 31/12/2030 | Año 3 | 16 |
+
+#### Escenario B: corte `01/01`, mínimo `6` meses, primer ciclo `Completo`
+
+| Período | Año reconocido | Días de vacaciones |
+|---------|----------------|--------------------|
+| 01/01/2027 - 31/12/2027 | Año 1 | 12 |
+| 01/01/2028 - 31/12/2028 | Año 2 | 14 |
+| 01/01/2029 - 31/12/2029 | Año 3 | 16 |
+
+#### Escenario C: corte `01/01`, mínimo `6` meses, primer ciclo `Proporcional`
+
+| Período | Año reconocido | Días de vacaciones |
+|---------|----------------|--------------------|
+| 01/01/2027 - 31/12/2027 | Año 1 proporcional | ~8.15 |
+| 01/01/2028 - 31/12/2028 | Año 2 | 14 |
+| 01/01/2029 - 31/12/2029 | Año 3 | 16 |
+
+**Observación**
+- En modo `Proporcional`, el primer ciclo reconocido usa días equivalentes del año 1 según el tramo realmente trabajado antes del corte; esos días equivalentes impactan saldo, prima vacacional, provisión e integración a IMSS.
+
 ### 9. Horas extra legales
 **Fuente:** `NominaCalculator`
 

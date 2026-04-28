@@ -69,6 +69,12 @@ public static class NominaConfiguracionLoader
             TasaImssPatronal = ObtenerDecimal(config, ClavesConfiguracionNomina.TasaImssPatronal, 0.18m),
             PrimaRiesgoTrabajo = ObtenerDecimal(config, ClavesConfiguracionNomina.PrimaRiesgoTrabajo, 0.005m),
             PrimaVacacionalMinima = ObtenerDecimal(config, ClavesConfiguracionNomina.PrimaVacacionalMinima, 0.25m),
+            TipoCicloVacacional = ObtenerEnum(config, ClavesConfiguracionNomina.TipoCicloVacacional, TipoCicloVacacionalRrhh.AniversarioContratacion),
+            FormaPagoPrimaVacacional = ObtenerEnum(config, ClavesConfiguracionNomina.FormaPagoPrimaVacacional, FormaPagoPrimaVacacionalRrhh.AlTomarVacaciones),
+            PoliticaPrimerCicloVacacional = ObtenerEnum(config, ClavesConfiguracionNomina.PoliticaPrimerCicloVacacional, PoliticaPrimerCicloVacacionalRrhh.Completo),
+            MesInicioCicloVacacional = Math.Clamp(ObtenerEntero(config, ClavesConfiguracionNomina.MesInicioCicloVacacional, 1), 1, 12),
+            DiaInicioCicloVacacional = Math.Clamp(ObtenerEntero(config, ClavesConfiguracionNomina.DiaInicioCicloVacacional, 1), 1, 31),
+            MesesMinimosPrimerAnioVacacional = Math.Max(0, ObtenerEntero(config, ClavesConfiguracionNomina.MesesMinimosPrimerAnioVacacional, 12)),
             DiasAguinaldoMinimo = ObtenerEntero(config, ClavesConfiguracionNomina.DiasAguinaldoMinimo, 15),
             TopeSbcEnUma = ObtenerDecimal(config, ClavesConfiguracionNomina.TopeSbcEnUma, 25m),
             RetencionIsrHabilitada = ObtenerBooleano(config, ClavesConfiguracionNomina.RetencionIsrHabilitada, true),
@@ -92,6 +98,11 @@ public static class NominaConfiguracionLoader
 
     private static bool ObtenerBooleano(IReadOnlyDictionary<string, string> config, string clave, bool valorDefault)
         => config.TryGetValue(clave, out var valor) && bool.TryParse(valor, out var resultado)
+            ? resultado
+            : valorDefault;
+
+    private static TEnum ObtenerEnum<TEnum>(IReadOnlyDictionary<string, string> config, string clave, TEnum valorDefault) where TEnum : struct
+        => config.TryGetValue(clave, out var valor) && Enum.TryParse<TEnum>(valor, out var resultado)
             ? resultado
             : valorDefault;
 

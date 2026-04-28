@@ -155,6 +155,9 @@ public class CrmDbContext : DbContext
     public DbSet<NominaPercepcion> NominasPercepciones => Set<NominaPercepcion>();
     public DbSet<DeduccionTipoRrhh> DeduccionesTiposRrhh => Set<DeduccionTipoRrhh>();
     public DbSet<NominaDeduccion> NominasDeducciones => Set<NominaDeduccion>();
+    public DbSet<NominaConceptoConfigRrhh> NominasConceptosConfigRrhh => Set<NominaConceptoConfigRrhh>();
+    public DbSet<EmpleadoConceptoRrhh> EmpleadosConceptosRrhh => Set<EmpleadoConceptoRrhh>();
+    public DbSet<NominaProvisionDetalleRrhh> NominasProvisionesDetalleRrhh => Set<NominaProvisionDetalleRrhh>();
     public DbSet<RrhhBancoHorasMovimiento> RrhhBancoHorasMovimientos => Set<RrhhBancoHorasMovimiento>();
 
     // Esquemas de Pago / Destajo
@@ -2513,6 +2516,100 @@ public class CrmDbContext : DbContext
 
             entity.HasIndex(e => e.NominaId);
             entity.HasIndex(e => e.EmpleadoId);
+        });
+
+        modelBuilder.Entity<NominaConceptoConfigRrhh>(entity =>
+        {
+            entity.ToTable("rrhh_nomina_concepto_config");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Clave).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.Nombre).HasMaxLength(120).IsRequired();
+            entity.Property(e => e.Naturaleza).HasConversion<int>();
+            entity.Property(e => e.Destino).HasConversion<int>();
+            entity.Property(e => e.TipoCalculo).HasConversion<int>();
+            entity.Property(e => e.MontoFijoDefault).HasPrecision(18, 2);
+            entity.Property(e => e.PorcentajeDefault).HasPrecision(9, 4);
+            entity.Property(e => e.CantidadDefault).HasPrecision(18, 4);
+            entity.Property(e => e.TarifaDefault).HasPrecision(18, 4);
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.Clave }).IsUnique();
+            entity.HasIndex(e => new { e.EmpresaId, e.Nombre });
+            entity.HasIndex(e => new { e.EmpresaId, e.Naturaleza, e.Destino });
+        });
+
+        modelBuilder.Entity<EmpleadoConceptoRrhh>(entity =>
+        {
+            entity.ToTable("rrhh_empleado_concepto");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Monto).HasPrecision(18, 2);
+            entity.Property(e => e.Porcentaje).HasPrecision(9, 4);
+            entity.Property(e => e.Cantidad).HasPrecision(18, 4);
+            entity.Property(e => e.Tarifa).HasPrecision(18, 4);
+            entity.Property(e => e.Saldo).HasPrecision(18, 2);
+            entity.Property(e => e.Limite).HasPrecision(18, 2);
+            entity.Property(e => e.FechaInicio).HasColumnType("date");
+            entity.Property(e => e.FechaFin).HasColumnType("date");
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Empleado)
+                .WithMany(e => e.ConceptosNomina)
+                .HasForeignKey(e => e.EmpleadoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ConceptoConfig)
+                .WithMany(c => c.EmpleadosConceptos)
+                .HasForeignKey(e => e.ConceptoConfigId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.ConceptoConfigId, e.FechaInicio });
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.IsActive });
+        });
+
+        modelBuilder.Entity<NominaProvisionDetalleRrhh>(entity =>
+        {
+            entity.ToTable("rrhh_nomina_provision_detalle");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Importe).HasPrecision(18, 2);
+            entity.Property(e => e.BaseCalculo).HasPrecision(18, 2);
+            entity.Property(e => e.Cantidad).HasPrecision(18, 4);
+            entity.Property(e => e.Tarifa).HasPrecision(18, 4);
+            entity.Property(e => e.PeriodoInicio).HasColumnType("date");
+            entity.Property(e => e.PeriodoFin).HasColumnType("date");
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.NominaDetalle)
+                .WithMany(n => n.ProvisionesDetalle)
+                .HasForeignKey(e => e.NominaDetalleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Empleado)
+                .WithMany()
+                .HasForeignKey(e => e.EmpleadoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.ConceptoConfig)
+                .WithMany(c => c.ProvisionesDetalle)
+                .HasForeignKey(e => e.ConceptoConfigId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.NominaDetalleId, e.ConceptoConfigId });
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.PeriodoInicio, e.PeriodoFin });
         });
 
         modelBuilder.Entity<BonoRubroRrhh>(entity =>

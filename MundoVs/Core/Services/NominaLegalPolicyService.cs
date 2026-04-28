@@ -32,16 +32,38 @@ public sealed class NominaLegalPolicyService : INominaLegalPolicyService
         return CalcularSueldoBasePeriodo(sueldoReferencia, empleado.PeriodicidadPago, diasPagados, configuracion);
     }
 
-    public decimal CalcularDiasVacacionesDisponibles(Empleado empleado, DateTime fechaReferencia, decimal vacacionesUsadas, NominaConfiguracion configuracion)
+    public VacacionCicloResultado ObtenerCicloVacacional(Empleado empleado, DateTime fechaReferencia, NominaConfiguracion configuracion)
     {
         if (!empleado.FechaContratacion.HasValue)
+        {
+            return new VacacionCicloResultado
+            {
+                InicioCiclo = fechaReferencia.Date,
+                FinCiclo = fechaReferencia.Date,
+                AnioVacacionalReconocido = 0,
+                TieneDerechoVacaciones = false,
+                DiasVacacionesEquivalentes = 0m
+            };
+        }
+
+        var fechaContratacion = empleado.FechaContratacion.Value.Date;
+        if (configuracion.TipoCicloVacacional == TipoCicloVacacionalRrhh.CorteFijoAnual)
+        {
+            return ObtenerCicloPorCorteFijo(fechaContratacion, fechaReferencia.Date, configuracion);
+        }
+
+        return ObtenerCicloPorAniversario(fechaContratacion, fechaReferencia.Date, configuracion);
+    }
+
+    public decimal CalcularDiasVacacionesDisponibles(Empleado empleado, DateTime fechaReferencia, decimal vacacionesUsadas, NominaConfiguracion configuracion)
+    {
+        var ciclo = ObtenerCicloVacacional(empleado, fechaReferencia, configuracion);
+        if (!ciclo.TieneDerechoVacaciones || ciclo.AnioVacacionalReconocido <= 0)
         {
             return 0m;
         }
 
-        var anios = (int)Math.Floor((fechaReferencia.Date - empleado.FechaContratacion.Value.Date).TotalDays / 365.25);
-        var dias = configuracion.ObtenerDiasVacacionesPorAntiguedad(anios);
-        return Math.Max(0m, dias - vacacionesUsadas);
+        return Math.Max(0m, ciclo.DiasVacacionesEquivalentes - vacacionesUsadas);
     }
 
     public decimal CalcularComplementoSalarioMinimo(decimal sueldoBasePeriodo, decimal montoDestajo, int diasPagados, NominaConfiguracion configuracion)
@@ -60,5 +82,99 @@ public sealed class NominaLegalPolicyService : INominaLegalPolicyService
     {
         var sueldoBasePeriodo = CalcularSueldoBasePeriodo(empleado, asignacion, diasPagados, configuracion);
         return CalcularComplementoSalarioMinimo(sueldoBasePeriodo, montoDestajo, diasPagados, configuracion);
+    }
+
+    private static VacacionCicloResultado ObtenerCicloPorAniversario(DateTime fechaContratacion, DateTime fechaReferencia, NominaConfiguracion configuracion)
+    {
+        var primerAniversario = fechaContratacion.AddYears(1);
+        if (fechaReferencia < primerAniversario)
+        {
+            return new VacacionCicloResultado
+            {
+                InicioCiclo = fechaContratacion,
+                FinCiclo = primerAniversario.AddDays(-1),
+                AnioVacacionalReconocido = 0,
+                TieneDerechoVacaciones = false,
+                DiasVacacionesEquivalentes = 0m
+            };
+        }
+
+        var aniosReconocidos = primerAniversario.Year - fechaContratacion.Year - (primerAniversario.Month < fechaContratacion.Month || (primerAniversario.Month == fechaContratacion.Month && primerAniversario.Day < fechaContratacion.Day) ? 1 : 0);
+        var inicioCiclo = primerAniversario;
+        while (inicioCiclo.AddYears(1) <= fechaReferencia)
+        {
+            inicioCiclo = inicioCiclo.AddYears(1);
+            aniosReconocidos++;
+        }
+
+        return new VacacionCicloResultado
+        {
+            InicioCiclo = inicioCiclo,
+            FinCiclo = inicioCiclo.AddYears(1).AddDays(-1),
+            AnioVacacionalReconocido = Math.Max(1, aniosReconocidos),
+            TieneDerechoVacaciones = true,
+            DiasVacacionesEquivalentes = configuracion.ObtenerDiasVacacionesPorAntiguedad(Math.Max(1, aniosReconocidos))
+        };
+    }
+
+    private static VacacionCicloResultado ObtenerCicloPorCorteFijo(DateTime fechaContratacion, DateTime fechaReferencia, NominaConfiguracion configuracion)
+    {
+        var inicioCicloActual = configuracion.ObtenerFechaInicioCicloVacacional(fechaReferencia.Year);
+        if (fechaReferencia < inicioCicloActual)
+            inicioCicloActual = inicioCicloActual.AddYears(-1);
+
+        var primerCicloPosteriorAlta = configuracion.ObtenerFechaInicioCicloVacacional(fechaContratacion.Year);
+        if (primerCicloPosteriorAlta <= fechaContratacion)
+            primerCicloPosteriorAlta = primerCicloPosteriorAlta.AddYears(1);
+
+        var primerCicloElegible = primerCicloPosteriorAlta;
+        var mesesMinimos = Math.Max(0, configuracion.MesesMinimosPrimerAnioVacacional);
+        while (CalcularMesesCumplidos(fechaContratacion, primerCicloElegible) < mesesMinimos)
+            primerCicloElegible = primerCicloElegible.AddYears(1);
+
+        if (inicioCicloActual < primerCicloElegible)
+        {
+            return new VacacionCicloResultado
+            {
+                InicioCiclo = inicioCicloActual,
+                FinCiclo = inicioCicloActual.AddYears(1).AddDays(-1),
+                AnioVacacionalReconocido = 0,
+                TieneDerechoVacaciones = false,
+                DiasVacacionesEquivalentes = 0m
+            };
+        }
+
+        var anioReconocido = 1;
+        var cursor = primerCicloElegible;
+        while (cursor.AddYears(1) <= inicioCicloActual)
+        {
+            cursor = cursor.AddYears(1);
+            anioReconocido++;
+        }
+
+        decimal diasVacaciones = configuracion.ObtenerDiasVacacionesPorAntiguedad(anioReconocido);
+        if (anioReconocido == 1 && configuracion.PoliticaPrimerCicloVacacional == PoliticaPrimerCicloVacacionalRrhh.Proporcional)
+        {
+            var diasTrabajadosEnPrimerCiclo = Math.Max(0, (cursor.Date - fechaContratacion.Date).Days);
+            var diasCiclo = Math.Max(1, (cursor.AddYears(1).Date - cursor.Date).Days);
+            diasVacaciones = Math.Round(diasVacaciones * ((decimal)diasTrabajadosEnPrimerCiclo / diasCiclo), 2);
+        }
+
+        return new VacacionCicloResultado
+        {
+            InicioCiclo = inicioCicloActual,
+            FinCiclo = inicioCicloActual.AddYears(1).AddDays(-1),
+            AnioVacacionalReconocido = anioReconocido,
+            TieneDerechoVacaciones = true,
+            DiasVacacionesEquivalentes = diasVacaciones
+        };
+    }
+
+    private static int CalcularMesesCumplidos(DateTime inicio, DateTime fin)
+    {
+        var meses = (fin.Year - inicio.Year) * 12 + fin.Month - inicio.Month;
+        if (fin.Day < inicio.Day)
+            meses--;
+        return Math.Max(0, meses);
     }
 }

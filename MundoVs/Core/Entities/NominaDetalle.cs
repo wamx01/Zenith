@@ -77,10 +77,20 @@ public class NominaDetalle
                                  + MontoHorasExtra + Bonos + SubsidioEmpleo
                                  - Deducciones - MontoDescuentoMinutos - CuotaImssObrera - MontoInfonavit - RetencionIsr;
 
+    public decimal TotalObligacionesTerceros => RetencionIsr + CuotaImssObrera + MontoInfonavit;
+    public decimal TotalAportacionesPatronales => CuotaImssPatronal;
+    public decimal TotalProvisiones => AguinaldoProvision + PrimaVacacionalProvision + ProvisionesDetalle.Where(p => p.IsActive).Sum(p => p.Importe);
+    public decimal CostoEmpresa => (SueldoBase + MontoDestajo + MontoBono
+                                    + MontoFestivoTrabajado + MontoDescansoTrabajado + MontoPrimaDominical + MontoPrimaVacacional + ComplementoSalarioMinimo
+                                    + MontoHorasExtra + Bonos + SubsidioEmpleo)
+                                   + TotalAportacionesPatronales
+                                   + TotalProvisiones;
+
     public string? Notas { get; set; }
 
     public ICollection<ValeDestajo> ValesDestajo { get; set; } = [];
     public ICollection<NominaBono> BonosEstructurados { get; set; } = [];
     public ICollection<NominaPercepcion> PercepcionesManuales { get; set; } = [];
     public ICollection<NominaDeduccion> DeduccionesEstructuradas { get; set; } = [];
+    public ICollection<NominaProvisionDetalleRrhh> ProvisionesDetalle { get; set; } = [];
 }

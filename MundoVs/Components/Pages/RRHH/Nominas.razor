@@ -158,10 +158,45 @@
                     <span class="badge text-bg-light">Horas extra: @resumenNomina.TotalHorasExtra.ToString("C2")</span>
                     <span class="badge text-bg-light">Percep. manuales: @resumenNomina.TotalPercepcionesManuales.ToString("C2")</span>
                     <span class="badge text-bg-light">IMSS obrero: @resumenNomina.TotalImssObrero.ToString("C2")</span>
+                    <span class="badge text-bg-light">ISR: @resumenNomina.TotalIsr.ToString("C2")</span>
+                    <span class="badge text-bg-light">IMSS patronal: @resumenNomina.TotalImssPatronal.ToString("C2")</span>
+                    <span class="badge text-bg-light">Terceros: @resumenNomina.TotalObligacionesTerceros.ToString("C2")</span>
+                    <span class="badge text-bg-light">Provisiones: @resumenNomina.TotalProvisiones.ToString("C2")</span>
+                    <span class="badge text-bg-light">Costo empresa: @resumenNomina.TotalCostoEmpresa.ToString("C2")</span>
                     <span class="badge text-bg-danger">Infonavit: @resumenNomina.TotalInfonavit.ToString("C2")</span>
                     <span class="badge text-bg-danger">Deducciones: @resumenNomina.TotalDeducciones.ToString("C2")</span>
                      <span class="badge text-bg-danger">Desc. minutos: @resumenNomina.TotalDescuentoMinutos.ToString("C2")</span>
                     <span class="badge text-bg-success">Total: @resumenNomina.TotalNeto.ToString("C2")</span>
+                </div>
+                <div class="row g-2 mt-2 small">
+                    <div class="col-xl-3 col-md-6">
+                        <div class="border rounded p-2 h-100 bg-white">
+                            <div class="text-muted text-uppercase small fw-semibold">Neto empleado</div>
+                            <div class="fw-bold text-success fs-6">@resumenNomina.TotalNeto.ToString("C2")</div>
+                            <div>Sueldo, destajo, bonos y percepciones menos descuentos del trabajador.</div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="border rounded p-2 h-100 bg-white">
+                            <div class="text-muted text-uppercase small fw-semibold">Obligaciones a terceros</div>
+                            <div class="fw-bold fs-6">@resumenNomina.TotalObligacionesTerceros.ToString("C2")</div>
+                            <div>ISR @resumenNomina.TotalIsr.ToString("C2") · IMSS obrero @resumenNomina.TotalImssObrero.ToString("C2") · Infonavit @resumenNomina.TotalInfonavit.ToString("C2")</div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="border rounded p-2 h-100 bg-white">
+                            <div class="text-muted text-uppercase small fw-semibold">Aportaciones patronales</div>
+                            <div class="fw-bold fs-6">@resumenNomina.TotalAportacionesPatronales.ToString("C2")</div>
+                            <div>IMSS patronal @resumenNomina.TotalImssPatronal.ToString("C2")</div>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="border rounded p-2 h-100 bg-white">
+                            <div class="text-muted text-uppercase small fw-semibold">Provisiones y costo</div>
+                            <div class="fw-bold fs-6">@resumenNomina.TotalCostoEmpresa.ToString("C2")</div>
+                            <div>Prov. @resumenNomina.TotalProvisiones.ToString("C2") · Costo empresa total</div>
+                        </div>
+                    </div>
                 </div>
                 @if (NominaSeleccionadaRequiereActualizacionPrenomina)
                 {
@@ -225,7 +260,8 @@
                                 <td class="small">
                                     <div>Fest @d.MontoFestivoTrabajado.ToString("C2") · Desc @d.MontoDescansoTrabajado.ToString("C2")</div>
                                     <div>Dom @d.MontoPrimaDominical.ToString("C2") · Vac @d.MontoPrimaVacacional.ToString("C2")</div>
-                                    <div>IMSS @(d.AplicaImss ? d.CuotaImssObrera.ToString("C2") : "—") · Deduc @d.Deducciones.ToString("C2")</div>
+                                    <div>IMSS @ObtenerTextoImssObrero(d) · ISR @d.RetencionIsr.ToString("C2")</div>
+                                    <div>Patronal @d.CuotaImssPatronal.ToString("C2") · Prov @d.TotalProvisiones.ToString("C2") · Costo @d.CostoEmpresa.ToString("C2")</div>
                                 </td>
                                 <td class="text-end fw-bold">@ObtenerTotalPagarPreview(d).ToString("C2")</td>
                                 <td class="text-center">
@@ -365,6 +401,85 @@
                                                     <div class="col-md-6"><div class="border rounded p-2">Infonavit<br /><strong>@detalleModalSeleccionado.MontoInfonavit.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Neto<br /><strong class="text-success">@ObtenerTotalPagarPreview(detalleModalSeleccionado).ToString("C2")</strong></div></div>
                                                 </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="card border-primary">
+                                            <div class="card-header bg-primary-subtle fw-semibold">Desglose administrativo</div>
+                                            <div class="card-body">
+                                                <div class="row g-3 small">
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="border rounded p-3 h-100">
+                                                            <div class="text-muted text-uppercase small fw-semibold">Neto empleado</div>
+                                                            <div class="fw-bold text-success fs-6">@ObtenerTotalPagarPreview(detalleModalSeleccionado).ToString("C2")</div>
+                                                            <div class="mt-2">Pago final del trabajador después de ISR, IMSS obrero, Infonavit y deducciones.</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="border rounded p-3 h-100">
+                                                            <div class="text-muted text-uppercase small fw-semibold">Obligaciones a terceros</div>
+                                                            <div class="fw-bold fs-6">@detalleModalSeleccionado.TotalObligacionesTerceros.ToString("C2")</div>
+                                                            <ul class="list-unstyled mt-2 mb-0">
+                                                                <li>ISR: @detalleModalSeleccionado.RetencionIsr.ToString("C2")</li>
+                                                                <li>IMSS obrero: @detalleModalSeleccionado.CuotaImssObrera.ToString("C2")</li>
+                                                                <li>Infonavit: @detalleModalSeleccionado.MontoInfonavit.ToString("C2")</li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="border rounded p-3 h-100">
+                                                            <div class="text-muted text-uppercase small fw-semibold">Aportaciones patronales</div>
+                                                            <div class="fw-bold fs-6">@detalleModalSeleccionado.TotalAportacionesPatronales.ToString("C2")</div>
+                                                            <ul class="list-unstyled mt-2 mb-0">
+                                                                <li>IMSS patronal: @detalleModalSeleccionado.CuotaImssPatronal.ToString("C2")</li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-lg-3 col-md-6">
+                                                        <div class="border rounded p-3 h-100">
+                                                            <div class="text-muted text-uppercase small fw-semibold">Provisiones y costo</div>
+                                                            <div class="fw-bold fs-6">@detalleModalSeleccionado.CostoEmpresa.ToString("C2")</div>
+                                                            <ul class="list-unstyled mt-2 mb-0">
+                                                                <li>Aguinaldo: @detalleModalSeleccionado.AguinaldoProvision.ToString("C2")</li>
+                                                                <li>Prima vacacional: @detalleModalSeleccionado.PrimaVacacionalProvision.ToString("C2")</li>
+                                                                <li>Otras provisiones: @ObtenerProvisionesConfigurables(detalleModalSeleccionado).ToString("C2")</li>
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                @if (detalleModalSeleccionado.ProvisionesDetalle.Any())
+                                                {
+                                                    <div class="table-responsive mt-3">
+                                                        <table class="table table-sm table-bordered align-middle mb-0">
+                                                            <thead class="table-light">
+                                                                <tr>
+                                                                    <th>Concepto</th>
+                                                                    <th class="text-end">Base</th>
+                                                                    <th class="text-end">Cantidad</th>
+                                                                    <th class="text-end">Tarifa</th>
+                                                                    <th class="text-end">Importe</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var provision in detalleModalSeleccionado.ProvisionesDetalle.Where(p => p.IsActive).OrderBy(p => p.ConceptoConfig.Orden).ThenBy(p => p.ConceptoConfig.Nombre))
+                                                                {
+                                                                    <tr>
+                                                                        <td>
+                                                                            <div class="fw-semibold">@provision.ConceptoConfig.Nombre</div>
+                                                                            <div class="small text-muted">@provision.ConceptoConfig.Clave</div>
+                                                                        </td>
+                                                                        <td class="text-end">@provision.BaseCalculo.ToString("C2")</td>
+                                                                        <td class="text-end">@provision.Cantidad.ToString("0.####")</td>
+                                                                        <td class="text-end">@provision.Tarifa.ToString("0.####")</td>
+                                                                        <td class="text-end fw-semibold">@provision.Importe.ToString("C2")</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                }
                                             </div>
                                         </div>
                                     </div>
@@ -687,6 +802,7 @@
                     .ThenInclude(p => p!.BonoEstructuraRrhh)
                         .ThenInclude(e => e!.Detalles)
                             .ThenInclude(d => d.BonoRubroRrhh)
+            .Include(d => d.ProvisionesDetalle.Where(p => p.IsActive))
             .Where(d => d.NominaId == nominaSeleccionada.Id)
             .OrderBy(d => d.Empleado.Nombre)
             .AsNoTracking()
@@ -1646,11 +1762,33 @@
         var bonosDistribuidosPorEmpleado = bonosDistribuidosPeriodo
             .SelectMany(b => b.Detalles.Where(d => d.IsActive), (b, d) => new { Captura = b, Detalle = d })
             .ToDictionary(x => x.Detalle.EmpleadoId, x => x);
+        var conceptosEmpleadoActivos = await db.EmpleadosConceptosRrhh
+            .Include(c => c.ConceptoConfig)
+            .Where(c => c.EmpresaId == nomina.EmpresaId
+                && c.IsActive
+                && c.ConceptoConfig.IsActive
+                && (!c.FechaInicio.HasValue || c.FechaInicio.Value <= fin)
+                && (!c.FechaFin.HasValue || c.FechaFin.Value >= inicio))
+            .ToListAsync();
+        var conceptosActivosPorEmpleado = conceptosEmpleadoActivos
+            .GroupBy(c => c.EmpleadoId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.ConceptoConfig.Orden).ThenBy(c => c.ConceptoConfig.Nombre).ToList());
         var percepcionesNominaExistentes = detalleIdsExistentes.Count == 0
             ? new List<NominaPercepcion>()
             : await db.NominasPercepciones
                 .Where(p => detalleIdsExistentes.Contains(p.NominaDetalleId))
                 .ToListAsync();
+        if (detalleIdsExistentes.Count > 0)
+        {
+            var provisionesExistentes = await db.NominasProvisionesDetalleRrhh
+                .Where(p => detalleIdsExistentes.Contains(p.NominaDetalleId))
+                .ToListAsync();
+
+            if (provisionesExistentes.Count > 0)
+            {
+                db.NominasProvisionesDetalleRrhh.RemoveRange(provisionesExistentes);
+            }
+        }
         if (detalleIdsExistentes.Count > 0)
         {
             var movimientosBancoNomina = await db.RrhhBancoHorasMovimientos
@@ -1825,12 +1963,14 @@
             var percepcionesManual = percepcionesPrenomina.Count > 0 ? percepcionesPrenomina.Sum(p => p.Importe) : montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual) ? totalPercepcionesManual : detalle.Bonos;
             var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : detalle.Deducciones;
             detalle.ConceptoDeducciones = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : detalle.ConceptoDeducciones;
+            var conceptosEmpleado = conceptosActivosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
             var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
             var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
                 ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
                 : configuracionNomina.ObtenerFactorFestivoTrabajado();
 
             var aniosServicio = CalcularAniosServicio(empleado, fin);
+            var cicloVacacional = NominaLegalPolicy.ObtenerCicloVacacional(empleado, fin, configuracionNomina);
             var horasExtraBase = Math.Max(0m, detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra);
             var horasExtraPagables = Math.Max(0m, detalle.HorasExtra);
             detalle.HorasExtraDobles = Math.Min(9m, Math.Min(horasExtraBase, horasExtraPagables));
@@ -1859,10 +1999,12 @@
                 MontoDeducciones = totalDeducciones,
                 ComplementoSalarioMinimo = detalle.ComplementoSalarioMinimo,
                 FactorFestivo = factorFestivoAplicado,
-                AniosServicio = CalcularAniosServicio(empleado, nominaSeleccionada?.FechaFin ?? DateTime.Today)
+                AniosServicio = aniosServicio,
+                DiasVacacionesAnualesOverride = cicloVacacional.DiasVacacionesEquivalentes
             });
 
             AplicarResultadoCalculo(detalle, resultado);
+            AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, detalle.ConceptoDeducciones, detalle.AplicaImss, empleado.AplicaIsr);
 
             if (bonosPrenomina.Count > 0)
                 SincronizarBonosPrenomina(db, bonosNominaExistentes, detalle, bonosPrenomina, nomina.EmpresaId);
@@ -2226,6 +2368,11 @@
             ? resumenDetalle.TotalPagarPreview
             : detalle.TotalPagar;
 
+    private static string ObtenerTextoImssObrero(NominaDetalle detalle)
+        => detalle.CuotaImssObrera > 0m || detalle.AplicaImss
+            ? detalle.CuotaImssObrera.ToString("C2")
+            : "—";
+
     private bool TieneFestivosAplicados(Guid empleadoId)
         => festivosAplicadosPorEmpleado.TryGetValue(empleadoId, out var festivos) && festivos.Count > 0;
 
@@ -2265,6 +2412,9 @@
 
     private int ObtenerMinutosDescuentoPreview(NominaDetalle detalle)
         => detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual;
+
+    private static decimal ObtenerProvisionesConfigurables(NominaDetalle detalle)
+        => detalle.ProvisionesDetalle.Where(p => p.IsActive).Sum(p => p.Importe);
 
     private Task OnResumenNominaChangedAsync()
     {
@@ -2394,6 +2544,137 @@
         detalle.SubsidioEmpleo = resultado.SubsidioEmpleo;
         detalle.AguinaldoProvision = resultado.AguinaldoProvision;
         detalle.PrimaVacacionalProvision = resultado.PrimaVacacionalProvision;
+    }
+
+    private static void AplicarConceptosConfigurablesEmpleado(CrmDbContext db, Nomina nomina, NominaDetalle detalle, IReadOnlyCollection<EmpleadoConceptoRrhh> conceptosEmpleado, decimal totalDeduccionesBase, string? conceptoDeduccionBase, bool aplicaImssAutomatico, bool aplicaIsrAutomatico)
+    {
+        if (conceptosEmpleado.Count == 0)
+        {
+            detalle.Deducciones = totalDeduccionesBase;
+            detalle.ConceptoDeducciones = conceptoDeduccionBase;
+            return;
+        }
+
+        var baseCalculo = detalle.SueldoBase + detalle.MontoDestajo + detalle.MontoBono + detalle.MontoFestivoTrabajado
+            + detalle.MontoDescansoTrabajado + detalle.MontoPrimaDominical + detalle.MontoPrimaVacacional + detalle.ComplementoSalarioMinimo
+            + detalle.MontoHorasExtra + detalle.Bonos;
+
+        var totalDeduccionesConfigurables = 0m;
+        var etiquetasDeduccion = new List<string>();
+        var ajusteImssObrero = 0m;
+        var ajusteImssPatronal = 0m;
+        var ajusteIsr = 0m;
+
+        foreach (var conceptoEmpleado in conceptosEmpleado)
+        {
+            var concepto = conceptoEmpleado.ConceptoConfig;
+            var importe = ResolverImporteConcepto(conceptoEmpleado, baseCalculo);
+            if (importe <= 0)
+                continue;
+
+            if (concepto.Naturaleza == NaturalezaConceptoNominaRrhh.Provision || concepto.AfectaProvision)
+            {
+                db.NominasProvisionesDetalleRrhh.Add(new NominaProvisionDetalleRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = nomina.EmpresaId,
+                    NominaDetalleId = detalle.Id,
+                    EmpleadoId = detalle.EmpleadoId,
+                    ConceptoConfigId = concepto.Id,
+                    Importe = importe,
+                    BaseCalculo = baseCalculo,
+                    Cantidad = ObtenerCantidadConcepto(conceptoEmpleado),
+                    Tarifa = ObtenerTarifaConcepto(conceptoEmpleado),
+                    PeriodoInicio = nomina.FechaInicio.Date,
+                    PeriodoFin = nomina.FechaFin.Date,
+                    EsAjusteManual = false,
+                    Observaciones = string.IsNullOrWhiteSpace(conceptoEmpleado.Observaciones) ? concepto.Observaciones : conceptoEmpleado.Observaciones,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+                continue;
+            }
+
+            if (concepto.AfectaPasivoImss)
+            {
+                if (aplicaImssAutomatico)
+                    continue;
+
+                if (concepto.AfectaNetoEmpleado)
+                    ajusteImssObrero += importe;
+
+                if (concepto.AfectaCostoEmpresa)
+                    ajusteImssPatronal += importe;
+
+                if (concepto.AfectaNetoEmpleado || concepto.AfectaCostoEmpresa)
+                    etiquetasDeduccion.Add(concepto.Nombre);
+
+                continue;
+            }
+
+            if (concepto.AfectaPasivoSat)
+            {
+                if (aplicaIsrAutomatico)
+                    continue;
+
+                if (concepto.AfectaNetoEmpleado)
+                    ajusteIsr += importe;
+
+                if (concepto.AfectaNetoEmpleado)
+                    etiquetasDeduccion.Add(concepto.Nombre);
+
+                continue;
+            }
+
+            if (concepto.AfectaNetoEmpleado)
+            {
+                totalDeduccionesConfigurables += importe;
+                etiquetasDeduccion.Add(concepto.Nombre);
+            }
+        }
+
+        detalle.CuotaImssObrera += ajusteImssObrero;
+        detalle.CuotaImssPatronal += ajusteImssPatronal;
+        detalle.RetencionIsr += ajusteIsr;
+        detalle.Deducciones = totalDeduccionesBase + totalDeduccionesConfigurables;
+        detalle.ConceptoDeducciones = ConstruirConceptoDeduccion(conceptoDeduccionBase, etiquetasDeduccion);
+    }
+
+    private static decimal ResolverImporteConcepto(EmpleadoConceptoRrhh conceptoEmpleado, decimal baseCalculo)
+    {
+        var concepto = conceptoEmpleado.ConceptoConfig;
+        return concepto.TipoCalculo switch
+        {
+            TipoCalculoConceptoNominaRrhh.Porcentaje => Math.Round(baseCalculo * ObtenerPorcentajeConcepto(conceptoEmpleado), 2),
+            TipoCalculoConceptoNominaRrhh.CantidadPorTarifa => Math.Round(ObtenerCantidadConcepto(conceptoEmpleado) * ObtenerTarifaConcepto(conceptoEmpleado), 2),
+            _ => Math.Round(ObtenerMontoConcepto(conceptoEmpleado), 2)
+        };
+    }
+
+    private static decimal ObtenerMontoConcepto(EmpleadoConceptoRrhh conceptoEmpleado)
+        => conceptoEmpleado.Monto > 0 ? conceptoEmpleado.Monto : conceptoEmpleado.ConceptoConfig.MontoFijoDefault;
+
+    private static decimal ObtenerPorcentajeConcepto(EmpleadoConceptoRrhh conceptoEmpleado)
+    {
+        var porcentaje = conceptoEmpleado.Porcentaje > 0 ? conceptoEmpleado.Porcentaje : conceptoEmpleado.ConceptoConfig.PorcentajeDefault;
+        return porcentaje > 1m ? porcentaje / 100m : porcentaje;
+    }
+
+    private static decimal ObtenerCantidadConcepto(EmpleadoConceptoRrhh conceptoEmpleado)
+        => conceptoEmpleado.Cantidad > 0 ? conceptoEmpleado.Cantidad : conceptoEmpleado.ConceptoConfig.CantidadDefault;
+
+    private static decimal ObtenerTarifaConcepto(EmpleadoConceptoRrhh conceptoEmpleado)
+        => conceptoEmpleado.Tarifa > 0 ? conceptoEmpleado.Tarifa : conceptoEmpleado.ConceptoConfig.TarifaDefault;
+
+    private static string? ConstruirConceptoDeduccion(string? conceptoBase, IReadOnlyCollection<string> etiquetasConfigurables)
+    {
+        if (etiquetasConfigurables.Count == 0)
+            return conceptoBase;
+
+        if (string.IsNullOrWhiteSpace(conceptoBase))
+            return etiquetasConfigurables.Count == 1 ? etiquetasConfigurables.First() : "Deducciones configurables";
+
+        return $"{conceptoBase} + configurables";
     }
 
     private static void SincronizarBonosPrenomina(CrmDbContext db, List<NominaBono> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaBono> bonosPrenomina, Guid empresaId)

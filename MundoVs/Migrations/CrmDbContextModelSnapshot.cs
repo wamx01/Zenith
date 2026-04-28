@@ -56,7 +56,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Clave")
                         .IsUnique();
 
-                    b.ToTable("AppConfigs");
+                    b.ToTable("appconfigs");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.AuditLog", b =>
@@ -120,7 +120,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("UsuarioId");
 
-                    b.ToTable("AuditLogs");
+                    b.ToTable("auditlogs");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Auth.Capacidad", b =>
@@ -158,7 +158,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ModuloAccesoId", "Nombre");
 
-                    b.ToTable("Capacidades");
+                    b.ToTable("capacidades");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Auth.EmpresaModuloAcceso", b =>
@@ -298,7 +298,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Nombre")
                         .IsUnique();
 
-                    b.ToTable("TiposUsuario");
+                    b.ToTable("tiposusuario");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Auth.TipoUsuarioCapacidad", b =>
@@ -313,7 +313,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("CapacidadId");
 
-                    b.ToTable("TipoUsuarioCapacidades");
+                    b.ToTable("tipousuariocapacidades");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Auth.Usuario", b =>
@@ -389,7 +389,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("TipoUsuarioId");
 
-                    b.ToTable("Usuarios");
+                    b.ToTable("usuarios");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.BonoDistribucionEmpleadoDetalleRrhh", b =>
@@ -744,7 +744,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "SistemaNumeracion", "Talla")
                         .IsUnique();
 
-                    b.ToTable("CatalogoTallasCalzado");
+                    b.ToTable("catalogotallascalzado");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.ClienteFraccionCalzado", b =>
@@ -800,7 +800,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ClienteId", "Nombre");
 
-                    b.ToTable("ClientesFraccionesCalzado");
+                    b.ToTable("clientesfraccionescalzado");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.ClienteFraccionCalzadoDetalle", b =>
@@ -867,7 +867,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("ClienteFraccionCalzadoId", "Talla")
                         .IsUnique();
 
-                    b.ToTable("ClientesFraccionesCalzadoDetalle");
+                    b.ToTable("clientesfraccionescalzadodetalle");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.ClienteTallaCalzado", b =>
@@ -929,7 +929,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ClienteId", "Orden");
 
-                    b.ToTable("ClientesTallasCalzado");
+                    b.ToTable("clientestallascalzado");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.Horma", b =>
@@ -992,7 +992,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Hormas");
+                    b.ToTable("hormas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.ProductoCalzado", b =>
@@ -1046,7 +1046,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoId");
 
-                    b.ToTable("ProductosCalzado");
+                    b.ToTable("productoscalzado");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Calzado.TallaCalzado", b =>
@@ -1097,7 +1097,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoCalzadoId");
 
-                    b.ToTable("TallasCalzado");
+                    b.ToTable("tallascalzado");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Cliente", b =>
@@ -1217,7 +1217,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Clientes");
+                    b.ToTable("clientes");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ClienteDatoFiscalSnapshot", b =>
@@ -1287,7 +1287,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FacturaId");
 
-                    b.ToTable("ClientesDatosFiscalesSnapshot");
+                    b.ToTable("clientesdatosfiscalessnapshot");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ClienteReglaVariacionPrecio", b =>
@@ -1348,7 +1348,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ClienteId", "Dimension", "Valor", "Orden");
 
-                    b.ToTable("ClientesReglasVariacionPrecio");
+                    b.ToTable("clientesreglasvariacionprecio");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ComplementoPago", b =>
@@ -1455,7 +1455,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "FolioInterno")
                         .IsUnique();
 
-                    b.ToTable("ComplementosPago");
+                    b.ToTable("complementospago");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ComplementoPagoDocumentoRelacionado", b =>
@@ -1521,7 +1521,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FacturaId");
 
-                    b.ToTable("ComplementosPagoDocumentosRelacionados");
+                    b.ToTable("complementospagodocumentosrelacionados");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Contacto", b =>
@@ -1576,7 +1576,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ClienteId");
 
-                    b.ToTable("Contactos");
+                    b.ToTable("contactos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.CuentaPorPagar", b =>
@@ -1644,7 +1644,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProveedorId");
 
-                    b.ToTable("CuentasPorPagar");
+                    b.ToTable("cuentasporpagar");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.DeduccionTipoRrhh", b =>
@@ -1881,7 +1881,87 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "NumeroEmpleado")
                         .IsUnique();
 
-                    b.ToTable("Empleados");
+                    b.ToTable("empleados");
+                });
+
+            modelBuilder.Entity("MundoVs.Core.Entities.EmpleadoConceptoRrhh", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<decimal>("Cantidad")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("ConceptoConfigId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("EmpleadoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("EsRecurrente")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("FechaFin")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("FechaInicio")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("Limite")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Monto")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<decimal>("Porcentaje")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("decimal(9,4)");
+
+                    b.Property<decimal>("Saldo")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Tarifa")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConceptoConfigId");
+
+                    b.HasIndex("EmpleadoId");
+
+                    b.HasIndex("EmpresaId", "EmpleadoId", "IsActive");
+
+                    b.HasIndex("EmpresaId", "EmpleadoId", "ConceptoConfigId", "FechaInicio");
+
+                    b.ToTable("rrhh_empleado_concepto", (string)null);
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.EmpleadoEsquemaPago", b =>
@@ -1929,7 +2009,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("EmpleadoId", "VigenteDesde");
 
-                    b.ToTable("EmpleadosEsquemaPago");
+                    b.ToTable("empleadosesquemapago");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Empresa", b =>
@@ -2003,7 +2083,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PlanActualId");
 
-                    b.ToTable("Empresas");
+                    b.ToTable("empresas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.EmpresaStorageConfiguracion", b =>
@@ -2050,7 +2130,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId")
                         .IsUnique();
 
-                    b.ToTable("EmpresasStorageConfiguracion");
+                    b.ToTable("empresasstorageconfiguracion");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.EsquemaPago", b =>
@@ -2120,7 +2200,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Nombre")
                         .IsUnique();
 
-                    b.ToTable("EsquemasPago");
+                    b.ToTable("esquemaspago");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.EsquemaPagoTarifa", b =>
@@ -2171,7 +2251,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("EsquemaPagoId", "TipoProcesoId", "PosicionId");
 
-                    b.ToTable("EsquemasPagoTarifa");
+                    b.ToTable("esquemaspagotarifa");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Factura", b =>
@@ -2350,7 +2430,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "FolioInterno")
                         .IsUnique();
 
-                    b.ToTable("Facturas");
+                    b.ToTable("facturas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FacturaDetalle", b =>
@@ -2422,7 +2502,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FacturaId");
 
-                    b.ToTable("FacturaDetalles");
+                    b.ToTable("facturadetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FacturaEvento", b =>
@@ -2479,7 +2559,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("Fecha");
 
-                    b.ToTable("FacturaEventos");
+                    b.ToTable("facturaeventos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FacturaImpuesto", b =>
@@ -2545,7 +2625,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FacturaId");
 
-                    b.ToTable("FacturaImpuestos");
+                    b.ToTable("facturaimpuestos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FacturaNotaEntrega", b =>
@@ -2598,7 +2678,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("NotaEntregaId");
 
-                    b.ToTable("FacturasNotasEntrega");
+                    b.ToTable("facturasnotasentrega");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FacturaRelacionada", b =>
@@ -2644,7 +2724,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FacturaId");
 
-                    b.ToTable("FacturasRelacionadas");
+                    b.ToTable("facturasrelacionadas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.FestivoRrhh", b =>
@@ -2747,7 +2827,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Nombre")
                         .IsUnique();
 
-                    b.ToTable("CategoriasInventario");
+                    b.ToTable("categoriasinventario");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Inventario.InventarioFinishedGood", b =>
@@ -2826,7 +2906,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "ClienteId", "ProductoVarianteId")
                         .IsUnique();
 
-                    b.ToTable("InventariosFinishedGoods");
+                    b.ToTable("inventariosfinishedgoods");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Inventario.MovimientoFinishedGood", b =>
@@ -2912,7 +2992,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("TipoMovimiento");
 
-                    b.ToTable("MovimientosFinishedGoods");
+                    b.ToTable("movimientosfinishedgoods");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Inventario.MovimientoInventario", b =>
@@ -2992,7 +3072,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("TipoMovimiento");
 
-                    b.ToTable("MovimientosInventario");
+                    b.ToTable("movimientosinventario");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Inventario.TipoInventario", b =>
@@ -3047,7 +3127,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "CategoriaInventarioId", "Nombre")
                         .IsUnique();
 
-                    b.ToTable("TiposInventario");
+                    b.ToTable("tiposinventario");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Nomina", b =>
@@ -3124,7 +3204,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "PeriodicidadPago", "AnioPeriodo", "NumeroPeriodo")
                         .IsUnique();
 
-                    b.ToTable("Nominas");
+                    b.ToTable("nominas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NominaBono", b =>
@@ -3223,6 +3303,114 @@ namespace MundoVs.Migrations
                         .IsUnique();
 
                     b.ToTable("rrhh_nomina_bono_detalle", (string)null);
+                });
+
+            modelBuilder.Entity("MundoVs.Core.Entities.NominaConceptoConfigRrhh", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("AfectaBaseImss")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaBaseIsr")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaCostoEmpresa")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaNetoEmpleado")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaPasivoImss")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaPasivoSat")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AfectaProvision")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("AplicaPorEmpleado")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("CantidadDefault")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("Destino")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("EsLegal")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("EsRecurrente")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("MontoFijoDefault")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("Naturaleza")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PorcentajeDefault")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("decimal(9,4)");
+
+                    b.Property<decimal>("TarifaDefault")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("TipoCalculo")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmpresaId", "Clave")
+                        .IsUnique();
+
+                    b.HasIndex("EmpresaId", "Nombre");
+
+                    b.HasIndex("EmpresaId", "Naturaleza", "Destino");
+
+                    b.ToTable("rrhh_nomina_concepto_config", (string)null);
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NominaConfiguracionGlobal", b =>
@@ -3584,7 +3772,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("NominaId");
 
-                    b.ToTable("NominaDetalles");
+                    b.ToTable("nominadetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NominaPercepcion", b =>
@@ -3701,6 +3889,83 @@ namespace MundoVs.Migrations
                     b.ToTable("rrhh_nomina_percepcion_tipo", (string)null);
                 });
 
+            modelBuilder.Entity("MundoVs.Core.Entities.NominaProvisionDetalleRrhh", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<decimal>("BaseCalculo")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Cantidad")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<Guid>("ConceptoConfigId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("EmpleadoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("EsAjusteManual")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("Importe")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid>("NominaDetalleId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTime?>("PeriodoFin")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("PeriodoInicio")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("Tarifa")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConceptoConfigId");
+
+                    b.HasIndex("EmpleadoId");
+
+                    b.HasIndex("NominaDetalleId");
+
+                    b.HasIndex("EmpresaId", "NominaDetalleId", "ConceptoConfigId");
+
+                    b.HasIndex("EmpresaId", "EmpleadoId", "PeriodoInicio", "PeriodoFin");
+
+                    b.ToTable("rrhh_nomina_provision_detalle", (string)null);
+                });
+
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntrega", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3778,7 +4043,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "NumeroNota")
                         .IsUnique();
 
-                    b.ToTable("NotasEntrega");
+                    b.ToTable("notasentrega");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaDetalle", b =>
@@ -3836,7 +4101,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoDetalleId");
 
-                    b.ToTable("NotasEntregaDetalle");
+                    b.ToTable("notasentregadetalle");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaDetalleTalla", b =>
@@ -3889,7 +4154,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("NotaEntregaDetalleId", "Talla");
 
-                    b.ToTable("NotasEntregaDetalleTalla");
+                    b.ToTable("notasentregadetalletalla");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoAplicacionDocumento", b =>
@@ -3942,7 +4207,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PagoRecibidoId");
 
-                    b.ToTable("PagosAplicacionDocumento");
+                    b.ToTable("pagosaplicaciondocumento");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoCxP", b =>
@@ -3981,7 +4246,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("FechaPago");
 
-                    b.ToTable("PagosCxP");
+                    b.ToTable("pagoscxp");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoPedido", b =>
@@ -4041,7 +4306,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoId");
 
-                    b.ToTable("PagosPedido");
+                    b.ToTable("pagospedido");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoRecibido", b =>
@@ -4113,7 +4378,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoId");
 
-                    b.ToTable("PagosRecibidos");
+                    b.ToTable("pagosrecibidos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoSuscripcion", b =>
@@ -4164,7 +4429,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("SuscripcionEmpresaId");
 
-                    b.ToTable("PagosSuscripcion");
+                    b.ToTable("pagossuscripcion");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Pedido", b =>
@@ -4235,7 +4500,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("NumeroPedido")
                         .IsUnique();
 
-                    b.ToTable("Pedidos");
+                    b.ToTable("pedidos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PedidoConcepto", b =>
@@ -4295,7 +4560,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("Tipo");
 
-                    b.ToTable("PedidoConceptos");
+                    b.ToTable("pedidoconceptos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PedidoDetalle", b =>
@@ -4376,7 +4641,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoVarianteId");
 
-                    b.ToTable("PedidoDetalles");
+                    b.ToTable("pedidodetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PedidoDetalleTalla", b =>
@@ -4444,7 +4709,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoDetalleId", "Talla");
 
-                    b.ToTable("PedidosDetalleTalla");
+                    b.ToTable("pedidosdetalletalla");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PedidoSeguimiento", b =>
@@ -4500,7 +4765,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoId");
 
-                    b.ToTable("PedidosSeguimiento");
+                    b.ToTable("pedidosseguimiento");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Plan", b =>
@@ -4556,7 +4821,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("Nombre")
                         .IsUnique();
 
-                    b.ToTable("Planes");
+                    b.ToTable("planes");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Prenomina", b =>
@@ -4636,7 +4901,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "PeriodicidadPago", "AnioPeriodo", "NumeroPeriodo")
                         .IsUnique();
 
-                    b.ToTable("Prenominas");
+                    b.ToTable("prenominas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PrenominaBono", b =>
@@ -4816,7 +5081,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("PrenominaId", "EmpleadoId")
                         .IsUnique();
 
-                    b.ToTable("PrenominaDetalles");
+                    b.ToTable("prenominadetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PrenominaPercepcion", b =>
@@ -4944,7 +5209,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Productos");
+                    b.ToTable("productos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ProductoCliente", b =>
@@ -4995,7 +5260,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("ClienteId", "ProductoId")
                         .IsUnique();
 
-                    b.ToTable("ProductosClientes");
+                    b.ToTable("productosclientes");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ProductoVariante", b =>
@@ -5052,7 +5317,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoId", "Talla", "Color");
 
-                    b.ToTable("ProductosVariantes");
+                    b.ToTable("productosvariantes");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Proveedor", b =>
@@ -5172,7 +5437,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Proveedores");
+                    b.ToTable("proveedores");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.RrhhAsistencia", b =>
@@ -5840,7 +6105,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoSerigrafiaId");
 
-                    b.ToTable("ColoresSerigrafia");
+                    b.ToTable("coloresserigrafia");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.CotizacionDetalle", b =>
@@ -5941,7 +6206,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("TipoProcesoId");
 
-                    b.ToTable("CotizacionDetalles");
+                    b.ToTable("cotizaciondetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.CotizacionSerigrafia", b =>
@@ -6015,7 +6280,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoId");
 
-                    b.ToTable("CotizacionesSerigrafia");
+                    b.ToTable("cotizacionesserigrafia");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.CotizacionSerigrafiaProceso", b =>
@@ -6054,7 +6319,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("CotizacionSerigrafiaId", "TipoProcesoId")
                         .IsUnique();
 
-                    b.ToTable("CotizacionSerigrafiaProcesos");
+                    b.ToTable("cotizacionserigrafiaprocesos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.CotizacionVariantePrecio", b =>
@@ -6121,7 +6386,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoVarianteId");
 
-                    b.ToTable("CotizacionVariantePrecios");
+                    b.ToTable("cotizacionvarianteprecios");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.Diseno", b =>
@@ -6189,7 +6454,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Disenos");
+                    b.ToTable("disenos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.EscalaSerigrafia", b =>
@@ -6229,7 +6494,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("EmpresaId");
 
-                    b.ToTable("EscalasSerigrafia");
+                    b.ToTable("escalasserigrafia");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.EscalaSerigrafiaTalla", b =>
@@ -6268,7 +6533,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("EscalaSerigrafiaId");
 
-                    b.ToTable("EscalaSerigrafiaTallas");
+                    b.ToTable("escalaserigrafiatallas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.GastoFijo", b =>
@@ -6313,7 +6578,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("EmpresaId");
 
-                    b.ToTable("GastosFijos");
+                    b.ToTable("gastosfijos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.Insumo", b =>
@@ -6382,7 +6647,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Insumos");
+                    b.ToTable("insumos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.MateriaPrima", b =>
@@ -6459,7 +6724,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("MateriasPrimas", (string)null);
+                    b.ToTable("materiasprimas", (string)null);
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.Pantalla", b =>
@@ -6520,7 +6785,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Codigo")
                         .IsUnique();
 
-                    b.ToTable("Pantallas");
+                    b.ToTable("pantallas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PedidoSerigrafia", b =>
@@ -6593,7 +6858,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoDetalleId");
 
-                    b.ToTable("PedidosSerigrafia");
+                    b.ToTable("pedidosserigrafia");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PedidoSerigrafiaProcesoDetalle", b =>
@@ -6629,7 +6894,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("TipoProcesoId");
 
-                    b.ToTable("PedidoSerigrafiaProcesoDetalles");
+                    b.ToTable("pedidoserigrafiaprocesodetalles");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PedidoSerigrafiaTalla", b =>
@@ -6668,7 +6933,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PedidoSerigrafiaId");
 
-                    b.ToTable("PedidoSerigrafiaTallas");
+                    b.ToTable("pedidoserigrafiatallas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PedidoSerigrafiaTallaProceso", b =>
@@ -6723,7 +6988,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("PedidoSerigrafiaId", "PedidoSerigrafiaTallaId", "TipoProcesoId")
                         .IsUnique();
 
-                    b.ToTable("PedidoSerigrafiaTallaProcesos");
+                    b.ToTable("pedidoserigrafiatallaprocesos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.Posicion", b =>
@@ -6780,7 +7045,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Nombre")
                         .IsUnique();
 
-                    b.ToTable("Posiciones", (string)null);
+                    b.ToTable("posiciones", (string)null);
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PresupuestoDetalle", b =>
@@ -6844,7 +7109,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PresupuestoProductoId");
 
-                    b.ToTable("PresupuestosDetalle");
+                    b.ToTable("presupuestosdetalle");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.PresupuestoProducto", b =>
@@ -6888,7 +7153,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoId");
 
-                    b.ToTable("PresupuestosProducto");
+                    b.ToTable("presupuestosproducto");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.ProductoSerigrafia", b =>
@@ -6937,7 +7202,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ProductoId");
 
-                    b.ToTable("ProductosSerigrafia");
+                    b.ToTable("productosserigrafia");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.RegistroDestajoProceso", b =>
@@ -7016,7 +7281,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ValeDestajoDetalleId");
 
-                    b.ToTable("RegistrosDestajoProceso");
+                    b.ToTable("registrosdestajoproceso");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.TipoProceso", b =>
@@ -7071,7 +7336,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PosicionId");
 
-                    b.ToTable("TiposProceso");
+                    b.ToTable("tiposproceso");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.StorageConfiguracionGlobal", b =>
@@ -7109,7 +7374,7 @@ namespace MundoVs.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("StorageConfiguracionesGlobales");
+                    b.ToTable("storageconfiguracionesglobales");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.SuscripcionEmpresa", b =>
@@ -7162,7 +7427,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("PlanId");
 
-                    b.ToTable("SuscripcionesEmpresa");
+                    b.ToTable("suscripcionesempresa");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.TurnoBase", b =>
@@ -7334,7 +7599,7 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId", "Folio")
                         .IsUnique();
 
-                    b.ToTable("ValesDestajo");
+                    b.ToTable("valesdestajo");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.ValeDestajoDetalle", b =>
@@ -7398,7 +7663,7 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("ValeDestajoId");
 
-                    b.ToTable("ValesDestajoDetalle");
+                    b.ToTable("valesdestajodetalle");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.AppConfig", b =>
@@ -7895,6 +8160,33 @@ namespace MundoVs.Migrations
                     b.Navigation("TurnoBase");
                 });
 
+            modelBuilder.Entity("MundoVs.Core.Entities.EmpleadoConceptoRrhh", b =>
+                {
+                    b.HasOne("MundoVs.Core.Entities.NominaConceptoConfigRrhh", "ConceptoConfig")
+                        .WithMany("EmpleadosConceptos")
+                        .HasForeignKey("ConceptoConfigId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MundoVs.Core.Entities.Empleado", "Empleado")
+                        .WithMany("ConceptosNomina")
+                        .HasForeignKey("EmpleadoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ConceptoConfig");
+
+                    b.Navigation("Empleado");
+
+                    b.Navigation("Empresa");
+                });
+
             modelBuilder.Entity("MundoVs.Core.Entities.EmpleadoEsquemaPago", b =>
                 {
                     b.HasOne("MundoVs.Core.Entities.Empleado", "Empleado")
@@ -8310,6 +8602,17 @@ namespace MundoVs.Migrations
                     b.Navigation("NominaBono");
                 });
 
+            modelBuilder.Entity("MundoVs.Core.Entities.NominaConceptoConfigRrhh", b =>
+                {
+                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Empresa");
+                });
+
             modelBuilder.Entity("MundoVs.Core.Entities.NominaCorteRrhh", b =>
                 {
                     b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
@@ -8399,6 +8702,41 @@ namespace MundoVs.Migrations
                     b.Navigation("NominaDetalle");
 
                     b.Navigation("TipoPercepcion");
+                });
+
+            modelBuilder.Entity("MundoVs.Core.Entities.NominaProvisionDetalleRrhh", b =>
+                {
+                    b.HasOne("MundoVs.Core.Entities.NominaConceptoConfigRrhh", "ConceptoConfig")
+                        .WithMany("ProvisionesDetalle")
+                        .HasForeignKey("ConceptoConfigId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MundoVs.Core.Entities.Empleado", "Empleado")
+                        .WithMany()
+                        .HasForeignKey("EmpleadoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
+                        .WithMany()
+                        .HasForeignKey("EmpresaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MundoVs.Core.Entities.NominaDetalle", "NominaDetalle")
+                        .WithMany("ProvisionesDetalle")
+                        .HasForeignKey("NominaDetalleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ConceptoConfig");
+
+                    b.Navigation("Empleado");
+
+                    b.Navigation("Empresa");
+
+                    b.Navigation("NominaDetalle");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntrega", b =>
@@ -9575,6 +9913,8 @@ namespace MundoVs.Migrations
 
                     b.Navigation("BancoHorasMovimientos");
 
+                    b.Navigation("ConceptosNomina");
+
                     b.Navigation("EsquemasPago");
 
                     b.Navigation("Marcaciones");
@@ -9644,6 +9984,13 @@ namespace MundoVs.Migrations
                     b.Navigation("Detalles");
                 });
 
+            modelBuilder.Entity("MundoVs.Core.Entities.NominaConceptoConfigRrhh", b =>
+                {
+                    b.Navigation("EmpleadosConceptos");
+
+                    b.Navigation("ProvisionesDetalle");
+                });
+
             modelBuilder.Entity("MundoVs.Core.Entities.NominaDetalle", b =>
                 {
                     b.Navigation("BonosEstructurados");
@@ -9651,6 +9998,8 @@ namespace MundoVs.Migrations
                     b.Navigation("DeduccionesEstructuradas");
 
                     b.Navigation("PercepcionesManuales");
+
+                    b.Navigation("ProvisionesDetalle");
 
                     b.Navigation("ValesDestajo");
                 });

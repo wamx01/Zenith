@@ -3,7 +3,7 @@ using MundoVs.Core.Interfaces;
 
 namespace MundoVs.Core.Services;
 
-public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaResumenBuilder
+public class NominaResumenBuilder(INominaCalculator nominaCalculator, INominaLegalPolicyService nominaLegalPolicy) : INominaResumenBuilder
 {
     public NominaResumenResult Build(NominaResumenInput input)
     {
@@ -22,6 +22,12 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
         decimal totalHorasExtra = 0m;
         decimal totalPercepcionesManuales = 0m;
         decimal totalImssObrero = 0m;
+        decimal totalIsr = 0m;
+        decimal totalImssPatronal = 0m;
+        decimal totalObligacionesTerceros = 0m;
+        decimal totalAportacionesPatronales = 0m;
+        decimal totalProvisiones = 0m;
+        decimal totalCostoEmpresa = 0m;
         decimal totalInfonavit = 0m;
         decimal totalDeducciones = 0m;
         decimal totalDescuentoMinutos = 0m;
@@ -53,6 +59,12 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
             totalHorasExtra += resultado.MontoHorasExtra;
             totalPercepcionesManuales += detalle.Bonos;
             totalImssObrero += detalle.CuotaImssObrera;
+            totalIsr += detalle.RetencionIsr;
+            totalImssPatronal += detalle.CuotaImssPatronal;
+            totalObligacionesTerceros += detalle.TotalObligacionesTerceros;
+            totalAportacionesPatronales += detalle.TotalAportacionesPatronales;
+            totalProvisiones += detalle.TotalProvisiones;
+            totalCostoEmpresa += detalle.CostoEmpresa;
             totalInfonavit += detalle.MontoInfonavit;
             totalDeducciones += detalle.Deducciones;
             totalDescuentoMinutos += detalle.MontoDescuentoMinutos;
@@ -76,6 +88,12 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
             TotalHorasExtra = totalHorasExtra,
             TotalPercepcionesManuales = totalPercepcionesManuales,
             TotalImssObrero = totalImssObrero,
+            TotalIsr = totalIsr,
+            TotalImssPatronal = totalImssPatronal,
+            TotalObligacionesTerceros = totalObligacionesTerceros,
+            TotalAportacionesPatronales = totalAportacionesPatronales,
+            TotalProvisiones = totalProvisiones,
+            TotalCostoEmpresa = totalCostoEmpresa,
             TotalInfonavit = totalInfonavit,
             TotalDeducciones = totalDeducciones,
             TotalDescuentoMinutos = totalDescuentoMinutos,
@@ -117,6 +135,7 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
         var factorFestivo = detalle.DiasFestivoTrabajado > 0 && sueldoDiario > 0
             ? Math.Max(0m, Math.Round(detalle.MontoFestivoTrabajado / (detalle.DiasFestivoTrabajado * sueldoDiario), 4))
             : 2m;
+        var cicloVacacional = nominaLegalPolicy.ObtenerCicloVacacional(detalle.Empleado, fechaReferencia, configuracion);
 
         return nominaCalculator.Calculate(new NominaCalculationInput
         {
@@ -135,6 +154,7 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
             HorasExtraTriples = detalle.HorasExtraTriples,
             HorasExtraBanco = detalle.HorasExtraBanco,
             AplicaImss = detalle.AplicaImss,
+            AplicaIsr = detalle.Empleado.AplicaIsr,
             HorasExtra = detalle.HorasExtra,
             MontoDestajo = detalle.MontoDestajo,
             MontoBono = detalle.MontoBono,
@@ -142,7 +162,8 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator) : INominaR
             MontoDeducciones = detalle.Deducciones,
             ComplementoSalarioMinimo = detalle.ComplementoSalarioMinimo,
             FactorFestivo = factorFestivo,
-            AniosServicio = CalcularAniosServicio(detalle.Empleado, fechaReferencia)
+            AniosServicio = CalcularAniosServicio(detalle.Empleado, fechaReferencia),
+            DiasVacacionesAnualesOverride = cicloVacacional.DiasVacacionesEquivalentes
         });
     }
 

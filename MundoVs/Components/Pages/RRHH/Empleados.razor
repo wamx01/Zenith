@@ -9,6 +9,7 @@
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject CodigoNegocioService CodigoNegocio
+@inject INominaLegalPolicyService NominaLegalPolicy
 @rendermode InteractiveServer
 
 <PageTitle>Empleados</PageTitle>
@@ -267,6 +268,110 @@
                             </div>
                         }
 
+                        <div class="col-12"><hr /><h6 class="text-muted">Conceptos recurrentes de nómina</h6></div>
+                        <div class="col-12">
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">Concepto configurable</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="conceptoEmpleadoTipoSeleccionadoId">
+                                        <option value="">Seleccione...</option>
+                                        @foreach (var concepto in conceptosNominaDisponibles)
+                                        {
+                                            <option value="@concepto.Id">@concepto.Nombre (@concepto.Naturaleza)</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Monto</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Monto" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Porcentaje</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Porcentaje" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Cantidad</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Cantidad" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Tarifa</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Tarifa" />
+                                </div>
+                                <div class="col-md-1">
+                                    <label class="form-label">Límite</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Limite" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Fecha inicio</label>
+                                    <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaInicio" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Fecha fin</label>
+                                    <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaFin" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Observaciones</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Observaciones" />
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <div class="form-check">
+                                        <InputCheckbox class="form-check-input" @bind-Value="conceptoEmpleadoEnCaptura.EsRecurrente" />
+                                        <label class="form-check-label">Recurrente</label>
+                                    </div>
+                                </div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-primary" @onclick="AgregarOActualizarConceptoEmpleado">@(conceptoEmpleadoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoConceptoEmpleado">Limpiar</button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Concepto</th>
+                                            <th class="text-end">Monto</th>
+                                            <th class="text-end">%</th>
+                                            <th class="text-end">Cant.</th>
+                                            <th class="text-end">Tarifa</th>
+                                            <th>Vigencia</th>
+                                            <th class="text-center">Rec.</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (conceptosEmpleadoEditando.Count == 0)
+                                        {
+                                            <tr><td colspan="8" class="text-center text-muted py-3">No hay conceptos recurrentes asignados.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var item in conceptosEmpleadoEditando.OrderBy(c => c.Orden).ThenBy(c => c.ConceptoNombre))
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-semibold">@item.ConceptoNombre</div>
+                                                        <div class="small text-muted">@item.Naturaleza · @item.Destino</div>
+                                                    </td>
+                                                    <td class="text-end">@item.Monto.ToString("C2")</td>
+                                                    <td class="text-end">@item.Porcentaje.ToString("0.####")</td>
+                                                    <td class="text-end">@item.Cantidad.ToString("0.####")</td>
+                                                    <td class="text-end">@item.Tarifa.ToString("0.####")</td>
+                                                    <td class="small">@(item.FechaInicio?.ToString("dd/MM/yyyy") ?? "—") - @(item.FechaFin?.ToString("dd/MM/yyyy") ?? "Vigente")</td>
+                                                    <td class="text-center">@(item.EsRecurrente ? "Sí" : "No")</td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarConceptoEmpleado(item)"><i class="bi bi-pencil"></i></button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarConceptoEmpleado(item)"><i class="bi bi-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="form-text">Aquí asignas descuentos fijos, provisiones y conceptos recurrentes específicos del empleado.</div>
+                        </div>
+
                         <div class="col-12">
                             <label class="form-label">Notas</label>
                             <InputTextArea class="form-control" @bind-Value="editando.Notas" rows="2" />
@@ -368,6 +473,10 @@
     private Dictionary<Guid, string> esquemaActivoPorEmpleado = new();
     private Dictionary<Guid, decimal> vacacionesDisponiblesPorEmpleado = new();
     private Dictionary<Guid, decimal> bancoHorasPorEmpleado = new();
+    private List<NominaConceptoConfigRrhh> conceptosNominaDisponibles = [];
+    private List<ConceptoEmpleadoEditor> conceptosEmpleadoEditando = [];
+    private ConceptoEmpleadoEditor conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
+    private string conceptoEmpleadoTipoSeleccionadoId = string.Empty;
     private HashSet<Guid> empleadosSeleccionados = [];
     private Empleado editando = new();
     private Guid? esquemaSeleccionadoId;
@@ -396,6 +505,7 @@
             await CargarDepartamentos();
             await CargarEsquemas();
             await CargarTurnos();
+            await CargarConceptosNomina();
             await Cargar();
         }
     }
@@ -456,6 +566,24 @@
         }
     }
 
+    private async Task CargarConceptosNomina()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            conceptosNominaDisponibles = await db.NominasConceptosConfigRrhh
+                .AsNoTracking()
+                .Where(c => c.IsActive && c.AplicaPorEmpleado)
+                .OrderBy(c => c.Orden)
+                .ThenBy(c => c.Nombre)
+                .ToListAsync();
+        }
+        catch
+        {
+            conceptosNominaDisponibles = [];
+        }
+    }
+
     private async Task CargarAcceso()
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -492,18 +620,7 @@
 
     private async Task CargarSaldosEmpleadoAsync(CrmDbContext db)
     {
-        var tablaVacacionesJson = await db.AppConfigs
-            .AsNoTracking()
-            .Where(c => c.Clave == ClavesConfiguracionNomina.TablaVacacionesJson)
-            .Select(c => c.Valor)
-            .FirstOrDefaultAsync();
-
-        var configuracionNomina = new NominaConfiguracion
-        {
-            TablaVacacionesJson = string.IsNullOrWhiteSpace(tablaVacacionesJson)
-                ? NominaConfiguracion.TablaVacacionesDefaultJson
-                : tablaVacacionesJson
-        };
+        var configuracionNomina = await NominaConfiguracionLoader.LoadAsync(db, _empresaId);
 
         var hoy = DateOnly.FromDateTime(DateTime.Today);
         var idsEmpleado = lista.Select(e => e.Id).ToList();
@@ -515,8 +632,7 @@
                 && a.Tipo == TipoAusenciaRrhh.Vacaciones
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.FechaFin <= hoy)
-            .GroupBy(a => a.EmpleadoId)
-            .ToDictionaryAsync(g => g.Key, g => (decimal)g.Sum(a => a.Dias));
+            .ToListAsync();
 
         bancoHorasPorEmpleado = await db.RrhhBancoHorasMovimientos
             .AsNoTracking()
@@ -526,19 +642,27 @@
 
         vacacionesDisponiblesPorEmpleado = lista.ToDictionary(
             e => e.Id,
-            e => CalcularSaldoVacaciones(e, configuracionNomina, vacacionesUsadas.GetValueOrDefault(e.Id)));
+            e => CalcularSaldoVacaciones(e, configuracionNomina, vacacionesUsadas.Where(a => a.EmpleadoId == e.Id).ToList()));
     }
 
-    private static decimal CalcularSaldoVacaciones(Empleado empleado, NominaConfiguracion configuracionNomina, decimal vacacionesUsadas)
+    private decimal CalcularSaldoVacaciones(Empleado empleado, NominaConfiguracion configuracionNomina, IReadOnlyCollection<RrhhAusencia> vacacionesUsadas)
     {
-        if (!empleado.FechaContratacion.HasValue)
-        {
+        var ciclo = NominaLegalPolicy.ObtenerCicloVacacional(empleado, DateTime.Today, configuracionNomina);
+        if (!ciclo.TieneDerechoVacaciones)
             return 0m;
-        }
 
-        var anios = (int)Math.Floor((DateTime.Today.Date - empleado.FechaContratacion.Value.Date).TotalDays / 365.25);
-        var dias = configuracionNomina.ObtenerDiasVacacionesPorAntiguedad(anios);
-        return Math.Max(0m, dias - vacacionesUsadas);
+        var usadasEnCiclo = vacacionesUsadas.Sum(a => CalcularDiasAusenciaEnRango(a, DateOnly.FromDateTime(ciclo.InicioCiclo), DateOnly.FromDateTime(ciclo.FinCiclo)));
+        return NominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, DateTime.Today, usadasEnCiclo, configuracionNomina);
+    }
+
+    private static int CalcularDiasAusenciaEnRango(RrhhAusencia ausencia, DateOnly inicio, DateOnly fin)
+    {
+        var inicioReal = ausencia.FechaInicio > inicio ? ausencia.FechaInicio : inicio;
+        var finReal = ausencia.FechaFin < fin ? ausencia.FechaFin : fin;
+        if (finReal < inicioReal)
+            return 0;
+
+        return (finReal.DayNumber - inicioReal.DayNumber) + 1;
     }
 
     private decimal ObtenerSaldoVacaciones(Guid empleadoId)
@@ -582,6 +706,9 @@
         esquemaSueldoOverride = null;
         historialEsquemas = [];
         historialTurnos = [];
+        conceptosEmpleadoEditando = [];
+        conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
+        conceptoEmpleadoTipoSeleccionadoId = string.Empty;
         mostrarForm = true;
     }
 
@@ -611,7 +738,43 @@
         turnoSeleccionadoId = e.TurnoBaseId;
         await CargarHistorialEsquemas(e.Id);
         await CargarHistorialTurnos(e.Id);
+        await CargarConceptosEmpleado(e.Id);
         mostrarForm = true;
+    }
+
+    private async Task CargarConceptosEmpleado(Guid empleadoId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var conceptos = await db.EmpleadosConceptosRrhh
+            .Include(c => c.ConceptoConfig)
+            .AsNoTracking()
+            .Where(c => c.EmpleadoId == empleadoId && c.IsActive)
+            .OrderBy(c => c.ConceptoConfig.Orden)
+            .ThenBy(c => c.ConceptoConfig.Nombre)
+            .ToListAsync();
+
+        conceptosEmpleadoEditando = conceptos.Select(c => new ConceptoEmpleadoEditor
+        {
+            Id = c.Id,
+            ConceptoConfigId = c.ConceptoConfigId,
+            ConceptoNombre = c.ConceptoConfig.Nombre,
+            Naturaleza = c.ConceptoConfig.Naturaleza,
+            Destino = c.ConceptoConfig.Destino,
+            Orden = c.ConceptoConfig.Orden,
+            Monto = c.Monto,
+            Porcentaje = c.Porcentaje,
+            Cantidad = c.Cantidad,
+            Tarifa = c.Tarifa,
+            Saldo = c.Saldo,
+            Limite = c.Limite,
+            FechaInicio = c.FechaInicio,
+            FechaFin = c.FechaFin,
+            EsRecurrente = c.EsRecurrente,
+            Observaciones = c.Observaciones
+        }).ToList();
+
+        conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
+        conceptoEmpleadoTipoSeleccionadoId = string.Empty;
     }
 
     private async Task CargarHistorialEsquemas(Guid empleadoId)
@@ -777,6 +940,9 @@
             await SincronizarTurnoBaseActualAsync(db, empresaId, empId);
             await db.SaveChangesAsync();
 
+            await GuardarConceptosEmpleadoAsync(db, empId);
+            await db.SaveChangesAsync();
+
             // Guardar asignación de esquema si se seleccionó uno
             if (esquemaSeleccionadoId.HasValue && esquemaSeleccionadoId.Value != Guid.Empty)
             {
@@ -818,6 +984,172 @@
         }
         catch (Exception ex) { error = ex.InnerException?.Message ?? ex.Message; }
         finally { guardando = false; }
+    }
+
+    private async Task GuardarConceptosEmpleadoAsync(CrmDbContext db, Guid empleadoId)
+    {
+        var existentes = await db.EmpleadosConceptosRrhh
+            .Where(c => c.EmpleadoId == empleadoId)
+            .ToListAsync();
+
+        var idsEditor = conceptosEmpleadoEditando.Where(c => c.Id != Guid.Empty).Select(c => c.Id).ToHashSet();
+        var eliminar = existentes.Where(c => !idsEditor.Contains(c.Id)).ToList();
+        if (eliminar.Count > 0)
+            db.EmpleadosConceptosRrhh.RemoveRange(eliminar);
+
+        foreach (var item in conceptosEmpleadoEditando)
+        {
+            var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(c => c.Id == item.Id);
+            if (entity == null)
+            {
+                entity = new EmpleadoConceptoRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    EmpleadoId = empleadoId,
+                    ConceptoConfigId = item.ConceptoConfigId,
+                    Monto = item.Monto,
+                    Porcentaje = item.Porcentaje,
+                    Cantidad = item.Cantidad,
+                    Tarifa = item.Tarifa,
+                    Saldo = item.Saldo,
+                    Limite = item.Limite,
+                    FechaInicio = item.FechaInicio,
+                    FechaFin = item.FechaFin,
+                    EsRecurrente = item.EsRecurrente,
+                    Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.EmpleadosConceptosRrhh.Add(entity);
+                continue;
+            }
+
+            entity.ConceptoConfigId = item.ConceptoConfigId;
+            entity.Monto = item.Monto;
+            entity.Porcentaje = item.Porcentaje;
+            entity.Cantidad = item.Cantidad;
+            entity.Tarifa = item.Tarifa;
+            entity.Saldo = item.Saldo;
+            entity.Limite = item.Limite;
+            entity.FechaInicio = item.FechaInicio;
+            entity.FechaFin = item.FechaFin;
+            entity.EsRecurrente = item.EsRecurrente;
+            entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
+            entity.IsActive = true;
+            entity.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private void PrepararNuevoConceptoEmpleado()
+    {
+        conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
+        conceptoEmpleadoTipoSeleccionadoId = string.Empty;
+        error = ok = null;
+    }
+
+    private void AgregarOActualizarConceptoEmpleado()
+    {
+        if (!Guid.TryParse(conceptoEmpleadoTipoSeleccionadoId, out var conceptoId))
+        {
+            error = "Selecciona un concepto configurable.";
+            return;
+        }
+
+        var concepto = conceptosNominaDisponibles.FirstOrDefault(c => c.Id == conceptoId);
+        if (concepto == null)
+        {
+            error = "No se encontró el concepto seleccionado.";
+            return;
+        }
+
+        if (conceptosEmpleadoEditando.Any(c => c.Id != conceptoEmpleadoEnCaptura.Id && c.ConceptoConfigId == conceptoId))
+        {
+            error = "Ese concepto ya está asignado al empleado.";
+            return;
+        }
+
+        if (conceptoEmpleadoEnCaptura.Id == Guid.Empty)
+        {
+            conceptosEmpleadoEditando.Add(new ConceptoEmpleadoEditor
+            {
+                Id = Guid.Empty,
+                ConceptoConfigId = concepto.Id,
+                ConceptoNombre = concepto.Nombre,
+                Naturaleza = concepto.Naturaleza,
+                Destino = concepto.Destino,
+                Orden = concepto.Orden,
+                Monto = conceptoEmpleadoEnCaptura.Monto,
+                Porcentaje = conceptoEmpleadoEnCaptura.Porcentaje,
+                Cantidad = conceptoEmpleadoEnCaptura.Cantidad,
+                Tarifa = conceptoEmpleadoEnCaptura.Tarifa,
+                Saldo = conceptoEmpleadoEnCaptura.Saldo,
+                Limite = conceptoEmpleadoEnCaptura.Limite,
+                FechaInicio = conceptoEmpleadoEnCaptura.FechaInicio,
+                FechaFin = conceptoEmpleadoEnCaptura.FechaFin,
+                EsRecurrente = conceptoEmpleadoEnCaptura.EsRecurrente,
+                Observaciones = conceptoEmpleadoEnCaptura.Observaciones
+            });
+        }
+        else
+        {
+            var actual = conceptosEmpleadoEditando.FirstOrDefault(c => c.Id == conceptoEmpleadoEnCaptura.Id && c.ConceptoConfigId == conceptoEmpleadoEnCaptura.ConceptoConfigId);
+            if (actual == null)
+                actual = conceptosEmpleadoEditando.FirstOrDefault(c => c.Id == conceptoEmpleadoEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.ConceptoConfigId = concepto.Id;
+            actual.ConceptoNombre = concepto.Nombre;
+            actual.Naturaleza = concepto.Naturaleza;
+            actual.Destino = concepto.Destino;
+            actual.Orden = concepto.Orden;
+            actual.Monto = conceptoEmpleadoEnCaptura.Monto;
+            actual.Porcentaje = conceptoEmpleadoEnCaptura.Porcentaje;
+            actual.Cantidad = conceptoEmpleadoEnCaptura.Cantidad;
+            actual.Tarifa = conceptoEmpleadoEnCaptura.Tarifa;
+            actual.Saldo = conceptoEmpleadoEnCaptura.Saldo;
+            actual.Limite = conceptoEmpleadoEnCaptura.Limite;
+            actual.FechaInicio = conceptoEmpleadoEnCaptura.FechaInicio;
+            actual.FechaFin = conceptoEmpleadoEnCaptura.FechaFin;
+            actual.EsRecurrente = conceptoEmpleadoEnCaptura.EsRecurrente;
+            actual.Observaciones = conceptoEmpleadoEnCaptura.Observaciones;
+        }
+
+        conceptosEmpleadoEditando = conceptosEmpleadoEditando.OrderBy(c => c.Orden).ThenBy(c => c.ConceptoNombre).ToList();
+        PrepararNuevoConceptoEmpleado();
+    }
+
+    private void EditarConceptoEmpleado(ConceptoEmpleadoEditor item)
+    {
+        conceptoEmpleadoEnCaptura = new ConceptoEmpleadoEditor
+        {
+            Id = item.Id,
+            ConceptoConfigId = item.ConceptoConfigId,
+            ConceptoNombre = item.ConceptoNombre,
+            Naturaleza = item.Naturaleza,
+            Destino = item.Destino,
+            Orden = item.Orden,
+            Monto = item.Monto,
+            Porcentaje = item.Porcentaje,
+            Cantidad = item.Cantidad,
+            Tarifa = item.Tarifa,
+            Saldo = item.Saldo,
+            Limite = item.Limite,
+            FechaInicio = item.FechaInicio,
+            FechaFin = item.FechaFin,
+            EsRecurrente = item.EsRecurrente,
+            Observaciones = item.Observaciones
+        };
+        conceptoEmpleadoTipoSeleccionadoId = item.ConceptoConfigId.ToString();
+        error = ok = null;
+    }
+
+    private void EliminarConceptoEmpleado(ConceptoEmpleadoEditor item)
+    {
+        conceptosEmpleadoEditando.RemoveAll(c => c == item || (item.Id != Guid.Empty && c.Id == item.Id));
+        if (conceptoEmpleadoEnCaptura.Id == item.Id)
+            PrepararNuevoConceptoEmpleado();
     }
 
     private async Task AplicarTurnoBulk()
@@ -1030,4 +1362,27 @@
         public DateOnly? Hasta { get; set; }
         public string? Observaciones { get; set; }
     }
+
+    private class ConceptoEmpleadoEditor
+    {
+        public Guid Id { get; set; }
+        public Guid ConceptoConfigId { get; set; }
+        public string ConceptoNombre { get; set; } = string.Empty;
+        public NaturalezaConceptoNominaRrhh Naturaleza { get; set; }
+        public DestinoConceptoNominaRrhh Destino { get; set; }
+        public int Orden { get; set; }
+        public decimal Monto { get; set; }
+        public decimal Porcentaje { get; set; }
+        public decimal Cantidad { get; set; }
+        public decimal Tarifa { get; set; }
+        public decimal Saldo { get; set; }
+        public decimal Limite { get; set; }
+        public DateTime? FechaInicio { get; set; }
+        public DateTime? FechaFin { get; set; }
+        public bool EsRecurrente { get; set; } = true;
+        public string? Observaciones { get; set; }
+    }
+
+    private static ConceptoEmpleadoEditor CrearConceptoEmpleadoVacio()
+        => new() { EsRecurrente = true, FechaInicio = DateTime.Today };
 }

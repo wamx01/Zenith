@@ -80,6 +80,16 @@
 
 > **Impacto en el sistema:** El cálculo proporcional de prima vacacional entra en el SDI (Art. 84). La fórmula es: `(días_vacaciones × 0.25 × salario_diario) / 365`. Este valor diario se suma al SDI base del trabajador. Operativamente, la prenómina debe capturar vacaciones disfrutadas en el período, distinguirlas de faltas e incapacidades, y mantener saldo por antigüedad, días ganados, días usados y días pagados.
 
+> **Política operativa soportada por empresa:** además del esquema por aniversario, el sistema puede operar con corte fijo anual y reglas de elegibilidad para año 0 / año 1. En ese modo, el primer ciclo reconocido puede otorgarse completo o proporcional según meses mínimos al corte y la política configurada por empresa.
+
+#### Tabla de ejemplo — ingreso `28/04/2026`, corte `01/01`
+
+| Política | 2027 | 2028 | 2029 |
+|----------|------|------|------|
+| Corte fijo, mínimo 12 meses, primer ciclo completo | 0 días | 12 días | 14 días |
+| Corte fijo, mínimo 6 meses, primer ciclo completo | 12 días | 14 días | 16 días |
+| Corte fijo, mínimo 6 meses, primer ciclo proporcional | ~8.15 días | 14 días | 16 días |
+
 ---
 
 ### 1.5 Aguinaldo

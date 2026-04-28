@@ -534,6 +534,50 @@
                         <div class="card-header bg-white">Vacaciones y aguinaldo</div>
                         <div class="card-body">
                             <div class="mb-3">
+                                <label class="form-label">Ciclo vacacional</label>
+                                <InputSelect class="form-select" @bind-Value="configuracion.TipoCicloVacacional">
+                                    @foreach (var tipo in Enum.GetValues<TipoCicloVacacionalRrhh>())
+                                    {
+                                        <option value="@tipo">@tipo</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Pago prima vacacional</label>
+                                <InputSelect class="form-select" @bind-Value="configuracion.FormaPagoPrimaVacacional">
+                                    @foreach (var forma in Enum.GetValues<FormaPagoPrimaVacacionalRrhh>())
+                                    {
+                                        <option value="@forma">@forma</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Primer ciclo vacacional</label>
+                                <InputSelect class="form-select" @bind-Value="configuracion.PoliticaPrimerCicloVacacional">
+                                    @foreach (var politica in Enum.GetValues<PoliticaPrimerCicloVacacionalRrhh>())
+                                    {
+                                        <option value="@politica">@politica</option>
+                                    }
+                                </InputSelect>
+                                <div class="form-text">Define si el año 1 entra completo o proporcional cuando el empleado alcanza elegibilidad en el corte anual.</div>
+                            </div>
+                            @if (configuracion.TipoCicloVacacional == TipoCicloVacacionalRrhh.CorteFijoAnual)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Mes inicio ciclo</label>
+                                    <InputNumber class="form-control" @bind-Value="configuracion.MesInicioCicloVacacional" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Día inicio ciclo</label>
+                                    <InputNumber class="form-control" @bind-Value="configuracion.DiaInicioCicloVacacional" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Meses mínimos para año 1</label>
+                                    <InputNumber class="form-control" @bind-Value="configuracion.MesesMinimosPrimerAnioVacacional" />
+                                    <div class="form-text">Si el empleado no cumple este mínimo al corte, permanece en año 0.</div>
+                                </div>
+                            }
+                            <div class="mb-3">
                                 <label class="form-label">Prima vacacional mínima</label>
                                 <InputNumber class="form-control" @bind-Value="configuracion.PrimaVacacionalMinima" />
                             </div>
@@ -554,6 +598,141 @@
                         <div>
                             <h2 class="nom-section-title">Calendario y catálogos</h2>
                             <p class="nom-section-subtitle">Concentra festivos, bonos y tipos de captura en un bloque operativo más fácil de escanear.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="card nom-config-card h-100 border-primary">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span>Conceptos configurables y provisiones</span>
+                                <span class="badge bg-light text-primary">Se configuran aquí para fases siguientes</span>
+                            </div>
+                            @if (_puedeEditar)
+                            {
+                                <button type="button" class="btn btn-sm btn-light" @onclick="CargarConceptosNominaBaseAsync" disabled="@guardando">
+                                    <i class="bi bi-database-add me-1"></i>Cargar conceptos base
+                                </button>
+                            }
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-2">
+                                    <label class="form-label">Clave</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.Clave" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Nombre</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.Nombre" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Naturaleza</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="conceptoNominaEnCaptura.Naturaleza">
+                                        @foreach (var naturaleza in Enum.GetValues<NaturalezaConceptoNominaRrhh>())
+                                        {
+                                            <option value="@naturaleza">@naturaleza</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Destino</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="conceptoNominaEnCaptura.Destino">
+                                        @foreach (var destino in Enum.GetValues<DestinoConceptoNominaRrhh>())
+                                        {
+                                            <option value="@destino">@destino</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Cálculo</label>
+                                    <InputSelect class="form-select form-select-sm" @bind-Value="conceptoNominaEnCaptura.TipoCalculo">
+                                        @foreach (var tipo in Enum.GetValues<TipoCalculoConceptoNominaRrhh>())
+                                        {
+                                            <option value="@tipo">@tipo</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-1">
+                                    <label class="form-label">Orden</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.Orden" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Monto fijo</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.MontoFijoDefault" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Porcentaje</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.PorcentajeDefault" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Cantidad</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.CantidadDefault" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Tarifa</label>
+                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.TarifaDefault" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Observaciones</label>
+                                    <InputText class="form-control form-control-sm" @bind-Value="conceptoNominaEnCaptura.Observaciones" />
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.EsRecurrente" /><label class="form-check-label">Recurrente</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AplicaPorEmpleado" /><label class="form-check-label">Por empleado</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaNetoEmpleado" /><label class="form-check-label">Neto</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaCostoEmpresa" /><label class="form-check-label">Costo</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaPasivoSat" /><label class="form-check-label">SAT</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaPasivoImss" /><label class="form-check-label">IMSS</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaProvision" /><label class="form-check-label">Provisiona</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaBaseIsr" /><label class="form-check-label">Base ISR</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.AfectaBaseImss" /><label class="form-check-label">Base IMSS</label></div></div>
+                                <div class="col-md-2 d-flex align-items-end"><div class="form-check"><InputCheckbox class="form-check-input" @bind-Value="conceptoNominaEnCaptura.EsLegal" /><label class="form-check-label">Legal</label></div></div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-primary" @onclick="AgregarOActualizarConceptoNomina">@(conceptoNominaEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoConceptoNomina">Limpiar</button>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Clave</th>
+                                            <th>Nombre</th>
+                                            <th>Naturaleza</th>
+                                            <th>Destino</th>
+                                            <th>Cálculo</th>
+                                            <th class="text-center">Provisiona</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (conceptosNominaConfigurables.Count == 0)
+                                        {
+                                            <tr><td colspan="7" class="text-center text-muted py-3">No hay conceptos configurables capturados.</td></tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var concepto in conceptosNominaConfigurables.OrderBy(c => c.Orden).ThenBy(c => c.Nombre))
+                                            {
+                                                <tr>
+                                                    <td>@concepto.Clave</td>
+                                                    <td class="fw-semibold">@concepto.Nombre</td>
+                                                    <td>@concepto.Naturaleza</td>
+                                                    <td>@concepto.Destino</td>
+                                                    <td>@concepto.TipoCalculo</td>
+                                                    <td class="text-center">@(concepto.AfectaProvision ? "Sí" : "No")</td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarConceptoNomina(concepto)"><i class="bi bi-pencil"></i></button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarConceptoNomina(concepto)"><i class="bi bi-trash"></i></button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="form-text mt-2">Aquí se configura el catálogo base. Los importes reales de conceptos como IMSS o ISR fijo se capturan por empleado en <code>/rrhh/empleados</code>, no como valor general.</div>
                         </div>
                     </div>
                 </div>
@@ -842,6 +1021,9 @@
     private List<DeduccionTipoRrhh> tiposDeduccion = [];
     private DeduccionTipoRrhh tipoDeduccionEnCaptura = CrearTipoDeduccionVacio();
     private HashSet<Guid> tiposDeduccionEliminados = [];
+    private List<NominaConceptoConfigRrhh> conceptosNominaConfigurables = [];
+    private NominaConceptoConfigRrhh conceptoNominaEnCaptura = CrearConceptoNominaVacio();
+    private HashSet<Guid> conceptosNominaEliminados = [];
     private ReglasPrenominaConfiguracion reglasPrenomina = new();
     private static IReadOnlyList<DayOfWeek> DiasSemanaDisponibles { get; } = Enum.GetValues<DayOfWeek>();
     private decimal TotalPorcentajeEsquema => rubrosEsquemaSeleccionados.Sum(id => ObtenerPorcentajeRubroEsquema(id));
@@ -917,6 +1099,13 @@
             .ThenBy(t => t.Nombre)
             .ToListAsync();
 
+        conceptosNominaConfigurables = await db.NominasConceptosConfigRrhh
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.Orden)
+            .ThenBy(c => c.Nombre)
+            .ToListAsync();
+
         festivoEnCaptura = CrearFestivoVacio();
         festivosEliminados = [];
         rubroBonoEnCaptura = CrearRubroBonoVacio();
@@ -929,6 +1118,8 @@
         tiposPercepcionEliminados = [];
         tipoDeduccionEnCaptura = CrearTipoDeduccionVacio();
         tiposDeduccionEliminados = [];
+        conceptoNominaEnCaptura = CrearConceptoNominaVacio();
+        conceptosNominaEliminados = [];
     }
 
     private async Task GuardarAsync()
@@ -964,6 +1155,12 @@
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TasaImssPatronal, configuracion.TasaImssPatronal.ToString(System.Globalization.CultureInfo.InvariantCulture), "Tasa base de cuota patronal IMSS.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.PrimaRiesgoTrabajo, configuracion.PrimaRiesgoTrabajo.ToString(System.Globalization.CultureInfo.InvariantCulture), "Prima de riesgo de trabajo IMSS.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.PrimaVacacionalMinima, configuracion.PrimaVacacionalMinima.ToString(System.Globalization.CultureInfo.InvariantCulture), "Prima vacacional mínima.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TipoCicloVacacional, configuracion.TipoCicloVacacional.ToString(), "Define si el ciclo vacacional se rige por aniversario o por corte anual de empresa.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FormaPagoPrimaVacacional, configuracion.FormaPagoPrimaVacacional.ToString(), "Define si la prima vacacional se paga al tomar vacaciones, anual o manual.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.PoliticaPrimerCicloVacacional, configuracion.PoliticaPrimerCicloVacacional.ToString(), "Define si el primer ciclo vacacional reconocido por corte entra completo o proporcional.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.MesInicioCicloVacacional, configuracion.MesInicioCicloVacacional.ToString(), "Mes de inicio del ciclo vacacional cuando la empresa usa corte fijo anual.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiaInicioCicloVacacional, configuracion.DiaInicioCicloVacacional.ToString(), "Día de inicio del ciclo vacacional cuando la empresa usa corte fijo anual.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.MesesMinimosPrimerAnioVacacional, configuracion.MesesMinimosPrimerAnioVacacional.ToString(), "Meses mínimos de antigüedad al corte para reconocer el año 1 vacacional.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.DiasAguinaldoMinimo, configuracion.DiasAguinaldoMinimo.ToString(), "Días mínimos de aguinaldo.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.TopeSbcEnUma, configuracion.TopeSbcEnUma.ToString(System.Globalization.CultureInfo.InvariantCulture), "Tope de SBC expresado en UMA.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.RetencionIsrHabilitada, configuracion.RetencionIsrHabilitada.ToString(), "Indica si la empresa retiene ISR en nómina.");
@@ -1072,6 +1269,7 @@
         await GuardarAsignacionesEsquemaPorPosicionAsync(db);
         await GuardarTiposPercepcionAsync(db);
         await GuardarTiposDeduccionAsync(db);
+        await GuardarConceptosNominaAsync(db);
 
         await db.SaveChangesAsync();
     }
@@ -1219,6 +1417,80 @@
                 continue;
 
             actual.BonoEstructuraRrhhId = posicion.BonoEstructuraRrhhId;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task GuardarConceptosNominaAsync(CrmDbContext db)
+    {
+        if (conceptosNominaEliminados.Count > 0)
+        {
+            var eliminados = await db.NominasConceptosConfigRrhh.Where(c => conceptosNominaEliminados.Contains(c.Id)).ToListAsync();
+            if (eliminados.Count > 0)
+                db.NominasConceptosConfigRrhh.RemoveRange(eliminados);
+        }
+
+        foreach (var concepto in conceptosNominaConfigurables)
+        {
+            if (concepto.Id == Guid.Empty)
+            {
+                db.NominasConceptosConfigRrhh.Add(new NominaConceptoConfigRrhh
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    Clave = concepto.Clave.Trim().ToUpperInvariant(),
+                    Nombre = concepto.Nombre.Trim(),
+                    Naturaleza = concepto.Naturaleza,
+                    Destino = concepto.Destino,
+                    TipoCalculo = concepto.TipoCalculo,
+                    MontoFijoDefault = concepto.MontoFijoDefault,
+                    PorcentajeDefault = concepto.PorcentajeDefault,
+                    CantidadDefault = concepto.CantidadDefault,
+                    TarifaDefault = concepto.TarifaDefault,
+                    Orden = concepto.Orden,
+                    EsRecurrente = concepto.EsRecurrente,
+                    AplicaPorEmpleado = concepto.AplicaPorEmpleado,
+                    AfectaNetoEmpleado = concepto.AfectaNetoEmpleado,
+                    AfectaCostoEmpresa = concepto.AfectaCostoEmpresa,
+                    AfectaPasivoSat = concepto.AfectaPasivoSat,
+                    AfectaPasivoImss = concepto.AfectaPasivoImss,
+                    AfectaProvision = concepto.AfectaProvision,
+                    AfectaBaseIsr = concepto.AfectaBaseIsr,
+                    AfectaBaseImss = concepto.AfectaBaseImss,
+                    EsLegal = concepto.EsLegal,
+                    Observaciones = string.IsNullOrWhiteSpace(concepto.Observaciones) ? null : concepto.Observaciones.Trim(),
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+                continue;
+            }
+
+            var actual = await db.NominasConceptosConfigRrhh.FirstOrDefaultAsync(c => c.Id == concepto.Id);
+            if (actual == null)
+                continue;
+
+            actual.Clave = concepto.Clave.Trim().ToUpperInvariant();
+            actual.Nombre = concepto.Nombre.Trim();
+            actual.Naturaleza = concepto.Naturaleza;
+            actual.Destino = concepto.Destino;
+            actual.TipoCalculo = concepto.TipoCalculo;
+            actual.MontoFijoDefault = concepto.MontoFijoDefault;
+            actual.PorcentajeDefault = concepto.PorcentajeDefault;
+            actual.CantidadDefault = concepto.CantidadDefault;
+            actual.TarifaDefault = concepto.TarifaDefault;
+            actual.Orden = concepto.Orden;
+            actual.EsRecurrente = concepto.EsRecurrente;
+            actual.AplicaPorEmpleado = concepto.AplicaPorEmpleado;
+            actual.AfectaNetoEmpleado = concepto.AfectaNetoEmpleado;
+            actual.AfectaCostoEmpresa = concepto.AfectaCostoEmpresa;
+            actual.AfectaPasivoSat = concepto.AfectaPasivoSat;
+            actual.AfectaPasivoImss = concepto.AfectaPasivoImss;
+            actual.AfectaProvision = concepto.AfectaProvision;
+            actual.AfectaBaseIsr = concepto.AfectaBaseIsr;
+            actual.AfectaBaseImss = concepto.AfectaBaseImss;
+            actual.EsLegal = concepto.EsLegal;
+            actual.Observaciones = string.IsNullOrWhiteSpace(concepto.Observaciones) ? null : concepto.Observaciones.Trim();
+            actual.IsActive = true;
             actual.UpdatedAt = DateTime.UtcNow;
         }
     }
@@ -1753,6 +2025,424 @@
             PrepararNuevoTipoDeduccion();
     }
 
+    private void PrepararNuevoConceptoNomina()
+    {
+        conceptoNominaEnCaptura = CrearConceptoNominaVacio();
+        error = ok = null;
+    }
+
+    private async Task CargarConceptosNominaBaseAsync()
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar la configuración de nómina.";
+            return;
+        }
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No hay empresa activa para cargar conceptos base.";
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existentes = await db.NominasConceptosConfigRrhh
+                .Where(c => c.EmpresaId == _empresaId)
+                .ToListAsync();
+
+            var conceptosBase = new[]
+            {
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "DESCUENTO_FIJO",
+                    Nombre = "Descuento fijo empleado",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Deduccion,
+                    Destino = DestinoConceptoNominaRrhh.Empleado,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 1,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = false,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = false,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = false,
+                    AfectaBaseImss = false,
+                    EsLegal = false,
+                    Observaciones = "Descuento fijo recurrente aplicado directo al neto del trabajador."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PRESTAMO_NOMINA",
+                    Nombre = "Préstamo nómina",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Deduccion,
+                    Destino = DestinoConceptoNominaRrhh.OtroTercero,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 2,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    EsLegal = false,
+                    Observaciones = "Descuento recurrente por préstamo o anticipo recuperable."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "CAJA_AHORRO",
+                    Nombre = "Caja de ahorro",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Deduccion,
+                    Destino = DestinoConceptoNominaRrhh.OtroTercero,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 3,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    EsLegal = false,
+                    Observaciones = "Aportación o retención recurrente de caja de ahorro."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PENSION_ALIMENTICIA",
+                    Nombre = "Pensión alimenticia",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Deduccion,
+                    Destino = DestinoConceptoNominaRrhh.OtroTercero,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.Porcentaje,
+                    Orden = 4,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    EsLegal = true,
+                    Observaciones = "Retención judicial o administrativa aplicada por porcentaje."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "IMSS_FIJO_OBRERO",
+                    Nombre = "IMSS fijo obrero",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion,
+                    Destino = DestinoConceptoNominaRrhh.Imss,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 5,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = false,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = true,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = false,
+                    AfectaBaseImss = false,
+                    EsLegal = false,
+                    Observaciones = "Ajuste fijo de IMSS obrero capturado por empleado."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "IMSS_FIJO_PATRONAL",
+                    Nombre = "IMSS fijo patronal",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion,
+                    Destino = DestinoConceptoNominaRrhh.Imss,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 6,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = false,
+                    AfectaCostoEmpresa = true,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = true,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = false,
+                    AfectaBaseImss = false,
+                    EsLegal = false,
+                    Observaciones = "Ajuste fijo de IMSS patronal capturado por empleado."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "ISR_FIJO",
+                    Nombre = "ISR fijo",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion,
+                    Destino = DestinoConceptoNominaRrhh.Sat,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 7,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = false,
+                    AfectaPasivoSat = true,
+                    AfectaPasivoImss = false,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = false,
+                    AfectaBaseImss = false,
+                    EsLegal = false,
+                    Observaciones = "Ajuste fijo de ISR capturado por empleado."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "AJUSTE_SEG_SOCIAL",
+                    Nombre = "Ajuste seguridad social",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion,
+                    Destino = DestinoConceptoNominaRrhh.Imss,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 8,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaPasivoImss = true,
+                    EsLegal = false,
+                    Observaciones = "Ajuste adicional separado del cálculo legal principal de IMSS."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PROV_AGUINALDO_EXTRA",
+                    Nombre = "Provisión aguinaldo extra",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Provision,
+                    Destino = DestinoConceptoNominaRrhh.Reserva,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 9,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaProvision = true,
+                    EsLegal = false,
+                    Observaciones = "Reserva adicional aparte de la provisión legal automática de aguinaldo."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PROV_VACACIONES_EXTRA",
+                    Nombre = "Provisión vacaciones extra",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Provision,
+                    Destino = DestinoConceptoNominaRrhh.Reserva,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 10,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaProvision = true,
+                    EsLegal = false,
+                    Observaciones = "Reserva adicional para vacaciones distinta al cálculo legal automático."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PROV_PRIMA_VAC_EXTRA",
+                    Nombre = "Provisión prima vacacional extra",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Provision,
+                    Destino = DestinoConceptoNominaRrhh.Reserva,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 11,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaProvision = true,
+                    EsLegal = false,
+                    Observaciones = "Reserva adicional para prima vacacional aparte de la legal automática."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PROV_PTU",
+                    Nombre = "Provisión PTU",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Provision,
+                    Destino = DestinoConceptoNominaRrhh.Reserva,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.Porcentaje,
+                    Orden = 12,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaProvision = true,
+                    EsLegal = true,
+                    Observaciones = "Reserva de PTU estimada por porcentaje o monto fijo."
+                }
+            };
+
+            foreach (var baseConcepto in conceptosBase)
+            {
+                var actual = existentes.FirstOrDefault(c => string.Equals(c.Clave, baseConcepto.Clave, StringComparison.OrdinalIgnoreCase));
+                if (actual == null)
+                {
+                    db.NominasConceptosConfigRrhh.Add(new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(),
+                        EmpresaId = _empresaId,
+                        Clave = baseConcepto.Clave,
+                        Nombre = baseConcepto.Nombre,
+                        Naturaleza = baseConcepto.Naturaleza,
+                        Destino = baseConcepto.Destino,
+                        TipoCalculo = baseConcepto.TipoCalculo,
+                        MontoFijoDefault = baseConcepto.MontoFijoDefault,
+                        PorcentajeDefault = baseConcepto.PorcentajeDefault,
+                        CantidadDefault = baseConcepto.CantidadDefault,
+                        TarifaDefault = baseConcepto.TarifaDefault,
+                        Orden = baseConcepto.Orden,
+                        EsRecurrente = baseConcepto.EsRecurrente,
+                        AplicaPorEmpleado = baseConcepto.AplicaPorEmpleado,
+                        AfectaNetoEmpleado = baseConcepto.AfectaNetoEmpleado,
+                        AfectaCostoEmpresa = baseConcepto.AfectaCostoEmpresa,
+                        AfectaPasivoSat = baseConcepto.AfectaPasivoSat,
+                        AfectaPasivoImss = baseConcepto.AfectaPasivoImss,
+                        AfectaProvision = baseConcepto.AfectaProvision,
+                        AfectaBaseIsr = baseConcepto.AfectaBaseIsr,
+                        AfectaBaseImss = baseConcepto.AfectaBaseImss,
+                        EsLegal = baseConcepto.EsLegal,
+                        Observaciones = baseConcepto.Observaciones,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                    continue;
+                }
+
+                actual.Nombre = baseConcepto.Nombre;
+                actual.Naturaleza = baseConcepto.Naturaleza;
+                actual.Destino = baseConcepto.Destino;
+                actual.TipoCalculo = baseConcepto.TipoCalculo;
+                actual.Orden = baseConcepto.Orden;
+                actual.EsRecurrente = baseConcepto.EsRecurrente;
+                actual.AplicaPorEmpleado = baseConcepto.AplicaPorEmpleado;
+                actual.AfectaNetoEmpleado = baseConcepto.AfectaNetoEmpleado;
+                actual.AfectaCostoEmpresa = baseConcepto.AfectaCostoEmpresa;
+                actual.AfectaPasivoSat = baseConcepto.AfectaPasivoSat;
+                actual.AfectaPasivoImss = baseConcepto.AfectaPasivoImss;
+                actual.AfectaProvision = baseConcepto.AfectaProvision;
+                actual.AfectaBaseIsr = baseConcepto.AfectaBaseIsr;
+                actual.AfectaBaseImss = baseConcepto.AfectaBaseImss;
+                actual.EsLegal = baseConcepto.EsLegal;
+                actual.Observaciones = baseConcepto.Observaciones;
+                actual.IsActive = true;
+                actual.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await CargarConfiguracionAsync();
+            ok = "Conceptos base de nómina cargados.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void AgregarOActualizarConceptoNomina()
+    {
+        if (string.IsNullOrWhiteSpace(conceptoNominaEnCaptura.Clave) || string.IsNullOrWhiteSpace(conceptoNominaEnCaptura.Nombre))
+        {
+            error = "La clave y el nombre del concepto configurable son requeridos.";
+            return;
+        }
+
+        var clave = conceptoNominaEnCaptura.Clave.Trim().ToUpperInvariant();
+        if (conceptosNominaConfigurables.Any(c => c.Id != conceptoNominaEnCaptura.Id && c.Clave == clave))
+        {
+            error = "Ya existe un concepto configurable con esa clave.";
+            return;
+        }
+
+        if (conceptoNominaEnCaptura.Id == Guid.Empty)
+        {
+            conceptosNominaConfigurables.Add(new NominaConceptoConfigRrhh
+            {
+                Id = Guid.Empty,
+                Clave = clave,
+                Nombre = conceptoNominaEnCaptura.Nombre.Trim(),
+                Naturaleza = conceptoNominaEnCaptura.Naturaleza,
+                Destino = conceptoNominaEnCaptura.Destino,
+                TipoCalculo = conceptoNominaEnCaptura.TipoCalculo,
+                MontoFijoDefault = conceptoNominaEnCaptura.MontoFijoDefault,
+                PorcentajeDefault = conceptoNominaEnCaptura.PorcentajeDefault,
+                CantidadDefault = conceptoNominaEnCaptura.CantidadDefault,
+                TarifaDefault = conceptoNominaEnCaptura.TarifaDefault,
+                Orden = conceptoNominaEnCaptura.Orden,
+                EsRecurrente = conceptoNominaEnCaptura.EsRecurrente,
+                AplicaPorEmpleado = conceptoNominaEnCaptura.AplicaPorEmpleado,
+                AfectaNetoEmpleado = conceptoNominaEnCaptura.AfectaNetoEmpleado,
+                AfectaCostoEmpresa = conceptoNominaEnCaptura.AfectaCostoEmpresa,
+                AfectaPasivoSat = conceptoNominaEnCaptura.AfectaPasivoSat,
+                AfectaPasivoImss = conceptoNominaEnCaptura.AfectaPasivoImss,
+                AfectaProvision = conceptoNominaEnCaptura.AfectaProvision,
+                AfectaBaseIsr = conceptoNominaEnCaptura.AfectaBaseIsr,
+                AfectaBaseImss = conceptoNominaEnCaptura.AfectaBaseImss,
+                EsLegal = conceptoNominaEnCaptura.EsLegal,
+                Observaciones = conceptoNominaEnCaptura.Observaciones?.Trim(),
+                IsActive = true
+            });
+        }
+        else
+        {
+            var actual = conceptosNominaConfigurables.FirstOrDefault(c => c.Id == conceptoNominaEnCaptura.Id);
+            if (actual == null)
+                return;
+
+            actual.Clave = clave;
+            actual.Nombre = conceptoNominaEnCaptura.Nombre.Trim();
+            actual.Naturaleza = conceptoNominaEnCaptura.Naturaleza;
+            actual.Destino = conceptoNominaEnCaptura.Destino;
+            actual.TipoCalculo = conceptoNominaEnCaptura.TipoCalculo;
+            actual.MontoFijoDefault = conceptoNominaEnCaptura.MontoFijoDefault;
+            actual.PorcentajeDefault = conceptoNominaEnCaptura.PorcentajeDefault;
+            actual.CantidadDefault = conceptoNominaEnCaptura.CantidadDefault;
+            actual.TarifaDefault = conceptoNominaEnCaptura.TarifaDefault;
+            actual.Orden = conceptoNominaEnCaptura.Orden;
+            actual.EsRecurrente = conceptoNominaEnCaptura.EsRecurrente;
+            actual.AplicaPorEmpleado = conceptoNominaEnCaptura.AplicaPorEmpleado;
+            actual.AfectaNetoEmpleado = conceptoNominaEnCaptura.AfectaNetoEmpleado;
+            actual.AfectaCostoEmpresa = conceptoNominaEnCaptura.AfectaCostoEmpresa;
+            actual.AfectaPasivoSat = conceptoNominaEnCaptura.AfectaPasivoSat;
+            actual.AfectaPasivoImss = conceptoNominaEnCaptura.AfectaPasivoImss;
+            actual.AfectaProvision = conceptoNominaEnCaptura.AfectaProvision;
+            actual.AfectaBaseIsr = conceptoNominaEnCaptura.AfectaBaseIsr;
+            actual.AfectaBaseImss = conceptoNominaEnCaptura.AfectaBaseImss;
+            actual.EsLegal = conceptoNominaEnCaptura.EsLegal;
+            actual.Observaciones = conceptoNominaEnCaptura.Observaciones?.Trim();
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+
+        conceptosNominaConfigurables = conceptosNominaConfigurables.OrderBy(c => c.Orden).ThenBy(c => c.Nombre).ToList();
+        PrepararNuevoConceptoNomina();
+    }
+
+    private void EditarConceptoNomina(NominaConceptoConfigRrhh concepto)
+        => conceptoNominaEnCaptura = new NominaConceptoConfigRrhh
+        {
+            Id = concepto.Id,
+            Clave = concepto.Clave,
+            Nombre = concepto.Nombre,
+            Naturaleza = concepto.Naturaleza,
+            Destino = concepto.Destino,
+            TipoCalculo = concepto.TipoCalculo,
+            MontoFijoDefault = concepto.MontoFijoDefault,
+            PorcentajeDefault = concepto.PorcentajeDefault,
+            CantidadDefault = concepto.CantidadDefault,
+            TarifaDefault = concepto.TarifaDefault,
+            Orden = concepto.Orden,
+            EsRecurrente = concepto.EsRecurrente,
+            AplicaPorEmpleado = concepto.AplicaPorEmpleado,
+            AfectaNetoEmpleado = concepto.AfectaNetoEmpleado,
+            AfectaCostoEmpresa = concepto.AfectaCostoEmpresa,
+            AfectaPasivoSat = concepto.AfectaPasivoSat,
+            AfectaPasivoImss = concepto.AfectaPasivoImss,
+            AfectaProvision = concepto.AfectaProvision,
+            AfectaBaseIsr = concepto.AfectaBaseIsr,
+            AfectaBaseImss = concepto.AfectaBaseImss,
+            EsLegal = concepto.EsLegal,
+            Observaciones = concepto.Observaciones,
+            IsActive = concepto.IsActive
+        };
+
+    private void EliminarConceptoNomina(NominaConceptoConfigRrhh concepto)
+    {
+        conceptosNominaConfigurables.RemoveAll(c => c == concepto || (concepto.Id != Guid.Empty && c.Id == concepto.Id));
+        if (concepto.Id != Guid.Empty)
+            conceptosNominaEliminados.Add(concepto.Id);
+
+        if (conceptoNominaEnCaptura.Id == concepto.Id)
+            PrepararNuevoConceptoNomina();
+    }
+
     private string ObtenerTextoFactorFestivo(FestivoRrhh festivo)
         => festivo.FactorPago > 0m
             ? festivo.FactorPago.ToString("0.##")
@@ -1780,6 +2470,19 @@
 
     private static DeduccionTipoRrhh CrearTipoDeduccionVacio()
         => new() { EsLegal = false, AfectaRecibo = true, Orden = 1, IsActive = true };
+
+    private static NominaConceptoConfigRrhh CrearConceptoNominaVacio()
+        => new()
+        {
+            Naturaleza = NaturalezaConceptoNominaRrhh.Provision,
+            Destino = DestinoConceptoNominaRrhh.Reserva,
+            TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+            EsRecurrente = true,
+            AplicaPorEmpleado = true,
+            AfectaProvision = true,
+            Orden = 1,
+            IsActive = true
+        };
 
     private static string ObtenerNombreDia(DayOfWeek dia)
         => dia switch

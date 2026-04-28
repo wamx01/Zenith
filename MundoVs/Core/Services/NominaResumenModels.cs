@@ -26,6 +26,12 @@ public class NominaResumenResult
     public decimal TotalHorasExtra { get; init; }
     public decimal TotalPercepcionesManuales { get; init; }
     public decimal TotalImssObrero { get; init; }
+    public decimal TotalIsr { get; init; }
+    public decimal TotalImssPatronal { get; init; }
+    public decimal TotalObligacionesTerceros { get; init; }
+    public decimal TotalAportacionesPatronales { get; init; }
+    public decimal TotalProvisiones { get; init; }
+    public decimal TotalCostoEmpresa { get; init; }
     public decimal TotalInfonavit { get; init; }
     public decimal TotalDeducciones { get; init; }
     public decimal TotalDescuentoMinutos { get; init; }

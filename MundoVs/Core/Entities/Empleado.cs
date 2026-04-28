@@ -49,6 +49,7 @@ public class Empleado
     public ICollection<RrhhAusencia> Ausencias { get; set; } = [];
     public ICollection<NominaDetalle> NominaDetalles { get; set; } = [];
     public ICollection<PrenominaDetalle> PrenominaDetalles { get; set; } = [];
+    public ICollection<EmpleadoConceptoRrhh> ConceptosNomina { get; set; } = [];
     public ICollection<EmpleadoEsquemaPago> EsquemasPago { get; set; } = [];
     public ICollection<ValeDestajo> ValesDestajo { get; set; } = [];
 }
