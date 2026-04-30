@@ -150,6 +150,12 @@
                                 <label class="form-label">Moneda</label>
                                 <InputText class="form-control" @bind-Value="facturaEditando.Moneda" />
                             </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <div class="form-check form-switch mb-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="aplicaIvaFactura" @bind-Value:after="ActualizarResumenDesdeNotasSeleccionadas" />
+                                    <label class="form-check-label">Aplica IVA</label>
+                                </div>
+                            </div>
                             <div class="col-md-3">
                                 <label class="form-label">Subtotal</label>
                                 <InputNumber class="form-control" @bind-Value="facturaEditando.Subtotal" />
@@ -275,6 +281,7 @@
     private string? clienteSeleccionado;
     private string? pedidoSeleccionado;
     private HashSet<Guid> notasEntregaSeleccionadasIds = [];
+    private bool aplicaIvaFactura;
     private Guid? facturaProcesandoId;
     private FacturacionConfiguracion configuracionFacturacion = new();
     private bool preseleccionAplicada;
@@ -369,6 +376,7 @@
             FormaPagoSat = configuracionFacturacion.FormaPagoContado,
             LugarExpedicionCp = configuracionFacturacion.LugarExpedicionCp
         };
+        aplicaIvaFactura = false;
         clienteSeleccionado = null;
         pedidoSeleccionado = null;
         notasEntregaSeleccionadasIds = [];
@@ -414,6 +422,7 @@
         clienteSeleccionado = factura.ClienteId.ToString();
         pedidoSeleccionado = factura.PedidoId?.ToString();
         notasEntregaSeleccionadasIds = factura.NotasEntregaRelacionadas.Select(r => r.NotaEntregaId).ToHashSet();
+        aplicaIvaFactura = factura.TotalImpuestosTrasladados > 0;
         if (notasEntregaSeleccionadasIds.Count == 0 && factura.NotaEntregaId.HasValue)
         {
             notasEntregaSeleccionadasIds.Add(factura.NotaEntregaId.Value);
@@ -726,8 +735,8 @@
             {
                 clienteSeleccionado = pedido.ClienteId.ToString();
                 facturaEditando.Subtotal = pedido.Subtotal;
-                facturaEditando.TotalImpuestosTrasladados = pedido.Impuestos;
-                facturaEditando.Total = pedido.Total;
+                facturaEditando.TotalImpuestosTrasladados = aplicaIvaFactura ? Math.Round(pedido.Subtotal * 0.16m, 2) : 0m;
+                facturaEditando.Total = Math.Round(facturaEditando.Subtotal + facturaEditando.TotalImpuestosTrasladados, 2);
                 facturaEditando.MetodoPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.MetodoPagoCredito : configuracionFacturacion.MetodoPagoContado;
                 facturaEditando.FormaPagoSat = pedido.TipoPrecio == TipoPrecioEnum.Credito ? configuracionFacturacion.FormaPagoCredito : configuracionFacturacion.FormaPagoContado;
                 facturaEditando.UsoCfdi ??= pedido.Cliente?.UsoCfdi;
@@ -762,6 +771,9 @@
         if (!notasSeleccionadas.Any())
         {
             facturaEditando.NotaEntregaId = null;
+            facturaEditando.Subtotal = 0m;
+            facturaEditando.TotalImpuestosTrasladados = 0m;
+            facturaEditando.Total = 0m;
             return;
         }
 
@@ -772,8 +784,8 @@
             : null;
         facturaEditando.NotaEntregaId = notasSeleccionadas.Count == 1 ? primerNota.Id : null;
         facturaEditando.Subtotal = notasSeleccionadas.Sum(n => n.Subtotal);
-        facturaEditando.TotalImpuestosTrasladados = notasSeleccionadas.Sum(n => n.Impuestos);
-        facturaEditando.Total = notasSeleccionadas.Sum(n => n.Total);
+        facturaEditando.TotalImpuestosTrasladados = aplicaIvaFactura ? Math.Round(facturaEditando.Subtotal * 0.16m, 2) : 0m;
+        facturaEditando.Total = Math.Round(facturaEditando.Subtotal + facturaEditando.TotalImpuestosTrasladados, 2);
         facturaEditando.Observaciones = notasSeleccionadas.Count == 1
             ? $"Nota de entrega {primerNota.NumeroNota}"
             : $"Notas de entrega: {string.Join(", ", notasSeleccionadas.Select(n => n.NumeroNota))}";

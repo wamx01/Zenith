@@ -1647,14 +1647,13 @@
 
     private decimal ObtenerPrecioContado()
     {
-        var precioSugerido = ObtenerPrecioSugerido();
-        return precioSugerido * 1.16m;
+        return ObtenerPrecioSugerido();
     }
 
     private decimal ObtenerPrecioCredito()
     {
         var precioSugerido = ObtenerPrecioSugerido();
-        return precioSugerido * 1.10m * 1.16m;
+        return precioSugerido * 1.10m;
     }
 
     private Task OnPorcentajeVarianteChanged(CotizacionVariantePrecioEditor precio)

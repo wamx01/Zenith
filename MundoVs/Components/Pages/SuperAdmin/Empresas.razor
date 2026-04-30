@@ -10,6 +10,7 @@
 @inject CodigoNegocioService CodigoNegocio
 @inject IAuthService AuthService
 @inject IAuditService AuditService
+@inject IModuloAccesoService ModuloAccesoService
 @inject ITenantFileStorageService TenantFileStorage
 @inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
@@ -705,7 +706,7 @@
                 await GuardarConfiguracionEmpresaAsync(db, empresa);
                 await GuardarModulosEmpresaAsync(db, empresa.Id);
                 await SeedRolesEmpresa(db, empresa.Id);
-                await AsegurarCapacidadesAdministradorAsync(db, empresa.Id);
+                await SincronizarCapacidadesAdministradorEmpresaAsync(db, empresa.Id);
 
                 if (EsNuevaEmpresa && crearAdmin)
                 {
@@ -751,7 +752,7 @@
                 await CodigoNegocio.EnsureCompanyShortCodeAsync(db, empresa);
                 await GuardarConfiguracionEmpresaAsync(db, empresa);
                 await GuardarModulosEmpresaAsync(db, empresa.Id);
-                await AsegurarCapacidadesAdministradorAsync(db, empresa.Id);
+                await SincronizarCapacidadesAdministradorEmpresaAsync(db, empresa.Id);
 
                 await AuditService.LogAsync("Editar empresa", nameof(Empresa), empresa.Id, $"Empresa {empresa.Codigo} actualizada. Estado: {empresa.Estado}. Plan: {planSeleccionado?.Nombre ?? "Sin plan"}.", empresa.Id);
             }
@@ -803,6 +804,7 @@
             }
 
             await transaction.CommitAsync();
+            ModuloAccesoService.InvalidarCacheEmpresa(empresa.Id);
 
             if (logoFile != null)
             {
@@ -867,7 +869,7 @@
                         Nombre = modulo.Nombre,
                         Descripcion = modulo.Descripcion,
                         Habilitado = EsModuloObligatorio(modulo.Clave)
-                            || (asignacion?.IsActive == true ? asignacion.Habilitado : true)
+                            || (asignacion?.IsActive == true && asignacion.Habilitado)
                     };
                 })
                 .ToList();
@@ -910,6 +912,63 @@
             asignacion.Origen = OrigenModuloEmpresa.Manual;
             asignacion.VigenteDesde = DateTime.UtcNow.Date;
             asignacion.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SincronizarCapacidadesAdministradorEmpresaAsync(MundoVs.Infrastructure.Data.CrmDbContext db, Guid empresaId)
+    {
+        var administrador = await db.TiposUsuario.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.EmpresaId == empresaId && t.Nombre == "Administrador");
+
+        if (administrador == null)
+            return;
+
+        var hoy = DateTime.UtcNow.Date;
+        var modulosHabilitadosIds = await db.EmpresasModulosAcceso.IgnoreQueryFilters()
+            .Where(m => m.EmpresaId == empresaId
+                && m.IsActive
+                && m.Habilitado
+                && m.VigenteDesde <= hoy
+                && (!m.VigenteHasta.HasValue || m.VigenteHasta.Value >= hoy))
+            .Select(m => m.ModuloAccesoId)
+            .ToListAsync();
+
+        var capacidadesDeseadas = await db.Capacidades.IgnoreQueryFilters()
+            .Where(c => !c.Clave.StartsWith("empresas.") && modulosHabilitadosIds.Contains(c.ModuloAccesoId))
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        var relacionesActuales = await db.TipoUsuarioCapacidades
+            .Where(tc => tc.TipoUsuarioId == administrador.Id)
+            .ToListAsync();
+
+        var actualesIds = relacionesActuales
+            .Select(tc => tc.CapacidadId)
+            .ToHashSet();
+
+        var deseadasIds = capacidadesDeseadas.ToHashSet();
+
+        var porEliminar = relacionesActuales
+            .Where(tc => !deseadasIds.Contains(tc.CapacidadId))
+            .ToList();
+
+        if (porEliminar.Count > 0)
+        {
+            db.TipoUsuarioCapacidades.RemoveRange(porEliminar);
+        }
+
+        foreach (var capacidadId in capacidadesDeseadas.Distinct())
+        {
+            if (!actualesIds.Add(capacidadId))
+                continue;
+
+            db.TipoUsuarioCapacidades.Add(new TipoUsuarioCapacidad
+            {
+                TipoUsuarioId = administrador.Id,
+                CapacidadId = capacidadId
+            });
         }
 
         await db.SaveChangesAsync();

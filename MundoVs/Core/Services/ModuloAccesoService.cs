@@ -68,6 +68,14 @@ public class ModuloAccesoService : IModuloAccesoService
         return modulos.Contains(moduloClave);
     }
 
+    public void InvalidarCacheEmpresa(Guid empresaId)
+    {
+        if (empresaId == Guid.Empty)
+            return;
+
+        _cache.Remove($"modulos-empresa:{empresaId}");
+    }
+
     public async Task<List<string>> FiltrarCapacidadesAsync(Guid empresaId, IEnumerable<string> capacidades, bool esSuperAdmin, CancellationToken cancellationToken = default)
     {
         var capacidadesSolicitadas = capacidades
