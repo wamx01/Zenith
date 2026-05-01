@@ -27,6 +27,7 @@
 - En el dominio del proyecto, 'fracción' en calzado es la distribución de pares por talla dentro de una docena o surtido. Variantes comunes: docena corrida, media docena, docena y media y surtido especial. Puede modelarse como una plantilla reutilizable para convertir docenas por modelo/color en cantidades por talla dentro de pedidos, inventario y producción.
 - En cotización de calzado se debe poder definir una talla base; las fracciones pueden ser plantillas reutilizables con pares/unidades por fracción y porcentaje de variación por talla. Al crear el pedido se debe indicar si aplica fracción y cuál, y la disponibilidad de tallas debe poder administrarse por cliente salvo que se marque explícitamente como configuración maestra.
 - Un pedido puede entregarse en parcialidades; cada parcialidad debe manejarse como una nota y puede generar su propia factura, por lo que la lógica no debe asumir facturación por pedido completo.
+- **Regla funcional**: no todas las notas de entrega se facturan, por lo que cuentas por cobrar y cobranza deben soportar notas de entrega como documento cobrable independiente.
 
 ## Inventory Module Guidelines
 - En el módulo de inventario, los usuarios prefieren acciones directas por cada fila para registrar entrada o salida del item, en lugar de un flujo separado más genérico.

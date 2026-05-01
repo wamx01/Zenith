@@ -3,7 +3,9 @@ namespace MundoVs.Core.Entities.Serigrafia;
 public class CotizacionDetalle : BaseEntity
 {
     public Guid CotizacionSerigrafiaId { get; set; }
+    public Guid? CotizacionSerigrafiaProcesoId { get; set; }
     public CotizacionCategoria Categoria { get; set; }
+    public CotizacionDetalleOrigen OrigenDetalle { get; set; } = CotizacionDetalleOrigen.Manual;
     public string Concepto { get; set; } = string.Empty;
     public int Orden { get; set; }
 
@@ -26,15 +28,24 @@ public class CotizacionDetalle : BaseEntity
     public Guid? InsumoId { get; set; }
     public Guid? PosicionId { get; set; }
     public Guid? TipoProcesoId { get; set; }
+    public Guid? TipoProcesoConsumoId { get; set; }
     public Guid? GastoFijoId { get; set; }
 
     // Navegación
     public CotizacionSerigrafia CotizacionSerigrafia { get; set; } = null!;
+    public CotizacionSerigrafiaProceso? CotizacionSerigrafiaProceso { get; set; }
     public MateriaPrima? MateriaPrima { get; set; }
     public Insumo? Insumo { get; set; }
     public Posicion? Posicion { get; set; }
     public TipoProceso? TipoProceso { get; set; }
+    public TipoProcesoConsumo? TipoProcesoConsumo { get; set; }
     public GastoFijo? GastoFijo { get; set; }
+}
+
+public enum CotizacionDetalleOrigen
+{
+    Manual = 1,
+    GeneradoPorProceso = 2
 }
 
 public enum CotizacionCategoria

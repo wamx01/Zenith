@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 using QuestPDF.Infrastructure;
+using MySqlConnector;
 using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -55,6 +56,7 @@ var cookieSecurePolicy = ParseCookieSecurePolicy(builder.Configuration["Auth:Coo
 var cookieSameSite = ParseSameSiteMode(builder.Configuration["Auth:SameSite"]);
 var useHttpsRedirection = builder.Configuration.GetValue("Auth:UseHttpsRedirection", true);
 var applyMigrationsOnStartup = builder.Configuration.GetValue("Database:ApplyMigrationsOnStartup", false);
+var connectionStringFromEnvironment = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ConnectionStrings__ZenithConnection"));
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -181,9 +183,11 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<CrmDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
 
+    LogDatabaseConnectionInfo(connectionString, connectionStringFromEnvironment, logger);
+
     if (applyMigrationsOnStartup)
     {
-        await db.Database.MigrateAsync();
+        await ApplyMigrationsAsync(db, logger);
     }
     else
     {
@@ -701,6 +705,99 @@ static string GetRequiredConnectionString(IConfiguration configuration)
         throw new InvalidOperationException("Connection string 'ZenithConnection' not configured. Use environment variables or local secrets.");
 
     return connectionString;
+}
+
+static void LogDatabaseConnectionInfo(string connectionString, bool fromEnvironment, ILogger logger)
+{
+    var builder = new MySqlConnectionStringBuilder(connectionString);
+    logger.LogInformation(
+        "Usando conexión MySQL. Source={Source}; Server={Server}; Port={Port}; Database={Database}; User={User}",
+        fromEnvironment ? "Environment" : "Configuration",
+        builder.Server,
+        builder.Port,
+        builder.Database,
+        builder.UserID);
+}
+
+static async Task ApplyMigrationsAsync(CrmDbContext db, ILogger logger, CancellationToken cancellationToken = default)
+{
+    try
+    {
+        await db.Database.MigrateAsync(cancellationToken);
+    }
+    catch (MySqlException ex)
+    {
+        if (!await TryBaselineInitialCreateAsync(db, logger, ex, cancellationToken))
+        {
+            throw;
+        }
+
+        logger.LogWarning("Se registró InitialCreate como línea base porque el esquema ya existía sin historial de migraciones. Reintentando migraciones pendientes.");
+        await db.Database.MigrateAsync(cancellationToken);
+    }
+}
+
+static async Task<bool> TryBaselineInitialCreateAsync(CrmDbContext db, ILogger logger, MySqlException exception, CancellationToken cancellationToken)
+{
+    if (!exception.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var pendingMigrations = await db.Database.GetPendingMigrationsAsync(cancellationToken);
+    var firstPendingMigration = pendingMigrations.FirstOrDefault();
+    if (!string.Equals(firstPendingMigration, "20260221063813_InitialCreate", StringComparison.Ordinal))
+    {
+        return false;
+    }
+
+    await using var connection = db.Database.GetDbConnection();
+    if (connection.State != System.Data.ConnectionState.Open)
+    {
+        await connection.OpenAsync(cancellationToken);
+    }
+
+    await using var historyExistsCommand = connection.CreateCommand();
+    historyExistsCommand.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '__EFMigrationsHistory';";
+    var historyResult = await historyExistsCommand.ExecuteScalarAsync(cancellationToken);
+    var historyCount = Convert.ToInt32(historyResult, CultureInfo.InvariantCulture);
+    var historyTableExists = historyCount > 0;
+
+    if (historyTableExists)
+    {
+        return false;
+    }
+
+    await using var clientesExistsCommand = connection.CreateCommand();
+    clientesExistsCommand.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('Clientes', 'clientes');";
+    var clientesResult = await clientesExistsCommand.ExecuteScalarAsync(cancellationToken);
+    var clientesCount = Convert.ToInt32(clientesResult, CultureInfo.InvariantCulture);
+    var clientesTableExists = clientesCount > 0;
+
+    if (!clientesTableExists)
+    {
+        return false;
+    }
+
+    await using (var createHistoryCommand = connection.CreateCommand())
+    {
+        createHistoryCommand.CommandText = @"CREATE TABLE IF NOT EXISTS `__EFMigrationsHistory` (
+    `MigrationId` varchar(150) NOT NULL,
+    `ProductVersion` varchar(32) NOT NULL,
+    CONSTRAINT `PK___EFMigrationsHistory` PRIMARY KEY (`MigrationId`)
+) CHARACTER SET=utf8mb4;";
+        await createHistoryCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    await using (var insertBaselineCommand = connection.CreateCommand())
+    {
+        insertBaselineCommand.CommandText = @"INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`)
+VALUES ('20260221063813_InitialCreate', '10.0.0');";
+        await insertBaselineCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    logger.LogWarning(exception, "Se detectó una base con tablas existentes pero sin historial de migraciones de EF Core.");
+    return true;
 }
 
 static bool IsJsonEndpoint(PathString path)

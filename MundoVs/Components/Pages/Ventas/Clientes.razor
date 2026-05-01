@@ -10,6 +10,7 @@
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Clientes</PageTitle>
@@ -463,7 +464,7 @@
                     <table class="table table-sm align-middle mb-0 cat-table">
                         <thead>
                             <tr>
-                                <th style="width:70px">Acciones</th>
+                                <th style="width:110px">Acciones</th>
                                 <th style="width:72px">Estado</th>
                                 <th>Código</th>
                                 <th>Razón Social</th>
@@ -480,11 +481,24 @@
                                 <tr class="@(!cliente.IsActive ? "cat-row-inactive" : string.Empty)">
                                     <td class="cat-actions">
                                         <button class="cat-btn-edit me-1" @onclick="async () => await EditarCliente(cliente)" title="Editar"><i class="bi bi-pencil"></i></button>
-                                        <button class="cat-btn-delete" @onclick="() => EliminarCliente(cliente)" title="Desactivar"><i class="bi bi-trash"></i></button>
+                                        @if (cliente.IsActive)
+                                        {
+                                            <button class="cat-btn-delete" @onclick="() => CambiarEstadoCliente(cliente, false)" title="Desactivar"><i class="bi bi-pause-circle"></i></button>
+                                        }
+                                        else
+                                        {
+                                            <button class="cat-btn-activate" @onclick="() => CambiarEstadoCliente(cliente, true)" title="Activar"><i class="bi bi-play-circle"></i></button>
+                                        }
                                     </td>
                                     <td><span class="@(cliente.IsActive ? "cat-badge-active" : "cat-badge-inactive")">@(cliente.IsActive ? "Activo" : "Inactivo")</span></td>
                                     <td class="fw-semibold text-primary-emphasis">@cliente.Codigo</td>
-                                    <td>@cliente.RazonSocial</td>
+                                    <td>
+                                        <div>@cliente.RazonSocial</div>
+                                        @if (!string.IsNullOrWhiteSpace(cliente.NombreComercial))
+                                        {
+                                            <div class="small text-muted">@cliente.NombreComercial</div>
+                                        }
+                                    </td>
                                     <td class="text-muted">@cliente.RfcCif</td>
                                     <td>@cliente.Email</td>
                                     <td>@cliente.Telefono</td>
@@ -525,11 +539,13 @@
     .cat-badge-active { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #d1e7dd; color: #146c43; border: 1px solid #a3cfbb; font-weight: 600; white-space: nowrap; }
     .cat-badge-inactive { font-size: 0.68rem; padding: 0.15rem 0.48rem; border-radius: 999px; background: #e9ecef; color: #6c757d; border: 1px solid #ced4da; font-weight: 600; white-space: nowrap; }
     .cat-actions { white-space: nowrap; }
-    .cat-btn-edit, .cat-btn-delete { background: transparent; border-radius: 4px; padding: 0.14rem 0.38rem; font-size: 0.73rem; line-height: 1; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .cat-btn-edit, .cat-btn-delete, .cat-btn-activate { background: transparent; border-radius: 4px; padding: 0.14rem 0.38rem; font-size: 0.73rem; line-height: 1; cursor: pointer; transition: background 0.15s, color 0.15s; }
     .cat-btn-edit { border: 1px solid #0d6efd; color: #0d6efd; }
     .cat-btn-edit:hover { background: #0d6efd; color: #fff; }
     .cat-btn-delete { border: 1px solid #dc3545; color: #dc3545; }
     .cat-btn-delete:hover { background: #dc3545; color: #fff; }
+    .cat-btn-activate { border: 1px solid #198754; color: #198754; }
+    .cat-btn-activate:hover { background: #198754; color: #fff; }
 </style>
 
 @code {
@@ -582,6 +598,7 @@
             consulta = consulta.Where(c =>
                 c.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
                 || c.RazonSocial.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (c.NombreComercial?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
                 || c.RfcCif.Contains(texto, StringComparison.OrdinalIgnoreCase)
                 || c.Email.Contains(texto, StringComparison.OrdinalIgnoreCase)
                 || (c.Ciudad?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
@@ -684,9 +701,18 @@
         CancelarEdicion();
     }
 
-    private async Task EliminarCliente(Cliente cliente)
+    private async Task CambiarEstadoCliente(Cliente cliente, bool activar)
     {
-        cliente.IsActive = false;
+        if (!activar)
+        {
+            var confirmado = await JS.InvokeAsync<bool>("confirm", $"¿Deseas desactivar al cliente '{cliente.RazonSocial}'?");
+            if (!confirmado)
+            {
+                return;
+            }
+        }
+
+        cliente.IsActive = activar;
         cliente.UpdatedAt = DateTime.UtcNow;
         await ClienteRepository.UpdateAsync(cliente);
         await CargarClientes();

@@ -95,466 +95,448 @@
 
                 @if (cotizacionEditando.Id != Guid.Empty)
                 {
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-white fw-bold" style="background:#1e3a5f">
-                            <i class="bi bi-diagram-3"></i> PROCESOS A USAR
-                        </div>
-                        <div class="card-body">
-                            @if (catalogoProcesos.Any())
-                            {
-                                <div class="row g-2">
-                                    @foreach (var proceso in catalogoProcesos)
+                    <div class="row g-3 mb-3">
+                        <div class="col-lg-8">
+                            <div class="card h-100 border-0 shadow-sm">
+                                <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center" style="background:#1e3a5f">
+                                    <span><i class="bi bi-diagram-3"></i> PROCESOS ESTÁNDAR</span>
+                                    <span class="badge bg-light text-primary">@procesosCotizacionAplicados.Count proceso(s)</span>
+                                </div>
+                                <div class="card-body">
+                                    @if (catalogoProcesos.Any())
                                     {
-                                        var selected = procesosSeleccionados.Contains(proceso.Id);
-                                        <div class="col-md-4">
-                                            <label class="d-flex align-items-start gap-2 border rounded p-2 h-100" style="cursor:pointer;background:@(selected ? "#eef4ff" : "#fff")">
-                                                <input type="checkbox"
-                                                       class="form-check-input mt-1"
-                                                       checked="@selected"
-                                                       @onchange="async (e) => await ToggleProcesoCotizacion(proceso.Id, e.Value)" />
-                                                <span>
-                                                    <strong>@proceso.Nombre</strong><br />
-                                                    <small class="text-muted">Posición: @(proceso.Posicion?.Nombre ?? "Sin posición") · Tarifa: @ObtenerTarifaPorMinuto(proceso).ToString("C4")/min</small>
-                                                </span>
-                                            </label>
+                                        <div class="row g-2">
+                                            @foreach (var proceso in catalogoProcesos)
+                                            {
+                                                var selected = procesosSeleccionados.Contains(proceso.Id);
+                                                <div class="col-md-6 col-xl-4">
+                                                    <label class="d-flex align-items-start gap-2 border rounded p-2 h-100" style="cursor:pointer;background:@(selected ? "#eef4ff" : "#fff")">
+                                                        <input type="checkbox"
+                                                               class="form-check-input mt-1"
+                                                               checked="@selected"
+                                                               @onchange="async (e) => await ToggleProcesoCotizacion(proceso.Id, e.Value)" />
+                                                        <span>
+                                                            <strong>@proceso.Nombre</strong><br />
+                                                            <small class="text-muted">Posición: @(proceso.Posicion?.Nombre ?? "Sin posición") · Tarifa: @ObtenerTarifaPorMinuto(proceso).ToString("C4")/min</small><br />
+                                                            <small class="text-muted">Min. est: @proceso.MinutosEstandar.ToString("N2") · Consumos: @proceso.ConsumosEstandar.Count(c => c.IsActive && c.Activo)</small>
+                                                        </span>
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-light mb-0">No hay procesos activos configurados.</div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card h-100 border-0 shadow-sm procesos-aplicados-card">
+                                <div class="card-header fw-bold" style="background:#eef2ff;color:#1e3a5f">
+                                    <i class="bi bi-sliders2"></i> Aplicados en cotización
+                                </div>
+                                <div class="card-body">
+                                    @if (!procesosCotizacionAplicados.Any())
+                                    {
+                                        <div class="text-muted small">Selecciona un proceso para calcular tiempo y consumos estándar.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="vstack gap-2">
+                                            @foreach (var procesoAplicado in procesosCotizacionAplicados.OrderBy(p => p.Orden).ThenBy(p => p.TipoProceso?.Nombre))
+                                            {
+                                                var nombreProceso = procesoAplicado.TipoProceso?.Nombre ?? "Proceso";
+                                                var consumosLigados = procesoAplicado.TipoProceso?.ConsumosEstandar.Count(c => c.IsActive && c.Activo) ?? 0;
+                                                <div class="proceso-aplicado-item">
+                                                    <div class="proceso-aplicado-head">
+                                                        <div>
+                                                            <div class="proceso-aplicado-label">Proceso aplicado</div>
+                                                            <div class="proceso-aplicado-title">@nombreProceso</div>
+                                                            <div class="small text-muted">Posición: @(procesoAplicado.TipoProceso?.Posicion?.Nombre ?? "Sin posición")</div>
+                                                        </div>
+                                                        <div class="proceso-aplicado-multiplier">
+                                                            <label class="form-label small mb-1">Multiplicador de @nombreProceso</label>
+                                                            <InputNumber class="form-control form-control-sm text-end" @bind-Value="procesoAplicado.Multiplicador" @bind-Value:after="() => ActualizarMultiplicadorProcesoAsync(procesoAplicado)" />
+                                                            <div class="small text-muted mt-1">1 = una vez, 2 = doble, 3 = triple</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="proceso-aplicado-kpis">
+                                                        <div class="proceso-aplicado-kpi">
+                                                            <span>Base</span>
+                                                            <strong>@procesoAplicado.MinutosEstandarAplicados.ToString("N2") min</strong>
+                                                        </div>
+                                                        <div class="proceso-aplicado-kpi">
+                                                            <span>Total</span>
+                                                            <strong>@procesoAplicado.TiempoTotal.ToString("N2") min</strong>
+                                                        </div>
+                                                        <div class="proceso-aplicado-kpi">
+                                                            <span>Consumos</span>
+                                                            <strong>@consumosLigados</strong>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
                                         </div>
                                     }
                                 </div>
-                            }
-                            else
-                            {
-                                <div class="alert alert-light mb-0">No hay procesos activos configurados.</div>
-                            }
+                            </div>
                         </div>
                     </div>
                 }
 
                 @if (cotizacionEditando.Id != Guid.Empty)
                 {
-                    <!-- ========== TINTAS ========== -->
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-white fw-bold" style="background:#8B008B">
-                            <i class="bi bi-droplet-fill"></i> TINTAS
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:30%">Concepto</th>
-                                        <th style="width:15%">Consumo</th>
-                                        <th style="width:15%">Precio Unit.</th>
-                                        <th style="width:15%">Costo</th>
-                                        <th style="width:15%">Peso Ini/Fin</th>
-                                        <th style="width:10%"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var d in ObtenerDetalles(CotizacionCategoria.Tinta))
-                                    {
-                                        <tr>
-                                            <td>@d.Concepto</td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Consumo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PrecioUnitario" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td class="text-end fw-bold">$@d.Costo.ToString("N4")</td>
-                                            <td>
-                                                <div class="d-flex gap-1">
-                                                    <input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PesoInicial" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" />
-                                                    <input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PesoFinal" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" />
-                                                </div>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDetalle(d)"><i class="bi bi-trash"></i></button></td>
-                                        </tr>
-                                    }
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="6">
-                                            <div class="d-flex gap-2">
-                                                <select class="form-select form-select-sm" @bind="selectedTintaId">
-                                                    <option value="">Seleccionar tinta...</option>
-                                                    @if (catalogoMP != null)
-                                                    {
-                                                        @foreach (var mp in catalogoMP)
-                                                        {
-                                                            <option value="@mp.Id">@mp.Nombre — $@mp.PrecioUnitario.ToString("N4")/@mp.UnidadMedida</option>
-                                                        }
-                                                    }
-                                                </select>
-                                                <button class="btn btn-sm btn-success" @onclick="AgregarTinta">
-                                                    <i class="bi bi-plus"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <tr class="fw-bold" style="background:#f0e0f0">
-                                        <td colspan="3" class="text-end">TOTAL TINTAS:</td>
-                                        <td>$@cotizacionEditando.TotalTintas.ToString("N2")</td>
-                                        <td colspan="2"></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- ========== INSUMOS BÁSICOS ========== -->
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-white fw-bold" style="background:#2E8B57">
-                            <i class="bi bi-box-seam"></i> INSUMOS BÁSICOS
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:40%">Concepto</th>
-                                        <th style="width:20%">Consumo</th>
-                                        <th style="width:20%">Precio Unit.</th>
-                                        <th style="width:20%">Costo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var d in ObtenerDetalles(CotizacionCategoria.InsumoBasico))
-                                    {
-                                        <tr>
-                                            <td>@d.Concepto</td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Consumo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PrecioUnitario" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td class="text-end fw-bold">$@d.Costo.ToString("N4")</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="4">
-                                            <div class="d-flex gap-2">
-                                                <select class="form-select form-select-sm" @bind="selectedInsBasicoId">
-                                                    <option value="">Seleccionar insumo básico...</option>
-                                                    @if (catalogoInsBasicos != null)
-                                                    {
-                                                        @foreach (var ins in catalogoInsBasicos)
-                                                        {
-                                                            <option value="@ins.Id">@ins.Nombre — $@ins.PrecioUnitario.ToString("N2")/@ins.UnidadMedida</option>
-                                                        }
-                                                    }
-                                                </select>
-                                                <button class="btn btn-sm btn-success" @onclick="() => AgregarInsumo(TipoInsumoEnum.Basico)">
-                                                    <i class="bi bi-plus"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <tr class="fw-bold" style="background:#e0f5e0">
-                                        <td colspan="3" class="text-end">TOTAL INSUMOS BÁSICOS:</td>
-                                        <td>$@cotizacionEditando.TotalInsumosBasicos.ToString("N2")</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- ========== INSUMOS DIVERSOS ========== -->
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-white fw-bold" style="background:#4169E1">
-                            <i class="bi bi-tools"></i> INSUMOS DIVERSOS
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:40%">Concepto</th>
-                                        <th style="width:20%">Consumo</th>
-                                        <th style="width:20%">Precio Unit.</th>
-                                        <th style="width:20%">Costo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var d in ObtenerDetalles(CotizacionCategoria.InsumoDiverso))
-                                    {
-                                        <tr>
-                                            <td>@d.Concepto</td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Consumo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PrecioUnitario" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td class="text-end fw-bold">$@d.Costo.ToString("N4")</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="4">
-                                            <div class="d-flex gap-2">
-                                                <select class="form-select form-select-sm" @bind="selectedInsDiversoId">
-                                                    <option value="">Seleccionar insumo diverso...</option>
-                                                    @if (catalogoInsDiversos != null)
-                                                    {
-                                                        @foreach (var ins in catalogoInsDiversos)
-                                                        {
-                                                            <option value="@ins.Id">@ins.Nombre — $@ins.PrecioUnitario.ToString("N2")/@ins.UnidadMedida</option>
-                                                        }
-                                                    }
-                                                </select>
-                                                <button class="btn btn-sm btn-success" @onclick="() => AgregarInsumo(TipoInsumoEnum.Diverso)">
-                                                    <i class="bi bi-plus"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <tr class="fw-bold" style="background:#e0e8f5">
-                                        <td colspan="3" class="text-end">TOTAL INSUMOS DIVERSOS:</td>
-                                        <td>$@cotizacionEditando.TotalInsumosDiversos.ToString("N2")</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- ========== MANO DE OBRA ========== -->
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-dark fw-bold" style="background:#FFD700">
-                            <i class="bi bi-person-workspace"></i> MANO DE OBRA
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:22%">Proceso</th>
-                                        <th style="width:22%">Posición</th>
-                                        <th style="width:16%">Tiempo (min)</th>
-                                        <th style="width:14%">Precio/Min</th>
-                                        <th style="width:12%">Ganancia %</th>
-                                        <th style="width:10%">Costo</th>
-                                        <th style="width:4%"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var d in ObtenerDetalles(CotizacionCategoria.ManoObra))
-                                    {
-                                        <tr>
-                                            <td>
-                                                <strong>@ObtenerNombreProceso(d)</strong>
-                                                @if (!string.Equals(d.Concepto, ObtenerNombreProceso(d), StringComparison.OrdinalIgnoreCase))
+                    <div class="row g-3 align-items-start">
+                        <div class="col-xl-8">
+                            <div class="card mb-3 border-0 shadow-sm">
+                                <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center" style="background:#34507a">
+                                    <span><i class="bi bi-box-seam me-1"></i> MATERIALES</span>
+                                    <span class="badge bg-light text-primary">@ObtenerTotalMateriales().ToString("C2")</span>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-bordered mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width:18%">Grupo</th>
+                                                    <th style="width:26%">Concepto</th>
+                                                    <th style="width:16%">Consumo</th>
+                                                    <th style="width:16%">Precio Unit.</th>
+                                                    <th style="width:14%">Costo</th>
+                                                    <th style="width:10%"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var d in ObtenerDetallesMateriales())
                                                 {
-                                                    <div><small class="text-muted">@d.Concepto</small></div>
+                                                    <tr>
+                                                        <td>
+                                                            <div class="fw-semibold">@ObtenerEtiquetaGrupoMaterial(d)</div>
+                                                            <span class="badge @(d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso ? "bg-primary-subtle text-primary-emphasis" : "bg-light text-dark border")">@(d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso ? "Auto" : "Manual")</span>
+                                                        </td>
+                                                        <td>
+                                                            <div>@d.Concepto</div>
+                                                            <div class="small text-muted">@ObtenerOrigenProcesoMaterial(d)</div>
+                                                        </td>
+                                                        <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Consumo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
+                                                        <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.PrecioUnitario" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
+                                                        <td class="text-end fw-bold">$@d.Costo.ToString("N4")</td>
+                                                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDetalle(d)"><i class="bi bi-trash"></i></button></td>
+                                                    </tr>
                                                 }
-                                            </td>
-                                            <td>@ObtenerNombreActividad(d)</td>
-                                            <td><input type="number" step="0.01" class="form-control form-control-sm" @bind="d.Tiempo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Precio" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td><input type="number" step="0.01" class="form-control form-control-sm" value="@ObtenerGananciaManoObra(d).ToString("N2")" readonly /></td>
-                                            <td class="text-end fw-bold">$@d.Costo.ToString("N2")</td>
-                                            <td class="text-center text-muted">Auto</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="7">
-                                            <small class="text-muted">La mano de obra se genera automáticamente desde los procesos seleccionados. Puedes ajustar el <strong>precio/min</strong> solo para esta cotización; la ganancia se calcula contra la tarifa original.</small>
-                                        </td>
-                                    </tr>
-                                    <tr class="fw-bold" style="background:#fff3cd">
-                                        <td colspan="5" class="text-end">TOTAL MANO DE OBRA:</td>
-                                        <td>$@cotizacionEditando.TotalManoObra.ToString("N2")</td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
+                                            </tbody>
+                                            <tfoot>
+                                                <tr>
+                                                    <td colspan="6">
+                                                        <div class="row g-2">
+                                                            <div class="col-lg-4">
+                                                                <label class="form-label small mb-1">Agregar materia prima</label>
+                                                                <div class="d-flex gap-2">
+                                                                    <select class="form-select form-select-sm" @bind="selectedTintaId">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        @if (catalogoMP != null)
+                                                                        {
+                                                                            @foreach (var mp in catalogoMP)
+                                                                            {
+                                                                                <option value="@mp.Id">@mp.Nombre — $@mp.PrecioUnitario.ToString("N4")/@mp.UnidadMedida</option>
+                                                                            }
+                                                                        }
+                                                                    </select>
+                                                                    <button class="btn btn-sm btn-success" @onclick="AgregarTinta"><i class="bi bi-plus"></i></button>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-lg-4">
+                                                                <label class="form-label small mb-1">Agregar insumo básico</label>
+                                                                <div class="d-flex gap-2">
+                                                                    <select class="form-select form-select-sm" @bind="selectedInsBasicoId">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        @if (catalogoInsBasicos != null)
+                                                                        {
+                                                                            @foreach (var ins in catalogoInsBasicos)
+                                                                            {
+                                                                                <option value="@ins.Id">@ins.Nombre — $@ins.PrecioUnitario.ToString("N2")/@ins.UnidadMedida</option>
+                                                                            }
+                                                                        }
+                                                                    </select>
+                                                                    <button class="btn btn-sm btn-success" @onclick="() => AgregarInsumo(TipoInsumoEnum.Basico)"><i class="bi bi-plus"></i></button>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-lg-4">
+                                                                <label class="form-label small mb-1">Agregar insumo diverso</label>
+                                                                <div class="d-flex gap-2">
+                                                                    <select class="form-select form-select-sm" @bind="selectedInsDiversoId">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        @if (catalogoInsDiversos != null)
+                                                                        {
+                                                                            @foreach (var ins in catalogoInsDiversos)
+                                                                            {
+                                                                                <option value="@ins.Id">@ins.Nombre — $@ins.PrecioUnitario.ToString("N2")/@ins.UnidadMedida</option>
+                                                                            }
+                                                                        }
+                                                                    </select>
+                                                                    <button class="btn btn-sm btn-success" @onclick="() => AgregarInsumo(TipoInsumoEnum.Diverso)"><i class="bi bi-plus"></i></button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <tr class="fw-bold" style="background:#e8eef8">
+                                                    <td colspan="4" class="text-end">TOTAL MATERIALES:</td>
+                                                    <td>$@ObtenerTotalMateriales().ToString("N2")</td>
+                                                    <td></td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
 
-                    <!-- ========== GASTOS FIJOS ========== -->
-                    <div class="card mb-3 border-0">
-                        <div class="card-header text-white fw-bold" style="background:#696969">
-                            <i class="bi bi-building"></i> GASTOS FIJOS
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="width:40%">Concepto</th>
-                                        <th style="width:20%">Tiempo (min)</th>
-                                        <th style="width:20%">Precio/Min</th>
-                                        <th style="width:15%">Costo</th>
-                                        <th style="width:5%"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var d in ObtenerDetalles(CotizacionCategoria.GastoFijo))
-                                    {
-                                        <tr>
-                                            <td>@d.Concepto</td>
-                                            <td><input type="number" step="0.01" class="form-control form-control-sm" value="@ObtenerTiempoManoObraTotal()" readonly /></td>
-                                            <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Precio" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
-                                            <td class="text-end fw-bold">$@d.Costo.ToString("N2")</td>
-                                            <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDetalle(d)"><i class="bi bi-trash"></i></button></td>
-                                        </tr>
-                                    }
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="5">
-                                            <div class="d-flex gap-2">
-                                                <select class="form-select form-select-sm" @bind="selectedGastoFijoId">
-                                                    <option value="">Seleccionar gasto fijo...</option>
-                                                    @if (catalogoGastosFijos != null)
-                                                    {
-                                                        @foreach (var gf in catalogoGastosFijos)
+                            <div class="card mb-3 border-0 shadow-sm">
+                                <div class="card-header text-dark fw-bold" style="background:#FFD700">
+                                    <i class="bi bi-person-workspace"></i> MANO DE OBRA
+                                </div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width:22%">Proceso</th>
+                                                <th style="width:22%">Posición</th>
+                                                <th style="width:16%">Tiempo (min)</th>
+                                                <th style="width:14%">Precio/Min</th>
+                                                <th style="width:12%">Ganancia %</th>
+                                                <th style="width:10%">Costo</th>
+                                                <th style="width:4%"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var d in ObtenerDetalles(CotizacionCategoria.ManoObra))
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <strong>@ObtenerNombreProceso(d)</strong>
+                                                        @if (!string.Equals(d.Concepto, ObtenerNombreProceso(d), StringComparison.OrdinalIgnoreCase))
                                                         {
-                                                            <option value="@gf.Id">@gf.Concepto — $@gf.CostoMensual.ToString("N2")/mes</option>
+                                                            <div><small class="text-muted">@d.Concepto</small></div>
                                                         }
-                                                    }
-                                                </select>
-                                                <button class="btn btn-sm btn-success" @onclick="AgregarGastoFijo">
-                                                    <i class="bi bi-plus"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <tr class="fw-bold" style="background:#e0e0e0">
-                                        <td colspan="4" class="text-end">TOTAL GASTOS FIJOS:</td>
-                                        <td>$@cotizacionEditando.TotalGastosFijos.ToString("N2")</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
+                                                    </td>
+                                                    <td>@ObtenerNombreActividad(d)</td>
+                                                    <td><input type="number" step="0.01" class="form-control form-control-sm" @bind="d.Tiempo" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
+                                                    <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Precio" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
+                                                    <td><input type="number" step="0.01" class="form-control form-control-sm" value="@ObtenerGananciaManoObra(d).ToString("N2")" readonly /></td>
+                                                    <td class="text-end fw-bold">$@d.Costo.ToString("N2")</td>
+                                                    <td class="text-center">
+                                                        <span class="badge @(d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso ? "bg-primary-subtle text-primary-emphasis" : "bg-light text-dark border")">@(d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso ? "Auto" : "Manual")</span>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td colspan="7">
+                                                    <small class="text-muted">La mano de obra se genera automáticamente desde los procesos seleccionados. Puedes ajustar el <strong>precio/min</strong> solo para esta cotización; la ganancia se calcula contra la tarifa original.</small>
+                                                </td>
+                                            </tr>
+                                            <tr class="fw-bold" style="background:#fff3cd">
+                                                <td colspan="5" class="text-end">TOTAL MANO DE OBRA:</td>
+                                                <td>$@cotizacionEditando.TotalManoObra.ToString("N2")</td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
 
-                    <!-- ========== RESUMEN ========== -->
-                    <div class="card border-0 shadow">
-                        <div class="card-header bg-success text-white fw-bold">
-                            <i class="bi bi-bar-chart-fill"></i> RESUMEN DE COSTOS
+                            <div class="card mb-3 border-0 shadow-sm">
+                                <div class="card-header text-white fw-bold" style="background:#696969">
+                                    <i class="bi bi-building"></i> GASTOS FIJOS
+                                </div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width:40%">Concepto</th>
+                                                <th style="width:20%">Tiempo (min)</th>
+                                                <th style="width:20%">Precio/Min</th>
+                                                <th style="width:15%">Costo</th>
+                                                <th style="width:5%"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var d in ObtenerDetalles(CotizacionCategoria.GastoFijo))
+                                            {
+                                                <tr>
+                                                    <td>@d.Concepto</td>
+                                                    <td><input type="number" step="0.01" class="form-control form-control-sm" value="@ObtenerTiempoManoObraTotal()" readonly /></td>
+                                                    <td><input type="number" step="0.0001" class="form-control form-control-sm" @bind="d.Precio" @bind:event="onchange" @onblur="() => GuardarDetalle(d)" /></td>
+                                                    <td class="text-end fw-bold">$@d.Costo.ToString("N2")</td>
+                                                    <td><button class="btn btn-sm btn-outline-danger" @onclick="() => EliminarDetalle(d)"><i class="bi bi-trash"></i></button></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td colspan="5">
+                                                    <div class="d-flex gap-2">
+                                                        <select class="form-select form-select-sm" @bind="selectedGastoFijoId">
+                                                            <option value="">Seleccionar gasto fijo...</option>
+                                                            @if (catalogoGastosFijos != null)
+                                                            {
+                                                                @foreach (var gf in catalogoGastosFijos)
+                                                                {
+                                                                    <option value="@gf.Id">@gf.Concepto — $@gf.CostoMensual.ToString("N2")/mes</option>
+                                                                }
+                                                            }
+                                                        </select>
+                                                        <button class="btn btn-sm btn-success" @onclick="AgregarGastoFijo">
+                                                            <i class="bi bi-plus"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr class="fw-bold" style="background:#e0e0e0">
+                                                <td colspan="4" class="text-end">TOTAL GASTOS FIJOS:</td>
+                                                <td>$@cotizacionEditando.TotalGastosFijos.ToString("N2")</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            <div class="row g-3">
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#f0e0f0">
-                                        <small class="text-muted">Tintas</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.TotalTintas.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#e0f5e0">
-                                        <small class="text-muted">Insumos Básicos</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.TotalInsumosBasicos.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#e0e8f5">
-                                        <small class="text-muted">Insumos Diversos</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.TotalInsumosDiversos.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#fff3cd">
-                                        <small class="text-muted">Mano de Obra</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.TotalManoObra.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#e0e0e0">
-                                        <small class="text-muted">Gastos Fijos</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.TotalGastosFijos.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <div class="card text-center p-2" style="background:#d6efe3">
-                                        <small class="text-muted">Costo Base</small>
-                                        <h5 class="mb-0">$@cotizacionEditando.CostoTotal.ToString("N2")</h5>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row g-3 mt-2">
-                                <div class="col-md-3">
-                                    <div class="card text-center p-2" style="background:#f1f5f9">
-                                        <small class="text-muted">Costo por Par</small>
-                                        <h5 class="mb-0">$@ObtenerCostoUnitarioBase().ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="card text-center p-2" style="background:#eaf7ff">
-                                        <small class="text-muted">Precio Sugerido</small>
-                                        <h5 class="mb-0">$@ObtenerPrecioSugerido().ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="card text-center p-2" style="background:#f1f5f9">
-                                        <small class="text-muted">Utilidad (@cotizacionEditando.Utilidad.ToString("N2")%)</small>
-                                        <h5 class="mb-0">$@ObtenerUtilidadMonto().ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-3">
-                                    <div class="card text-center p-2 bg-success text-white">
-                                        <small>Precio Contado</small>
-                                        <h4 class="mb-0">$@ObtenerPrecioContado().ToString("N2")</h4>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row g-3 mt-2">
-                                <div class="col-md-6">
-                                    <div class="card text-center p-2" style="background:#e8f2ff">
-                                        <small class="text-muted">Precio Crédito</small>
-                                        <h5 class="mb-0">$@ObtenerPrecioCredito().ToString("N2")</h5>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="card text-center p-2 bg-success text-white">
-                                        <small>Costo por Tarea</small>
-                                        <h4 class="mb-0">$@ObtenerCostoTarea().ToString("N2")</h4>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="card mt-3 border-0" style="background:#f8fafc">
-                                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2" style="background:#eef2ff">
-                                    <strong>Precios por variante</strong>
-                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="RegenerarPreciosVariantesAsync" disabled="@(cotizacionEditando.ClienteId == null || cotizacionEditando.ProductoId == Guid.Empty)">
-                                        <i class="bi bi-magic me-1"></i>Aplicar sugerencias
-                                    </button>
+
+                        <div class="col-xl-4">
+                            <div class="card border-0 shadow resumen-cotizacion-sticky">
+                                <div class="card-header bg-success text-white fw-bold">
+                                    <i class="bi bi-bar-chart-fill"></i> RESUMEN DE COSTOS
                                 </div>
                                 <div class="card-body">
-                                    <div class="small text-muted mb-2">La cotización define el precio final. Las reglas del cliente sólo proponen porcentajes sugeridos por dimensión y valor.</div>
-                                    @if (!preciosVariantesEditando.Any())
-                                    {
-                                        <div class="text-muted small">No hay precios por variante generados todavía.</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="table-responsive">
-                                            <table class="table table-sm align-middle mb-0">
-                                                <thead class="table-light">
-                                                    <tr>
-                                                        <th>Variante</th>
-                                                        <th class="text-end">% aplicado</th>
-                                                        <th class="text-end">Contado</th>
-                                                        <th class="text-end">Crédito</th>
-                                                        <th class="text-center">Aceptada</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach (var precio in preciosVariantesEditando.OrderBy(p => p.Orden).ThenBy(p => p.Etiqueta))
-                                                    {
-                                                        <tr>
-                                                            <td>
-                                                                <div class="fw-semibold">@precio.Etiqueta</div>
-                                                                @if (!string.IsNullOrWhiteSpace(precio.Sku))
-                                                                {
-                                                                    <div class="text-muted small">@precio.Sku</div>
-                                                                }
-                                                            </td>
-                                                            <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PorcentajeVariacionAplicado" @bind-Value:after="() => OnPorcentajeVarianteChanged(precio)" /></td>
-                                                            <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PrecioContado" @bind-Value:after="() => OnPrecioVarianteChanged(precio)" /></td>
-                                                            <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PrecioCredito" @bind-Value:after="() => OnPrecioVarianteChanged(precio)" /></td>
-                                                            <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="precio.Aceptada" /></td>
-                                                        </tr>
-                                                    }
-                                                </tbody>
-                                            </table>
+                                    <div class="row g-3">
+                                        <div class="col-md-6 col-xl-12">
+                                            <div class="card text-center p-2" style="background:#e8eef8">
+                                                <small class="text-muted">Materiales</small>
+                                                <h5 class="mb-0">$@ObtenerTotalMateriales().ToString("N2")</h5>
+                                            </div>
                                         </div>
-                                    }
+                                        <div class="col-md-6 col-xl-12">
+                                            <div class="card text-center p-2" style="background:#fff3cd">
+                                                <small class="text-muted">Mano de Obra</small>
+                                                <h5 class="mb-0">$@cotizacionEditando.TotalManoObra.ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 col-xl-12">
+                                            <div class="card text-center p-2" style="background:#e0e0e0">
+                                                <small class="text-muted">Gastos Fijos</small>
+                                                <h5 class="mb-0">$@cotizacionEditando.TotalGastosFijos.ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6 col-xl-12">
+                                            <div class="card text-center p-2" style="background:#d6efe3">
+                                                <small class="text-muted">Costo Base</small>
+                                                <h5 class="mb-0">$@cotizacionEditando.CostoTotal.ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-2">
+                                        <div class="col-6">
+                                            <div class="card text-center p-2" style="background:#f1f5f9">
+                                                <small class="text-muted">Costo por Par</small>
+                                                <h5 class="mb-0">$@ObtenerCostoUnitarioBase().ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="card text-center p-2" style="background:#eaf7ff">
+                                                <small class="text-muted">Precio Sugerido</small>
+                                                <h5 class="mb-0">$@ObtenerPrecioSugerido().ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="card text-center p-2" style="background:#f1f5f9">
+                                                <small class="text-muted">Utilidad (@cotizacionEditando.Utilidad.ToString("N2")%)</small>
+                                                <h5 class="mb-0">$@ObtenerUtilidadMonto().ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="card text-center p-2 bg-success text-white">
+                                                <small>Precio Contado</small>
+                                                <h4 class="mb-0">$@ObtenerPrecioContado().ToString("N2")</h4>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="card text-center p-2" style="background:#e8f2ff">
+                                                <small class="text-muted">Precio Crédito</small>
+                                                <h5 class="mb-0">$@ObtenerPrecioCredito().ToString("N2")</h5>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="card text-center p-2 bg-success text-white">
+                                                <small>Costo por Tarea</small>
+                                                <h4 class="mb-0">$@ObtenerCostoTarea().ToString("N2")</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-3 border-top pt-3">
+                                        <div class="small text-muted mb-2">Este resumen ya considera procesos estándar, consumos generados y ajustes manuales.</div>
+                                        <div class="d-grid gap-2">
+                                            <button class="btn btn-primary" @onclick="GuardarCotizacion">
+                                                <i class="bi bi-save"></i> Guardar Cotización
+                                            </button>
+                                            <button type="button" class="btn btn-outline-primary" @onclick="RegenerarPreciosVariantesAsync" disabled="@(cotizacionEditando.ClienteId == null || cotizacionEditando.ProductoId == Guid.Empty)">
+                                                <i class="bi bi-magic me-1"></i>Recalcular variantes
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="d-flex justify-content-end mt-3">
-                                <button class="btn btn-primary" @onclick="GuardarCotizacion">
-                                    <i class="bi bi-save"></i> Guardar Cotización
-                                </button>
-                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mt-3 border-0 shadow-sm" style="background:#f8fafc">
+                        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2" style="background:#eef2ff">
+                            <strong>Precios por variante</strong>
+                            <span class="small text-muted">La cotización define el precio final y las reglas del cliente sólo sugieren porcentajes.</span>
+                        </div>
+                        <div class="card-body">
+                            @if (!preciosVariantesEditando.Any())
+                            {
+                                <div class="text-muted small">No hay precios por variante generados todavía.</div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Variante</th>
+                                                <th class="text-end">% aplicado</th>
+                                                <th class="text-end">Contado</th>
+                                                <th class="text-end">Crédito</th>
+                                                <th class="text-center">Aceptada</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var precio in preciosVariantesEditando.OrderBy(p => p.Orden).ThenBy(p => p.Etiqueta))
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-semibold">@precio.Etiqueta</div>
+                                                        @if (!string.IsNullOrWhiteSpace(precio.Sku))
+                                                        {
+                                                            <div class="text-muted small">@precio.Sku</div>
+                                                        }
+                                                    </td>
+                                                    <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PorcentajeVariacionAplicado" @bind-Value:after="() => OnPorcentajeVarianteChanged(precio)" /></td>
+                                                    <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PrecioContado" @bind-Value:after="() => OnPrecioVarianteChanged(precio)" /></td>
+                                                    <td><InputNumber class="form-control form-control-sm text-end" @bind-Value="precio.PrecioCredito" @bind-Value:after="() => OnPrecioVarianteChanged(precio)" /></td>
+                                                    <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="precio.Aceptada" /></td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
                         </div>
                     </div>
                 }
@@ -621,6 +603,76 @@
     </div>
 </div>
 
+<style>
+    .resumen-cotizacion-sticky {
+        position: sticky;
+        top: 1rem;
+    }
+
+    .procesos-aplicados-card {
+        background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    }
+
+    .proceso-aplicado-item {
+        border: 1px solid #dbe7f5;
+        border-radius: 10px;
+        padding: .85rem;
+        background: #fff;
+    }
+
+    .proceso-aplicado-head {
+        display: flex;
+        gap: .75rem;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .proceso-aplicado-label {
+        font-size: .65rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .proceso-aplicado-title {
+        font-size: .95rem;
+        font-weight: 700;
+        color: #1e3a5f;
+    }
+
+    .proceso-aplicado-multiplier {
+        width: 170px;
+    }
+
+    .proceso-aplicado-kpis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .5rem;
+        margin-top: .75rem;
+    }
+
+    .proceso-aplicado-kpi {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .45rem .55rem;
+    }
+
+    .proceso-aplicado-kpi span {
+        display: block;
+        font-size: .62rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
+    .proceso-aplicado-kpi strong {
+        font-size: .8rem;
+        color: #0f172a;
+    }
+</style>
+
 @code {
     private IEnumerable<CotizacionSerigrafia>? cotizaciones;
     private IEnumerable<Cliente>? clientes;
@@ -636,6 +688,7 @@
     private IEnumerable<Posicion>? catalogoPosiciones;
     private IEnumerable<GastoFijo>? catalogoGastosFijos;
     private IEnumerable<TipoProceso> catalogoProcesos = [];
+    private List<CotizacionSerigrafiaProceso> procesosCotizacionAplicados = [];
 
     private readonly SemaphoreSlim _dbLock = new(1, 1);
 
@@ -847,6 +900,7 @@
 
             var procesos = await context.TiposProceso
                 .AsNoTracking()
+                .Include(p => p.ConsumosEstandar.Where(c => c.IsActive && c.Activo))
                 .Where(p => p.IsActive && p.Activo)
                 .OrderBy(p => p.Orden)
                 .ToListAsync();
@@ -901,6 +955,7 @@
     private async Task EditarCotizacion(CotizacionSerigrafia cot)
     {
         cotizacionEditando = await CargarCotizacionPorIdAsync(cot.Id);
+        procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
         procesosSeleccionados = cotizacionEditando?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? [];
         reglasVariacionCliente = cotizacionEditando?.ClienteId is Guid clienteId
             ? await CargarReglasVariacionClienteAsync(clienteId)
@@ -989,6 +1044,7 @@
                 });
 
                 cotizacionEditando = await CargarCotizacionPorIdAsync(cotizacionEditando.Id);
+                procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
             }
             else
             {
@@ -1023,6 +1079,7 @@
 
             await SincronizarProcesosCotizacionAsync();
             await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
 
             await CargarCotizaciones();
         });
@@ -1039,7 +1096,9 @@
         {
             await SincronizarProcesosCotizacionAsync();
             await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
             cotizacionEditando = await RecargarCotizacion();
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
             await CargarCotizaciones();
         }
     }
@@ -1135,6 +1194,7 @@
         await EjecutarConNuevoContextoAsync(async context =>
         {
             var existentes = await context.CotizacionSerigrafiaProcesos
+                .Include(p => p.TipoProceso)
                 .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id)
                 .ToListAsync();
 
@@ -1147,12 +1207,17 @@
 
             var porAgregar = procesosSeleccionados
                 .Where(id => !existentesIds.Contains(id))
-                .Select(id =>
+                .Select((id, index) =>
                 {
+                    var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == id);
                     var proceso = new CotizacionSerigrafiaProceso
                     {
                         CotizacionSerigrafiaId = cotizacionEditando.Id,
-                        TipoProcesoId = id
+                        TipoProcesoId = id,
+                        Multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, tipoProceso?.MultiplicadorDefault ?? 1m),
+                        MinutosEstandarAplicados = tipoProceso?.MinutosEstandar ?? 0m,
+                        TiempoTotal = (tipoProceso?.MinutosEstandar ?? 0m) * (tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, tipoProceso?.MultiplicadorDefault ?? 1m)),
+                        Orden = existentes.Count + index + 1
                     };
 
                     PrepararNuevaEntidad(proceso);
@@ -1169,6 +1234,13 @@
             {
                 await context.SaveChangesAsync();
             }
+
+            procesosCotizacionAplicados = await context.CotizacionSerigrafiaProcesos
+                .AsNoTracking()
+                .Include(p => p.TipoProceso)
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id && p.IsActive)
+                .OrderBy(p => p.Orden)
+                .ToListAsync();
         });
     }
 
@@ -1509,6 +1581,7 @@
             });
 
             cotizacionEditando = await CargarCotizacionPorIdAsync(nueva.Id);
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
             procesosSeleccionados = cotizacionEditando?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? [];
             mostrarFormulario = true;
             await CargarCotizaciones();
@@ -1518,10 +1591,128 @@
     private void Cancelar()
     {
         cotizacionEditando = null;
+        procesosCotizacionAplicados = [];
         procesosSeleccionados = [];
         reglasVariacionCliente = [];
         preciosVariantesEditando = [];
         mostrarFormulario = false;
+    }
+
+    private async Task ActualizarMultiplicadorProcesoAsync(CotizacionSerigrafiaProceso proceso)
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConDbLock(async () =>
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                var procesoDb = await context.CotizacionSerigrafiaProcesos
+                    .FirstOrDefaultAsync(p => p.Id == proceso.Id);
+
+                if (procesoDb == null)
+                {
+                    return;
+                }
+
+                var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == procesoDb.TipoProcesoId);
+                var multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, proceso.Multiplicador);
+                procesoDb.Multiplicador = multiplicador;
+                procesoDb.MinutosEstandarAplicados = tipoProceso?.MinutosEstandar ?? procesoDb.MinutosEstandarAplicados;
+                procesoDb.TiempoTotal = procesoDb.MinutosEstandarAplicados * multiplicador;
+                procesoDb.UpdatedAt = DateTime.UtcNow;
+
+                await context.SaveChangesAsync();
+            });
+
+            await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
+            cotizacionEditando = await RecargarCotizacion();
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task SincronizarConsumosDesdeProcesosAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var procesosAplicados = await context.CotizacionSerigrafiaProcesos
+                .Include(p => p.TipoProceso)
+                    .ThenInclude(tp => tp.ConsumosEstandar.Where(c => c.IsActive && c.Activo))
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id && p.IsActive)
+                .OrderBy(p => p.Orden)
+                .ToListAsync();
+
+            var detallesGenerados = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.IsActive && d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso && d.Categoria != CotizacionCategoria.ManoObra)
+                .ToListAsync();
+
+            if (detallesGenerados.Count > 0)
+            {
+                context.CotizacionDetalles.RemoveRange(detallesGenerados);
+                await context.SaveChangesAsync();
+            }
+
+            var siguienteOrdenPorCategoria = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.IsActive)
+                .GroupBy(d => d.Categoria)
+                .Select(g => new { g.Key, Orden = g.Max(x => x.Orden) })
+                .ToDictionaryAsync(x => x.Key, x => x.Orden);
+
+            foreach (var procesoAplicado in procesosAplicados)
+            {
+                foreach (var consumo in procesoAplicado.TipoProceso.ConsumosEstandar.OrderBy(c => c.Orden))
+                {
+                    var categoria = consumo.CategoriaCotizacion;
+                    var cantidad = Math.Round(consumo.CantidadBase * Math.Max(1m, procesoAplicado.Multiplicador), 4);
+                    var siguienteOrden = siguienteOrdenPorCategoria.TryGetValue(categoria, out var ordenActual)
+                        ? ordenActual + 1
+                        : 1;
+                    siguienteOrdenPorCategoria[categoria] = siguienteOrden;
+
+                    var insumoCatalogo = catalogoInsBasicos?.Concat(catalogoInsDiversos ?? []).ToList() ?? [];
+                    var concepto = consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima
+                        ? catalogoMP?.FirstOrDefault(m => m.Id == consumo.MateriaPrimaId)?.Nombre ?? procesoAplicado.TipoProceso.Nombre
+                        : insumoCatalogo.FirstOrDefault(i => i.Id == consumo.InsumoId)?.Nombre ?? procesoAplicado.TipoProceso.Nombre;
+
+                    var precioUnitario = consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima
+                        ? catalogoMP?.FirstOrDefault(m => m.Id == consumo.MateriaPrimaId)?.PrecioUnitario ?? 0m
+                        : insumoCatalogo.FirstOrDefault(i => i.Id == consumo.InsumoId)?.PrecioUnitario ?? 0m;
+
+                    context.CotizacionDetalles.Add(new CotizacionDetalle
+                    {
+                        Id = Guid.NewGuid(),
+                        CotizacionSerigrafiaId = cotizacionEditando.Id,
+                        CotizacionSerigrafiaProcesoId = procesoAplicado.Id,
+                        Categoria = categoria,
+                        OrigenDetalle = CotizacionDetalleOrigen.GeneradoPorProceso,
+                        Concepto = concepto,
+                        Consumo = cantidad,
+                        PrecioUnitario = precioUnitario,
+                        Costo = cantidad * precioUnitario,
+                        MateriaPrimaId = consumo.MateriaPrimaId,
+                        InsumoId = consumo.InsumoId,
+                        TipoProcesoId = procesoAplicado.TipoProcesoId,
+                        TipoProcesoConsumoId = consumo.Id,
+                        Orden = siguienteOrden,
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+        });
+
+        cotizacionEditando = await RecargarCotizacion();
     }
 
     private List<CotizacionDetalle> ObtenerDetalles(CotizacionCategoria categoria)
@@ -1530,6 +1721,47 @@
             .Where(d => d.Categoria == categoria && d.IsActive)
             .OrderBy(d => d.Orden)
             .ToList() ?? new List<CotizacionDetalle>();
+    }
+
+    private List<CotizacionDetalle> ObtenerDetallesMateriales()
+    {
+        if (cotizacionEditando?.Detalles == null)
+        {
+            return [];
+        }
+
+        return cotizacionEditando.Detalles
+            .Where(d => d.IsActive && (d.Categoria == CotizacionCategoria.Tinta || d.Categoria == CotizacionCategoria.InsumoBasico || d.Categoria == CotizacionCategoria.InsumoDiverso))
+            .OrderBy(d => d.Categoria)
+            .ThenBy(d => d.Orden)
+            .ThenBy(d => d.Concepto)
+            .ToList();
+    }
+
+    private decimal ObtenerTotalMateriales()
+        => (cotizacionEditando?.TotalTintas ?? 0m) + (cotizacionEditando?.TotalInsumosBasicos ?? 0m) + (cotizacionEditando?.TotalInsumosDiversos ?? 0m);
+
+    private static string ObtenerEtiquetaGrupoMaterial(CotizacionDetalle detalle)
+        => detalle.Categoria switch
+        {
+            CotizacionCategoria.Tinta => "Materia prima",
+            CotizacionCategoria.InsumoBasico => "Insumo básico",
+            CotizacionCategoria.InsumoDiverso => "Insumo diverso",
+            _ => "Material"
+        };
+
+    private string ObtenerOrigenProcesoMaterial(CotizacionDetalle detalle)
+    {
+        if (detalle.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso && detalle.TipoProcesoId.HasValue)
+        {
+            var proceso = catalogoProcesos.FirstOrDefault(p => p.Id == detalle.TipoProcesoId.Value);
+            if (proceso != null)
+            {
+                return $"Generado por proceso: {proceso.Nombre}";
+            }
+        }
+
+        return "Capturado manualmente";
     }
 
     private static string ObtenerEtiquetaVariante(ProductoVariante variante)

@@ -12,9 +12,14 @@ public class TipoProceso : BaseEntity
     public string? Descripcion { get; set; }
     public bool Activo { get; set; } = true;
     public int Orden { get; set; } // Para ordenar en la UI
+    public decimal MinutosEstandar { get; set; }
+    public bool PermiteMultiplicador { get; set; } = true;
+    public decimal MultiplicadorDefault { get; set; } = 1m;
+    public bool GeneraConsumosAutomaticos { get; set; }
     
     // Navegación
     public Posicion? Posicion { get; set; }
+    public ICollection<TipoProcesoConsumo> ConsumosEstandar { get; set; } = new List<TipoProcesoConsumo>();
     public ICollection<PedidoSerigrafiaProcesoDetalle> PedidosProcesos { get; set; } = new List<PedidoSerigrafiaProcesoDetalle>();
     public ICollection<RegistroDestajoProceso> RegistrosDestajo { get; set; } = new List<RegistroDestajoProceso>();
 }

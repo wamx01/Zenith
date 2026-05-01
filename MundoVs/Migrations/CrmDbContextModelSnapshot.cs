@@ -6133,6 +6133,9 @@ namespace MundoVs.Migrations
                     b.Property<Guid>("CotizacionSerigrafiaId")
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid?>("CotizacionSerigrafiaProcesoId")
+                        .HasColumnType("char(36)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -6158,6 +6161,9 @@ namespace MundoVs.Migrations
                     b.Property<int>("Orden")
                         .HasColumnType("int");
 
+                    b.Property<int>("OrigenDetalle")
+                        .HasColumnType("int");
+
                     b.Property<decimal?>("PesoFinal")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
@@ -6181,6 +6187,9 @@ namespace MundoVs.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<Guid?>("TipoProcesoConsumoId")
+                        .HasColumnType("char(36)");
+
                     b.Property<Guid?>("TipoProcesoId")
                         .HasColumnType("char(36)");
 
@@ -6196,6 +6205,8 @@ namespace MundoVs.Migrations
 
                     b.HasIndex("CotizacionSerigrafiaId");
 
+                    b.HasIndex("CotizacionSerigrafiaProcesoId");
+
                     b.HasIndex("GastoFijoId");
 
                     b.HasIndex("InsumoId");
@@ -6203,6 +6214,8 @@ namespace MundoVs.Migrations
                     b.HasIndex("MateriaPrimaId");
 
                     b.HasIndex("PosicionId");
+
+                    b.HasIndex("TipoProcesoConsumoId");
 
                     b.HasIndex("TipoProcesoId");
 
@@ -6301,6 +6314,21 @@ namespace MundoVs.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<decimal>("MinutosEstandarAplicados")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Multiplicador")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TiempoTotal")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<Guid>("TipoProcesoId")
                         .HasColumnType("char(36)");
 
@@ -6315,9 +6343,6 @@ namespace MundoVs.Migrations
                     b.HasIndex("CotizacionSerigrafiaId");
 
                     b.HasIndex("TipoProcesoId");
-
-                    b.HasIndex("CotizacionSerigrafiaId", "TipoProcesoId")
-                        .IsUnique();
 
                     b.ToTable("cotizacionserigrafiaprocesos");
                 });
@@ -7306,8 +7331,19 @@ namespace MundoVs.Migrations
                     b.Property<Guid>("EmpresaId")
                         .HasColumnType("char(36)");
 
+                    b.Property<bool>("GeneraConsumosAutomaticos")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("MinutosEstandar")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("MultiplicadorDefault")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
@@ -7316,6 +7352,9 @@ namespace MundoVs.Migrations
 
                     b.Property<int>("Orden")
                         .HasColumnType("int");
+
+                    b.Property<bool>("PermiteMultiplicador")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<Guid?>("PosicionId")
                         .HasColumnType("char(36)");
@@ -7337,6 +7376,65 @@ namespace MundoVs.Migrations
                     b.HasIndex("PosicionId");
 
                     b.ToTable("tiposproceso");
+                });
+
+            modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.TipoProcesoConsumo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("CantidadBase")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<int>("CategoriaCotizacion")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid?>("InsumoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid?>("MateriaPrimaId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Observaciones")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Origen")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TipoProcesoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InsumoId");
+
+                    b.HasIndex("MateriaPrimaId");
+
+                    b.HasIndex("TipoProcesoId");
+
+                    b.ToTable("tiposprocesoconsumos");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.StorageConfiguracionGlobal", b =>
@@ -9313,6 +9411,11 @@ namespace MundoVs.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("MundoVs.Core.Entities.Serigrafia.CotizacionSerigrafiaProceso", "CotizacionSerigrafiaProceso")
+                        .WithMany()
+                        .HasForeignKey("CotizacionSerigrafiaProcesoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MundoVs.Core.Entities.Serigrafia.GastoFijo", "GastoFijo")
                         .WithMany()
                         .HasForeignKey("GastoFijoId")
@@ -9333,12 +9436,19 @@ namespace MundoVs.Migrations
                         .HasForeignKey("PosicionId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("MundoVs.Core.Entities.Serigrafia.TipoProcesoConsumo", "TipoProcesoConsumo")
+                        .WithMany()
+                        .HasForeignKey("TipoProcesoConsumoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MundoVs.Core.Entities.Serigrafia.TipoProceso", "TipoProceso")
                         .WithMany()
                         .HasForeignKey("TipoProcesoId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("CotizacionSerigrafia");
+
+                    b.Navigation("CotizacionSerigrafiaProceso");
 
                     b.Navigation("GastoFijo");
 
@@ -9349,6 +9459,8 @@ namespace MundoVs.Migrations
                     b.Navigation("Posicion");
 
                     b.Navigation("TipoProceso");
+
+                    b.Navigation("TipoProcesoConsumo");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.CotizacionSerigrafia", b =>
@@ -9696,6 +9808,29 @@ namespace MundoVs.Migrations
                     b.Navigation("Empresa");
 
                     b.Navigation("Posicion");
+                });
+
+            modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.TipoProcesoConsumo", b =>
+                {
+                    b.HasOne("MundoVs.Core.Entities.Serigrafia.Insumo", "Insumo")
+                        .WithMany()
+                        .HasForeignKey("InsumoId");
+
+                    b.HasOne("MundoVs.Core.Entities.Serigrafia.MateriaPrima", "MateriaPrima")
+                        .WithMany()
+                        .HasForeignKey("MateriaPrimaId");
+
+                    b.HasOne("MundoVs.Core.Entities.Serigrafia.TipoProceso", "TipoProceso")
+                        .WithMany("ConsumosEstandar")
+                        .HasForeignKey("TipoProcesoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Insumo");
+
+                    b.Navigation("MateriaPrima");
+
+                    b.Navigation("TipoProceso");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.SuscripcionEmpresa", b =>
@@ -10130,6 +10265,8 @@ namespace MundoVs.Migrations
 
             modelBuilder.Entity("MundoVs.Core.Entities.Serigrafia.TipoProceso", b =>
                 {
+                    b.Navigation("ConsumosEstandar");
+
                     b.Navigation("PedidosProcesos");
 
                     b.Navigation("RegistrosDestajo");

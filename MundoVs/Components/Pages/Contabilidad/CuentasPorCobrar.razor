@@ -1,4 +1,4 @@
-s@page "/contabilidad/cuentas-por-cobrar"
+@page "/contabilidad/cuentas-por-cobrar"
 @using MundoVs.Core.Entities
 @using MundoVs.Infrastructure.Data
 @using Microsoft.EntityFrameworkCore
@@ -79,7 +79,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
                         <div class="cpc-avatar" style="background:@(cliente.Saldo <= 0 ? "#10b981" : "#1e3a5f")">@cliente.ClienteNombre[..1]</div>
                         <div>
                             <div class="cpc-client-name">@cliente.ClienteNombre</div>
-                            <div class="cpc-client-meta">@cliente.Facturas.Count factura@(cliente.Facturas.Count != 1 ? "s" : "")</div>
+                            <div class="cpc-client-meta">@cliente.Facturas.Count documento@(cliente.Facturas.Count != 1 ? "s" : "") · @cliente.Facturas.Count(f => f.EsNotaEntrega) nota@(cliente.Facturas.Count(f => f.EsNotaEntrega) != 1 ? "s" : "") · @cliente.Facturas.Count(f => !f.EsNotaEntrega) factura@(cliente.Facturas.Count(f => !f.EsNotaEntrega) != 1 ? "s" : "")</div>
                         </div>
                     </div>
                     <div class="cpc-client-nums">
@@ -133,7 +133,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
                     <div class="cpc-detail-panel">
                         @foreach (var factura in cliente.Facturas)
                         {
-                            var pagosFactura = pagosPorFactura.GetValueOrDefault(factura.FacturaId, []);
+                            var pagosFactura = pagosPorDocumento.GetValueOrDefault(factura.FacturaId, []);
                             var pagado = pagosFactura.Sum(p => p.ImporteAplicado);
                             var saldo = Math.Max(0, factura.Total - pagado);
                             var fColor = saldo <= 0 ? "#10b981" : saldo < factura.Total ? "#f59e0b" : "#ef4444";
@@ -143,7 +143,15 @@ s@page "/contabilidad/cuentas-por-cobrar"
                             <div class="cpc-invoice @(saldo <= 0 ? "cpc-invoice-paid" : "")">
                                 <div class="cpc-invoice-head" @onclick="() => ToggleFactura(factura.FacturaId)" @onclick:stopPropagation="true">
                                     <div class="cpc-invoice-left">
-                                        <span class="cpc-inv-num"><i class="bi bi-receipt me-1"></i>@factura.NumeroFactura</span>
+                                        <span class="cpc-inv-num"><i class="bi @(factura.EsNotaEntrega ? "bi-journal-text" : "bi-receipt") me-1"></i>@factura.NumeroFactura</span>
+                                        @if (factura.EsNotaEntrega)
+                                        {
+                                            <span class="cpc-inv-tag">@factura.EtiquetaTipoDocumento</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="cpc-inv-tag">Factura</span>
+                                        }
                                         @if (!string.IsNullOrWhiteSpace(factura.NumeroPedido))
                                         {
                                             <span class="cpc-inv-tag">Ped. @factura.NumeroPedido</span>
@@ -183,16 +191,16 @@ s@page "/contabilidad/cuentas-por-cobrar"
                                                 </thead>
                                                 <tbody>
                                                     @{ var idx = 1; }
-                                                    @foreach (var aplicacion in pagosFactura.OrderBy(p => p.PagoRecibido.FechaPago))
+                                                    @foreach (var aplicacion in pagosFactura.OrderBy(p => p.FechaPago))
                                                     {
                                                         <tr>
                                                             <td class="text-muted">@idx</td>
-                                                            <td>@aplicacion.PagoRecibido.FechaPago.ToString("dd/MM/yyyy")</td>
-                                                            <td><span class="cpc-forma-pill">@GetFormaPagoLabel(aplicacion.PagoRecibido.FormaPagoSat)</span></td>
-                                                            <td class="fw-semibold">@(aplicacion.PagoRecibido.Referencia ?? "—")</td>
-                                                            <td style="color:#6b7280;max-width:160px">@(aplicacion.PagoRecibido.Notas ?? "—")</td>
+                                                             <td>@aplicacion.FechaPago.ToString("dd/MM/yyyy")</td>
+                                                             <td><span class="cpc-forma-pill">@GetFormaPagoLabel(aplicacion.FormaPagoSat)</span></td>
+                                                             <td class="fw-semibold">@(aplicacion.Referencia ?? "—")</td>
+                                                             <td style="color:#6b7280;max-width:160px">@(aplicacion.Notas ?? "—")</td>
                                                             <td class="text-end fw-bold" style="color:#10b981">@aplicacion.ImporteAplicado.ToString("C2")</td>
-                                                            <td><button type="button" class="cpc-btn-trash" @onclick="async () => await EliminarPago(aplicacion.Id, factura.FacturaId, cliente.ClienteId)" @onclick:stopPropagation="true"><i class="bi bi-trash3"></i></button></td>
+                                                             <td><button type="button" class="cpc-btn-trash" @onclick="async () => await EliminarPago(aplicacion.RegistroId, factura.FacturaId, cliente.ClienteId, factura.EsNotaEntrega)" @onclick:stopPropagation="true"><i class="bi bi-trash3"></i></button></td>
                                                         </tr>
                                                         idx++;
                                                     }
@@ -201,7 +209,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
                                             </table>
                                         }
 
-                                        @if (saldo > 0)
+                                         @if (saldo > 0 && factura.PermiteAplicarPago)
                                         {
                                             <div class="cpc-section-title">Aplicar cobro</div>
                                             <div class="cpc-pay-form">
@@ -234,7 +242,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
                                                         <input type="text" class="form-control form-control-sm cpc-inp" @bind="nuevoPagoNotas" placeholder="Banco, comprobante..." />
                                                     </div>
                                                     <div class="col-12 col-md-2">
-                                                        <button type="button" class="btn cpc-btn-action btn-sm w-100" @onclick="async () => await AgregarPago(factura.FacturaId, factura.Total, cliente.ClienteId, factura.PedidoId, factura.NotaEntregaId, factura.MetodoPagoSat)" @onclick:stopPropagation="true">
+                                                        <button type="button" class="btn cpc-btn-action btn-sm w-100" @onclick="async () => await AgregarPago(factura.FacturaId, factura.Total, cliente.ClienteId, factura.PedidoId, factura.NotaEntregaId, factura.MetodoPagoSat, factura.EsNotaEntrega)" @onclick:stopPropagation="true">
                                                             <i class="bi bi-plus-circle me-1"></i>Aplicar cobro
                                                         </button>
                                                     </div>
@@ -364,7 +372,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
 @code {
     private List<ClienteAgrupado>? clientesAgrupados;
     private List<ClienteAgrupado> todosClientes = [];
-    private Dictionary<Guid, List<PagoAplicacionDocumento>> pagosPorFactura = new();
+    private Dictionary<Guid, List<PagoDocumentoViewModel>> pagosPorDocumento = new();
     private Guid? expandedCliente;
     private Guid? expandedFactura;
     private string filtro = "pendientes";
@@ -412,15 +420,54 @@ s@page "/contabilidad/cuentas-por-cobrar"
                 && a.PagoRecibido.IsActive)
             .ToListAsync();
 
-        pagosPorFactura = aplicaciones
+        var pagosDirectosNotas = await DbContext.PagosRecibidos
+            .AsNoTracking()
+            .Where(p => p.IsActive && p.NotaEntregaId.HasValue)
+            .Where(p => !DbContext.PagosAplicacionDocumento.Any(a => a.PagoRecibidoId == p.Id && a.IsActive))
+            .ToListAsync();
+
+        pagosPorDocumento = aplicaciones
             .GroupBy(a => a.FacturaId)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(a => new PagoDocumentoViewModel
+                {
+                    RegistroId = a.Id,
+                    PagoRecibidoId = a.PagoRecibidoId,
+                    FechaPago = a.PagoRecibido.FechaPago,
+                    FormaPagoSat = a.PagoRecibido.FormaPagoSat,
+                    Referencia = a.PagoRecibido.Referencia,
+                    Notas = a.PagoRecibido.Notas,
+                    ImporteAplicado = a.ImporteAplicado,
+                    EsAplicacionFactura = true
+                }).ToList());
+
+        foreach (var grupo in pagosDirectosNotas.Where(p => p.NotaEntregaId.HasValue).GroupBy(p => p.NotaEntregaId!.Value))
+        {
+            if (!pagosPorDocumento.TryGetValue(grupo.Key, out var lista))
+            {
+                lista = [];
+                pagosPorDocumento[grupo.Key] = lista;
+            }
+
+            lista.AddRange(grupo.Select(p => new PagoDocumentoViewModel
+            {
+                RegistroId = p.Id,
+                PagoRecibidoId = p.Id,
+                FechaPago = p.FechaPago,
+                FormaPagoSat = p.FormaPagoSat,
+                Referencia = p.Referencia,
+                Notas = p.Notas,
+                ImporteAplicado = p.Monto,
+                EsAplicacionFactura = false
+            }));
+        }
 
         var facturasView = todasFacturas.Select(f =>
         {
             var diasCredito = f.Cliente.DiasCredito ?? 0;
             DateTime? fechaVencimiento = diasCredito > 0 ? f.FechaEmision.AddDays(diasCredito) : null;
-            var pagadoF = pagosPorFactura.GetValueOrDefault(f.Id, []).Sum(x => x.ImporteAplicado);
+            var pagadoF = pagosPorDocumento.GetValueOrDefault(f.Id, []).Sum(x => x.ImporteAplicado);
             var saldoF = Math.Max(0, f.Total - pagadoF);
             var diasAtraso = 0;
             if (saldoF > 0 && fechaVencimiento.HasValue && fechaVencimiento.Value.Date < DateTime.Today)
@@ -442,25 +489,77 @@ s@page "/contabilidad/cuentas-por-cobrar"
                 FechaVencimiento = fechaVencimiento,
                 DiasAtraso = diasAtraso,
                 MetodoPagoSat = f.MetodoPagoSat,
-                Total = f.Total
+                    Total = f.Total,
+                    PermiteAplicarPago = true,
+                    EtiquetaTipoDocumento = "Factura"
             };
         }).ToList();
 
-        var totalFacturado = facturasView.Sum(f => f.Total);
-        totalCobrado = aplicaciones.Sum(a => a.ImporteAplicado);
+        var notasPendientes = await DbContext.NotasEntrega
+            .AsNoTracking()
+            .Include(n => n.Cliente)
+            .Include(n => n.Pedido)
+            .Include(n => n.FacturasRelacionadas)
+                .ThenInclude(r => r.Factura)
+            .Where(n => n.IsActive && n.Estatus != NotaEntregaEstatus.Cancelada && n.Estatus != NotaEntregaEstatus.Borrador)
+            .ToListAsync();
+
+        var notasView = notasPendientes
+            .Select(nota =>
+            {
+                var diasCredito = nota.Cliente.DiasCredito ?? 0;
+                DateTime? fechaVencimiento = diasCredito > 0 ? nota.FechaNota.AddDays(diasCredito) : null;
+                var totalFacturadoNota = nota.FacturasRelacionadas
+                    .Where(r => r.IsActive && r.Factura.IsActive && r.Factura.Estatus != FacturaEstatus.Cancelado)
+                    .Sum(r => r.Total);
+                var pagadoNota = pagosPorDocumento.GetValueOrDefault(nota.Id, []).Sum(x => x.ImporteAplicado);
+                var saldoNota = Math.Max(0, (nota.Total - totalFacturadoNota) - pagadoNota);
+                var diasAtraso = 0;
+                if (saldoNota > 0 && fechaVencimiento.HasValue && fechaVencimiento.Value.Date < DateTime.Today)
+                {
+                    diasAtraso = (DateTime.Today - fechaVencimiento.Value.Date).Days;
+                }
+
+                return new FacturaViewModel
+                {
+                    FacturaId = nota.Id,
+                    PedidoId = nota.PedidoId,
+                    NotaEntregaId = nota.Id,
+                    ClienteId = nota.ClienteId,
+                    ClienteNombre = nota.Cliente.RazonSocial,
+                    NumeroFactura = nota.NumeroNota,
+                    NumeroPedido = nota.Pedido?.NumeroPedido,
+                    NumeroNota = nota.NumeroNota,
+                    FechaFactura = nota.FechaNota,
+                    FechaVencimiento = fechaVencimiento,
+                    DiasAtraso = diasAtraso,
+                    MetodoPagoSat = "PPD",
+                    Total = Math.Max(0, nota.Total - totalFacturadoNota),
+                    EsNotaEntrega = true,
+                    PermiteAplicarPago = true,
+                    EtiquetaTipoDocumento = totalFacturadoNota > 0 ? "Nota parcialmente facturada" : "Nota por cobrar"
+                };
+            })
+            .Where(n => (n.Total - pagosPorDocumento.GetValueOrDefault(n.FacturaId, []).Sum(x => x.ImporteAplicado)) > 0 || pagosPorDocumento.GetValueOrDefault(n.FacturaId, []).Any())
+            .ToList();
+
+        var documentosView = facturasView.Concat(notasView).ToList();
+
+        var totalFacturado = documentosView.Sum(f => f.Total);
+        totalCobrado = pagosPorDocumento.SelectMany(kvp => kvp.Value).Sum(a => a.ImporteAplicado);
         totalPendiente = Math.Max(0, totalFacturado - totalCobrado);
-        montoVencido = facturasView.Where(f => f.DiasAtraso > 0).Sum(f => f.Total - pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
+        montoVencido = documentosView.Where(f => f.DiasAtraso > 0).Sum(f => f.Total - pagosPorDocumento.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
         montoVencido = Math.Max(0, montoVencido);
 
-        todosClientes = facturasView
+        todosClientes = documentosView
             .GroupBy(f => new { f.ClienteId, f.ClienteNombre })
             .Select(g =>
             {
                 var total = g.Sum(f => f.Total);
-                var pagado = g.Sum(f => pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
+                var pagado = g.Sum(f => pagosPorDocumento.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado));
                 var mayorAtraso = g.Where(f =>
                 {
-                    var s = f.Total - pagosPorFactura.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado);
+                    var s = f.Total - pagosPorDocumento.GetValueOrDefault(f.FacturaId, []).Sum(x => x.ImporteAplicado);
                     return s > 0;
                 }).Select(f => f.DiasAtraso).DefaultIfEmpty(0).Max();
 
@@ -531,7 +630,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
         ResetNuevoPago();
     }
 
-    private async Task AgregarPago(Guid facturaId, decimal totalFactura, Guid clienteId, Guid? pedidoId, Guid? notaEntregaId, string metodoPagoSat)
+    private async Task AgregarPago(Guid facturaId, decimal totalFactura, Guid clienteId, Guid? pedidoId, Guid? notaEntregaId, string metodoPagoSat, bool esNotaEntrega)
     {
         errorPago = null;
 
@@ -555,10 +654,10 @@ s@page "/contabilidad/cuentas-por-cobrar"
             return;
         }
 
-        var factura = await DbContext.Facturas.AsNoTracking().FirstOrDefaultAsync(f => f.Id == facturaId);
-        if (factura == null)
+        var saldoRestanteDocumento = totalFactura - ObtenerTotalPagadoActivo(facturaId);
+        if (nuevoPagoMonto > saldoRestanteDocumento)
         {
-            errorPago = "No se encontró la factura asociada al cobro.";
+            errorPago = $"El importe (${nuevoPagoMonto:F2}) excede el saldo pendiente (${saldoRestanteDocumento:F2}).";
             return;
         }
 
@@ -578,23 +677,36 @@ s@page "/contabilidad/cuentas-por-cobrar"
             IsActive = true
         };
 
-        var aplicacion = new PagoAplicacionDocumento
-        {
-            Id = Guid.NewGuid(),
-            PagoRecibidoId = pago.Id,
-            PagoRecibido = pago,
-            FacturaId = facturaId,
-            ImporteAplicado = nuevoPagoMonto,
-            SaldoAnterior = saldoRestante,
-            SaldoInsoluto = Math.Max(0, saldoRestante - nuevoPagoMonto),
-            CreatedAt = DateTime.UtcNow,
-            IsActive = true
-        };
-
         DbContext.PagosRecibidos.Add(pago);
-        DbContext.PagosAplicacionDocumento.Add(aplicacion);
+
+        if (!esNotaEntrega)
+        {
+            var factura = await DbContext.Facturas.AsNoTracking().FirstOrDefaultAsync(f => f.Id == facturaId);
+            if (factura == null)
+            {
+                errorPago = "No se encontró la factura asociada al cobro.";
+                return;
+            }
+
+            DbContext.PagosAplicacionDocumento.Add(new PagoAplicacionDocumento
+            {
+                Id = Guid.NewGuid(),
+                PagoRecibidoId = pago.Id,
+                PagoRecibido = pago,
+                FacturaId = facturaId,
+                ImporteAplicado = nuevoPagoMonto,
+                SaldoAnterior = saldoRestanteDocumento,
+                SaldoInsoluto = Math.Max(0, saldoRestanteDocumento - nuevoPagoMonto),
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
         await DbContext.SaveChangesAsync();
-        await ActualizarEstadoFacturaAsync(facturaId);
+        if (!esNotaEntrega)
+        {
+            await ActualizarEstadoFacturaAsync(facturaId);
+        }
 
         var keepCliente = clienteId;
         var keepFactura = expandedFactura;
@@ -604,8 +716,26 @@ s@page "/contabilidad/cuentas-por-cobrar"
         expandedFactura = keepFactura;
     }
 
-    private async Task EliminarPago(Guid aplicacionId, Guid facturaId, Guid clienteId)
+    private async Task EliminarPago(Guid aplicacionId, Guid facturaId, Guid clienteId, bool esNotaEntrega)
     {
+        if (esNotaEntrega)
+        {
+            var pagoDirecto = await DbContext.PagosRecibidos.FirstOrDefaultAsync(p => p.Id == aplicacionId && p.IsActive);
+            if (pagoDirecto == null)
+            {
+                return;
+            }
+
+            pagoDirecto.IsActive = false;
+            pagoDirecto.UpdatedAt = DateTime.UtcNow;
+            await DbContext.SaveChangesAsync();
+
+            await CargarDatos();
+            expandedCliente = clienteId;
+            expandedFactura = facturaId;
+            return;
+        }
+
         var aplicacion = await DbContext.PagosAplicacionDocumento
             .Include(a => a.PagoRecibido)
             .FirstOrDefaultAsync(a => a.Id == aplicacionId && a.IsActive);
@@ -682,7 +812,7 @@ s@page "/contabilidad/cuentas-por-cobrar"
     }
 
     private decimal ObtenerTotalPagadoActivo(Guid facturaId)
-        => pagosPorFactura.GetValueOrDefault(facturaId, []).Sum(p => p.ImporteAplicado);
+        => pagosPorDocumento.GetValueOrDefault(facturaId, []).Sum(p => p.ImporteAplicado);
 
     private static string GetFormaPagoLabel(string formaPagoSat) => formaPagoSat switch
     {
@@ -742,6 +872,21 @@ s@page "/contabilidad/cuentas-por-cobrar"
         public int DiasAtraso { get; set; }
         public string MetodoPagoSat { get; set; } = "";
         public decimal Total { get; set; }
+        public bool EsNotaEntrega { get; set; }
+        public bool PermiteAplicarPago { get; set; } = true;
+        public string EtiquetaTipoDocumento { get; set; } = "Factura";
+    }
+
+    private class PagoDocumentoViewModel
+    {
+        public Guid RegistroId { get; set; }
+        public Guid PagoRecibidoId { get; set; }
+        public DateTime FechaPago { get; set; }
+        public string FormaPagoSat { get; set; } = "03";
+        public string? Referencia { get; set; }
+        public string? Notas { get; set; }
+        public decimal ImporteAplicado { get; set; }
+        public bool EsAplicacionFactura { get; set; }
     }
 
     private class ClienteAgrupado

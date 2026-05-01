@@ -14,6 +14,7 @@
 @inject IRepository<TipoProceso> TipoProcesoRepository
 @inject IRepository<PedidoDetalle> PedidoDetalleRepository
 @inject CrmDbContext DbContext
+@inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
 @rendermode InteractiveServer
@@ -884,6 +885,15 @@
 
                                 @if (comprobacionInventarioItems.Any())
                                 {
+                                    <div class="alert alert-primary py-2 mb-3">
+                                        <div class="fw-semibold mb-1"><i class="bi bi-box-arrow-up-right me-1"></i>Descuento de inventario de materiales</div>
+                                        <div class="small mb-2">Cuando confirmes el pedido, el sistema puede registrar la salida de materias primas e insumos con base en esta comprobación.</div>
+                                        <div class="form-check">
+                                            <InputCheckbox class="form-check-input" @bind-Value="descontarInventarioMaterialesAlGuardar" />
+                                            <label class="form-check-label small">Sí, descontar automáticamente materias primas e insumos al guardar este pedido.</label>
+                                        </div>
+                                    </div>
+
                                     <div class="table-responsive">
                                         <table class="table table-sm align-middle mb-0 ps-inventory-table">
                                             <thead class="table-light">
@@ -1346,6 +1356,8 @@
     private bool inventarioComprobado;
     private bool revisandoComprobacionInventario;
     private DateTime? inventarioComprobadoEn;
+    private bool descontarInventarioMaterialesAlGuardar;
+    private Guid _empresaId;
 
     // Pagos
     private List<PagoPedido> pagosDelPedido = new();
@@ -1378,6 +1390,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
         clientes = await ClienteRepository.GetAllAsync();
         tiposProceso = await TipoProcesoRepository.GetAllAsync();
         empleadosActivos = await DbContext.Empleados
@@ -1664,6 +1678,11 @@
         var totalConIva = subtotal + iva;
         var usuarioActual = await ObtenerUsuarioActualAsync();
 
+        if (incluyeProductos && descontarInventarioMaterialesAlGuardar)
+        {
+            await DescontarInventarioMaterialesAsync(usuarioActual);
+        }
+
         if (pedidoEditando.Id == Guid.Empty)
         {
             var pedido = new Pedido
@@ -1851,6 +1870,8 @@
                     item = new ComprobacionInventarioItem
                     {
                         Tipo = tipo,
+                        MateriaPrimaId = consumo.MateriaPrimaId,
+                        InsumoId = consumo.InsumoId,
                         Nombre = string.IsNullOrWhiteSpace(nombre) ? consumo.Concepto : nombre!,
                         UnidadMedida = string.IsNullOrWhiteSpace(unidadMedida) ? string.Empty : unidadMedida!,
                         ExistenciaInventario = existencia,
@@ -1905,6 +1926,7 @@
     private void CancelarEdicion()
     {
         InvalidarComprobacionInventario();
+        descontarInventarioMaterialesAlGuardar = false;
         nuevaTallaSeleccionada = null;
         pedidoEditando = new();
         pedidoBaseIdEditando = Guid.Empty;
@@ -3255,8 +3277,92 @@
     {
         inventarioComprobado = false;
         inventarioComprobadoEn = null;
+        descontarInventarioMaterialesAlGuardar = false;
         comprobacionInventarioItems.Clear();
         avisosComprobacionInventario.Clear();
+    }
+
+    private async Task DescontarInventarioMaterialesAsync(string? usuarioActual)
+    {
+        if (_empresaId == Guid.Empty || !comprobacionInventarioItems.Any())
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        foreach (var item in comprobacionInventarioItems.Where(i => !i.SinVinculoInventario && i.CantidadRequerida > 0))
+        {
+            if (item.MateriaPrimaId.HasValue)
+            {
+                var materiaPrima = await db.MateriasPrimas.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(m => m.EmpresaId == _empresaId && m.IsActive && m.Id == item.MateriaPrimaId.Value);
+
+                if (materiaPrima == null)
+                {
+                    continue;
+                }
+
+                var existenciaAnterior = materiaPrima.Cantidad;
+                var existenciaNueva = Math.Max(0, existenciaAnterior - item.CantidadRequerida);
+                materiaPrima.Cantidad = existenciaNueva;
+                materiaPrima.UpdatedAt = DateTime.UtcNow;
+
+                db.MovimientosInventario.Add(new MundoVs.Core.Entities.Inventario.MovimientoInventario
+                {
+                    EmpresaId = _empresaId,
+                    Origen = MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.MateriaPrima,
+                    TipoMovimiento = MundoVs.Core.Entities.Inventario.MovimientoInventarioTipoEnum.Salida,
+                    MateriaPrimaId = materiaPrima.Id,
+                    Cantidad = item.CantidadRequerida,
+                    ExistenciaAnterior = existenciaAnterior,
+                    ExistenciaNueva = existenciaNueva,
+                    CostoUnitario = materiaPrima.PrecioUnitario,
+                    FechaMovimiento = DateTime.UtcNow,
+                    Referencia = pedidoBaseIdEditando == Guid.Empty ? pedidoEditando.Estilo : pedidoBaseIdEditando.ToString(),
+                    Observaciones = $"Salida automática por confirmación de pedido {(pedidoEditando.Estilo ?? string.Empty).Trim()}",
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuarioActual,
+                    IsActive = true
+                });
+
+                continue;
+            }
+
+            var insumo = item.InsumoId.HasValue
+                ? await db.Insumos.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.EmpresaId == _empresaId && i.IsActive && i.Id == item.InsumoId.Value)
+                : null;
+
+            if (insumo == null)
+            {
+                continue;
+            }
+
+            var existenciaAnteriorInsumo = insumo.Cantidad;
+            var existenciaNuevaInsumo = Math.Max(0, existenciaAnteriorInsumo - item.CantidadRequerida);
+            insumo.Cantidad = existenciaNuevaInsumo;
+            insumo.UpdatedAt = DateTime.UtcNow;
+
+            db.MovimientosInventario.Add(new MundoVs.Core.Entities.Inventario.MovimientoInventario
+            {
+                EmpresaId = _empresaId,
+                Origen = MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.Insumo,
+                TipoMovimiento = MundoVs.Core.Entities.Inventario.MovimientoInventarioTipoEnum.Salida,
+                InsumoId = insumo.Id,
+                Cantidad = item.CantidadRequerida,
+                ExistenciaAnterior = existenciaAnteriorInsumo,
+                ExistenciaNueva = existenciaNuevaInsumo,
+                CostoUnitario = insumo.PrecioUnitario,
+                FechaMovimiento = DateTime.UtcNow,
+                Referencia = pedidoBaseIdEditando == Guid.Empty ? pedidoEditando.Estilo : pedidoBaseIdEditando.ToString(),
+                Observaciones = $"Salida automática por confirmación de pedido {(pedidoEditando.Estilo ?? string.Empty).Trim()}",
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuarioActual,
+                IsActive = true
+            });
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private sealed class ProductoClienteOption
@@ -3306,6 +3412,8 @@
     private sealed class ComprobacionInventarioItem
     {
         public string Tipo { get; set; } = string.Empty;
+        public Guid? MateriaPrimaId { get; set; }
+        public Guid? InsumoId { get; set; }
         public string Nombre { get; set; } = string.Empty;
         public string UnidadMedida { get; set; } = string.Empty;
         public decimal CantidadRequerida { get; set; }

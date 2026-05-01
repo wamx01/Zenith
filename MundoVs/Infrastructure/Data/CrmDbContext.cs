@@ -87,6 +87,7 @@ public class CrmDbContext : DbContext
     public DbSet<Pantalla> Pantallas => Set<Pantalla>();
     public DbSet<Diseno> Disenos => Set<Diseno>();
     public DbSet<TipoProceso> TiposProceso => Set<TipoProceso>();
+    public DbSet<TipoProcesoConsumo> TiposProcesoConsumos => Set<TipoProcesoConsumo>();
     public DbSet<EscalaSerigrafia> EscalasSerigrafia => Set<EscalaSerigrafia>();
     public DbSet<PedidoSerigrafia> PedidosSerigrafia => Set<PedidoSerigrafia>();
     public DbSet<PedidoSerigrafiaProcesoDetalle> PedidoSerigrafiaProcesoDetalles => Set<PedidoSerigrafiaProcesoDetalle>();
@@ -1792,6 +1793,8 @@ public class CrmDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Descripcion).HasMaxLength(500);
+            entity.Property(e => e.MinutosEstandar).HasPrecision(18, 2);
+            entity.Property(e => e.MultiplicadorDefault).HasPrecision(18, 2);
 
             entity.HasOne(e => e.Empresa)
                 .WithMany()
@@ -2013,6 +2016,11 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.CotizacionSerigrafiaId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasOne(e => e.CotizacionSerigrafiaProceso)
+                .WithMany()
+                .HasForeignKey(e => e.CotizacionSerigrafiaProcesoId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasOne(e => e.MateriaPrima)
                 .WithMany()
                 .HasForeignKey(e => e.MateriaPrimaId)
@@ -2033,6 +2041,11 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.TipoProcesoId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.TipoProcesoConsumo)
+                .WithMany()
+                .HasForeignKey(e => e.TipoProcesoConsumoId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasOne(e => e.GastoFijo)
                 .WithMany()
                 .HasForeignKey(e => e.GastoFijoId)
@@ -2040,11 +2053,16 @@ public class CrmDbContext : DbContext
 
             entity.HasIndex(e => e.CotizacionSerigrafiaId);
             entity.HasIndex(e => e.Categoria);
+            entity.HasIndex(e => e.CotizacionSerigrafiaProcesoId);
+            entity.HasIndex(e => e.TipoProcesoConsumoId);
         });
 
         modelBuilder.Entity<CotizacionSerigrafiaProceso>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.Multiplicador).HasPrecision(18, 2);
+            entity.Property(e => e.MinutosEstandarAplicados).HasPrecision(18, 2);
+            entity.Property(e => e.TiempoTotal).HasPrecision(18, 2);
 
             entity.HasOne(e => e.CotizacionSerigrafia)
                 .WithMany(c => c.Procesos)
@@ -2058,7 +2076,6 @@ public class CrmDbContext : DbContext
 
             entity.HasIndex(e => e.CotizacionSerigrafiaId);
             entity.HasIndex(e => e.TipoProcesoId);
-            entity.HasIndex(e => new { e.CotizacionSerigrafiaId, e.TipoProcesoId }).IsUnique();
         });
 
         modelBuilder.Entity<CotizacionVariantePrecio>(entity =>

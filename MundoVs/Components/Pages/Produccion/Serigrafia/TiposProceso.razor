@@ -3,8 +3,10 @@
 @using MundoVs.Core.Entities
 @using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
+@using MundoVs.Infrastructure.Data
 @inject IRepository<TipoProceso> TipoProcesoRepository
 @inject IRepository<Posicion> PosicionRepository
+@inject IDbContextFactory<CrmDbContext> DbContextFactory
 @rendermode InteractiveServer
 
 <PageTitle>Tipos de Proceso</PageTitle>
@@ -137,10 +139,118 @@
                                 <InputCheckbox class="form-check-input" @bind-Value="tipoEditando.Activo" />
                             </div>
                         </div>
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label">Min. estándar</label>
+                            <InputNumber class="form-control" @bind-Value="tipoEditando.MinutosEstandar" />
+                        </div>
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label">Multiplicador default</label>
+                            <InputNumber class="form-control" @bind-Value="tipoEditando.MultiplicadorDefault" />
+                        </div>
+                        <div class="col-lg-3 col-md-4">
+                            <label class="form-label d-block">Automatización</label>
+                            <div class="form-check form-switch pt-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="tipoEditando.PermiteMultiplicador" />
+                                <label class="form-check-label">Permite multiplicador</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="tipoEditando.GeneraConsumosAutomaticos" />
+                                <label class="form-check-label">Genera consumos automáticos</label>
+                            </div>
+                        </div>
 
                         <div class="col-12">
                         <label class="form-label">Descripción</label>
                             <InputTextArea class="form-control" rows="2" @bind-Value="tipoEditando.Descripcion" />
+                        </div>
+
+                        <div class="col-12">
+                            <div class="border rounded-3 p-3 bg-light-subtle">
+                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                                    <div>
+                                        <div class="fw-semibold">Consumos estándar</div>
+                                        <div class="small text-muted">Define materias primas e insumos que este proceso agregará automáticamente en cotización.</div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AgregarConsumo(TipoProcesoConsumoOrigen.MateriaPrima)">
+                                            <i class="bi bi-droplet me-1"></i>Materia prima
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => AgregarConsumo(TipoProcesoConsumoOrigen.Insumo)">
+                                            <i class="bi bi-box-seam me-1"></i>Insumo
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @if (!consumosEditando.Any())
+                                {
+                                    <div class="text-muted small">Este proceso aún no tiene consumos estándar configurados.</div>
+                                }
+                                else
+                                {
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Origen</th>
+                                                    <th>Referencia</th>
+                                                    <th>Categoría cotización</th>
+                                                    <th>Cantidad base</th>
+                                                    <th>Activo</th>
+                                                    <th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var consumo in consumosEditando.OrderBy(c => c.Orden).ThenBy(c => c.LocalKey))
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            <span class="badge @(consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima ? "bg-primary-subtle text-primary-emphasis" : "bg-success-subtle text-success-emphasis")">
+                                                                @(consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima ? "Materia prima" : "Insumo")
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            @if (consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima)
+                                                            {
+                                                                <InputSelect class="form-select form-select-sm" @bind-Value="consumo.MateriaPrimaId">
+                                                                    <option value="">Seleccione...</option>
+                                                                    @foreach (var mp in materiasPrimasCatalogo)
+                                                                    {
+                                                                        <option value="@mp.Id">@mp.Nombre</option>
+                                                                    }
+                                                                </InputSelect>
+                                                            }
+                                                            else
+                                                            {
+                                                                <InputSelect class="form-select form-select-sm" @bind-Value="consumo.InsumoId" @bind-Value:after="() => AjustarCategoriaPorInsumo(consumo)">
+                                                                    <option value="">Seleccione...</option>
+                                                                    @foreach (var ins in insumosCatalogo)
+                                                                    {
+                                                                        <option value="@ins.Id">@ins.Nombre</option>
+                                                                    }
+                                                                </InputSelect>
+                                                            }
+                                                        </td>
+                                                        <td>
+                                                            <InputSelect class="form-select form-select-sm" @bind-Value="consumo.CategoriaCotizacion">
+                                                                <option value="@CotizacionCategoria.Tinta">Tintas</option>
+                                                                <option value="@CotizacionCategoria.InsumoBasico">Insumo básico</option>
+                                                                <option value="@CotizacionCategoria.InsumoDiverso">Insumo diverso</option>
+                                                            </InputSelect>
+                                                        </td>
+                                                        <td><InputNumber class="form-control form-control-sm" @bind-Value="consumo.CantidadBase" /></td>
+                                                        <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="consumo.Activo" /></td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarConsumo(consumo.LocalKey)">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     </div>
 
@@ -185,6 +295,8 @@
                                 <th>Nombre</th>
                                 <th>Descripción</th>
                                 <th>Posición</th>
+                                <th>Min. Est.</th>
+                                <th>Consumos</th>
                                 <th>Tarifa/Min</th>
                                 <th>Acciones</th>
                             </tr>
@@ -202,6 +314,8 @@
                                     </td>
                                     <td class="text-muted">@(string.IsNullOrWhiteSpace(tipo.Descripcion) ? "—" : tipo.Descripcion)</td>
                                     <td>@(tipo.Posicion?.Nombre ?? "—")</td>
+                                    <td>@tipo.MinutosEstandar.ToString("N2")</td>
+                                    <td>@tipo.ConsumosEstandar.Count(c => c.IsActive && c.Activo)</td>
                                     <td>$@ObtenerTarifaPorMinuto(tipo).ToString("N4")</td>
                                     <td>
                                         <div class="btn-group btn-group-sm" role="group">
@@ -248,6 +362,9 @@
     private List<TipoProceso> tiposProcesoLista = [];
     private IEnumerable<TipoProceso> tiposFiltrados = [];
     private IEnumerable<Posicion> posiciones = [];
+    private List<MateriaPrima> materiasPrimasCatalogo = [];
+    private List<Insumo> insumosCatalogo = [];
+    private List<TipoProcesoConsumoEditor> consumosEditando = [];
     private TipoProceso tipoEditando = new();
     private bool mostrarFormulario;
     private string textoBusqueda = string.Empty;
@@ -263,6 +380,7 @@
                 .Where(a => a.IsActive)
                 .OrderBy(a => a.Nombre)
                 .ToList();
+            await CargarCatalogosConsumosAsync();
             await CargarTipos();
         }
         catch (Exception ex)
@@ -278,6 +396,12 @@
             .OrderBy(t => t.Orden)
             .ToList();
 
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        var consumosPorProceso = await context.TiposProcesoConsumos
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .ToListAsync();
+
         tiposProceso = tiposProcesoLista;
 
         foreach (var tipo in tiposProcesoLista)
@@ -286,6 +410,11 @@
             {
                 tipo.Posicion = posiciones.FirstOrDefault(a => a.Id == tipo.PosicionId.Value);
             }
+
+            tipo.ConsumosEstandar = consumosPorProceso
+                .Where(c => c.TipoProcesoId == tipo.Id)
+                .OrderBy(c => c.Orden)
+                .ToList();
         }
 
         AplicarFiltrosTipos();
@@ -326,6 +455,7 @@
         error = null;
         success = null;
         tipoEditando = new TipoProceso { Activo = true };
+        consumosEditando = [];
         mostrarFormulario = true;
     }
 
@@ -342,11 +472,31 @@
             PosicionId = tipo.PosicionId,
             Activo = tipo.Activo,
             Orden = tipo.Orden,
+            MinutosEstandar = tipo.MinutosEstandar,
+            PermiteMultiplicador = tipo.PermiteMultiplicador,
+            MultiplicadorDefault = tipo.MultiplicadorDefault,
+            GeneraConsumosAutomaticos = tipo.GeneraConsumosAutomaticos,
             CreatedAt = tipo.CreatedAt,
             CreatedBy = tipo.CreatedBy,
             UpdatedBy = tipo.UpdatedBy,
             IsActive = tipo.IsActive
         };
+        consumosEditando = tipo.ConsumosEstandar
+            .OrderBy(c => c.Orden)
+            .Select(c => new TipoProcesoConsumoEditor
+            {
+                Id = c.Id,
+                TipoProcesoId = c.TipoProcesoId,
+                Origen = c.Origen,
+                CategoriaCotizacion = c.CategoriaCotizacion,
+                MateriaPrimaId = c.MateriaPrimaId,
+                InsumoId = c.InsumoId,
+                CantidadBase = c.CantidadBase,
+                Orden = c.Orden,
+                Activo = c.Activo,
+                Observaciones = c.Observaciones
+            })
+            .ToList();
         mostrarFormulario = true;
     }
 
@@ -360,12 +510,14 @@
             if (tipoEditando.Id == Guid.Empty)
             {
                 await TipoProcesoRepository.AddAsync(tipoEditando);
+                await GuardarConsumosAsync(tipoEditando.Id);
                 success = "Tipo de proceso creado correctamente.";
             }
             else
             {
                 tipoEditando.UpdatedAt = DateTime.UtcNow;
                 await TipoProcesoRepository.UpdateAsync(tipoEditando);
+                await GuardarConsumosAsync(tipoEditando.Id);
                 success = "Tipo de proceso actualizado correctamente.";
             }
 
@@ -401,7 +553,92 @@
     private void CancelarEdicion()
     {
         tipoEditando = new();
+        consumosEditando = [];
         mostrarFormulario = false;
+    }
+
+    private async Task CargarCatalogosConsumosAsync()
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        materiasPrimasCatalogo = await context.MateriasPrimas
+            .AsNoTracking()
+            .Where(m => m.IsActive)
+            .OrderBy(m => m.Nombre)
+            .ToListAsync();
+
+        insumosCatalogo = await context.Insumos
+            .AsNoTracking()
+            .Where(i => i.IsActive)
+            .OrderBy(i => i.Nombre)
+            .ToListAsync();
+    }
+
+    private void AgregarConsumo(TipoProcesoConsumoOrigen origen)
+    {
+        var orden = consumosEditando.Count == 0 ? 1 : consumosEditando.Max(c => c.Orden) + 1;
+        consumosEditando.Add(new TipoProcesoConsumoEditor
+        {
+            Origen = origen,
+            Orden = orden,
+            CantidadBase = 1m,
+            Activo = true,
+            CategoriaCotizacion = origen == TipoProcesoConsumoOrigen.MateriaPrima ? CotizacionCategoria.Tinta : CotizacionCategoria.InsumoBasico
+        });
+    }
+
+    private void EliminarConsumo(string localKey)
+        => consumosEditando.RemoveAll(c => c.LocalKey == localKey);
+
+    private void AjustarCategoriaPorInsumo(TipoProcesoConsumoEditor consumo)
+    {
+        if (!consumo.InsumoId.HasValue)
+        {
+            return;
+        }
+
+        var insumo = insumosCatalogo.FirstOrDefault(i => i.Id == consumo.InsumoId.Value);
+        if (insumo != null)
+        {
+            consumo.CategoriaCotizacion = insumo.TipoInsumo == TipoInsumoEnum.Basico
+                ? CotizacionCategoria.InsumoBasico
+                : CotizacionCategoria.InsumoDiverso;
+        }
+    }
+
+    private async Task GuardarConsumosAsync(Guid tipoProcesoId)
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        var existentes = await context.TiposProcesoConsumos
+            .Where(c => c.TipoProcesoId == tipoProcesoId)
+            .ToListAsync();
+
+        if (existentes.Count > 0)
+        {
+            context.TiposProcesoConsumos.RemoveRange(existentes);
+            await context.SaveChangesAsync();
+        }
+
+        var orden = 1;
+        foreach (var consumo in consumosEditando.Where(c => c.Activo && (c.MateriaPrimaId.HasValue || c.InsumoId.HasValue)))
+        {
+            context.TiposProcesoConsumos.Add(new TipoProcesoConsumo
+            {
+                Id = Guid.NewGuid(),
+                TipoProcesoId = tipoProcesoId,
+                Origen = consumo.Origen,
+                CategoriaCotizacion = consumo.CategoriaCotizacion,
+                MateriaPrimaId = consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima ? consumo.MateriaPrimaId : null,
+                InsumoId = consumo.Origen == TipoProcesoConsumoOrigen.Insumo ? consumo.InsumoId : null,
+                CantidadBase = consumo.CantidadBase,
+                Orden = orden++,
+                Activo = consumo.Activo,
+                Observaciones = consumo.Observaciones,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+        }
+
+        await context.SaveChangesAsync();
     }
 
     private decimal ObtenerTarifaPorMinuto(TipoProceso tipo)
@@ -412,5 +649,20 @@
         }
 
         return 0m;
+    }
+
+    private sealed class TipoProcesoConsumoEditor
+    {
+        public string LocalKey { get; set; } = Guid.NewGuid().ToString("N");
+        public Guid Id { get; set; }
+        public Guid TipoProcesoId { get; set; }
+        public TipoProcesoConsumoOrigen Origen { get; set; }
+        public CotizacionCategoria CategoriaCotizacion { get; set; }
+        public Guid? MateriaPrimaId { get; set; }
+        public Guid? InsumoId { get; set; }
+        public decimal CantidadBase { get; set; }
+        public int Orden { get; set; }
+        public bool Activo { get; set; } = true;
+        public string? Observaciones { get; set; }
     }
 }
