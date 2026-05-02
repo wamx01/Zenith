@@ -39,6 +39,7 @@ public partial class Asistencias : ComponentBase
     private string? reprocesoMotivo;
     private RrhhAsistencia? asistenciaSeleccionada;
     private Dictionary<string, string> ausenciasPorDia = new();
+    private Dictionary<string, int> compensacionesPorDia = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,6 +95,7 @@ public partial class Asistencias : ComponentBase
                 .ToListAsync();
 
             await CargarAusenciasDiasAsync(db);
+            await CargarCompensacionesDiasAsync(db);
         }
         catch (Exception ex)
         {
@@ -597,7 +599,15 @@ public partial class Asistencias : ComponentBase
         ausenciasPorDia = await ConstruirAusenciasPorDiaAsync(db, lista);
     }
 
+    private async Task CargarCompensacionesDiasAsync(CrmDbContext db)
+    {
+        compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, lista);
+    }
+
     private static string CrearClaveAusencia(Guid empleadoId, DateOnly fecha)
+        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
+
+    private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string FormatearAusencia(RrhhAusencia ausencia)
@@ -609,6 +619,39 @@ public partial class Asistencias : ComponentBase
         => ausenciasPorDia.TryGetValue(CrearClaveAusencia(asistencia.EmpleadoId, asistencia.Fecha), out var resumen)
             ? resumen
             : "—";
+
+    private int ObtenerMinutosCompensados(RrhhAsistencia asistencia)
+        => compensacionesPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
+            ? Math.Max(0, minutos)
+            : 0;
+
+    private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, ObtenerMinutosCompensados(asistencia));
+
+    private async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
+    {
+        if (asistencias.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+
+        var logs = await db.RrhhLogsChecador
+            .AsNoTracking()
+            .Where(l => l.EmpresaId == _empresaId
+                && l.Detalle != null
+                && l.Mensaje.Contains("compensación aprobada de permiso"))
+            .OrderByDescending(l => l.FechaUtc)
+            .ToListAsync();
+
+        var resultado = new Dictionary<string, int>();
+        foreach (var asistencia in asistencias)
+        {
+            var minutos = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, asistencia.EmpleadoId, asistencia.Fecha);
+            resultado[CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha)] = minutos;
+        }
+
+        return resultado;
+    }
 
     private IQueryable<RrhhAsistencia> ConstruirConsultaAsistencias(CrmDbContext db)
     {

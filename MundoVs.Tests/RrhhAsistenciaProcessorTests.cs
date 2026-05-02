@@ -619,6 +619,62 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
+    public async Task PoliticaCompensacionPermiso_CuandoHaySalidaPosteriorBajoUmbral_ObtieneMinutosRecuperablesAprobables()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            HoraEntradaProgramada = new TimeSpan(8, 0, 0),
+            HoraSalidaProgramada = new TimeSpan(17, 0, 0),
+            HoraEntradaReal = new TimeSpan(8, 0, 0),
+            HoraSalidaReal = new TimeSpan(17, 20, 0)
+        };
+
+        var minutos = RrhhPermisoCompensationPolicy.ObtenerMinutosRecuperablesAprobables(asistencia, 30);
+
+        Assert.Equal(20, minutos);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoHayCompensacionAprobada_ReducePermisoSugerido()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosJornadaNetaProgramada = 480,
+            MinutosTrabajadosNetos = 304
+        };
+
+        var sugerido = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoSugeridos(asistencia, 20);
+
+        Assert.Equal(156, sugerido);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoHayCompensacionAprobada_AumentaTrabajoVisible()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosTrabajadosNetos = 304
+        };
+
+        var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 20);
+
+        Assert.Equal(324, visibles);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoNoHayCompensacion_ConservaTrabajoNetoVisible()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosTrabajadosNetos = 304
+        };
+
+        var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+
+        Assert.Equal(304, visibles);
+    }
+
+    [Fact]
     public async Task ProcesarMarcacionesPendientesAsync_SiSalidaAnticipadaNoCubreElDescanso_DescuentaElProgramado()
     {
         await using var db = CreateDbContext();

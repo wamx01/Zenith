@@ -14,7 +14,8 @@ public sealed record RrhhAsistenciaCorreccionSegmento(
     int Minutos,
     decimal WidthPercent,
     string CssClass,
-    string TextoCorto);
+    string TextoCorto,
+    bool EsAjuste = false);
 
 public sealed record RrhhAsistenciaCorreccionResolucionOption(
     string Value,

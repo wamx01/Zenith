@@ -9,6 +9,7 @@ namespace MundoVs.Core.Services;
 public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutionService
 {
     private const string ReferenciaPermisoBancoPrefix = "permiso-banco";
+    private const string ReferenciaCompensacionPermisoBancoPrefix = "permiso-compensacion-banco";
 
     public async Task<int> ObtenerSaldoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, CancellationToken cancellationToken = default)
     {
@@ -252,8 +253,81 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
         return saldoActualMinutos - minutosRemovidos;
     }
 
+    public async Task<int> AplicarCompensacionPermisoBancoHorasAsync(CrmDbContext db, RrhhCompensacionPermisoBancoHorasCommand command, CancellationToken cancellationToken = default)
+    {
+        var referencia = ConstruirReferenciaCompensacionPermisoBanco(command.EmpleadoId, command.Fecha);
+        var movimientosPrevios = await db.RrhhBancoHorasMovimientos
+            .Where(m => m.EmpresaId == command.EmpresaId
+                && m.EmpleadoId == command.EmpleadoId
+                && m.IsActive
+                && m.ReferenciaTipo == referencia)
+            .ToListAsync(cancellationToken);
+
+        var contextoEmpleado = await ObtenerContextoEmpleadoAsync(db, command.EmpresaId, command.EmpleadoId, cancellationToken);
+        var saldoActualMinutos = contextoEmpleado.SaldoBancoHorasMinutos;
+        var netoPrevioMinutos = (int)Math.Round(movimientosPrevios.Sum(m => m.Horas) * 60m, MidpointRounding.AwayFromZero);
+        var saldoDisponibleMinutos = saldoActualMinutos - netoPrevioMinutos;
+        var bancoHorasHabilitado = contextoEmpleado.Configuracion.BancoHorasHabilitado;
+        if (!bancoHorasHabilitado)
+        {
+            throw new InvalidOperationException("El banco de horas no está habilitado para esta empresa.");
+        }
+
+        var minutosCompensados = Math.Max(0, command.MinutosCompensados);
+        if (movimientosPrevios.Count > 0)
+        {
+            db.RrhhBancoHorasMovimientos.RemoveRange(movimientosPrevios);
+        }
+
+        if (minutosCompensados <= 0)
+        {
+            return saldoDisponibleMinutos;
+        }
+
+        db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = command.EmpresaId,
+            EmpleadoId = command.EmpleadoId,
+            Fecha = command.Fecha,
+            TipoMovimiento = TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra,
+            Horas = minutosCompensados / 60m,
+            ReferenciaTipo = referencia,
+            Observaciones = string.IsNullOrWhiteSpace(command.Observaciones) ? "Compensación aprobada de permiso desde asistencias." : command.Observaciones.Trim(),
+            EsAutomatico = true,
+            CreatedAt = DateTime.UtcNow,
+            CreatedBy = command.UsuarioActual,
+            IsActive = true
+        });
+
+        return saldoDisponibleMinutos + minutosCompensados;
+    }
+
+    public async Task<int> RemoverCompensacionPermisoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fecha, CancellationToken cancellationToken = default)
+    {
+        var referencia = ConstruirReferenciaCompensacionPermisoBanco(empleadoId, fecha);
+        var movimientos = await db.RrhhBancoHorasMovimientos
+            .Where(m => m.EmpresaId == empresaId
+                && m.EmpleadoId == empleadoId
+                && m.IsActive
+                && m.ReferenciaTipo == referencia)
+            .ToListAsync(cancellationToken);
+
+        if (movimientos.Count > 0)
+        {
+            db.RrhhBancoHorasMovimientos.RemoveRange(movimientos);
+        }
+
+        var saldoActualMinutos = await ObtenerSaldoBancoHorasAsync(db, empresaId, empleadoId, cancellationToken);
+        var minutosRemovidos = (int)Math.Round(movimientos.Sum(m => m.Horas) * 60m, MidpointRounding.AwayFromZero);
+        return saldoActualMinutos - minutosRemovidos;
+    }
+
     private static string ConstruirReferenciaPermisoBanco(Guid ausenciaId)
         => $"{ReferenciaPermisoBancoPrefix}:{ausenciaId:N}";
+
+    private static string ConstruirReferenciaCompensacionPermisoBanco(Guid empleadoId, DateOnly fecha)
+        => $"{ReferenciaCompensacionPermisoBancoPrefix}:{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static decimal ObtenerDecimal(IReadOnlyDictionary<string, string> configuraciones, string clave, decimal valorDefault)
         => configuraciones.TryGetValue(clave, out var valor)

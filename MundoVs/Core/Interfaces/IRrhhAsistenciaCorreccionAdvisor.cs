@@ -8,6 +8,8 @@ public interface IRrhhAsistenciaCorreccionAdvisor
     RrhhAsistenciaCorreccionAdvice Analizar(
         RrhhAsistencia asistencia,
         RrhhAusencia? permisoDia,
+        int minutosCompensadosAprobados,
+        int minutosRecuperablesAprobables,
         bool bancoHorasHabilitado,
         bool puedeAprobarTiempoExtra,
         decimal factorTiempoExtra,

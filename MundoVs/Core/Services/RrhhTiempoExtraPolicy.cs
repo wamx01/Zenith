@@ -7,14 +7,47 @@ public static class RrhhTiempoExtraPolicy
     public static int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosJornadaNetaProgramada);
 
+    public static int ObtenerMinutosPermisoCompensadosAprobados(IEnumerable<RrhhLogChecador> bitacora, Guid empleadoId, DateOnly fecha)
+    {
+        const string prefijo = "minutosCompensados=";
+
+        foreach (var log in bitacora
+                     .Where(l => l.Detalle != null
+                         && l.Mensaje.Contains("compensación aprobada de permiso", StringComparison.OrdinalIgnoreCase)
+                         && l.Detalle.Contains($"empleado={empleadoId}", StringComparison.OrdinalIgnoreCase)
+                         && l.Detalle.Contains($"fecha={fecha:yyyy-MM-dd}", StringComparison.OrdinalIgnoreCase))
+                     .OrderByDescending(l => l.FechaUtc))
+        {
+            var detalle = log.Detalle!;
+            var indice = detalle.IndexOf(prefijo, StringComparison.OrdinalIgnoreCase);
+            if (indice < 0)
+            {
+                continue;
+            }
+
+            indice += prefijo.Length;
+            var fin = detalle.IndexOf(';', indice);
+            var texto = fin >= 0 ? detalle[indice..fin] : detalle[indice..];
+            if (int.TryParse(texto, out var minutos))
+            {
+                return Math.Max(0, minutos);
+            }
+        }
+
+        return 0;
+    }
+
+    public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
+        => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, minutosCompensadosAprobados));
+
     public static int ObtenerMinutosAusenciaBrutaSugerida(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);
 
     public static int ObtenerMinutosFaltanteBanco(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - asistencia.MinutosTrabajadosNetos);
 
-    public static int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia)
-        => ObtenerMinutosFaltanteBanco(asistencia);
+    public static int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia, int minutosCompensadosAprobados = 0)
+        => Math.Max(0, ObtenerMinutosFaltanteBanco(asistencia) - Math.Max(0, minutosCompensadosAprobados));
 
     public static int ObtenerMinutosDescansoNoPagadoExcluidosDelPermiso(RrhhAsistencia asistencia)
     {

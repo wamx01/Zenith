@@ -22,7 +22,7 @@
                     <div class="asis-summary-strip px-3 pt-3 pb-2 border-bottom">
                         <div class="d-flex flex-wrap gap-2 mb-2">
                             <span class="asis-chip asis-chip--muted"><i class="bi bi-calendar-event"></i>@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</span>
-                            <span class="asis-chip asis-chip--info"><i class="bi bi-hourglass-split"></i>Neto @FormatearMinutos(AsistenciaActual.MinutosTrabajadosNetos)</span>
+                            <span class="asis-chip asis-chip--info"><i class="bi bi-hourglass-split"></i>Trabajado @FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</span>
                             <span class="asis-chip @ObtenerClaseMetricaIncidencia(AsistenciaActual.MinutosRetardo)"><i class="bi bi-alarm"></i>Retardo @FormatearMinutosCortos(AsistenciaActual.MinutosRetardo)</span>
                             <span class="asis-chip @ObtenerClaseMetricaIncidencia(AsistenciaActual.MinutosSalidaAnticipada)"><i class="bi bi-box-arrow-left"></i>Salida ant. @FormatearMinutosCortos(AsistenciaActual.MinutosSalidaAnticipada)</span>
                             <span class="asis-chip @ObtenerClaseMetricaExtra(AsistenciaActual.MinutosExtra)"><i class="bi bi-plus-circle"></i>Extra @FormatearMinutosCortos(AsistenciaActual.MinutosExtra)</span>
@@ -141,13 +141,14 @@
 
                                 <div class="asis-section-title mb-2">Distribución visual del día</div>
                                 <div class="asis-timeline mb-2">
-                                    @foreach (var segmento in asesorCorreccionActual.Segmentos)
+                                    @foreach (var segmento in ObtenerSegmentosBaseTimeline())
                                     {
                                         <div class="asis-timeline__segment @segmento.CssClass" style="width:@($"{segmento.WidthPercent}%")" title="@($"{segmento.Titulo}: {segmento.TextoCorto}")"></div>
                                     }
                                 </div>
+                                <div class="small text-muted mb-2">La barra integra trabajo visible, descansos y coberturas/ajustes del día para mostrar cómo se compone la jornada operativa.</div>
                                 <div class="asis-timeline-legend">
-                                    @foreach (var segmento in asesorCorreccionActual.Segmentos)
+                                    @foreach (var segmento in ObtenerSegmentosBaseTimeline())
                                     {
                                         <span class="asis-timeline-legend__item">
                                             <span class="asis-timeline-legend__dot @segmento.CssClass.Replace("asis-timeline__segment", "asis-timeline-legend__dot")"></span>
@@ -155,6 +156,19 @@
                                         </span>
                                     }
                                 </div>
+                                @if (ObtenerSegmentosAjusteTimeline().Count > 0)
+                                {
+                                    <div class="small text-muted mt-2 mb-1">Detalle de ajustes</div>
+                                    <div class="asis-timeline-legend">
+                                        @foreach (var segmento in ObtenerSegmentosAjusteTimeline())
+                                        {
+                                            <span class="asis-timeline-legend__item">
+                                                <span class="asis-timeline-legend__dot @segmento.CssClass.Replace("asis-timeline__segment", "asis-timeline-legend__dot")"></span>
+                                                <span>@segmento.Titulo: @segmento.TextoCorto</span>
+                                            </span>
+                                        }
+                                    </div>
+                                }
                             </div>
                         }
 
@@ -364,6 +378,10 @@
                                                 @(permisoDiaSeleccionado == null ? ObtenerGuiaRapidaPermiso() : ObtenerResumenPermisoDiaCaptura())
                                             </div>
 
+                                            <div class="alert @(TieneCompensacionPermisoAprobada() ? "alert-info" : "alert-warning") py-2 small">
+                                                <strong>Compensación por aprobación:</strong> @ObtenerResumenCompensacionPermiso()
+                                            </div>
+
                                             @if (AsistenciaActual != null)
                                             {
                                                 <div class="alert alert-primary py-2 small">
@@ -385,6 +403,18 @@
                                                     </div>
                                                     <div class="col-md-4">
                                                         <div class="asis-mini-stat h-100 border border-primary-subtle">
+                                                            <div class="asis-mini-stat__label">Compensado aprobado</div>
+                                                            <div class="asis-mini-stat__value">@FormatearMinutos(minutosCompensadosPermisoAprobados)</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="asis-mini-stat h-100 border border-primary-subtle">
+                                                            <div class="asis-mini-stat__label">Trabajo visible</div>
+                                                            <div class="asis-mini-stat__value">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="asis-mini-stat h-100 border border-primary-subtle">
                                                             <div class="asis-mini-stat__label">Faltante remanente</div>
                                                             <div class="asis-mini-stat__value">@FormatearMinutos(ObtenerMinutosFaltanteRemanenteActual())</div>
                                                         </div>
@@ -396,7 +426,29 @@
                                                 <button class="btn btn-outline-primary btn-sm" @onclick="AplicarPermisoDiaSugerido" disabled="@(AsistenciaActual == null || guardandoPermisoDia)">
                                                     <i class="bi bi-magic me-1"></i>Usar sugerido
                                                 </button>
+                                                <button class="btn btn-outline-info btn-sm" @onclick="AprobarCompensacionPermisoAsync" disabled="@(guardandoPermisoDia || !PuedeAprobarCompensacionPermiso())">
+                                                    <i class="bi bi-check2-square me-1"></i>@(TieneCompensacionPermisoAprobada() ? "Guardar compensación" : "Aprobar compensación")
+                                                </button>
+                                                @if (TieneCompensacionPermisoAprobada())
+                                                {
+                                                    <button class="btn btn-outline-danger btn-sm" @onclick="QuitarCompensacionPermisoAsync" disabled="@guardandoPermisoDia">
+                                                        <i class="bi bi-x-circle me-1"></i>Quitar compensación
+                                                    </button>
+                                                }
                                                 <span class="small text-muted align-self-center">@ObtenerGuiaRapidaPermiso()</span>
+                                            </div>
+
+                                            <div class="row g-2 mb-3">
+                                                <div class="col-md-4">
+                                                    <label class="form-label">Minutos de compensación</label>
+                                                    <InputNumber class="form-control" @bind-Value="minutosCompensacionPermisoCaptura" min="0" step="1" />
+                                                    <div class="small text-muted mt-1">Puedes aprobar lo detectado o capturar manualmente otro valor.</div>
+                                                </div>
+                                                <div class="col-md-8 d-flex align-items-end">
+                                                    <div class="small text-muted">
+                                                        Detectado automáticamente: @FormatearMinutos(minutosRecuperablesPermisoAprobables). Aprobado actual: @FormatearMinutos(minutosCompensadosPermisoAprobados). Saldo banco: @saldoBancoHorasSeleccionado min.
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             <div class="row g-3 align-items-end">

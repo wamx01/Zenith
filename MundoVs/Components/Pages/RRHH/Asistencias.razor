@@ -446,7 +446,7 @@
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Con revisión</div><div class="fs-4 fw-bold">@lista.Count(a => a.RequiereRevision)</div></div></div></div>
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Retardos</div><div class="fs-4 fw-bold">@lista.Count(a => a.MinutosRetardo > 0)</div></div></div></div>
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Sin turno</div><div class="fs-4 fw-bold">@lista.Count(a => a.TurnoBaseId == null)</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Trabajo neto</div><div class="fs-4 fw-bold">@FormatearMinutos(lista.Sum(a => a.MinutosTrabajadosNetos))</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Trabajo visible</div><div class="fs-4 fw-bold">@FormatearMinutos(lista.Sum(a => ObtenerMinutosTrabajadosVisibles(a)))</div></div></div></div>
         </div>
 
         <div class="card border-0 shadow-sm mb-4">
@@ -611,9 +611,13 @@
                                         </td>
                                         <td>
                                             <div class="asis-stack">
-                                                <div class="asis-cell-title">@FormatearMinutos(item.MinutosTrabajadosNetos)</div>
+                                                <div class="asis-cell-title">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(item))</div>
                                                 <div class="asis-cell-subtitle" title="Tiempo bruto detectado"><i class="bi bi-hourglass me-1"></i>@FormatearMinutos(item.MinutosTrabajadosBrutos)</div>
                                                 <div class="asis-cell-subtitle" title="Jornada neta programada"><i class="bi bi-calendar-range me-1"></i>@FormatearMinutos(item.MinutosJornadaNetaProgramada)</div>
+                                                @if (ObtenerMinutosCompensados(item) > 0)
+                                                {
+                                                    <div class="asis-cell-subtitle" title="Compensación aprobada integrada al tiempo visible"><i class="bi bi-plus-square me-1"></i>Comp. @FormatearMinutos(ObtenerMinutosCompensados(item))</div>
+                                                }
                                             </div>
                                         </td>
                                         <td class="text-end"><span class="asis-chip asis-kpi-chip @ObtenerClaseMetricaIncidencia(item.MinutosRetardo)" title="Retardo"><i class="bi bi-alarm"></i>@FormatearMinutosCortos(item.MinutosRetardo)</span></td>

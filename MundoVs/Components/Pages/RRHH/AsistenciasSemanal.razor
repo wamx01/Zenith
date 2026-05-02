@@ -5,6 +5,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -192,6 +193,7 @@
     private string? filtroEmpleado;
     private int totalMinutosPeriodo;
     private int promedioMinutosEmpleado;
+    private Dictionary<string, int> compensacionesPorDia = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -236,6 +238,8 @@
                 .ThenBy(a => a.Fecha)
                 .ToListAsync();
 
+            compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
+
             resumenes = asistencias
                 .GroupBy(a => new
                 {
@@ -252,7 +256,7 @@
                     CodigoChecador = grupo.Key.CodigoChecador,
                     MinutosPorDia = grupo
                         .GroupBy(a => a.Fecha)
-                        .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosTrabajadosNetos)))
+                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x)))
                 })
                 .OrderBy(x => x.NombreCompleto)
                 .ThenBy(x => x.NumeroEmpleado)
@@ -268,6 +272,7 @@
             diasPeriodo = [];
             resumenes = [];
             totalesPorDia = new();
+            compensacionesPorDia = new();
             totalMinutosPeriodo = 0;
             promedioMinutosEmpleado = 0;
         }
@@ -421,6 +426,37 @@
         }
 
         return $"\"{valor.Replace("\"", "\"\"")}\"";
+    }
+
+    private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, ObtenerMinutosCompensados(asistencia));
+
+    private int ObtenerMinutosCompensados(RrhhAsistencia asistencia)
+        => compensacionesPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
+            ? Math.Max(0, minutos)
+            : 0;
+
+    private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
+        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
+
+    private async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
+    {
+        if (asistencias.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+
+        var logs = await db.RrhhLogsChecador
+            .AsNoTracking()
+            .Where(l => l.EmpresaId == _empresaId
+                && l.Detalle != null
+                && l.Mensaje.Contains("compensación aprobada de permiso"))
+            .OrderByDescending(l => l.FechaUtc)
+            .ToListAsync();
+
+        return asistencias.ToDictionary(
+            a => CrearClaveCompensacion(a.EmpleadoId, a.Fecha),
+            a => RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, a.EmpleadoId, a.Fecha));
     }
 
     private sealed class ResumenSemanalEmpleado

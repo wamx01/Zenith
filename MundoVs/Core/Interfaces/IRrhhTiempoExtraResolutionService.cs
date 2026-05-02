@@ -15,6 +15,8 @@ public interface IRrhhTiempoExtraResolutionService
     Task<RrhhTiempoExtraResolutionResult> AplicarResolucionAsync(CrmDbContext db, RrhhTiempoExtraResolutionCommand command, CancellationToken cancellationToken = default);
     Task<int> AplicarPermisoConGoceBancoHorasAsync(CrmDbContext db, RrhhPermisoBancoHorasCommand command, CancellationToken cancellationToken = default);
     Task<int> RemoverPermisoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, Guid ausenciaId, CancellationToken cancellationToken = default);
+    Task<int> AplicarCompensacionPermisoBancoHorasAsync(CrmDbContext db, RrhhCompensacionPermisoBancoHorasCommand command, CancellationToken cancellationToken = default);
+    Task<int> RemoverCompensacionPermisoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fecha, CancellationToken cancellationToken = default);
 }
 
 public sealed class RrhhTiempoExtraConfiguracionSnapshot
@@ -39,6 +41,16 @@ public sealed class RrhhTiempoExtraResolutionCommand
     public int MinutosPago { get; init; }
     public int MinutosBanco { get; init; }
     public int MinutosCubrirBanco { get; init; }
+    public string? Observaciones { get; init; }
+    public string UsuarioActual { get; init; } = string.Empty;
+}
+
+public sealed class RrhhCompensacionPermisoBancoHorasCommand
+{
+    public Guid EmpresaId { get; init; }
+    public Guid EmpleadoId { get; init; }
+    public DateOnly Fecha { get; init; }
+    public int MinutosCompensados { get; init; }
     public string? Observaciones { get; init; }
     public string UsuarioActual { get; init; } = string.Empty;
 }
