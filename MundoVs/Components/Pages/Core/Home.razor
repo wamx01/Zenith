@@ -374,6 +374,7 @@
                         <i class="bi bi-building stat-icon"></i>
                         <h6 class="text-uppercase opacity-75 mb-2">Empresas</h6>
                         <h2 class="stat-number">@totalEmpresas</h2>
+                        <div class="small opacity-75 mt-2">@empresasOperativas operativas</div>
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-6">
@@ -383,6 +384,45 @@
                         <h2 class="stat-number">@totalUsuarios</h2>
                     </div>
                 </div>
+
+            <div class="row g-4 mb-4">
+                <div class="col-xl-4 col-md-6">
+                    <div class="feature-card card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Sin admin</div>
+                                <h3 class="mb-1">@empresasSinAdmin</h3>
+                            </div>
+                            <i class="bi bi-person-x fs-2 text-warning"></i>
+                        </div>
+                        <p class="text-muted small mb-0">Empresas que requieren asignar o corregir su administrador principal.</p>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-md-6">
+                    <div class="feature-card card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Suscripción vigente</div>
+                                <h3 class="mb-1">@empresasConSuscripcionVigente</h3>
+                            </div>
+                            <i class="bi bi-patch-check fs-2 text-success"></i>
+                        </div>
+                        <p class="text-muted small mb-0">Incluye activas y demos con vigencia actual para dar seguimiento comercial real.</p>
+                    </div>
+                </div>
+                <div class="col-xl-4 col-md-12">
+                    <div class="feature-card card p-4 h-100">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="text-muted small text-uppercase fw-semibold">Pendientes de atención</div>
+                                <h3 class="mb-1">@empresasPendientesAtencion</h3>
+                            </div>
+                            <i class="bi bi-bell fs-2 text-danger"></i>
+                        </div>
+                        <p class="text-muted small mb-0">Suma suspendidas, canceladas y empresas sin admin para priorizar acciones de superadmin.</p>
+                    </div>
+                </div>
+            </div>
                 <div class="col-lg-3 col-md-6">
                     <div class="stat-card card gradient-bg-5 text-white p-4 position-relative">
                         <i class="bi bi-key-fill stat-icon"></i>
@@ -694,6 +734,10 @@
     private int empresasDemo;
     private int empresasSuspendidas;
     private int empresasCanceladas;
+    private int empresasOperativas;
+    private int empresasSinAdmin;
+    private int empresasConSuscripcionVigente;
+    private int empresasPendientesAtencion;
 
     protected override async Task OnInitializedAsync()
     {
@@ -813,16 +857,43 @@
     {
         await using var context = await ContextFactory.CreateDbContextAsync();
 
-        var empresas = await context.Empresas.AsNoTracking().ToListAsync();
+        var empresas = await context.Empresas
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .ToListAsync();
+
+        var adminsEmpresa = await context.Usuarios
+            .IgnoreQueryFilters()
+            .Include(u => u.TipoUsuario)
+            .AsNoTracking()
+            .Where(u => u.TipoUsuario.Nombre == "Administrador")
+            .Select(u => u.EmpresaId)
+            .Distinct()
+            .ToListAsync();
+
+        var hoy = DateTime.Today;
+        var suscripcionesVigentes = await context.SuscripcionesEmpresa
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(s => s.Estado == EstadoSuscripcion.Activa
+                || (s.Estado == EstadoSuscripcion.Trial && (!s.FechaFin.HasValue || s.FechaFin.Value.Date >= hoy)))
+            .Select(s => s.EmpresaId)
+            .Distinct()
+            .ToListAsync();
+
         totalEmpresas = empresas.Count;
         empresasActivas = empresas.Count(e => e.Estado == EmpresaEstado.Activa && e.IsActive && !e.IsSuspended);
         empresasDemo = empresas.Count(e => e.Estado == EmpresaEstado.Demo);
         empresasSuspendidas = empresas.Count(e => e.Estado == EmpresaEstado.Suspendida || e.IsSuspended);
         empresasCanceladas = empresas.Count(e => e.Estado == EmpresaEstado.Cancelada);
+        empresasOperativas = empresas.Count(e => e.IsActive && e.Estado != EmpresaEstado.Cancelada);
+        empresasSinAdmin = empresas.Count(e => !adminsEmpresa.Contains(e.Id));
+        empresasConSuscripcionVigente = suscripcionesVigentes.Count;
+        empresasPendientesAtencion = empresasSinAdmin + empresasSuspendidas + empresasCanceladas;
 
-        totalUsuarios = await context.Usuarios.AsNoTracking().CountAsync();
-        totalCapacidades = await context.Capacidades.AsNoTracking().CountAsync();
-        totalPlanes = await context.Planes.AsNoTracking().CountAsync();
+        totalUsuarios = await context.Usuarios.IgnoreQueryFilters().AsNoTracking().CountAsync();
+        totalCapacidades = await context.Capacidades.IgnoreQueryFilters().AsNoTracking().CountAsync();
+        totalPlanes = await context.Planes.IgnoreQueryFilters().AsNoTracking().CountAsync();
     }
 
     private bool Tiene(string capacidad)

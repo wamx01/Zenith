@@ -1,8 +1,10 @@
 @page "/configuracion/tallas-calzado"
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
 @using MundoVs.Core.Entities.Calzado
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Tallas base</PageTitle>
@@ -110,16 +112,26 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var talla in tallasFiltradas.OrderBy(t => t.Orden).ThenBy(t => t.SistemaNumeracion).ThenBy(t => t.Talla))
+                            @foreach (var talla in tallasFiltradas
+                                .OrderByDescending(t => t.EsNueva)
+                                .ThenBy(t => t.EsNueva ? 0 : t.Orden)
+                                .ThenBy(t => t.SistemaNumeracion)
+                                .ThenBy(t => t.Talla))
                             {
-                                <tr class="@(!talla.Activa ? "table-light opacity-75" : string.Empty)">
+                                <tr class="@(ObtenerClaseFilaTalla(talla))">
                                     <td>
                                         <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => QuitarTalla(talla.LocalKey)">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </td>
                                     <td>
-                                        <span class="badge @(talla.Activa ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(talla.Activa ? "Activa" : "Inactiva")</span>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            <span class="badge @(talla.Activa ? "bg-success-subtle text-success-emphasis border border-success-subtle" : "bg-secondary")">@(talla.Activa ? "Activa" : "Inactiva")</span>
+                                            @if (talla.EsNueva)
+                                            {
+                                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">Nueva</span>
+                                            }
+                                        </div>
                                     </td>
                                     <td>
                                         <InputText class="form-control form-control-sm" @bind-Value="talla.Talla" />
@@ -168,6 +180,7 @@
     .tc-table thead th { white-space: nowrap; }
     .tc-empty-state { border: 1px dashed #cbd5e1; border-radius: 12px; background: #f8fafc; }
     .tc-empty-icon { font-size: 1.8rem; color: #64748b; }
+    .tc-row-new { background: #eff6ff; }
 </style>
 
 @code {
@@ -177,18 +190,34 @@
     private string? ok;
     private string textoBusqueda = string.Empty;
     private string filtroEstado = "activas";
+    private Guid _empresaId;
 
     protected override async Task OnInitializedAsync()
     {
+        await CargarAccesoAsync();
         await CargarAsync();
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }
 
     private async Task CargarAsync()
     {
+        if (_empresaId == Guid.Empty)
+        {
+            tallas = [];
+            tallasFiltradas = [];
+            error = "No hay una empresa activa en sesión.";
+            ok = null;
+            return;
+        }
+
         await using var db = await DbFactory.CreateDbContextAsync();
         tallas = await db.CatalogoTallasCalzado
             .AsNoTracking()
-            .IgnoreQueryFilters()
             .OrderBy(t => t.Orden)
             .ThenBy(t => t.SistemaNumeracion)
             .ThenBy(t => t.Talla)
@@ -239,17 +268,21 @@
     private void AgregarTalla()
     {
         var siguienteOrden = tallas.Count == 0 ? 1 : tallas.Max(t => t.Orden) + 1;
+        textoBusqueda = string.Empty;
+        filtroEstado = "todas";
         tallas.Add(new TallaCatalogoEditor
         {
             Orden = siguienteOrden,
             Activa = true,
             SistemaNumeracion = SistemaNumeracionCalzadoEnum.MX
         });
+        AplicarFiltros();
     }
 
     private void QuitarTalla(string localKey)
     {
         tallas.RemoveAll(t => t.LocalKey == localKey);
+        AplicarFiltros();
     }
 
     private async Task GuardarAsync()
@@ -270,7 +303,8 @@
         }
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        var existentes = await db.CatalogoTallasCalzado.Where(t => t.IsActive).ToListAsync();
+        var existentes = await db.CatalogoTallasCalzado
+            .ToListAsync();
         var idsEditados = tallas.Where(t => t.Id != Guid.Empty).Select(t => t.Id).ToHashSet();
 
         foreach (var existente in existentes.Where(t => !idsEditados.Contains(t.Id)))
@@ -287,6 +321,7 @@
                 db.CatalogoTallasCalzado.Add(new CatalogoTallaCalzado
                 {
                     Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
                     Talla = talla.Talla.Trim(),
                     SistemaNumeracion = talla.SistemaNumeracion,
                     Orden = talla.Orden,
@@ -325,5 +360,14 @@
         public SistemaNumeracionCalzadoEnum SistemaNumeracion { get; set; }
         public int Orden { get; set; }
         public bool Activa { get; set; } = true;
+        public bool EsNueva => Id == Guid.Empty;
+    }
+
+    private static string ObtenerClaseFilaTalla(TallaCatalogoEditor talla)
+    {
+        if (talla.EsNueva)
+            return "tc-row-new";
+
+        return !talla.Activa ? "table-light opacity-75" : string.Empty;
     }
 }

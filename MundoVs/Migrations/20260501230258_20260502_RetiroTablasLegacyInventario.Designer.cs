@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MundoVs.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using MundoVs.Infrastructure.Data;
 namespace MundoVs.Migrations
 {
     [DbContext(typeof(CrmDbContext))]
-    partial class CrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501230258_20260502_RetiroTablasLegacyInventario")]
+    partial class _20260502_RetiroTablasLegacyInventario
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4109,10 +4112,6 @@ namespace MundoVs.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("TextoPagare")
-                        .HasMaxLength(4000)
-                        .HasColumnType("varchar(4000)");
-
                     b.Property<decimal>("Total")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -4171,9 +4170,6 @@ namespace MundoVs.Migrations
                     b.Property<Guid>("NotaEntregaId")
                         .HasColumnType("char(36)");
 
-                    b.Property<Guid?>("PedidoConceptoId")
-                        .HasColumnType("char(36)");
-
                     b.Property<Guid?>("PedidoDetalleId")
                         .HasColumnType("char(36)");
 
@@ -4192,8 +4188,6 @@ namespace MundoVs.Migrations
                     b.HasIndex("EmpresaId");
 
                     b.HasIndex("NotaEntregaId");
-
-                    b.HasIndex("PedidoConceptoId");
 
                     b.HasIndex("PedidoDetalleId");
 
@@ -8905,11 +8899,6 @@ namespace MundoVs.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("MundoVs.Core.Entities.PedidoConcepto", "PedidoConcepto")
-                        .WithMany()
-                        .HasForeignKey("PedidoConceptoId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("MundoVs.Core.Entities.PedidoDetalle", "PedidoDetalle")
                         .WithMany("NotasEntregaDetalle")
                         .HasForeignKey("PedidoDetalleId")
@@ -8918,8 +8907,6 @@ namespace MundoVs.Migrations
                     b.Navigation("Empresa");
 
                     b.Navigation("NotaEntrega");
-
-                    b.Navigation("PedidoConcepto");
 
                     b.Navigation("PedidoDetalle");
                 });

@@ -44,6 +44,7 @@ public class NotaEntrega : BaseEntity
     public NotaEntregaEstatus Estatus { get; set; } = NotaEntregaEstatus.Borrador;
     public bool NoRequiereFactura { get; set; }
     public string? Observaciones { get; set; }
+    public string? TextoPagare { get; set; }
     public string? PdfUrl { get; set; }
     public decimal Subtotal { get; set; }
     public decimal Impuestos { get; set; }
@@ -63,6 +64,9 @@ public class NotaEntregaDetalle : BaseEntity
 
     public Guid? PedidoDetalleId { get; set; }
     public PedidoDetalle? PedidoDetalle { get; set; }
+
+    public Guid? PedidoConceptoId { get; set; }
+    public PedidoConcepto? PedidoConcepto { get; set; }
 
     public string Descripcion { get; set; } = string.Empty;
     public decimal Cantidad { get; set; }

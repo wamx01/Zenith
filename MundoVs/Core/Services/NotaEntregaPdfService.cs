@@ -42,7 +42,9 @@ public class NotaEntregaPdfService : INotaEntregaPdfService
         var fechaVencimiento = ObtenerFechaVencimiento(nota);
         var lugarPago = ObtenerLugarPago(nota);
         var nombreEmpresa = nota.Empresa.NombreComercial ?? nota.Empresa.RazonSocial;
-        var pagareTexto = ConstruirTextoPagare(nota, nombreEmpresa, importeEnLetra, fechaVencimiento, lugarPago);
+        var pagareTexto = string.IsNullOrWhiteSpace(nota.TextoPagare)
+            ? ConstruirTextoPagare(nota, nombreEmpresa, importeEnLetra, fechaVencimiento, lugarPago)
+            : nota.TextoPagare.Trim();
         var logoEmpresa = await CargarLogoEmpresaAsync(db, nota.EmpresaId, cancellationToken);
 
         var pdfBytes = Document.Create(container =>

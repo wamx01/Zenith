@@ -1,6 +1,7 @@
 @page "/serigrafia/tipos-proceso"
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Inventario
 @using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
@@ -209,26 +210,13 @@
                                                             </span>
                                                         </td>
                                                         <td>
-                                                            @if (consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima)
-                                                            {
-                                                                <InputSelect class="form-select form-select-sm" @bind-Value="consumo.MateriaPrimaId">
-                                                                    <option value="">Seleccione...</option>
-                                                                    @foreach (var mp in materiasPrimasCatalogo)
-                                                                    {
-                                                                        <option value="@mp.Id">@mp.Nombre</option>
-                                                                    }
-                                                                </InputSelect>
-                                                            }
-                                                            else
-                                                            {
-                                                                <InputSelect class="form-select form-select-sm" @bind-Value="consumo.InsumoId" @bind-Value:after="() => AjustarCategoriaPorInsumo(consumo)">
-                                                                    <option value="">Seleccione...</option>
-                                                                    @foreach (var ins in insumosCatalogo)
-                                                                    {
-                                                                        <option value="@ins.Id">@ins.Nombre</option>
-                                                                    }
-                                                                </InputSelect>
-                                                            }
+                                                            <InputSelect class="form-select form-select-sm" @bind-Value="consumo.InventarioItemId" @bind-Value:after="() => OnInventarioItemChanged(consumo)">
+                                                                <option value="">Seleccione...</option>
+                                                                @foreach (var item in ObtenerInventarioItemsPorOrigen(consumo.Origen))
+                                                                {
+                                                                    <option value="@item.Id">@item.Nombre</option>
+                                                                }
+                                                            </InputSelect>
                                                         </td>
                                                         <td>
                                                             <InputSelect class="form-select form-select-sm" @bind-Value="consumo.CategoriaCotizacion">
@@ -362,8 +350,7 @@
     private List<TipoProceso> tiposProcesoLista = [];
     private IEnumerable<TipoProceso> tiposFiltrados = [];
     private IEnumerable<Posicion> posiciones = [];
-    private List<MateriaPrima> materiasPrimasCatalogo = [];
-    private List<Insumo> insumosCatalogo = [];
+    private List<InventarioItem> inventarioItemsCatalogo = [];
     private List<TipoProcesoConsumoEditor> consumosEditando = [];
     private TipoProceso tipoEditando = new();
     private bool mostrarFormulario;
@@ -489,8 +476,7 @@
                 TipoProcesoId = c.TipoProcesoId,
                 Origen = c.Origen,
                 CategoriaCotizacion = c.CategoriaCotizacion,
-                MateriaPrimaId = c.MateriaPrimaId,
-                InsumoId = c.InsumoId,
+                InventarioItemId = c.InventarioItemId,
                 CantidadBase = c.CantidadBase,
                 Orden = c.Orden,
                 Activo = c.Activo,
@@ -560,13 +546,7 @@
     private async Task CargarCatalogosConsumosAsync()
     {
         await using var context = await DbContextFactory.CreateDbContextAsync();
-        materiasPrimasCatalogo = await context.MateriasPrimas
-            .AsNoTracking()
-            .Where(m => m.IsActive)
-            .OrderBy(m => m.Nombre)
-            .ToListAsync();
-
-        insumosCatalogo = await context.Insumos
+        inventarioItemsCatalogo = await context.InventarioItems
             .AsNoTracking()
             .Where(i => i.IsActive)
             .OrderBy(i => i.Nombre)
@@ -586,20 +566,41 @@
         });
     }
 
+    private IEnumerable<InventarioItem> ObtenerInventarioItemsPorOrigen(TipoProcesoConsumoOrigen origen)
+        => origen == TipoProcesoConsumoOrigen.MateriaPrima
+            ? inventarioItemsCatalogo.Where(i => i.MateriaPrimaOrigenId.HasValue)
+            : inventarioItemsCatalogo.Where(i => i.InsumoOrigenId.HasValue);
+
+    private void OnInventarioItemChanged(TipoProcesoConsumoEditor consumo)
+    {
+        var item = consumo.InventarioItemId.HasValue
+            ? inventarioItemsCatalogo.FirstOrDefault(i => i.Id == consumo.InventarioItemId.Value)
+            : null;
+
+        if (item?.InsumoOrigenId.HasValue == true)
+        {
+            AjustarCategoriaPorInsumo(consumo);
+        }
+    }
+
     private void EliminarConsumo(string localKey)
         => consumosEditando.RemoveAll(c => c.LocalKey == localKey);
 
     private void AjustarCategoriaPorInsumo(TipoProcesoConsumoEditor consumo)
     {
-        if (!consumo.InsumoId.HasValue)
+        var item = consumo.InventarioItemId.HasValue
+            ? inventarioItemsCatalogo.FirstOrDefault(i => i.Id == consumo.InventarioItemId.Value)
+            : null;
+
+        if (item?.InsumoOrigenId.HasValue != true)
         {
             return;
         }
 
-        var insumo = insumosCatalogo.FirstOrDefault(i => i.Id == consumo.InsumoId.Value);
+        var insumo = item;
         if (insumo != null)
         {
-            consumo.CategoriaCotizacion = insumo.TipoInsumo == TipoInsumoEnum.Basico
+            consumo.CategoriaCotizacion = string.Equals(insumo.TipoInventario?.Codigo, "BASICO", StringComparison.OrdinalIgnoreCase)
                 ? CotizacionCategoria.InsumoBasico
                 : CotizacionCategoria.InsumoDiverso;
         }
@@ -619,7 +620,7 @@
         }
 
         var orden = 1;
-        foreach (var consumo in consumosEditando.Where(c => c.Activo && (c.MateriaPrimaId.HasValue || c.InsumoId.HasValue)))
+        foreach (var consumo in consumosEditando.Where(c => c.Activo && c.InventarioItemId.HasValue))
         {
             context.TiposProcesoConsumos.Add(new TipoProcesoConsumo
             {
@@ -627,8 +628,7 @@
                 TipoProcesoId = tipoProcesoId,
                 Origen = consumo.Origen,
                 CategoriaCotizacion = consumo.CategoriaCotizacion,
-                MateriaPrimaId = consumo.Origen == TipoProcesoConsumoOrigen.MateriaPrima ? consumo.MateriaPrimaId : null,
-                InsumoId = consumo.Origen == TipoProcesoConsumoOrigen.Insumo ? consumo.InsumoId : null,
+                InventarioItemId = consumo.InventarioItemId,
                 CantidadBase = consumo.CantidadBase,
                 Orden = orden++,
                 Activo = consumo.Activo,
@@ -658,8 +658,7 @@
         public Guid TipoProcesoId { get; set; }
         public TipoProcesoConsumoOrigen Origen { get; set; }
         public CotizacionCategoria CategoriaCotizacion { get; set; }
-        public Guid? MateriaPrimaId { get; set; }
-        public Guid? InsumoId { get; set; }
+        public Guid? InventarioItemId { get; set; }
         public decimal CantidadBase { get; set; }
         public int Orden { get; set; }
         public bool Activo { get; set; } = true;

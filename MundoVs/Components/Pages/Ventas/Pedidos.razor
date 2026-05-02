@@ -2,14 +2,17 @@
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities.Calzado
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Entities.Inventario
 @using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IPedidoRepository PedidoRepository
 @inject IClienteRepository ClienteRepository
 @inject IProductoRepository ProductoRepository
 @inject IRepository<PedidoDetalle> PedidoDetalleRepository
 @inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Pedidos</PageTitle>
@@ -696,6 +699,7 @@
     private DateTime? fechaHasta;
     private string filtroEstadoPedido = string.Empty;
     private string filtroActivoPedido = "activos";
+    private Guid _empresaId;
     private IEnumerable<Pedido> PedidosFiltrados
         => pedidos == null
             ? []
@@ -716,8 +720,15 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await CargarContextoAsync();
         clientes = await ClienteRepository.GetAllAsync();
         await CargarPedidos();
+    }
+
+    private async Task CargarContextoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }
 
     private async Task CargarPedidos()
@@ -725,8 +736,8 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         pedidos = await db.Pedidos
             .AsNoTracking()
-            .IgnoreQueryFilters()
             .Include(p => p.Cliente)
+            .Where(p => _empresaId == Guid.Empty || p.Cliente.EmpresaId == _empresaId)
             .OrderByDescending(p => p.FechaPedido)
             .ToListAsync();
     }
@@ -988,14 +999,10 @@
                         Categoria = d.Categoria,
                         Concepto = d.Concepto,
                         Consumo = d.Consumo,
-                        MateriaPrimaId = d.MateriaPrimaId,
-                        MateriaPrimaNombre = d.MateriaPrima != null ? d.MateriaPrima.Nombre : null,
-                        MateriaPrimaUnidadMedida = d.MateriaPrima != null ? d.MateriaPrima.UnidadMedida : null,
-                        MateriaPrimaExistencia = d.MateriaPrima != null ? d.MateriaPrima.Cantidad : null,
-                        InsumoId = d.InsumoId,
-                        InsumoNombre = d.Insumo != null ? d.Insumo.Nombre : null,
-                        InsumoUnidadMedida = d.Insumo != null ? d.Insumo.UnidadMedida : null,
-                        InsumoExistencia = d.Insumo != null ? d.Insumo.Cantidad : null
+                        InventarioItemId = d.InventarioItemId,
+                        Nombre = d.InventarioItem != null ? d.InventarioItem.Nombre : d.Concepto,
+                        UnidadMedida = d.InventarioItem != null ? d.InventarioItem.UnidadMedida : string.Empty,
+                        ExistenciaInventario = d.InventarioItem != null ? d.InventarioItem.Cantidad : null
                     })
                     .ToListAsync();
 
@@ -1031,11 +1038,11 @@
                         continue;
                     }
 
-                    var tipo = consumo.Categoria == CotizacionCategoria.Tinta ? "Materia prima" : "Insumo";
-                    var itemId = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaId : consumo.InsumoId;
-                    var nombre = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaNombre : consumo.InsumoNombre;
-                    var unidadMedida = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaUnidadMedida : consumo.InsumoUnidadMedida;
-                    var existencia = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaExistencia : consumo.InsumoExistencia;
+                    var tipo = consumo.Categoria == CotizacionCategoria.Tinta ? "Material tipo tinta" : "Material de apoyo";
+                    var itemId = consumo.InventarioItemId;
+                    var nombre = consumo.Nombre;
+                    var unidadMedida = consumo.UnidadMedida;
+                    var existencia = consumo.ExistenciaInventario;
                     var sinVinculoInventario = !itemId.HasValue;
                     var clave = itemId.HasValue
                         ? $"{tipo}:{itemId.Value}"
@@ -1131,10 +1138,10 @@
         pedidoEditando.ClienteId = clienteId;
         await CargarConfiguracionClienteAsync(clienteId);
         detallesPedido = [];
-        detallePedidoError = null;
 
         if (productosDisponibles.Any())
         {
+            detallePedidoError = null;
             AgregarDetalle();
         }
     }
@@ -1146,7 +1153,10 @@
         var productosAsignados = await db.ProductosClientes
             .AsNoTracking()
             .Include(pc => pc.Producto)
-            .Where(pc => pc.ClienteId == clienteId && pc.IsActive && pc.Producto.IsActive)
+            .Where(pc => pc.ClienteId == clienteId
+                && pc.IsActive
+                && pc.Producto.IsActive
+                && (_empresaId == Guid.Empty || (pc.Cliente.EmpresaId == _empresaId && pc.Producto.EmpresaId == _empresaId)))
             .OrderBy(pc => pc.Producto.Nombre)
             .Select(pc => new ProductoClienteOption
             {
@@ -1164,7 +1174,10 @@
 
         cotizacionesDisponiblesCliente = await db.CotizacionesSerigrafia
             .AsNoTracking()
-            .Where(c => c.ClienteId == clienteId && c.IsActive && c.Producto.IsActive)
+            .Where(c => c.ClienteId == clienteId
+                && c.IsActive
+                && c.Producto.IsActive
+                && (_empresaId == Guid.Empty || (c.Cliente.EmpresaId == _empresaId && c.Producto.EmpresaId == _empresaId)))
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new CotizacionClienteOption
             {
@@ -1192,31 +1205,13 @@
             }
         }
 
-        foreach (var cotizacion in cotizacionesDisponiblesCliente)
-        {
-            if (productosAsignados.Any(p => p.ProductoId == cotizacion.ProductoId))
-            {
-                continue;
-            }
-
-            productosAsignados.Add(new ProductoClienteOption
-            {
-                ProductoId = cotizacion.ProductoId,
-                Nombre = cotizacion.ProductoNombre,
-                PrecioBase = cotizacion.PrecioContado,
-                CotizacionSerigrafiaId = cotizacion.Id,
-                PrecioCotizacionContado = cotizacion.PrecioContado,
-                PrecioCotizacionCredito = cotizacion.PrecioCredito
-            });
-        }
-
         productosDisponibles = productosAsignados
             .OrderBy(p => p.Nombre)
             .ToList();
 
         var catalogoTallasEmpresa = await db.CatalogoTallasCalzado
             .AsNoTracking()
-            .Where(t => t.IsActive && t.Activa)
+            .Where(t => t.IsActive && t.Activa && (_empresaId == Guid.Empty || t.EmpresaId == _empresaId))
             .OrderBy(t => t.Orden)
             .ThenBy(t => t.Talla)
             .Select(t => new TallaClienteDisponible
@@ -1230,7 +1225,10 @@
 
         var tallasOverrideCliente = await db.ClientesTallasCalzado
             .AsNoTracking()
-            .Where(t => t.ClienteId == clienteId && t.IsActive && t.Activa)
+            .Where(t => t.ClienteId == clienteId
+                && t.IsActive
+                && t.Activa
+                && (_empresaId == Guid.Empty || t.EmpresaId == _empresaId))
             .OrderBy(t => t.Orden)
             .ThenBy(t => t.Talla)
             .Select(t => new TallaClienteDisponible
@@ -1255,7 +1253,10 @@
             ? []
             : await db.ProductosVariantes
                 .AsNoTracking()
-                .Where(v => productoIds.Contains(v.ProductoId) && v.IsActive && v.Activa)
+                .Where(v => productoIds.Contains(v.ProductoId)
+                    && v.IsActive
+                    && v.Activa
+                    && (_empresaId == Guid.Empty || v.Producto.EmpresaId == _empresaId))
                 .Where(v => !v.Producto.UsaVariantesTalla || !string.IsNullOrWhiteSpace(v.Talla) && tallasPermitidas.Contains(v.Talla))
                 .OrderBy(v => v.ProductoId)
                 .ThenBy(v => v.Color)
@@ -1275,9 +1276,18 @@
         fraccionesDisponiblesCliente = await db.ClientesFraccionesCalzado
             .AsNoTracking()
             .Include(f => f.Detalles)
-            .Where(f => f.ClienteId == clienteId && f.IsActive && f.Activa)
+            .Where(f => f.ClienteId == clienteId
+                && f.IsActive
+                && f.Activa
+                && (_empresaId == Guid.Empty || f.EmpresaId == _empresaId))
             .OrderBy(f => f.Nombre)
             .ToListAsync();
+
+        detallePedidoError = productosDisponibles.Any()
+            ? null
+            : cotizacionesDisponiblesCliente.Any()
+                ? "Este cliente sí tiene cotizaciones activas, pero no tiene productos asignados. Así debe quedar hasta asignarlos en Productos por Cliente."
+                : "Este cliente no tiene productos asignados o sus asignaciones no pertenecen a la empresa activa.";
     }
 
     private void AgregarDetalle()
@@ -1838,14 +1848,10 @@
         public CotizacionCategoria Categoria { get; set; }
         public string Concepto { get; set; } = string.Empty;
         public decimal Consumo { get; set; }
-        public Guid? MateriaPrimaId { get; set; }
-        public string? MateriaPrimaNombre { get; set; }
-        public string? MateriaPrimaUnidadMedida { get; set; }
-        public decimal? MateriaPrimaExistencia { get; set; }
-        public Guid? InsumoId { get; set; }
-        public string? InsumoNombre { get; set; }
-        public string? InsumoUnidadMedida { get; set; }
-        public decimal? InsumoExistencia { get; set; }
+        public Guid? InventarioItemId { get; set; }
+        public string? Nombre { get; set; }
+        public string? UnidadMedida { get; set; }
+        public decimal? ExistenciaInventario { get; set; }
     }
 
     private sealed class ComprobacionInventarioItem

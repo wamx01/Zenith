@@ -661,9 +661,34 @@
             return;
         }
 
+        Guid empresaIdPago;
+        if (esNotaEntrega)
+        {
+            var nota = await DbContext.NotasEntrega.AsNoTracking().FirstOrDefaultAsync(n => n.Id == notaEntregaId);
+            if (nota == null)
+            {
+                errorPago = "No se encontró la nota de entrega asociada al cobro.";
+                return;
+            }
+
+            empresaIdPago = nota.EmpresaId;
+        }
+        else
+        {
+            var factura = await DbContext.Facturas.AsNoTracking().FirstOrDefaultAsync(f => f.Id == facturaId);
+            if (factura == null)
+            {
+                errorPago = "No se encontró la factura asociada al cobro.";
+                return;
+            }
+
+            empresaIdPago = factura.EmpresaId;
+        }
+
         var pago = new PagoRecibido
         {
             Id = Guid.NewGuid(),
+            EmpresaId = empresaIdPago,
             ClienteId = clienteId,
             PedidoId = pedidoId,
             NotaEntregaId = notaEntregaId,
@@ -691,6 +716,7 @@
             DbContext.PagosAplicacionDocumento.Add(new PagoAplicacionDocumento
             {
                 Id = Guid.NewGuid(),
+                EmpresaId = factura.EmpresaId,
                 PagoRecibidoId = pago.Id,
                 PagoRecibido = pago,
                 FacturaId = facturaId,

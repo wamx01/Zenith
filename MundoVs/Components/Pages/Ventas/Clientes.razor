@@ -581,8 +581,6 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         clientes = await db.Clientes
             .AsNoTracking()
-            .IgnoreQueryFilters()
-            .Where(c => c.EmpresaId == _empresaId)
             .OrderBy(c => c.RazonSocial)
             .ToListAsync();
         AplicarFiltrosClientes();
@@ -1076,6 +1074,7 @@
                 db.ClientesTallasCalzado.Add(new ClienteTallaCalzado
                 {
                     Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
                     ClienteId = clienteId,
                     CatalogoTallaCalzadoId = talla.CatalogoTallaCalzadoId,
                     Talla = talla.Talla.Trim(),
@@ -1095,6 +1094,7 @@
             var fraccionEntity = new ClienteFraccionCalzado
             {
                 Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
                 ClienteId = clienteId,
                 Codigo = codigoFraccion,
                 Nombre = fraccion.Nombre.Trim(),
@@ -1111,6 +1111,7 @@
                 db.ClientesFraccionesCalzadoDetalle.Add(new ClienteFraccionCalzadoDetalle
                 {
                     Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
                     ClienteFraccionCalzadoId = fraccionEntity.Id,
                     CatalogoTallaCalzadoId = tallaMap.TryGetValue(detalle.Talla.Trim(), out var tallaId) ? tallaId : null,
                     Talla = detalle.Talla.Trim(),

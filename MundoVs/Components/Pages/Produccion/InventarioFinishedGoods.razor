@@ -75,6 +75,14 @@
             <span>Desde esta pantalla solo se permiten ajustes de inventario. La salida por entrega debe hacerse desde el pedido y la nota de entrega.</span>
         </div>
 
+        @if (!_puedeAjustar)
+        {
+            <div class="alert alert-warning py-2 d-flex align-items-center gap-2 mb-4">
+                <i class="bi bi-lock"></i>
+                <span>Inventario FG en modo <strong>solo lectura</strong>. Para ajustar existencias necesitas la capacidad <code>inventario.fg.ajustar</code>.</span>
+            </div>
+        }
+
         @if (!string.IsNullOrWhiteSpace(error))
         {
             <div class="alert alert-danger">@error</div>
@@ -210,7 +218,7 @@
                                             }
                                             else
                                             {
-                                                <span class="text-muted small">Solo lectura</span>
+                                                <span class="text-muted small">Solo lectura por capacidad</span>
                                             }
                                         </td>
                                         <td>
@@ -276,7 +284,7 @@
         var empresaIdStr = state.User.FindFirst("EmpresaId")?.Value;
         _ = Guid.TryParse(empresaIdStr, out _empresaId);
         _puedeVer = state.User.HasClaim("Capacidad", "inventario.fg.ver") || state.User.HasClaim("Capacidad", "serigrafia.editar");
-        _puedeAjustar = state.User.HasClaim("Capacidad", "inventario.fg.ajustar") || state.User.HasClaim("Capacidad", "serigrafia.editar");
+        _puedeAjustar = state.User.HasClaim("Capacidad", "inventario.fg.ajustar");
     }
 
     private async Task CargarAsync()
@@ -298,11 +306,9 @@
             await using var db = await DbFactory.CreateDbContextAsync();
             var inventario = await db.InventariosFinishedGoods
                 .AsNoTracking()
-                .IgnoreQueryFilters()
                 .Include(i => i.Cliente)
                 .Include(i => i.Producto)
                 .Include(i => i.ProductoVariante)
-                .Where(i => i.EmpresaId == _empresaId)
                 .OrderBy(i => i.Cliente.RazonSocial)
                 .ThenBy(i => i.Sku)
                 .ToListAsync();

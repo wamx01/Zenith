@@ -119,10 +119,7 @@
                             <label class="ps-label">Tipo de captura</label>
                             <InputSelect class="form-select ps-input" @bind-Value="tipoCapturaSeleccionado">
                                 <option value="@PedidoModoCaptura.Productos">Productos</option>
-                                @if (pedidoEditando.Id == Guid.Empty)
-                                {
-                                    <option value="@PedidoModoCaptura.Servicios">Servicios</option>
-                                }
+                                <option value="@PedidoModoCaptura.Servicios">Servicios</option>
                                 <option value="@PedidoModoCaptura.Ambos">Ambos</option>
                             </InputSelect>
                         </div>
@@ -1028,7 +1025,7 @@
                                 <tr class="@rowClass">
                                     <td class="ps-col-sticky ps-col-sticky-actions ps-td-actions">
                                         <div class="ps-row-actions">
-                                            @if (pedido.PedidoDetalle != null)
+                                            @if (pedido.PedidoDetalle?.Pedido != null)
                                             {
                                                 <a class="ps-btn-procesar" href="/pedidos/@pedido.PedidoDetalle.PedidoId/seguimiento" title="Abrir seguimiento del pedido">
                                                     <i class="bi bi-play-circle-fill"></i>
@@ -1039,9 +1036,18 @@
                                                 <button class="btn ps-action-btn ps-action-edit" title="Editar" @onclick="async () => await EditarPedido(pedido)">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
-                                                <button class="btn ps-action-btn ps-action-delete" title="Eliminar" @onclick="() => EliminarPedido(pedido)">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
+                                                @if (pedido.Id != Guid.Empty)
+                                                {
+                                                    <button class="btn ps-action-btn ps-action-delete" title="Eliminar" @onclick="() => EliminarPedido(pedido)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                }
+                                                else if (pedido.PedidoDetalle?.PedidoId != Guid.Empty)
+                                                {
+                                                    <button class="btn ps-action-btn ps-action-delete" title="Eliminar pedido" @onclick="() => EliminarPedidoBaseVirtual(pedido)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                }
                                             </div>
                                         </div>
                                     </td>
@@ -1318,6 +1324,7 @@
 
 @code {
     private IEnumerable<PedidoSerigrafia>? pedidos;
+    private readonly Dictionary<Guid, Guid> pedidoSerigrafiaPorPedidoDetalle = new();
     private PedidoSerigrafia pedidoEditando = new();
     private IEnumerable<Cliente>? clientes;
     private IEnumerable<Producto>? productosCliente;
@@ -1405,7 +1412,78 @@
 
     private async Task CargarPedidos()
     {
-        pedidos = await PedidoSerigrafiaRepository.GetAllAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var pedidosExistentes = await db.PedidosSerigrafia
+            .AsNoTracking()
+            .Include(p => p.PedidoDetalle)
+                .ThenInclude(pd => pd.Pedido)
+                    .ThenInclude(ped => ped.Cliente)
+            .Include(p => p.PedidoDetalle)
+                .ThenInclude(pd => pd.DetallesTalla)
+                    .ThenInclude(dt => dt.ProductoVariante)
+            .Include(p => p.PedidoDetalle)
+                .ThenInclude(pd => pd.CotizacionSerigrafia)
+            .Include(p => p.TiposProceso)
+                .ThenInclude(tp => tp.TipoProceso)
+            .Include(p => p.Tallas)
+            .Where(p => p.IsActive && (_empresaId == Guid.Empty || p.PedidoDetalle.Pedido.Cliente.EmpresaId == _empresaId))
+            .OrderByDescending(p => p.FechaRecibido)
+            .ToListAsync();
+
+        var pedidosServicio = await db.Pedidos
+            .AsNoTracking()
+            .Include(p => p.Cliente)
+            .Include(p => p.Conceptos)
+            .Where(p => p.IsActive
+                && (_empresaId == Guid.Empty || p.Cliente.EmpresaId == _empresaId)
+                && p.Conceptos.Any(c => c.IsActive)
+                && !p.Detalles.Any())
+            .OrderByDescending(p => p.FechaPedido)
+            .ToListAsync();
+
+        var detallesConPedido = await db.PedidoDetalles
+            .AsNoTracking()
+            .Include(d => d.Pedido)
+                .ThenInclude(p => p.Cliente)
+            .Include(d => d.Producto)
+            .Include(d => d.ProductoVariante)
+            .Include(d => d.CotizacionSerigrafia)
+            .Include(d => d.DetallesTalla)
+                .ThenInclude(t => t.ProductoVariante)
+            .Where(d => d.Pedido.IsActive
+                && d.Producto.IsActive
+                && (_empresaId == Guid.Empty || d.Pedido.Cliente.EmpresaId == _empresaId)
+                && (d.Producto.Industria == IndustriaEnum.Serigrafia || d.Producto.Industria == IndustriaEnum.Ambas || d.CotizacionSerigrafiaId.HasValue))
+            .OrderByDescending(d => d.Pedido.FechaPedido)
+            .ToListAsync();
+
+        pedidoSerigrafiaPorPedidoDetalle.Clear();
+        foreach (var pedidoExistente in pedidosExistentes)
+        {
+            pedidoSerigrafiaPorPedidoDetalle[pedidoExistente.PedidoDetalleId] = pedidoExistente.Id;
+        }
+
+        var pedidosPorDetalle = pedidosExistentes.ToDictionary(p => p.PedidoDetalleId);
+        var listaUnificada = new List<PedidoSerigrafia>();
+        foreach (var detalle in detallesConPedido)
+        {
+            if (pedidosPorDetalle.TryGetValue(detalle.Id, out var pedidoExistente))
+            {
+                listaUnificada.Add(pedidoExistente);
+                continue;
+            }
+
+            listaUnificada.Add(CrearPedidoSerigrafiaVirtual(detalle));
+        }
+
+        foreach (var pedidoServicio in pedidosServicio)
+        {
+            listaUnificada.Add(CrearPedidoSerigrafiaVirtualDesdeServicios(pedidoServicio));
+        }
+
+        pedidos = listaUnificada
+            .OrderByDescending(p => p.FechaRecibido ?? p.PedidoDetalle?.Pedido?.FechaPedido)
+            .ToList();
         await CargarSeguimientosPorPedidoAsync();
         ComputarColumnas();
     }
@@ -1413,8 +1491,19 @@
     private async Task CargarSeguimientosPorPedidoAsync()
     {
         if (pedidos == null) return;
-        var ids = pedidos.Select(p => p.Id).ToList();
-        var todos = await DbContext.PedidoSerigrafiaTallaProcesos
+        var ids = pedidos
+            .Where(p => p.Id != Guid.Empty && pedidoSerigrafiaPorPedidoDetalle.ContainsValue(p.Id))
+            .Select(p => p.Id)
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            seguimientosPorPedido = new();
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var todos = await db.PedidoSerigrafiaTallaProcesos
             .Where(s => ids.Contains(s.PedidoSerigrafiaId))
             .ToListAsync();
         seguimientosPorPedido = todos.GroupBy(s => s.PedidoSerigrafiaId)
@@ -1430,6 +1519,110 @@
             .Distinct()
             .OrderBy(t => t)
             .ToList();
+    }
+
+    private static PedidoSerigrafia CrearPedidoSerigrafiaVirtual(PedidoDetalle detalle)
+    {
+        var color = detalle.VariacionValor ?? detalle.ProductoVariante?.Color ?? string.Empty;
+        var tallas = detalle.DetallesTalla
+            .Where(t => t.IsActive && t.Cantidad > 0)
+            .OrderBy(t => t.Orden)
+            .ThenBy(t => t.Talla)
+            .Select(t => new PedidoSerigrafiaTalla
+            {
+                Id = t.Id,
+                PedidoSerigrafiaId = Guid.Empty,
+                Talla = t.Talla,
+                Cantidad = (int)Math.Round(t.Cantidad),
+                CreatedAt = t.CreatedAt,
+                UpdatedAt = t.UpdatedAt,
+                CreatedBy = t.CreatedBy,
+                UpdatedBy = t.UpdatedBy,
+                IsActive = t.IsActive
+            })
+            .ToList();
+
+        var corrida = tallas.Count == 0
+            ? string.Empty
+            : string.Join(", ", tallas.Select(t => $"{t.Talla}:{t.Cantidad}"));
+
+        return new PedidoSerigrafia
+        {
+            Id = Guid.Empty,
+            PedidoDetalleId = detalle.Id,
+            PedidoDetalle = detalle,
+            Estilo = detalle.Producto?.Nombre ?? string.Empty,
+            CombinacionColor = color,
+            Corrida = corrida,
+            FechaRecibido = detalle.Pedido?.FechaPedido,
+            FechaEstimada = detalle.Pedido?.FechaEntregaEstimada,
+            Hecho = detalle.Pedido?.Estado is EstadoPedidoEnum.Entregado or EstadoPedidoEnum.Facturado or EstadoPedidoEnum.Pagado,
+            Factura = string.Empty,
+            Tallas = tallas,
+            TiposProceso = new List<PedidoSerigrafiaProcesoDetalle>(),
+            CreatedAt = detalle.CreatedAt,
+            UpdatedAt = detalle.UpdatedAt,
+            CreatedBy = detalle.CreatedBy,
+            UpdatedBy = detalle.UpdatedBy,
+            IsActive = detalle.IsActive
+        };
+    }
+
+    private static PedidoSerigrafia CrearPedidoSerigrafiaVirtualDesdeServicios(Pedido pedido)
+    {
+        var conceptos = pedido.Conceptos
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.CreatedAt)
+            .ToList();
+
+        var estilo = conceptos.Count == 1
+            ? conceptos[0].Descripcion
+            : $"Servicios ({conceptos.Count})";
+
+        return new PedidoSerigrafia
+        {
+            Id = Guid.Empty,
+            PedidoDetalleId = Guid.Empty,
+            PedidoDetalle = new PedidoDetalle
+            {
+                Id = Guid.Empty,
+                PedidoId = pedido.Id,
+                Pedido = pedido,
+                Producto = new Producto
+                {
+                    Id = Guid.Empty,
+                    EmpresaId = pedido.Cliente.EmpresaId,
+                    Codigo = "SERVICIO",
+                    Nombre = "Servicios",
+                    Industria = IndustriaEnum.Serigrafia,
+                    IsActive = true,
+                    CreatedAt = pedido.CreatedAt
+                },
+                Cantidad = conceptos.Sum(c => Math.Max(1, c.Cantidad)),
+                PrecioUnitario = 0m,
+                Total = conceptos.Sum(c => c.Total),
+                CreatedAt = pedido.CreatedAt,
+                UpdatedAt = pedido.UpdatedAt,
+                CreatedBy = pedido.CreatedBy,
+                UpdatedBy = pedido.UpdatedBy,
+                IsActive = pedido.IsActive,
+                DetallesTalla = new List<PedidoDetalleTalla>()
+            },
+            Estilo = estilo,
+            CombinacionColor = string.Empty,
+            Corrida = "Servicios",
+            FechaRecibido = pedido.FechaPedido,
+            FechaEstimada = pedido.FechaEntregaEstimada,
+            Hecho = pedido.Estado is EstadoPedidoEnum.Entregado or EstadoPedidoEnum.Facturado or EstadoPedidoEnum.Pagado,
+            Factura = string.Empty,
+            Tallas = new List<PedidoSerigrafiaTalla>(),
+            TiposProceso = new List<PedidoSerigrafiaProcesoDetalle>(),
+            CreatedAt = pedido.CreatedAt,
+            UpdatedAt = pedido.UpdatedAt,
+            CreatedBy = pedido.CreatedBy,
+            UpdatedBy = pedido.UpdatedBy,
+            IsActive = pedido.IsActive
+        };
     }
 
     private (int completados, int total) ProgresoTalla(Guid pedidoId, Guid tallaId, IEnumerable<Guid> procesoIds)
@@ -1561,6 +1754,67 @@
 
     private async Task EditarPedido(PedidoSerigrafia pedido)
     {
+        if (pedido.Id == Guid.Empty)
+        {
+            if (pedido.PedidoDetalle?.Pedido != null)
+            {
+                pedidoEditando = new PedidoSerigrafia
+                {
+                    Id = Guid.Empty,
+                    PedidoDetalleId = Guid.Empty,
+                    Estilo = pedido.Estilo,
+                    CombinacionColor = pedido.CombinacionColor,
+                    OrdenCompra = pedido.OrdenCompra,
+                    LoteCliente = pedido.LoteCliente,
+                    Corrida = pedido.Corrida,
+                    FechaRecibido = pedido.FechaRecibido,
+                    FechaEstimada = pedido.FechaEstimada,
+                    FechaEntregaReal = pedido.FechaEntregaReal,
+                    Hecho = pedido.Hecho,
+                    Factura = pedido.Factura,
+                    CreatedAt = pedido.CreatedAt,
+                    CreatedBy = pedido.CreatedBy,
+                    IsActive = pedido.IsActive
+                };
+
+                tallasEditando = pedido.Tallas.Select(t => new PedidoSerigrafiaTalla
+                {
+                    Id = t.Id,
+                    PedidoSerigrafiaId = Guid.Empty,
+                    Talla = t.Talla,
+                    Cantidad = t.Cantidad,
+                    CreatedAt = t.CreatedAt,
+                    UpdatedAt = t.UpdatedAt,
+                    CreatedBy = t.CreatedBy,
+                    UpdatedBy = t.UpdatedBy,
+                    IsActive = t.IsActive
+                }).ToList();
+
+                pedidoBaseIdEditando = pedido.PedidoDetalle.PedidoId;
+                clienteSeleccionadoId = pedido.PedidoDetalle.Pedido.ClienteId;
+                productoSeleccionadoId = pedido.PedidoDetalle.ProductoId == Guid.Empty ? null : pedido.PedidoDetalle.ProductoId;
+                cotizacionSeleccionadaId = pedido.PedidoDetalle.CotizacionSerigrafiaId;
+                fraccionSeleccionadaId = pedido.PedidoDetalle.ClienteFraccionCalzadoId;
+                variacionSeleccionada = pedido.PedidoDetalle.VariacionValor;
+                tipoPrecioSeleccionado = pedido.PedidoDetalle.Pedido.TipoPrecio;
+                procesosSeleccionados = pedido.TiposProceso.Select(tp => tp.TipoProcesoId).ToHashSet();
+                await CargarProductosClienteAsync(clienteSeleccionadoId);
+                await CargarCotizacionesProductoAsync(productoSeleccionadoId);
+                await CargarConceptosAsync(pedidoBaseIdEditando);
+                tipoCapturaSeleccionado = productoSeleccionadoId.HasValue
+                    ? (conceptosEditando.Any() ? PedidoModoCaptura.Ambos : PedidoModoCaptura.Productos)
+                    : PedidoModoCaptura.Servicios;
+                capturaEscalaSeleccionada = pedido.PedidoDetalle.AplicaFraccionCalzado ? CapturaEscalaModo.Fraccion : CapturaEscalaModo.Tallas;
+                cantidadFracciones = CalcularCantidadFraccionesSugerida();
+                await CargarSeguimientosAsync(Guid.Empty);
+                await CargarPagosPedidoBaseAsync(pedidoBaseIdEditando);
+                ResetNuevoPago();
+                mostrarFormulario = true;
+            }
+
+            return;
+        }
+
         pedidoEditando = new PedidoSerigrafia
         {
             Id = pedido.Id,
@@ -1611,6 +1865,35 @@
         await CargarPagosAsync(pedido.PedidoDetalleId);
         ResetNuevoPago();
         mostrarFormulario = true;
+    }
+
+    private async Task EliminarPedidoBaseVirtual(PedidoSerigrafia pedido)
+    {
+        if (pedido.PedidoDetalle?.Pedido == null)
+            return;
+
+        pedido.PedidoDetalle.Pedido.IsActive = false;
+        pedido.PedidoDetalle.Pedido.UpdatedAt = DateTime.UtcNow;
+        await PedidoRepository.UpdateAsync(pedido.PedidoDetalle.Pedido);
+        await CargarPedidos();
+    }
+
+    private async Task CargarPagosPedidoBaseAsync(Guid pedidoId)
+    {
+        if (pedidoId == Guid.Empty)
+        {
+            pagosDelPedido = new();
+            totalPedidoActual = 0;
+            return;
+        }
+
+        var pedido = await DbContext.Pedidos.FindAsync(pedidoId);
+        totalPedidoActual = pedido?.Total ?? 0;
+
+        pagosDelPedido = await DbContext.PagosPedido
+            .Where(p => p.PedidoId == pedidoId)
+            .OrderBy(p => p.FechaPago)
+            .ToListAsync();
     }
 
     private async Task GuardarPedido()
@@ -1821,14 +2104,10 @@
                     Categoria = d.Categoria,
                     Concepto = d.Concepto,
                     Consumo = d.Consumo,
-                    MateriaPrimaId = d.MateriaPrimaId,
-                    MateriaPrimaNombre = d.MateriaPrima != null ? d.MateriaPrima.Nombre : null,
-                    MateriaPrimaUnidadMedida = d.MateriaPrima != null ? d.MateriaPrima.UnidadMedida : null,
-                    MateriaPrimaExistencia = d.MateriaPrima != null ? d.MateriaPrima.Cantidad : null,
-                    InsumoId = d.InsumoId,
-                    InsumoNombre = d.Insumo != null ? d.Insumo.Nombre : null,
-                    InsumoUnidadMedida = d.Insumo != null ? d.Insumo.UnidadMedida : null,
-                    InsumoExistencia = d.Insumo != null ? d.Insumo.Cantidad : null
+                    InventarioItemId = d.InventarioItemId,
+                    Nombre = d.InventarioItem != null ? d.InventarioItem.Nombre : d.Concepto,
+                    UnidadMedida = d.InventarioItem != null ? d.InventarioItem.UnidadMedida : string.Empty,
+                    ExistenciaInventario = d.InventarioItem != null ? d.InventarioItem.Cantidad : null
                 })
                 .ToListAsync();
 
@@ -1855,11 +2134,11 @@
                     continue;
                 }
 
-                var tipo = consumo.Categoria == CotizacionCategoria.Tinta ? "Materia prima" : "Insumo";
-                var itemId = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaId : consumo.InsumoId;
-                var nombre = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaNombre : consumo.InsumoNombre;
-                var unidadMedida = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaUnidadMedida : consumo.InsumoUnidadMedida;
-                var existencia = consumo.Categoria == CotizacionCategoria.Tinta ? consumo.MateriaPrimaExistencia : consumo.InsumoExistencia;
+                var tipo = consumo.Categoria == CotizacionCategoria.Tinta ? "Material tipo tinta" : "Material de apoyo";
+                var itemId = consumo.InventarioItemId;
+                var nombre = consumo.Nombre;
+                var unidadMedida = consumo.UnidadMedida;
+                var existencia = consumo.ExistenciaInventario;
                 var sinVinculoInventario = !itemId.HasValue;
                 var clave = itemId.HasValue
                     ? $"{tipo}:{itemId.Value}"
@@ -1870,8 +2149,7 @@
                     item = new ComprobacionInventarioItem
                     {
                         Tipo = tipo,
-                        MateriaPrimaId = consumo.MateriaPrimaId,
-                        InsumoId = consumo.InsumoId,
+                        InventarioItemId = consumo.InventarioItemId,
                         Nombre = string.IsNullOrWhiteSpace(nombre) ? consumo.Concepto : nombre!,
                         UnidadMedida = string.IsNullOrWhiteSpace(unidadMedida) ? string.Empty : unidadMedida!,
                         ExistenciaInventario = existencia,
@@ -3159,12 +3437,15 @@
     private async Task FiltrarPorEstado(ChangeEventArgs e)
     {
         var estado = e.Value?.ToString();
+        await CargarPedidos();
+
         pedidos = estado switch
         {
-            "pendientes" => await PedidoSerigrafiaRepository.GetPendientesAsync(),
-            "completados" => await PedidoSerigrafiaRepository.GetCompletadosAsync(),
-            _ => await PedidoSerigrafiaRepository.GetAllAsync()
+            "pendientes" => pedidos?.Where(p => !p.Hecho).ToList(),
+            "completados" => pedidos?.Where(p => p.Hecho).ToList(),
+            _ => pedidos
         };
+
         await CargarSeguimientosPorPedidoAsync();
         ComputarColumnas();
     }
@@ -3173,7 +3454,12 @@
     {
         if (fechaDesde.HasValue && fechaHasta.HasValue)
         {
-            pedidos = await PedidoSerigrafiaRepository.GetByFechaRangoAsync(fechaDesde.Value, fechaHasta.Value);
+            await CargarPedidos();
+            pedidos = pedidos?
+                .Where(p => (p.FechaRecibido ?? p.PedidoDetalle?.Pedido?.FechaPedido) >= fechaDesde.Value
+                    && (p.FechaRecibido ?? p.PedidoDetalle?.Pedido?.FechaPedido) <= fechaHasta.Value)
+                .OrderBy(p => p.FechaRecibido ?? p.PedidoDetalle?.Pedido?.FechaPedido)
+                .ToList();
             await CargarSeguimientosPorPedidoAsync();
             ComputarColumnas();
         }
@@ -3199,10 +3485,23 @@
 
     private async Task AgregarPago()
     {
-        if (nuevoPagoMonto <= 0 || pedidoEditando.Id == Guid.Empty) return;
+        if (nuevoPagoMonto <= 0) return;
 
-        var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoEditando.PedidoDetalleId);
-        if (detalle == null) return;
+        Guid pedidoId;
+        if (pedidoEditando.PedidoDetalleId != Guid.Empty)
+        {
+            var detalle = await DbContext.PedidoDetalles.FindAsync(pedidoEditando.PedidoDetalleId);
+            if (detalle == null) return;
+            pedidoId = detalle.PedidoId;
+        }
+        else if (pedidoBaseIdEditando != Guid.Empty)
+        {
+            pedidoId = pedidoBaseIdEditando;
+        }
+        else
+        {
+            return;
+        }
 
         // Validar que no exceda el saldo
         var pagadoActual = pagosDelPedido.Sum(p => p.Monto);
@@ -3216,7 +3515,7 @@
         var pago = new PagoPedido
         {
             Id = Guid.NewGuid(),
-            PedidoId = detalle.PedidoId,
+            PedidoId = pedidoId,
             FechaPago = nuevoPagoFecha,
             Monto = nuevoPagoMonto,
             FormaPago = nuevoPagoFormaPago,
@@ -3228,9 +3527,12 @@
         DbContext.PagosPedido.Add(pago);
         await DbContext.SaveChangesAsync();
 
-        pagosDelPedido.Add(pago);
+          await CargarPagosPedidoBaseAsync(pedidoId);
         ResetNuevoPago();
-        await ActualizarEstadoPedidoAsync(pedidoEditando.Id);
+          if (pedidoEditando.Id != Guid.Empty)
+          {
+              await ActualizarEstadoPedidoAsync(pedidoEditando.Id);
+          }
         await CargarPedidos();
     }
 
@@ -3293,66 +3595,38 @@
 
         foreach (var item in comprobacionInventarioItems.Where(i => !i.SinVinculoInventario && i.CantidadRequerida > 0))
         {
-            if (item.MateriaPrimaId.HasValue)
-            {
-                var materiaPrima = await db.MateriasPrimas.IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(m => m.EmpresaId == _empresaId && m.IsActive && m.Id == item.MateriaPrimaId.Value);
+            var inventarioItemId = item.InventarioItemId;
 
-                if (materiaPrima == null)
-                {
-                    continue;
-                }
-
-                var existenciaAnterior = materiaPrima.Cantidad;
-                var existenciaNueva = Math.Max(0, existenciaAnterior - item.CantidadRequerida);
-                materiaPrima.Cantidad = existenciaNueva;
-                materiaPrima.UpdatedAt = DateTime.UtcNow;
-
-                db.MovimientosInventario.Add(new MundoVs.Core.Entities.Inventario.MovimientoInventario
-                {
-                    EmpresaId = _empresaId,
-                    Origen = MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.MateriaPrima,
-                    TipoMovimiento = MundoVs.Core.Entities.Inventario.MovimientoInventarioTipoEnum.Salida,
-                    MateriaPrimaId = materiaPrima.Id,
-                    Cantidad = item.CantidadRequerida,
-                    ExistenciaAnterior = existenciaAnterior,
-                    ExistenciaNueva = existenciaNueva,
-                    CostoUnitario = materiaPrima.PrecioUnitario,
-                    FechaMovimiento = DateTime.UtcNow,
-                    Referencia = pedidoBaseIdEditando == Guid.Empty ? pedidoEditando.Estilo : pedidoBaseIdEditando.ToString(),
-                    Observaciones = $"Salida automática por confirmación de pedido {(pedidoEditando.Estilo ?? string.Empty).Trim()}",
-                    CreatedAt = DateTime.UtcNow,
-                    CreatedBy = usuarioActual,
-                    IsActive = true
-                });
-
-                continue;
-            }
-
-            var insumo = item.InsumoId.HasValue
-                ? await db.Insumos.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.EmpresaId == _empresaId && i.IsActive && i.Id == item.InsumoId.Value)
-                : null;
-
-            if (insumo == null)
+            if (!inventarioItemId.HasValue)
             {
                 continue;
             }
 
-            var existenciaAnteriorInsumo = insumo.Cantidad;
-            var existenciaNuevaInsumo = Math.Max(0, existenciaAnteriorInsumo - item.CantidadRequerida);
-            insumo.Cantidad = existenciaNuevaInsumo;
-            insumo.UpdatedAt = DateTime.UtcNow;
+            var inventarioItem = await db.InventarioItems.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(ii => ii.EmpresaId == _empresaId && ii.IsActive && ii.Id == inventarioItemId.Value);
+
+            if (inventarioItem == null)
+            {
+                continue;
+            }
+
+            var existenciaAnterior = inventarioItem.Cantidad;
+            var existenciaNueva = Math.Max(0, existenciaAnterior - item.CantidadRequerida);
+            inventarioItem.Cantidad = existenciaNueva;
+            inventarioItem.UpdatedAt = DateTime.UtcNow;
 
             db.MovimientosInventario.Add(new MundoVs.Core.Entities.Inventario.MovimientoInventario
             {
                 EmpresaId = _empresaId,
-                Origen = MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.Insumo,
+                Origen = inventarioItem.OrigenLegacy == MundoVs.Core.Entities.Inventario.InventarioItemOrigenLegacy.MateriaPrima
+                    ? MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.MateriaPrima
+                    : MundoVs.Core.Entities.Inventario.MovimientoInventarioOrigenEnum.Insumo,
                 TipoMovimiento = MundoVs.Core.Entities.Inventario.MovimientoInventarioTipoEnum.Salida,
-                InsumoId = insumo.Id,
+                InventarioItemId = inventarioItem.Id,
                 Cantidad = item.CantidadRequerida,
-                ExistenciaAnterior = existenciaAnteriorInsumo,
-                ExistenciaNueva = existenciaNuevaInsumo,
-                CostoUnitario = insumo.PrecioUnitario,
+                ExistenciaAnterior = existenciaAnterior,
+                ExistenciaNueva = existenciaNueva,
+                CostoUnitario = inventarioItem.PrecioUnitario,
                 FechaMovimiento = DateTime.UtcNow,
                 Referencia = pedidoBaseIdEditando == Guid.Empty ? pedidoEditando.Estilo : pedidoBaseIdEditando.ToString(),
                 Observaciones = $"Salida automática por confirmación de pedido {(pedidoEditando.Estilo ?? string.Empty).Trim()}",
@@ -3399,21 +3673,16 @@
         public CotizacionCategoria Categoria { get; set; }
         public string Concepto { get; set; } = string.Empty;
         public decimal Consumo { get; set; }
-        public Guid? MateriaPrimaId { get; set; }
-        public string? MateriaPrimaNombre { get; set; }
-        public string? MateriaPrimaUnidadMedida { get; set; }
-        public decimal? MateriaPrimaExistencia { get; set; }
-        public Guid? InsumoId { get; set; }
-        public string? InsumoNombre { get; set; }
-        public string? InsumoUnidadMedida { get; set; }
-        public decimal? InsumoExistencia { get; set; }
+        public Guid? InventarioItemId { get; set; }
+        public string? Nombre { get; set; }
+        public string? UnidadMedida { get; set; }
+        public decimal? ExistenciaInventario { get; set; }
     }
 
     private sealed class ComprobacionInventarioItem
     {
         public string Tipo { get; set; } = string.Empty;
-        public Guid? MateriaPrimaId { get; set; }
-        public Guid? InsumoId { get; set; }
+        public Guid? InventarioItemId { get; set; }
         public string Nombre { get; set; } = string.Empty;
         public string UnidadMedida { get; set; } = string.Empty;
         public decimal CantidadRequerida { get; set; }

@@ -41,6 +41,14 @@
                 {
                     <div class="alert alert-success">@mensajeOk</div>
                 }
+                @if (!string.IsNullOrWhiteSpace(passwordTemporalGenerado))
+                {
+                    <div class="alert alert-warning d-flex flex-column gap-1" role="alert">
+                        <div class="fw-semibold"><i class="bi bi-key me-1"></i>Contraseña temporal generada para @passwordTemporalUsuario</div>
+                        <div class="small">Compártela por un canal seguro. El admin deberá cambiarla al iniciar sesión.</div>
+                        <code>@passwordTemporalGenerado</code>
+                    </div>
+                }
 
                 @if (mostrarFormulario)
                 {
@@ -215,29 +223,56 @@
                                         }
                                     </div>
 
-                                    @if (EsNuevaEmpresa)
-                                    {
-                                        <div class="col-12"><hr /></div>
+                                    <div class="col-12"><hr /></div>
 
-                                        <div class="col-md-6">
-                                            <label class="form-label">Admin (nombre)</label>
-                                            <InputText class="form-control" @bind-Value="adminNombre" />
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label">Admin (email)</label>
-                                            <InputText class="form-control" @bind-Value="adminEmail" />
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label">Admin (password)</label>
-                                            <InputText class="form-control" @bind-Value="adminPassword" type="password" />
-                                        </div>
-                                        <div class="col-md-6 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <InputCheckbox class="form-check-input" @bind-Value="crearAdmin" />
-                                                <label class="form-check-label">Crear usuario admin inicial</label>
+                                    <div class="col-12">
+                                        <div class="card border-0 bg-light-subtle">
+                                            <div class="card-body">
+                                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                                    <div>
+                                                        <h6 class="mb-1"><i class="bi bi-person-badge me-1"></i>Administrador principal</h6>
+                                                        <small class="text-muted">@GetAdminAyuda()</small>
+                                                    </div>
+                                                    @if (!EsNuevaEmpresa)
+                                                    {
+                                                        <span class="badge @(adminExiste ? "text-bg-success" : "text-bg-warning")">@(adminExiste ? "Configurado" : "Sin admin")</span>
+                                                    }
+                                                </div>
+
+                                                <div class="row g-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Admin (nombre)</label>
+                                                        <InputText class="form-control" @bind-Value="adminNombre" />
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Admin (email)</label>
+                                                        <InputText class="form-control" @bind-Value="adminEmail" />
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Admin (password)</label>
+                                                        <InputText class="form-control" @bind-Value="adminPassword" type="password" />
+                                                        <small class="text-muted">@(adminExiste ? "Déjalo vacío si no deseas cambiar la contraseña." : "Se requiere para crear el admin de la empresa.")</small>
+                                                    </div>
+                                                    <div class="col-md-6 d-flex align-items-end">
+                                                        @if (EsNuevaEmpresa)
+                                                        {
+                                                            <div class="form-check">
+                                                                <InputCheckbox class="form-check-input" @bind-Value="crearAdmin" />
+                                                                <label class="form-check-label">Crear usuario admin inicial</label>
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="form-check">
+                                                                <InputCheckbox class="form-check-input" @bind-Value="adminActivo" />
+                                                                <label class="form-check-label">Admin activo</label>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                    }
+                                    </div>
 
                                     <div class="col-12 d-flex gap-2">
                                         <button class="btn btn-primary" type="submit" disabled="@guardando">
@@ -264,11 +299,26 @@
                     <div class="card mb-4 border-success">
                         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                             <h5 class="mb-0"><i class="bi bi-credit-card me-1"></i>Pago de suscripción</h5>
-                            <button class="btn btn-sm btn-light" @onclick="PrepararPagoSuscripcion">Registrar pago</button>
+                            <div class="d-flex gap-2">
+                                @if (NecesitaReactivacion())
+                                {
+                                    <button class="btn btn-sm btn-warning" @onclick="ReactivarEmpresa" disabled="@guardando">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>Reactivar empresa
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-light" @onclick="PrepararPagoSuscripcion">Registrar pago</button>
+                            </div>
                         </div>
                         @if (mostrarPagoSuscripcion)
                         {
                             <div class="card-body">
+                                @if (NecesitaReactivacion())
+                                {
+                                    <div class="alert alert-warning py-2">
+                                        La empresa está suspendida, cancelada o inactiva. Puedes registrar el pago y reactivarla explícitamente.
+                                    </div>
+                                }
+
                                 <div class="row g-3">
                                     <div class="col-md-3">
                                         <label class="form-label">Monto</label>
@@ -296,7 +346,9 @@
                                         <InputText class="form-control" @bind-Value="nuevoPagoSuscripcion.Notas" />
                                     </div>
                                     <div class="col-12 d-flex gap-2">
-                                        <button class="btn btn-success" type="button" @onclick="RegistrarPagoSuscripcion" disabled="@guardando">Guardar pago</button>
+                                        <button class="btn btn-success" type="button" @onclick="RegistrarPagoSuscripcion" disabled="@guardando">
+                                            @(NecesitaReactivacion() ? "Guardar pago y reactivar" : "Guardar pago")
+                                        </button>
                                         <button class="btn btn-outline-secondary" type="button" @onclick="CancelarPagoSuscripcion">Cancelar</button>
                                     </div>
                                 </div>
@@ -307,6 +359,28 @@
 
                 <div class="card">
                     <div class="card-body">
+                        <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                            <div style="min-width:280px;flex:1 1 280px;">
+                                <label class="form-label">Buscar</label>
+                                <input class="form-control" value="@textoBusqueda" @oninput="OnTextoBusquedaChanged" placeholder="Código, razón social, RFC o admin" />
+                            </div>
+                            <div style="min-width:220px;">
+                                <label class="form-label">Vista rápida</label>
+                                <select class="form-select" value="@filtroVista" @onchange="OnFiltroVistaChanged">
+                                    <option value="todas">Todas</option>
+                                    <option value="activas">Activas</option>
+                                    <option value="suspendidas">Suspendidas</option>
+                                    <option value="canceladas">Canceladas</option>
+                                    <option value="sin-admin">Sin admin</option>
+                                    <option value="reactivacion">Requieren reactivación</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="LimpiarFiltros">Limpiar</button>
+                            </div>
+                            <div class="ms-auto small text-muted pb-2">@GetResumenFiltros()</div>
+                        </div>
+
                         <div class="table-responsive">
                             <table class="table table-hover align-middle">
                                 <thead class="table-light">
@@ -314,41 +388,91 @@
                                         <th>Código</th>
                                         <th>Razón social</th>
                                         <th>Plan</th>
+                                        <th>Admin</th>
                                         <th>Suscripción</th>
                                         <th>Estado</th>
                                         <th>Trial</th>
                                         <th>Máx. usuarios</th>
                                         <th>Suspendido</th>
                                         <th>Activa</th>
-                                        <th></th>
+                                        <th>Atención</th>
+                                        <th>Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var e in empresas)
+                                    @if (!empresasFiltradas.Any())
                                     {
                                         <tr>
-                                            <td class="fw-semibold">@e.Codigo</td>
-                                            <td>@e.RazonSocial</td>
-                                            <td>@(GetSuscripcionActual(e.Id)?.Plan?.Nombre ?? e.PlanActual?.Nombre ?? "—")</td>
-                                            <td>
-                                                @if (GetSuscripcionActual(e.Id) is { } suscripcion)
-                                                {
-                                                    <span class="badge @GetSuscripcionBadge(suscripcion.Estado)">@suscripcion.Estado</span>
-                                                }
-                                                else
-                                                {
-                                                    <span>—</span>
-                                                }
-                                            </td>
-                                            <td><span class="badge @GetEstadoBadge(e)">@e.Estado</span></td>
-                                            <td>@(e.TrialEndsAt?.ToString("dd/MM/yyyy") ?? "—")</td>
-                                            <td>@(e.MaxUsuarios?.ToString() ?? "—")</td>
-                                            <td>@(e.IsSuspended ? "Sí" : "No")</td>
-                                            <td>@(e.IsActive ? "Sí" : "No")</td>
-                                            <td class="text-end">
-                                                <button class="btn btn-sm btn-outline-primary" @onclick="async () => await EditarEmpresa(e)"><i class="bi bi-pencil"></i></button>
-                                            </td>
+                                            <td colspan="12" class="text-center text-muted py-4">No hay empresas con los filtros actuales.</td>
                                         </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var e in empresasFiltradas)
+                                        {
+                                            <tr>
+                                                <td class="fw-semibold">@e.Codigo</td>
+                                                <td>@e.RazonSocial</td>
+                                                <td>@(GetSuscripcionActual(e.Id)?.Plan?.Nombre ?? e.PlanActual?.Nombre ?? "—")</td>
+                                                <td>@(GetAdminEmpresa(e.Id)?.Email ?? "—")</td>
+                                                <td>
+                                                    @if (GetSuscripcionActual(e.Id) is { } suscripcion)
+                                                    {
+                                                        <span class="badge @GetSuscripcionBadge(suscripcion.Estado)">@suscripcion.Estado</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>—</span>
+                                                    }
+                                                </td>
+                                                <td><span class="badge @GetEstadoBadge(e)">@e.Estado</span></td>
+                                                <td>@(e.TrialEndsAt?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                                <td>@(e.MaxUsuarios?.ToString() ?? "—")</td>
+                                                <td>@(e.IsSuspended ? "Sí" : "No")</td>
+                                                <td>@(e.IsActive ? "Sí" : "No")</td>
+                                                <td>
+                                                    <div class="d-flex flex-wrap gap-1">
+                                                        @if (RequiereReactivacion(e))
+                                                        {
+                                                            <span class="badge text-bg-warning">Requiere reactivación</span>
+                                                        }
+                                                        @if (GetAdminEmpresa(e.Id) == null)
+                                                        {
+                                                            <span class="badge text-bg-danger">Sin admin</span>
+                                                        }
+                                                        @if (!RequiereReactivacion(e) && GetAdminEmpresa(e.Id) != null)
+                                                        {
+                                                            <span class="badge text-bg-success">OK</span>
+                                                        }
+                                                    </div>
+                                                </td>
+                                                <td class="text-end">
+                                                    <div class="d-inline-flex gap-1 flex-wrap justify-content-end">
+                                                        @if (RequiereReactivacion(e))
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-warning" title="Reactivar empresa" @onclick="async () => await ReactivarEmpresaRapido(e)" disabled="@guardando">
+                                                                <i class="bi bi-arrow-clockwise"></i>
+                                                            </button>
+                                                        }
+                                                        @if (e.PlanActualId.HasValue)
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-success" title="Registrar pago" @onclick="async () => await AbrirPagoRapido(e)" disabled="@guardando">
+                                                                <i class="bi bi-credit-card"></i>
+                                                            </button>
+                                                        }
+                                                        @if (GetAdminEmpresa(e.Id) != null)
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-dark" title="Resetear password del admin" @onclick="async () => await ResetearAdminRapido(e)" disabled="@guardando">
+                                                                <i class="bi bi-key"></i>
+                                                            </button>
+                                                        }
+                                                        <button class="btn btn-sm btn-outline-primary" title="Editar empresa" @onclick="async () => await EditarEmpresa(e)" disabled="@guardando">
+                                                            <i class="bi bi-pencil"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
                                     }
                                 </tbody>
                             </table>
@@ -373,6 +497,7 @@
     private List<Empresa> empresas = [];
     private List<Plan> planes = [];
     private Dictionary<Guid, SuscripcionEmpresa> suscripcionesActuales = [];
+    private Dictionary<Guid, Usuario> administradoresEmpresa = [];
     private Empresa editando = new();
     private SuscripcionEmpresa editandoSuscripcion = new();
     private bool mostrarFormulario;
@@ -380,7 +505,11 @@
     private bool guardando;
     private string? mensajeError;
     private string? mensajeOk;
+    private string? passwordTemporalGenerado;
+    private string? passwordTemporalUsuario;
     private string giroEmpresa = string.Empty;
+    private string textoBusqueda = string.Empty;
+    private string filtroVista = "todas";
 
     private const long MaxLogoSize = 2 * 1024 * 1024;
     private static readonly string[] AllowedExtensions = [".png", ".jpg", ".jpeg", ".webp", ".svg"];
@@ -390,6 +519,9 @@
     private string? logoPreviewUrl;
 
     private bool crearAdmin = true;
+    private Guid? adminUsuarioId;
+    private bool adminExiste;
+    private bool adminActivo = true;
     private string adminNombre = "Administrador";
     private string adminEmail = "";
     private string adminPassword = "";
@@ -397,6 +529,7 @@
     private bool _puedeAdministrar;
     private List<EmpresaModuloEdicion> modulosEmpresa = [];
     private bool EsNuevaEmpresa => editando.Id == Guid.Empty;
+    private IEnumerable<Empresa> empresasFiltradas => FiltrarEmpresas();
 
     protected override async Task OnInitializedAsync()
     {
@@ -437,6 +570,19 @@
         suscripcionesActuales = suscripciones
             .GroupBy(s => s.EmpresaId)
             .ToDictionary(g => g.Key, g => g.First());
+
+        var admins = await db.Usuarios.IgnoreQueryFilters()
+            .Include(u => u.TipoUsuario)
+            .AsNoTracking()
+            .Where(u => u.TipoUsuario.Nombre == "Administrador")
+            .OrderBy(u => u.EmpresaId)
+            .ThenByDescending(u => u.IsActive)
+            .ThenBy(u => u.CreatedAt)
+            .ToListAsync();
+
+        administradoresEmpresa = admins
+            .GroupBy(u => u.EmpresaId)
+            .ToDictionary(g => g.Key, g => g.First());
     }
 
     private async Task NuevaEmpresa()
@@ -449,6 +595,7 @@
 
         mensajeError = null;
         mensajeOk = null;
+        LimpiarPasswordTemporal();
         logoMensaje = null;
         logoError = false;
         logoFile = null;
@@ -475,6 +622,9 @@
         adminNombre = "Administrador";
         adminEmail = "";
         adminPassword = "";
+        adminUsuarioId = null;
+        adminExiste = false;
+        adminActivo = true;
         giroEmpresa = string.Empty;
         crearAdmin = true;
         await CargarModulosEmpresaAsync();
@@ -492,6 +642,7 @@
 
         mensajeError = null;
         mensajeOk = null;
+        LimpiarPasswordTemporal();
         logoMensaje = null;
         logoError = false;
         logoFile = null;
@@ -535,14 +686,12 @@
                 IsActive = true
             };
         crearAdmin = false;
-        adminNombre = "Administrador";
-        adminEmail = "";
-        adminPassword = "";
         await using var db = await DbFactory.CreateDbContextAsync();
         giroEmpresa = await db.AppConfigs.IgnoreQueryFilters()
             .Where(c => c.EmpresaId == empresa.Id && c.Clave == "GiroEmpresa")
             .Select(c => c.Valor)
             .FirstOrDefaultAsync() ?? string.Empty;
+        await CargarAdminEmpresaAsync(empresa.Id, db);
         await CargarModulosEmpresaAsync(empresa.Id, db);
         mostrarPagoSuscripcion = false;
         mostrarFormulario = true;
@@ -553,7 +702,71 @@
         mostrarFormulario = false;
         mensajeError = null;
         modulosEmpresa = [];
+        LimpiarPasswordTemporal();
+        adminUsuarioId = null;
+        adminExiste = false;
+        adminActivo = true;
     }
+
+    private void LimpiarPasswordTemporal()
+    {
+        passwordTemporalGenerado = null;
+        passwordTemporalUsuario = null;
+    }
+
+    private void AplicarFiltros()
+    {
+        StateHasChanged();
+    }
+
+    private void OnTextoBusquedaChanged(ChangeEventArgs e)
+    {
+        textoBusqueda = e.Value?.ToString() ?? string.Empty;
+        AplicarFiltros();
+    }
+
+    private void OnFiltroVistaChanged(ChangeEventArgs e)
+    {
+        filtroVista = e.Value?.ToString() ?? "todas";
+        AplicarFiltros();
+    }
+
+    private void LimpiarFiltros()
+    {
+        textoBusqueda = string.Empty;
+        filtroVista = "todas";
+    }
+
+    private IEnumerable<Empresa> FiltrarEmpresas()
+    {
+        IEnumerable<Empresa> consulta = empresas;
+
+        consulta = filtroVista switch
+        {
+            "activas" => consulta.Where(e => e.Estado == EmpresaEstado.Activa && e.IsActive && !e.IsSuspended),
+            "suspendidas" => consulta.Where(e => e.Estado == EmpresaEstado.Suspendida || e.IsSuspended),
+            "canceladas" => consulta.Where(e => e.Estado == EmpresaEstado.Cancelada),
+            "sin-admin" => consulta.Where(e => GetAdminEmpresa(e.Id) == null),
+            "reactivacion" => consulta.Where(RequiereReactivacion),
+            _ => consulta
+        };
+
+        if (!string.IsNullOrWhiteSpace(textoBusqueda))
+        {
+            var texto = textoBusqueda.Trim();
+            consulta = consulta.Where(e =>
+                e.Codigo.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || e.RazonSocial.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(e.Rfc) && e.Rfc.Contains(texto, StringComparison.OrdinalIgnoreCase))
+                || (GetAdminEmpresa(e.Id)?.Email?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (GetAdminEmpresa(e.Id)?.NombreCompleto?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        return consulta.ToList();
+    }
+
+    private string GetResumenFiltros()
+        => $"{empresasFiltradas.Count()} empresa(s)";
 
     private void ActualizarCodigoSugerido()
     {
@@ -600,11 +813,19 @@
             if (EsNuevaEmpresa)
                 ActualizarCodigoSugerido();
 
-            if (EsNuevaEmpresa && crearAdmin)
+            var requiereAdmin = RequiereGuardarAdmin();
+
+            if (requiereAdmin)
             {
-                if (string.IsNullOrWhiteSpace(adminNombre) || string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
+                if (string.IsNullOrWhiteSpace(adminNombre) || string.IsNullOrWhiteSpace(adminEmail))
                 {
-                    mensajeError = "Para crear el admin inicial, completa nombre, email y password.";
+                    mensajeError = "Completa nombre y email del administrador.";
+                    return;
+                }
+
+                if (!adminExiste && string.IsNullOrWhiteSpace(adminPassword))
+                {
+                    mensajeError = "La contraseña del admin es obligatoria cuando se crea por primera vez.";
                     return;
                 }
             }
@@ -708,26 +929,7 @@
                 await SeedRolesEmpresa(db, empresa.Id);
                 await SincronizarCapacidadesAdministradorEmpresaAsync(db, empresa.Id);
 
-                if (EsNuevaEmpresa && crearAdmin)
-                {
-                    var adminTipo = await ObtenerOCrearRolAdministradorAsync(db, empresa.Id);
-
-                    var email = adminEmail.Trim().ToLowerInvariant();
-
-                    db.Usuarios.Add(new Usuario
-                    {
-                        Id = Guid.NewGuid(),
-                        NombreCompleto = adminNombre.Trim(),
-                        Email = email,
-                        PasswordHash = AuthService.HashPassword(adminPassword),
-                        TipoUsuarioId = adminTipo.Id,
-                        EmpresaId = empresa.Id,
-                        RequiereCambioPassword = true,
-                        IsActive = true,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                    await db.SaveChangesAsync();
-                }
+                await GuardarAdminEmpresaAsync(db, empresa.Id);
 
                 await AuditService.LogAsync("Crear empresa", nameof(Empresa), empresa.Id, $"Empresa {empresa.Codigo} creada con estado {empresa.Estado}.", empresa.Id);
             }
@@ -752,6 +954,7 @@
                 await CodigoNegocio.EnsureCompanyShortCodeAsync(db, empresa);
                 await GuardarConfiguracionEmpresaAsync(db, empresa);
                 await GuardarModulosEmpresaAsync(db, empresa.Id);
+                await GuardarAdminEmpresaAsync(db, empresa.Id);
                 await SincronizarCapacidadesAdministradorEmpresaAsync(db, empresa.Id);
 
                 await AuditService.LogAsync("Editar empresa", nameof(Empresa), empresa.Id, $"Empresa {empresa.Codigo} actualizada. Estado: {empresa.Estado}. Plan: {planSeleccionado?.Nombre ?? "Sin plan"}.", empresa.Id);
@@ -881,6 +1084,122 @@
         }
     }
 
+    private async Task CargarAdminEmpresaAsync(Guid empresaId, MundoVs.Infrastructure.Data.CrmDbContext db)
+    {
+        var admin = await db.Usuarios.IgnoreQueryFilters()
+            .Include(u => u.TipoUsuario)
+            .AsNoTracking()
+            .Where(u => u.EmpresaId == empresaId && u.TipoUsuario.Nombre == "Administrador")
+            .OrderByDescending(u => u.IsActive)
+            .ThenBy(u => u.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (admin == null)
+        {
+            adminUsuarioId = null;
+            adminExiste = false;
+            adminActivo = true;
+            adminNombre = "Administrador";
+            adminEmail = string.Empty;
+            adminPassword = string.Empty;
+            return;
+        }
+
+        adminUsuarioId = admin.Id;
+        adminExiste = true;
+        adminActivo = admin.IsActive;
+        adminNombre = admin.NombreCompleto;
+        adminEmail = admin.Email;
+        adminPassword = string.Empty;
+    }
+
+    private bool RequiereGuardarAdmin()
+    {
+        if (EsNuevaEmpresa)
+            return crearAdmin;
+
+        return adminUsuarioId.HasValue
+            || !string.IsNullOrWhiteSpace(adminNombre)
+            || !string.IsNullOrWhiteSpace(adminEmail)
+            || !string.IsNullOrWhiteSpace(adminPassword);
+    }
+
+    private async Task GuardarAdminEmpresaAsync(MundoVs.Infrastructure.Data.CrmDbContext db, Guid empresaId)
+    {
+        if (!RequiereGuardarAdmin())
+            return;
+
+        var nombre = adminNombre.Trim();
+        var email = adminEmail.Trim().ToLowerInvariant();
+        var passwordNueva = adminPassword.Trim();
+
+        var adminTipo = await ObtenerOCrearRolAdministradorAsync(db, empresaId);
+        var admin = adminUsuarioId.HasValue
+            ? await db.Usuarios.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == adminUsuarioId.Value && u.EmpresaId == empresaId)
+            : await db.Usuarios.IgnoreQueryFilters()
+                .Include(u => u.TipoUsuario)
+                .Where(u => u.EmpresaId == empresaId && u.TipoUsuario.Nombre == "Administrador")
+                .OrderByDescending(u => u.IsActive)
+                .ThenBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync();
+
+        if (admin == null)
+        {
+            if (await db.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email == email))
+                throw new InvalidOperationException("Ya existe un usuario con el email del admin indicado.");
+
+            var passwordError = AuthService.ValidarPassword(passwordNueva);
+            if (!string.IsNullOrWhiteSpace(passwordError))
+                throw new InvalidOperationException(passwordError);
+
+            admin = new Usuario
+            {
+                Id = Guid.NewGuid(),
+                NombreCompleto = nombre,
+                Email = email,
+                PasswordHash = AuthService.HashPassword(passwordNueva),
+                TipoUsuarioId = adminTipo.Id,
+                EmpresaId = empresaId,
+                RequiereCambioPassword = true,
+                IsActive = EsNuevaEmpresa || adminActivo,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            db.Usuarios.Add(admin);
+            await db.SaveChangesAsync();
+            adminUsuarioId = admin.Id;
+            adminExiste = true;
+            adminActivo = admin.IsActive;
+            return;
+        }
+
+        if (!string.Equals(admin.Email, email, StringComparison.OrdinalIgnoreCase)
+            && await db.Usuarios.IgnoreQueryFilters().AnyAsync(u => u.Email == email && u.Id != admin.Id))
+        {
+            throw new InvalidOperationException("Ya existe un usuario con el email del admin indicado.");
+        }
+
+        admin.NombreCompleto = nombre;
+        admin.Email = email;
+        admin.TipoUsuarioId = adminTipo.Id;
+        admin.IsActive = adminActivo;
+        admin.UpdatedAt = DateTime.UtcNow;
+
+        if (!string.IsNullOrWhiteSpace(passwordNueva))
+        {
+            var passwordError = AuthService.ValidarPassword(passwordNueva);
+            if (!string.IsNullOrWhiteSpace(passwordError))
+                throw new InvalidOperationException(passwordError);
+
+            admin.PasswordHash = AuthService.HashPassword(passwordNueva);
+            admin.RequiereCambioPassword = true;
+            admin.PasswordChangedAt = null;
+        }
+
+        await db.SaveChangesAsync();
+        adminExiste = true;
+    }
+
     private async Task GuardarModulosEmpresaAsync(MundoVs.Infrastructure.Data.CrmDbContext db, Guid empresaId)
     {
         var existentes = await db.EmpresasModulosAcceso.IgnoreQueryFilters()
@@ -941,6 +1260,7 @@
             .ToListAsync();
 
         var relacionesActuales = await db.TipoUsuarioCapacidades
+            .IgnoreQueryFilters()
             .Where(tc => tc.TipoUsuarioId == administrador.Id)
             .ToListAsync();
 
@@ -994,10 +1314,122 @@
         mostrarPagoSuscripcion = false;
     }
 
+    private bool NecesitaReactivacion()
+        => editando.Estado is EmpresaEstado.Suspendida or EmpresaEstado.Cancelada
+            || editando.IsSuspended
+            || !editando.IsActive;
+
+    private static bool RequiereReactivacion(Empresa empresa)
+        => empresa.Estado is EmpresaEstado.Suspendida or EmpresaEstado.Cancelada
+            || empresa.IsSuspended
+            || !empresa.IsActive;
+
+    private async Task ReactivarEmpresa()
+        => await ReactivarEmpresaCore(editando.Id, true);
+
+    private async Task ReactivarEmpresaRapido(Empresa empresa)
+        => await ReactivarEmpresaCore(empresa.Id, false);
+
+    private async Task ReactivarEmpresaCore(Guid empresaId, bool recargarEdicion)
+    {
+        mensajeError = null;
+        mensajeOk = null;
+        LimpiarPasswordTemporal();
+        guardando = true;
+
+        try
+        {
+            if (empresaId == Guid.Empty)
+            {
+                mensajeError = "Primero selecciona una empresa válida.";
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var empresa = await db.Empresas.IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == empresaId);
+            if (empresa == null)
+            {
+                mensajeError = "No se encontró la empresa.";
+                return;
+            }
+
+            empresa.Estado = EmpresaEstado.Activa;
+            empresa.IsSuspended = false;
+            empresa.IsActive = true;
+            empresa.ActivatedAt ??= DateTime.UtcNow;
+            empresa.UpdatedAt = DateTime.UtcNow;
+
+            var suscripcion = await db.SuscripcionesEmpresa.IgnoreQueryFilters()
+                .Where(s => s.EmpresaId == empresa.Id)
+                .OrderByDescending(s => s.FechaInicio)
+                .ThenByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (suscripcion != null && suscripcion.Estado != EstadoSuscripcion.Cancelada)
+            {
+                suscripcion.Estado = EstadoSuscripcion.Activa;
+                suscripcion.IsActive = true;
+                suscripcion.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Reactivar empresa", nameof(Empresa), empresa.Id, $"Empresa {empresa.Codigo} reactivada manualmente desde superadmin.", empresa.Id);
+
+            mensajeOk = "Empresa reactivada correctamente.";
+            await Cargar();
+            var empresaActualizada = empresas.FirstOrDefault(e => e.Id == empresaId);
+            if (recargarEdicion && empresaActualizada != null)
+                await EditarEmpresa(empresaActualizada);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ObtenerMensajeError(ex);
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task AbrirPagoRapido(Empresa empresa)
+    {
+        LimpiarPasswordTemporal();
+        await EditarEmpresa(empresa);
+        PrepararPagoSuscripcion();
+    }
+
+    private async Task ResetearAdminRapido(Empresa empresa)
+    {
+        mensajeError = null;
+        mensajeOk = null;
+        LimpiarPasswordTemporal();
+
+        var admin = GetAdminEmpresa(empresa.Id);
+        if (admin == null)
+        {
+            mensajeError = "La empresa no tiene admin principal para restablecer acceso.";
+            return;
+        }
+
+        var passwordTemporal = await AuthService.GenerarPasswordTemporalAsync(admin.Id);
+        if (string.IsNullOrWhiteSpace(passwordTemporal))
+        {
+            mensajeError = "No fue posible generar la contraseña temporal del admin.";
+            return;
+        }
+
+        passwordTemporalGenerado = passwordTemporal;
+        passwordTemporalUsuario = admin.Email;
+        mensajeOk = $"Se generó una contraseña temporal para el admin de {empresa.Codigo}.";
+        await AuditService.LogAsync("Generar contraseña temporal admin empresa", nameof(Usuario), admin.Id, $"Se generó contraseña temporal para admin {admin.Email} de la empresa {empresa.Codigo}.", empresa.Id);
+        await Cargar();
+    }
+
     private async Task RegistrarPagoSuscripcion()
     {
         mensajeError = null;
         mensajeOk = null;
+        LimpiarPasswordTemporal();
         guardando = true;
 
         try
@@ -1059,7 +1491,9 @@
             await db.SaveChangesAsync();
             await AuditService.LogAsync("Registrar pago suscripción", nameof(PagoSuscripcion), null, $"Pago {nuevoPagoSuscripcion.Monto:C2} registrado para la empresa {editando.Codigo}.", editando.Id);
 
-            mensajeOk = "Pago de suscripción registrado correctamente.";
+            mensajeOk = NecesitaReactivacion()
+                ? "Pago registrado y empresa reactivada correctamente."
+                : "Pago de suscripción registrado correctamente.";
             mostrarPagoSuscripcion = false;
             await Cargar();
             var empresaActualizada = empresas.FirstOrDefault(e => e.Id == editando.Id);
@@ -1078,6 +1512,19 @@
 
     private SuscripcionEmpresa? GetSuscripcionActual(Guid empresaId)
         => suscripcionesActuales.TryGetValue(empresaId, out var suscripcion) ? suscripcion : null;
+
+    private Usuario? GetAdminEmpresa(Guid empresaId)
+        => administradoresEmpresa.TryGetValue(empresaId, out var admin) ? admin : null;
+
+    private string GetAdminAyuda()
+    {
+        if (EsNuevaEmpresa)
+            return "Opcionalmente puedes crear el admin inicial desde aquí.";
+
+        return adminExiste
+            ? "Puedes actualizar nombre, correo, estado o contraseña del admin principal de la empresa."
+            : "Esta empresa aún no tiene admin principal; puedes crearlo desde aquí.";
+    }
 
     private static string GetEstadoBadge(Empresa empresa) => empresa.Estado switch
     {
@@ -1244,6 +1691,7 @@
             }
 
             var actuales = await db.TipoUsuarioCapacidades
+                .IgnoreQueryFilters()
                 .Where(tc => tc.TipoUsuarioId == tipo.Id)
                 .Select(tc => tc.CapacidadId)
                 .ToListAsync();
@@ -1282,6 +1730,7 @@
             .ToListAsync();
 
         var actuales = await db.TipoUsuarioCapacidades
+            .IgnoreQueryFilters()
             .Where(tc => tc.TipoUsuarioId == administrador.Id)
             .Select(tc => tc.CapacidadId)
             .ToListAsync();

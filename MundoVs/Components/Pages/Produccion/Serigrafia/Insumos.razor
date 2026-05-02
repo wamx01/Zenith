@@ -2,10 +2,8 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities.Inventario
-@using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
-@inject IRepository<Insumo> InsumoRepository
 @inject IAppConfigRepository AppConfigRepository
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -156,10 +154,10 @@
 </div>
 
 @code {
-    private IEnumerable<Insumo>? items;
-    private IEnumerable<Insumo>? todosItems;
+    private IEnumerable<InventarioItem>? items;
+    private IEnumerable<InventarioItem>? todosItems;
     private List<TipoInventario> tiposInsumo = [];
-    private Insumo editando = new();
+    private InventarioItem editando = new();
     private Guid _empresaId;
     private Guid? filtroTipoId;
     private bool mostrarFormulario;
@@ -195,15 +193,16 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            tiposInsumo = await db.TiposInventario.IgnoreQueryFilters()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "INSUMO")
+            tiposInsumo = await db.TiposInventario
+                .Where(t => t.IsActive && t.CategoriaInventario.Codigo == "INSUMO")
                 .Include(t => t.CategoriaInventario)
                 .OrderBy(t => t.Orden)
                 .ThenBy(t => t.Nombre)
                 .ToListAsync();
 
-            todosItems = await db.Insumos.IgnoreQueryFilters()
-                .Where(i => i.EmpresaId == _empresaId && i.IsActive)
+            todosItems = await db.InventarioItems
+                .Where(i => i.IsActive)
+                .Where(i => i.OrigenLegacy == InventarioItemOrigenLegacy.Insumo)
                 .Include(i => i.TipoInventario)
                 .OrderBy(i => i.Nombre)
                 .ToListAsync();
@@ -228,30 +227,31 @@
 
     private async Task Nuevo()
     {
-        editando = new Insumo
+        editando = new InventarioItem
         {
             EmpresaId = _empresaId,
             Codigo = await AppConfigRepository.GetNextCodeAsync("INS-", "Consecutivo:Insumo"),
+            OrigenLegacy = InventarioItemOrigenLegacy.Insumo,
             TipoInventarioId = filtroTipoId ?? tiposInsumo.FirstOrDefault()?.Id
         };
         mostrarFormulario = true;
     }
 
-    private void Editar(Insumo item)
+    private void Editar(InventarioItem item)
     {
-        editando = new Insumo
+        editando = new InventarioItem
         {
             Id = item.Id,
             EmpresaId = item.EmpresaId,
             Codigo = item.Codigo,
             Nombre = item.Nombre,
             TipoInventarioId = item.TipoInventarioId,
-            TipoInsumo = item.TipoInsumo,
             PrecioUnitario = item.PrecioUnitario,
             Cantidad = item.Cantidad,
             UnidadMedida = item.UnidadMedida,
             StockMinimo = item.StockMinimo,
             CreatedAt = item.CreatedAt,
+            OrigenLegacy = item.OrigenLegacy,
             IsActive = item.IsActive
         };
         mostrarFormulario = true;
@@ -273,32 +273,37 @@
             return;
         }
 
+        await using var db = await DbFactory.CreateDbContextAsync();
         if (editando.Id == Guid.Empty)
-            await InsumoRepository.AddAsync(editando);
+            db.InventarioItems.Add(editando);
         else
         {
             editando.UpdatedAt = DateTime.UtcNow;
-            await InsumoRepository.UpdateAsync(editando);
+            db.InventarioItems.Update(editando);
         }
+
+        await db.SaveChangesAsync();
 
         await Cargar();
         Cancelar();
     }
 
-    private async Task Eliminar(Insumo item)
+    private async Task Eliminar(InventarioItem item)
     {
         item.IsActive = false;
         item.UpdatedAt = DateTime.UtcNow;
-        await InsumoRepository.UpdateAsync(item);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.InventarioItems.Update(item);
+        await db.SaveChangesAsync();
         await Cargar();
     }
 
     private void Cancelar()
     {
-        editando = new Insumo();
+        editando = new InventarioItem { OrigenLegacy = InventarioItemOrigenLegacy.Insumo };
         mostrarFormulario = false;
     }
 
-    private static string ObtenerNombreTipo(Insumo item)
-        => item.TipoInventario?.Nombre ?? item.TipoInsumo.ToString();
+    private static string ObtenerNombreTipo(InventarioItem item)
+        => item.TipoInventario?.Nombre ?? "Material";
 }

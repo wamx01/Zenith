@@ -685,39 +685,32 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            tiposMateriaPrima = await db.TiposInventario.IgnoreQueryFilters()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
+            tiposMateriaPrima = await db.TiposInventario
+                .Where(t => t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
                 .Include(t => t.CategoriaInventario)
                 .OrderBy(t => t.Orden)
                 .ThenBy(t => t.Nombre)
                 .ToListAsync();
 
-            tiposInsumo = await db.TiposInventario.IgnoreQueryFilters()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "INSUMO")
+            tiposInsumo = await db.TiposInventario
+                .Where(t => t.IsActive && t.CategoriaInventario.Codigo == "INSUMO")
                 .Include(t => t.CategoriaInventario)
                 .OrderBy(t => t.Orden)
                 .ThenBy(t => t.Nombre)
                 .ToListAsync();
 
-            var materiasPrimas = await db.MateriasPrimas.IgnoreQueryFilters()
-                .Where(i => i.EmpresaId == _empresaId)
+            var inventarioItemsDb = await db.InventarioItems
                 .Include(i => i.TipoInventario)
                 .OrderBy(i => i.Nombre)
                 .ToListAsync();
 
-            var insumos = await db.Insumos.IgnoreQueryFilters()
-                .Where(i => i.EmpresaId == _empresaId)
-                .Include(i => i.TipoInventario)
-                .OrderBy(i => i.Nombre)
-                .ToListAsync();
-
-            items.AddRange(materiasPrimas.Select(i => new InventarioItemViewModel
+            items.AddRange(inventarioItemsDb.Select(i => new InventarioItemViewModel
             {
                 Id = i.Id,
-                Origen = OrigenMateriaPrima,
+                Origen = i.OrigenLegacy == InventarioItemOrigenLegacy.MateriaPrima ? OrigenMateriaPrima : OrigenInsumo,
                 Codigo = i.Codigo,
                 Nombre = i.Nombre,
-                TipoNombre = i.TipoInventario?.Nombre ?? i.TipoMateriaPrima.ToString(),
+                TipoNombre = i.TipoInventario?.Nombre ?? string.Empty,
                 UnidadMedida = i.UnidadMedida,
                 Cantidad = i.Cantidad,
                 StockMinimo = i.StockMinimo,
@@ -725,34 +718,18 @@
                 IsActive = i.IsActive
             }));
 
-            items.AddRange(insumos.Select(i => new InventarioItemViewModel
-            {
-                Id = i.Id,
-                Origen = OrigenInsumo,
-                Codigo = i.Codigo,
-                Nombre = i.Nombre,
-                TipoNombre = i.TipoInventario?.Nombre ?? i.TipoInsumo.ToString(),
-                UnidadMedida = i.UnidadMedida,
-                Cantidad = i.Cantidad,
-                StockMinimo = i.StockMinimo,
-                PrecioUnitario = i.PrecioUnitario,
-                IsActive = i.IsActive
-            }));
-
-            var movimientosDb = await db.MovimientosInventario.IgnoreQueryFilters()
-                .Where(m => m.EmpresaId == _empresaId)
-                .Include(m => m.MateriaPrima)
-                .Include(m => m.Insumo)
+            var movimientosDb = await db.MovimientosInventario
+                .Include(m => m.InventarioItem)
                 .OrderByDescending(m => m.FechaMovimiento)
                 .ToListAsync();
 
             movimientos.AddRange(movimientosDb.Select(m => new MovimientoInventarioViewModel
             {
                 FechaMovimiento = m.FechaMovimiento,
-                Origen = m.Origen == MovimientoInventarioOrigenEnum.MateriaPrima ? OrigenMateriaPrima : OrigenInsumo,
+                Origen = m.InventarioItem?.OrigenLegacy == InventarioItemOrigenLegacy.MateriaPrima || m.Origen == MovimientoInventarioOrigenEnum.MateriaPrima ? OrigenMateriaPrima : OrigenInsumo,
                 TipoMovimiento = m.TipoMovimiento.ToString(),
-                Codigo = m.MateriaPrima?.Codigo ?? m.Insumo?.Codigo ?? string.Empty,
-                Nombre = m.MateriaPrima?.Nombre ?? m.Insumo?.Nombre ?? string.Empty,
+                Codigo = m.InventarioItem?.Codigo ?? string.Empty,
+                Nombre = m.InventarioItem?.Nombre ?? string.Empty,
                 Cantidad = m.Cantidad,
                 ExistenciaAnterior = m.ExistenciaAnterior,
                 ExistenciaNueva = m.ExistenciaNueva,
@@ -932,38 +909,20 @@
             return;
         }
 
-        if (nuevoItem.Origen == OrigenMateriaPrima)
+        db.InventarioItems.Add(new InventarioItem
         {
-            db.MateriasPrimas.Add(new MateriaPrima
-            {
-                EmpresaId = _empresaId,
-                Codigo = nuevoItem.Codigo,
-                Nombre = nuevoItem.Nombre.Trim(),
-                TipoInventarioId = nuevoItem.TipoInventarioId,
-                TipoMateriaPrima = MapearTipoMateriaPrimaLegacy(tipo.Codigo),
-                PrecioUnitario = nuevoItem.PrecioUnitario,
-                Cantidad = nuevoItem.Cantidad,
-                UnidadMedida = nuevoItem.UnidadMedida,
-                StockMinimo = nuevoItem.StockMinimo,
-                IsActive = true
-            });
-        }
-        else
-        {
-            db.Insumos.Add(new Insumo
-            {
-                EmpresaId = _empresaId,
-                Codigo = nuevoItem.Codigo,
-                Nombre = nuevoItem.Nombre.Trim(),
-                TipoInventarioId = nuevoItem.TipoInventarioId,
-                TipoInsumo = MapearTipoInsumoLegacy(tipo.Codigo),
-                PrecioUnitario = nuevoItem.PrecioUnitario,
-                Cantidad = nuevoItem.Cantidad,
-                UnidadMedida = nuevoItem.UnidadMedida,
-                StockMinimo = nuevoItem.StockMinimo,
-                IsActive = true
-            });
-        }
+            EmpresaId = _empresaId,
+            Codigo = nuevoItem.Codigo,
+            Nombre = nuevoItem.Nombre.Trim(),
+            CategoriaInventarioId = tipo.CategoriaInventarioId,
+            TipoInventarioId = nuevoItem.TipoInventarioId,
+            OrigenLegacy = nuevoItem.Origen == OrigenMateriaPrima ? InventarioItemOrigenLegacy.MateriaPrima : InventarioItemOrigenLegacy.Insumo,
+            PrecioUnitario = nuevoItem.PrecioUnitario,
+            Cantidad = nuevoItem.Cantidad,
+            UnidadMedida = nuevoItem.UnidadMedida,
+            StockMinimo = nuevoItem.StockMinimo,
+            IsActive = true
+        });
 
         await db.SaveChangesAsync();
         await Cargar();
@@ -1051,68 +1010,36 @@
         var costoUnitario = movimiento.CostoUnitario;
         decimal existenciaAnterior;
         decimal existenciaNueva;
-        Guid? materiaPrimaId = null;
-        Guid? insumoId = null;
         string nombreItem;
 
-        if (movimiento.Origen == OrigenMateriaPrima)
+        var item = await db.InventarioItems.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == movimiento.ItemId && i.EmpresaId == _empresaId && i.IsActive);
+        if (item is null)
         {
-            var item = await db.MateriasPrimas.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == movimiento.ItemId && i.EmpresaId == _empresaId && i.IsActive);
-            if (item is null)
-            {
-                error = "No se encontró la materia prima seleccionada.";
-                return;
-            }
-
-            existenciaAnterior = item.Cantidad;
-            existenciaNueva = CalcularNuevaExistencia(existenciaAnterior, movimiento.TipoMovimiento, movimiento.Cantidad);
-            if (existenciaNueva < 0)
-            {
-                error = "La salida no puede dejar existencia negativa.";
-                return;
-            }
-
-            item.Cantidad = existenciaNueva;
-            if (costoUnitario > 0)
-                item.PrecioUnitario = costoUnitario;
-            item.UpdatedAt = DateTime.UtcNow;
-            materiaPrimaId = item.Id;
-            nombreItem = item.Nombre;
-            costoUnitario = item.PrecioUnitario;
+            error = "No se encontró el material seleccionado.";
+            return;
         }
-        else
+
+        existenciaAnterior = item.Cantidad;
+        existenciaNueva = CalcularNuevaExistencia(existenciaAnterior, movimiento.TipoMovimiento, movimiento.Cantidad);
+        if (existenciaNueva < 0)
         {
-            var item = await db.Insumos.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == movimiento.ItemId && i.EmpresaId == _empresaId && i.IsActive);
-            if (item is null)
-            {
-                error = "No se encontró el insumo seleccionado.";
-                return;
-            }
-
-            existenciaAnterior = item.Cantidad;
-            existenciaNueva = CalcularNuevaExistencia(existenciaAnterior, movimiento.TipoMovimiento, movimiento.Cantidad);
-            if (existenciaNueva < 0)
-            {
-                error = "La salida no puede dejar existencia negativa.";
-                return;
-            }
-
-            item.Cantidad = existenciaNueva;
-            if (costoUnitario > 0)
-                item.PrecioUnitario = costoUnitario;
-            item.UpdatedAt = DateTime.UtcNow;
-            insumoId = item.Id;
-            nombreItem = item.Nombre;
-            costoUnitario = item.PrecioUnitario;
+            error = "La salida no puede dejar existencia negativa.";
+            return;
         }
+
+        item.Cantidad = existenciaNueva;
+        if (costoUnitario > 0)
+            item.PrecioUnitario = costoUnitario;
+        item.UpdatedAt = DateTime.UtcNow;
+        nombreItem = item.Nombre;
+        costoUnitario = item.PrecioUnitario;
 
         db.MovimientosInventario.Add(new MovimientoInventario
         {
             EmpresaId = _empresaId,
-            Origen = movimiento.Origen == OrigenMateriaPrima ? MovimientoInventarioOrigenEnum.MateriaPrima : MovimientoInventarioOrigenEnum.Insumo,
+            Origen = item.OrigenLegacy == InventarioItemOrigenLegacy.MateriaPrima ? MovimientoInventarioOrigenEnum.MateriaPrima : MovimientoInventarioOrigenEnum.Insumo,
             TipoMovimiento = movimiento.TipoMovimiento,
-            MateriaPrimaId = materiaPrimaId,
-            InsumoId = insumoId,
+            InventarioItemId = item.Id,
             Cantidad = movimiento.Cantidad,
             ExistenciaAnterior = existenciaAnterior,
             ExistenciaNueva = existenciaNueva,
@@ -1154,23 +1081,6 @@
 
     private IEnumerable<InventarioItemViewModel> ObtenerItemsPorOrigen(string origen)
         => items.Where(i => i.Origen == origen).OrderBy(i => i.Nombre);
-
-    private static TipoMateriaPrimaEnum MapearTipoMateriaPrimaLegacy(string codigo)
-        => codigo.ToUpperInvariant() switch
-        {
-            "TINTA" => TipoMateriaPrimaEnum.Tinta,
-            "BASE" => TipoMateriaPrimaEnum.Base,
-            "SOLVENTE" => TipoMateriaPrimaEnum.Solvente,
-            "ADITIVO" => TipoMateriaPrimaEnum.Aditivo,
-            _ => TipoMateriaPrimaEnum.Otro
-        };
-
-    private static TipoInsumoEnum MapearTipoInsumoLegacy(string codigo)
-        => codigo.ToUpperInvariant() switch
-        {
-            "BASICO" => TipoInsumoEnum.Basico,
-            _ => TipoInsumoEnum.Diverso
-        };
 
     private sealed class InventarioItemViewModel
     {

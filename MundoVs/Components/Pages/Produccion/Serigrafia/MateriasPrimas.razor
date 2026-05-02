@@ -2,10 +2,8 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities.Inventario
-@using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
-@inject IRepository<MateriaPrima> MateriaPrimaRepository
 @inject IAppConfigRepository AppConfigRepository
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -179,10 +177,10 @@
 </div>
 
 @code {
-    private IEnumerable<MateriaPrima>? items;
-    private IEnumerable<MateriaPrima>? todosItems;
+    private IEnumerable<InventarioItem>? items;
+    private IEnumerable<InventarioItem>? todosItems;
     private List<TipoInventario> tiposMateriaPrima = [];
-    private MateriaPrima editando = new();
+    private InventarioItem editando = new();
     private Guid _empresaId;
     private Guid? filtroTipoId;
     private bool mostrarFormulario;
@@ -218,15 +216,16 @@
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            tiposMateriaPrima = await db.TiposInventario.IgnoreQueryFilters()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
+            tiposMateriaPrima = await db.TiposInventario
+                .Where(t => t.IsActive && t.CategoriaInventario.Codigo == "MATERIA_PRIMA")
                 .Include(t => t.CategoriaInventario)
                 .OrderBy(t => t.Orden)
                 .ThenBy(t => t.Nombre)
                 .ToListAsync();
 
-            todosItems = await db.MateriasPrimas.IgnoreQueryFilters()
-                .Where(i => i.EmpresaId == _empresaId && i.IsActive)
+            todosItems = await db.InventarioItems
+                .Where(i => i.IsActive)
+                .Where(i => i.OrigenLegacy == InventarioItemOrigenLegacy.MateriaPrima)
                 .Include(i => i.TipoInventario)
                 .OrderBy(i => i.Nombre)
                 .ToListAsync();
@@ -251,25 +250,25 @@
 
     private async Task Nuevo()
     {
-        editando = new MateriaPrima
+        editando = new InventarioItem
         {
             EmpresaId = _empresaId,
             Codigo = await AppConfigRepository.GetNextCodeAsync("MP-", "Consecutivo:MateriaPrima"),
+            OrigenLegacy = InventarioItemOrigenLegacy.MateriaPrima,
             TipoInventarioId = filtroTipoId ?? tiposMateriaPrima.FirstOrDefault()?.Id
         };
         mostrarFormulario = true;
     }
 
-    private void Editar(MateriaPrima item)
+    private void Editar(InventarioItem item)
     {
-        editando = new MateriaPrima
+        editando = new InventarioItem
         {
             Id = item.Id,
             EmpresaId = item.EmpresaId,
             Codigo = item.Codigo,
             Nombre = item.Nombre,
             TipoInventarioId = item.TipoInventarioId,
-            TipoMateriaPrima = item.TipoMateriaPrima,
             PrecioUnitario = item.PrecioUnitario,
             CodigoPantone = item.CodigoPantone,
             CodigoHex = item.CodigoHex,
@@ -277,6 +276,7 @@
             UnidadMedida = item.UnidadMedida,
             StockMinimo = item.StockMinimo,
             CreatedAt = item.CreatedAt,
+            OrigenLegacy = item.OrigenLegacy,
             IsActive = item.IsActive
         };
         mostrarFormulario = true;
@@ -298,32 +298,37 @@
             return;
         }
 
+        await using var db = await DbFactory.CreateDbContextAsync();
         if (editando.Id == Guid.Empty)
-            await MateriaPrimaRepository.AddAsync(editando);
+            db.InventarioItems.Add(editando);
         else
         {
             editando.UpdatedAt = DateTime.UtcNow;
-            await MateriaPrimaRepository.UpdateAsync(editando);
+            db.InventarioItems.Update(editando);
         }
+
+        await db.SaveChangesAsync();
 
         await Cargar();
         Cancelar();
     }
 
-    private async Task Eliminar(MateriaPrima item)
+    private async Task Eliminar(InventarioItem item)
     {
         item.IsActive = false;
         item.UpdatedAt = DateTime.UtcNow;
-        await MateriaPrimaRepository.UpdateAsync(item);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.InventarioItems.Update(item);
+        await db.SaveChangesAsync();
         await Cargar();
     }
 
     private void Cancelar()
     {
-        editando = new MateriaPrima();
+        editando = new InventarioItem { OrigenLegacy = InventarioItemOrigenLegacy.MateriaPrima };
         mostrarFormulario = false;
     }
 
-    private static string ObtenerNombreTipo(MateriaPrima item)
-        => item.TipoInventario?.Nombre ?? item.TipoMateriaPrima.ToString();
+    private static string ObtenerNombreTipo(InventarioItem item)
+        => item.TipoInventario?.Nombre ?? "Material";
 }

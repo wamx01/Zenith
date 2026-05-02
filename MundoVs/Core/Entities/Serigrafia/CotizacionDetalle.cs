@@ -24,8 +24,7 @@ public class CotizacionDetalle : BaseEntity
     public decimal? GananciaPorcentaje { get; set; }
 
     // FK opcionales al catálogo
-    public Guid? MateriaPrimaId { get; set; }
-    public Guid? InsumoId { get; set; }
+    public Guid? InventarioItemId { get; set; }
     public Guid? PosicionId { get; set; }
     public Guid? TipoProcesoId { get; set; }
     public Guid? TipoProcesoConsumoId { get; set; }
@@ -34,8 +33,7 @@ public class CotizacionDetalle : BaseEntity
     // Navegación
     public CotizacionSerigrafia CotizacionSerigrafia { get; set; } = null!;
     public CotizacionSerigrafiaProceso? CotizacionSerigrafiaProceso { get; set; }
-    public MateriaPrima? MateriaPrima { get; set; }
-    public Insumo? Insumo { get; set; }
+    public Inventario.InventarioItem? InventarioItem { get; set; }
     public Posicion? Posicion { get; set; }
     public TipoProceso? TipoProceso { get; set; }
     public TipoProcesoConsumo? TipoProcesoConsumo { get; set; }

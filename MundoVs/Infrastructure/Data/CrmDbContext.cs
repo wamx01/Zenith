@@ -77,11 +77,10 @@ public class CrmDbContext : DbContext
     public DbSet<ColorSerigrafia> ColoresSerigrafia => Set<ColorSerigrafia>();
     public DbSet<CategoriaInventario> CategoriasInventario => Set<CategoriaInventario>();
     public DbSet<TipoInventario> TiposInventario => Set<TipoInventario>();
+    public DbSet<InventarioItem> InventarioItems => Set<InventarioItem>();
     public DbSet<MovimientoInventario> MovimientosInventario => Set<MovimientoInventario>();
     public DbSet<InventarioFinishedGood> InventariosFinishedGoods => Set<InventarioFinishedGood>();
     public DbSet<MovimientoFinishedGood> MovimientosFinishedGoods => Set<MovimientoFinishedGood>();
-    public DbSet<MateriaPrima> MateriasPrimas => Set<MateriaPrima>();
-    public DbSet<Insumo> Insumos => Set<Insumo>();
     public DbSet<Posicion> Posiciones => Set<Posicion>();
     public DbSet<GastoFijo> GastosFijos => Set<GastoFijo>();
     public DbSet<Pantalla> Pantallas => Set<Pantalla>();
@@ -613,6 +612,7 @@ public class CrmDbContext : DbContext
             entity.Property(e => e.Estatus).HasConversion<int>();
             entity.Property(e => e.NoRequiereFactura).HasDefaultValue(false);
             entity.Property(e => e.Observaciones).HasMaxLength(500);
+            entity.Property(e => e.TextoPagare).HasMaxLength(4000);
             entity.Property(e => e.PdfUrl).HasMaxLength(500);
             entity.Property(e => e.Subtotal).HasPrecision(18, 2);
             entity.Property(e => e.Impuestos).HasPrecision(18, 2);
@@ -662,8 +662,14 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.PedidoDetalleId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.PedidoConcepto)
+                .WithMany()
+                .HasForeignKey(e => e.PedidoConceptoId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(e => e.NotaEntregaId);
             entity.HasIndex(e => e.PedidoDetalleId);
+            entity.HasIndex(e => e.PedidoConceptoId);
         });
 
         modelBuilder.Entity<NotaEntregaDetalleTalla>(entity =>
@@ -1572,6 +1578,52 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.Orden);
         });
 
+        modelBuilder.Entity<InventarioItem>(entity =>
+        {
+            entity.ToTable("logistica_inventario_item");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Codigo).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Nombre).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CodigoPantone).HasMaxLength(20);
+            entity.Property(e => e.CodigoHex).HasMaxLength(7);
+            entity.Property(e => e.PrecioUnitario).HasPrecision(18, 4);
+            entity.Property(e => e.Cantidad).HasPrecision(18, 2);
+            entity.Property(e => e.UnidadMedida).HasMaxLength(10);
+            entity.Property(e => e.StockMinimo).HasPrecision(18, 2);
+            entity.Property(e => e.OrigenLegacy).HasConversion<int>();
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.CategoriaInventario)
+                .WithMany()
+                .HasForeignKey(e => e.CategoriaInventarioId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.TipoInventario)
+                .WithMany()
+                .HasForeignKey(e => e.TipoInventarioId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.Codigo }).IsUnique();
+            entity.HasIndex(e => e.CategoriaInventarioId);
+            entity.HasIndex(e => e.TipoInventarioId);
+            entity.HasIndex(e => e.MateriaPrimaOrigenId).IsUnique();
+            entity.HasIndex(e => e.InsumoOrigenId).IsUnique();
+        });
+
+        modelBuilder.Entity<TipoProcesoConsumo>(entity =>
+        {
+            entity.HasOne(e => e.InventarioItem)
+                .WithMany()
+                .HasForeignKey(e => e.InventarioItemId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.InventarioItemId);
+        });
+
         modelBuilder.Entity<MovimientoInventario>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -1587,22 +1639,16 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.EmpresaId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(e => e.MateriaPrima)
+            entity.HasOne(e => e.InventarioItem)
                 .WithMany()
-                .HasForeignKey(e => e.MateriaPrimaId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(e => e.Insumo)
-                .WithMany()
-                .HasForeignKey(e => e.InsumoId)
+                .HasForeignKey(e => e.InventarioItemId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(e => e.EmpresaId);
             entity.HasIndex(e => e.Origen);
             entity.HasIndex(e => e.TipoMovimiento);
             entity.HasIndex(e => e.FechaMovimiento);
-            entity.HasIndex(e => e.MateriaPrimaId);
-            entity.HasIndex(e => e.InsumoId);
+            entity.HasIndex(e => e.InventarioItemId);
         });
 
         modelBuilder.Entity<InventarioFinishedGood>(entity =>
@@ -1719,34 +1765,6 @@ public class CrmDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
                 
             entity.HasIndex(e => e.ProductoSerigrafiaId);
-        });
-
-        modelBuilder.Entity<MateriaPrima>(entity =>
-        {
-            entity.ToTable("MateriasPrimas");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Codigo).HasMaxLength(50).IsRequired();
-            entity.Property(e => e.Nombre).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.CodigoPantone).HasMaxLength(20);
-            entity.Property(e => e.CodigoHex).HasMaxLength(7);
-            entity.Property(e => e.PrecioUnitario).HasPrecision(18, 4);
-            entity.Property(e => e.Cantidad).HasPrecision(18, 2);
-            entity.Property(e => e.UnidadMedida).HasMaxLength(10);
-            entity.Property(e => e.StockMinimo).HasPrecision(18, 2);
-
-            entity.HasOne(e => e.Empresa)
-                .WithMany()
-                .HasForeignKey(e => e.EmpresaId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.TipoInventario)
-                .WithMany()
-                .HasForeignKey(e => e.TipoInventarioId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(e => new { e.EmpresaId, e.Codigo }).IsUnique();
-            entity.HasIndex(e => e.TipoMateriaPrima);
-            entity.HasIndex(e => e.TipoInventarioId);
         });
 
         modelBuilder.Entity<Pantalla>(entity =>
@@ -2021,14 +2039,9 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.CotizacionSerigrafiaProcesoId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            entity.HasOne(e => e.MateriaPrima)
+            entity.HasOne(e => e.InventarioItem)
                 .WithMany()
-                .HasForeignKey(e => e.MateriaPrimaId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasOne(e => e.Insumo)
-                .WithMany()
-                .HasForeignKey(e => e.InsumoId)
+                .HasForeignKey(e => e.InventarioItemId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasOne(e => e.Posicion)
@@ -2054,6 +2067,7 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.CotizacionSerigrafiaId);
             entity.HasIndex(e => e.Categoria);
             entity.HasIndex(e => e.CotizacionSerigrafiaProcesoId);
+            entity.HasIndex(e => e.InventarioItemId);
             entity.HasIndex(e => e.TipoProcesoConsumoId);
         });
 
@@ -3189,6 +3203,7 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<ProductoCliente>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Cliente.EmpresaId == _empresaId);
         modelBuilder.Entity<ProductoCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Producto.EmpresaId == _empresaId);
         modelBuilder.Entity<TallaCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.ProductoCalzado.Producto.EmpresaId == _empresaId);
+        modelBuilder.Entity<CatalogoTallaCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<ClienteTallaCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<ClienteFraccionCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<ClienteFraccionCalzadoDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
@@ -3203,8 +3218,6 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<Usuario>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<TipoUsuario>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<EmpresaModuloAcceso>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
-        modelBuilder.Entity<MateriaPrima>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
-        modelBuilder.Entity<Insumo>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<TipoProceso>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<Posicion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<GastoFijo>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);

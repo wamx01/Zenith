@@ -1,0 +1,1454 @@
+@code {
+    private IEnumerable<CotizacionSerigrafia>? cotizaciones;
+    private IEnumerable<Cliente>? clientes;
+    private IEnumerable<Producto>? productos;
+    private CotizacionSerigrafia? cotizacionEditando;
+    private bool mostrarFormulario;
+    private List<ClienteReglaVariacionPrecio> reglasVariacionCliente = [];
+    private List<CotizacionVariantePrecioEditor> preciosVariantesEditando = [];
+
+    private List<InventarioItem> catalogoInventarioMateriales = [];
+    private IEnumerable<Posicion>? catalogoPosiciones;
+    private IEnumerable<GastoFijo>? catalogoGastosFijos;
+    private IEnumerable<TipoProceso> catalogoProcesos = [];
+    private List<CotizacionSerigrafiaProceso> procesosCotizacionAplicados = [];
+    private string tipoInventarioSeleccionadoId = string.Empty;
+    private string materialInventarioSeleccionadoId = string.Empty;
+
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    private string selectedActividadId = "";
+    private string selectedGastoFijoId = "";
+    private HashSet<Guid> procesosSeleccionados = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            await CargarCatalogos();
+            await CargarClientes();
+            await CargarProductos();
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task<List<ClienteReglaVariacionPrecio>> CargarReglasVariacionClienteAsync(Guid clienteId)
+    {
+        return await EjecutarConNuevoContextoAsync(context =>
+            context.ClientesReglasVariacionPrecio
+                .AsNoTracking()
+                .Where(r => r.ClienteId == clienteId && r.IsActive && r.Activa)
+                .OrderBy(r => r.Orden)
+                .ThenBy(r => r.Dimension)
+                .ThenBy(r => r.Valor)
+                .ToListAsync());
+    }
+
+    private async Task RegenerarPreciosVariantesAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.ProductoId == Guid.Empty)
+        {
+            preciosVariantesEditando = [];
+            return;
+        }
+
+        cotizacionEditando.PrecioFinalContado = ObtenerPrecioContado();
+        cotizacionEditando.PrecioCredito = ObtenerPrecioCredito();
+        preciosVariantesEditando = await ConstruirPreciosVariantesSugeridosAsync();
+    }
+
+    private async Task<List<CotizacionVariantePrecioEditor>> ConstruirPreciosVariantesSugeridosAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.ProductoId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var baseContado = ObtenerPrecioContado();
+        var baseCredito = ObtenerPrecioCredito();
+
+        return await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var variantes = await context.ProductosVariantes
+                .AsNoTracking()
+                .Where(v => v.ProductoId == cotizacionEditando.ProductoId && v.IsActive && v.Activa)
+                .OrderBy(v => v.Talla)
+                .ThenBy(v => v.Color)
+                .ThenBy(v => v.Sku)
+                .ToListAsync();
+
+            var precios = new List<CotizacionVariantePrecioEditor>
+            {
+                new()
+                {
+                    Etiqueta = "Precio base",
+                    EsPrecioBase = true,
+                    Orden = 0,
+                    PorcentajeVariacionAplicado = 0m,
+                    PrecioContado = baseContado,
+                    PrecioCredito = baseCredito,
+                    Aceptada = true
+                }
+            };
+
+            foreach (var variante in variantes)
+            {
+                var porcentaje = ObtenerPorcentajeSugeridoVariante(variante);
+                var factor = 1m + (porcentaje / 100m);
+                precios.Add(new CotizacionVariantePrecioEditor
+                {
+                    ProductoVarianteId = variante.Id,
+                    Sku = variante.Sku,
+                    Etiqueta = ObtenerEtiquetaVariante(variante),
+                    Talla = variante.Talla,
+                    Color = variante.Color,
+                    Orden = precios.Count,
+                    PorcentajeVariacionAplicado = porcentaje,
+                    PrecioContado = Math.Round(baseContado * factor, 2),
+                    PrecioCredito = Math.Round(baseCredito * factor, 2),
+                    Aceptada = true
+                });
+            }
+
+            return precios;
+        });
+    }
+
+    private decimal ObtenerPorcentajeSugeridoVariante(ProductoVariante variante)
+    {
+        decimal total = 0m;
+
+        if (!string.IsNullOrWhiteSpace(variante.Talla))
+        {
+            total += reglasVariacionCliente
+                .Where(r => r.PermiteVariacionPrecio
+                    && string.Equals(r.Dimension, "Talla", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(r.Valor, variante.Talla, StringComparison.OrdinalIgnoreCase))
+                .Sum(r => r.PorcentajeVariacionSugerido);
+        }
+
+        if (!string.IsNullOrWhiteSpace(variante.Color))
+        {
+            total += reglasVariacionCliente
+                .Where(r => r.PermiteVariacionPrecio
+                    && string.Equals(r.Dimension, "Color", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(r.Valor, variante.Color, StringComparison.OrdinalIgnoreCase))
+                .Sum(r => r.PorcentajeVariacionSugerido);
+        }
+
+        return total;
+    }
+
+    private async Task GuardarPreciosVariantesCotizacionAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var existentes = await context.CotizacionVariantePrecios
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id)
+                .ToListAsync();
+
+            if (existentes.Count > 0)
+            {
+                context.CotizacionVariantePrecios.RemoveRange(existentes);
+                await context.SaveChangesAsync();
+            }
+
+            foreach (var precio in preciosVariantesEditando)
+            {
+                context.CotizacionVariantePrecios.Add(new CotizacionVariantePrecio
+                {
+                    Id = Guid.NewGuid(),
+                    CotizacionSerigrafiaId = cotizacionEditando.Id,
+                    ProductoVarianteId = precio.ProductoVarianteId,
+                    Etiqueta = precio.Etiqueta,
+                    Talla = precio.Talla,
+                    Color = precio.Color,
+                    EsPrecioBase = precio.EsPrecioBase,
+                    PorcentajeVariacionAplicado = precio.PorcentajeVariacionAplicado,
+                    PrecioContado = precio.PrecioContado,
+                    PrecioCredito = precio.PrecioCredito,
+                    Aceptada = precio.Aceptada,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
+
+            await context.SaveChangesAsync();
+        });
+    }
+
+    private async Task CargarClientes()
+    {
+        clientes = await ClienteRepository.GetAllAsync();
+    }
+
+    private async Task CargarCatalogos()
+    {
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            catalogoInventarioMateriales = await context.InventarioItems
+                .AsNoTracking()
+                .Where(i => i.IsActive)
+                .OrderBy(i => i.Nombre)
+                .ToListAsync();
+
+            var posiciones = await context.Posiciones
+                .AsNoTracking()
+                .Where(a => a.IsActive)
+                .OrderBy(a => a.Orden)
+                .ToListAsync();
+
+            catalogoPosiciones = posiciones;
+
+            catalogoGastosFijos = await context.GastosFijos
+                .AsNoTracking()
+                .Where(g => g.IsActive)
+                .OrderBy(g => g.Orden)
+                .ToListAsync();
+
+            var procesos = await context.TiposProceso
+                .AsNoTracking()
+                .Include(p => p.ConsumosEstandar.Where(c => c.IsActive && c.Activo))
+                .Where(p => p.IsActive && p.Activo)
+                .OrderBy(p => p.Orden)
+                .ToListAsync();
+
+            foreach (var proceso in procesos)
+            {
+                proceso.Posicion = posiciones.FirstOrDefault(a => a.Id == proceso.PosicionId);
+            }
+
+            catalogoProcesos = procesos;
+        });
+    }
+
+    private async Task CargarProductos()
+    {
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            productos = await context.Productos
+                .AsNoTracking()
+                .Where(p => p.IsActive)
+                .OrderBy(p => p.Nombre)
+                .ToListAsync();
+        });
+    }
+
+    private async Task CargarCotizaciones()
+    {
+        cotizaciones = await EjecutarConNuevoContextoAsync(context =>
+            context.CotizacionesSerigrafia
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(c => c.Cliente)
+                .Include(c => c.Producto)
+                .Include(c => c.Detalles.Where(d => d.IsActive))
+                .Include(c => c.PreciosVariantes.Where(p => p.IsActive))
+                .Include(c => c.Procesos)
+                    .ThenInclude(p => p.TipoProceso)
+                .Where(c => c.IsActive)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync());
+    }
+
+    private void NuevaCotizacion()
+    {
+        cotizacionEditando = new CotizacionSerigrafia { NumeroPersonas = 1 };
+        procesosSeleccionados = [];
+        reglasVariacionCliente = [];
+        preciosVariantesEditando = [];
+        mostrarFormulario = true;
+    }
+
+    private async Task EditarCotizacion(CotizacionSerigrafia cot)
+    {
+        cotizacionEditando = await CargarCotizacionPorIdAsync(cot.Id);
+        procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+        procesosSeleccionados = cotizacionEditando?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? [];
+        reglasVariacionCliente = cotizacionEditando?.ClienteId is Guid clienteId
+            ? await CargarReglasVariacionClienteAsync(clienteId)
+            : [];
+        preciosVariantesEditando = cotizacionEditando?.PreciosVariantes
+            .OrderBy(p => p.EsPrecioBase ? 0 : 1)
+            .ThenBy(p => p.Talla)
+            .ThenBy(p => p.Color)
+            .Select((p, index) => new CotizacionVariantePrecioEditor
+            {
+                Id = p.Id,
+                ProductoVarianteId = p.ProductoVarianteId,
+                Sku = p.ProductoVariante?.Sku,
+                Etiqueta = p.Etiqueta,
+                Talla = p.Talla,
+                Color = p.Color,
+                EsPrecioBase = p.EsPrecioBase,
+                Orden = index,
+                PorcentajeVariacionAplicado = p.PorcentajeVariacionAplicado,
+                PrecioContado = p.PrecioContado,
+                PrecioCredito = p.PrecioCredito,
+                Aceptada = p.Aceptada
+            })
+            .ToList() ?? [];
+        mostrarFormulario = true;
+    }
+
+    private async Task OnClienteChanged(ChangeEventArgs e)
+    {
+        if (cotizacionEditando == null)
+        {
+            return;
+        }
+
+        cotizacionEditando.ClienteId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        reglasVariacionCliente = cotizacionEditando.ClienteId is Guid clienteId
+            ? await CargarReglasVariacionClienteAsync(clienteId)
+            : [];
+
+        await RegenerarPreciosVariantesAsync();
+    }
+
+    private async Task OnProductoChangedAsync(ChangeEventArgs e)
+    {
+        if (cotizacionEditando == null)
+        {
+            return;
+        }
+
+        cotizacionEditando.ProductoId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : Guid.Empty;
+        await RegenerarPreciosVariantesAsync();
+    }
+
+    private async Task GuardarCotizacion()
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            if (cotizacionEditando == null || cotizacionEditando.ProductoId == Guid.Empty) return;
+
+            cotizacionEditando.CostoTotalPorTarea = ObtenerCostoTarea();
+            cotizacionEditando.CostoTotalPorPar = ObtenerCostoUnitarioBase();
+            cotizacionEditando.PrecioSugerido = ObtenerPrecioSugerido();
+            cotizacionEditando.PrecioFinalContado = ObtenerPrecioContado();
+            cotizacionEditando.PrecioCredito = ObtenerPrecioCredito();
+            cotizacionEditando.Ganancia = ObtenerUtilidadMonto();
+
+            if (!preciosVariantesEditando.Any())
+            {
+                await RegenerarPreciosVariantesAsync();
+            }
+
+            var precioBase = preciosVariantesEditando.FirstOrDefault(p => p.EsPrecioBase);
+            if (precioBase != null)
+            {
+                cotizacionEditando.PrecioFinalContado = precioBase.PrecioContado;
+                cotizacionEditando.PrecioCredito = precioBase.PrecioCredito;
+            }
+
+            if (cotizacionEditando.Id == Guid.Empty)
+            {
+                PrepararNuevaEntidad(cotizacionEditando);
+                await EjecutarConNuevoContextoAsync(async context =>
+                {
+                    context.CotizacionesSerigrafia.Add(cotizacionEditando);
+                    await context.SaveChangesAsync();
+                });
+
+                cotizacionEditando = await CargarCotizacionPorIdAsync(cotizacionEditando.Id);
+                procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            }
+            else
+            {
+                await EjecutarConNuevoContextoAsync(async context =>
+                {
+                    var cotizacionDb = await context.CotizacionesSerigrafia
+                        .FirstOrDefaultAsync(c => c.Id == cotizacionEditando.Id);
+
+                    if (cotizacionDb == null) return;
+
+                    cotizacionDb.ProductoId = cotizacionEditando.ProductoId;
+                    cotizacionDb.ClienteId = cotizacionEditando.ClienteId;
+                    cotizacionDb.ParesPorLamina = cotizacionEditando.ParesPorLamina;
+                    cotizacionDb.Utilidad = cotizacionEditando.Utilidad;
+                    cotizacionDb.Descripcion = cotizacionEditando.Descripcion;
+                    cotizacionDb.NumeroPersonas = cotizacionEditando.NumeroPersonas;
+                    cotizacionDb.CostoTotalPorTarea = cotizacionEditando.CostoTotalPorTarea;
+                    cotizacionDb.CostoTotalPorPar = cotizacionEditando.CostoTotalPorPar;
+                    cotizacionDb.PrecioSugerido = cotizacionEditando.PrecioSugerido;
+                    cotizacionDb.PrecioFinalContado = cotizacionEditando.PrecioFinalContado;
+                    cotizacionDb.PrecioCredito = cotizacionEditando.PrecioCredito;
+                    cotizacionDb.Ganancia = cotizacionEditando.Ganancia;
+                    cotizacionDb.UpdatedAt = DateTime.UtcNow;
+
+                    await context.SaveChangesAsync();
+                });
+            }
+
+            await SincronizarProductoClienteCotizacionAsync();
+
+            await GuardarPreciosVariantesCotizacionAsync();
+
+            await SincronizarProcesosCotizacionAsync();
+            await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
+
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task ToggleProcesoCotizacion(Guid tipoProcesoId, object? value)
+    {
+        if (value is bool b && b)
+            procesosSeleccionados.Add(tipoProcesoId);
+        else
+            procesosSeleccionados.Remove(tipoProcesoId);
+
+        if (cotizacionEditando?.Id != Guid.Empty)
+        {
+            await SincronizarProcesosCotizacionAsync();
+            await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
+            cotizacionEditando = await RecargarCotizacion();
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            await CargarCotizaciones();
+        }
+    }
+
+    private async Task SincronizarManoObraDesdeProcesosAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty) return;
+
+        var procesosActivos = catalogoProcesos
+            .Where(p => procesosSeleccionados.Contains(p.Id))
+            .ToList();
+
+        var procesoIdsValidos = procesosActivos
+            .Where(p => p.PosicionId.HasValue)
+            .Select(p => p.Id)
+            .ToHashSet();
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var detallesMo = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.Categoria == CotizacionCategoria.ManoObra && d.IsActive)
+                .ToListAsync();
+
+            var porDesactivar = detallesMo
+                .Where(d => d.TipoProcesoId.HasValue && !procesoIdsValidos.Contains(d.TipoProcesoId.Value))
+                .ToList();
+
+            foreach (var detalle in porDesactivar)
+            {
+                detalle.IsActive = false;
+                detalle.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var siguienteOrden = detallesMo
+                .Where(d => d.IsActive)
+                .Select(d => d.Orden)
+                .DefaultIfEmpty(0)
+                .Max();
+
+            foreach (var proceso in procesosActivos.Where(p => p.PosicionId.HasValue))
+            {
+                var detalleExistente = detallesMo.FirstOrDefault(d => d.TipoProcesoId == proceso.Id && d.IsActive);
+                var precioMin = ObtenerTarifaPorMinuto(proceso);
+
+                if (detalleExistente == null)
+                {
+                    detalleExistente = new CotizacionDetalle
+                    {
+                        CotizacionSerigrafiaId = cotizacionEditando.Id,
+                        Categoria = CotizacionCategoria.ManoObra,
+                        Concepto = proceso.Nombre,
+                        Tiempo = 0,
+                        Precio = precioMin,
+                        GananciaPorcentaje = 0,
+                        PosicionId = proceso.PosicionId,
+                        TipoProcesoId = proceso.Id,
+                        Orden = ++siguienteOrden,
+                        IsActive = true
+                    };
+
+                    PrepararNuevaEntidad(detalleExistente);
+                    detalleExistente.GananciaPorcentaje = CalcularGananciaManoObra(detalleExistente.Precio, precioMin);
+                    detalleExistente.Costo = (detalleExistente.Tiempo ?? 0) * (detalleExistente.Precio ?? 0);
+                    context.CotizacionDetalles.Add(detalleExistente);
+                }
+                else
+                {
+                    detalleExistente.Concepto = proceso.Nombre;
+                    if (!detalleExistente.Precio.HasValue || detalleExistente.Precio <= 0)
+                    {
+                        detalleExistente.Precio = precioMin;
+                    }
+
+                    detalleExistente.GananciaPorcentaje = CalcularGananciaManoObra(detalleExistente.Precio, precioMin);
+                    detalleExistente.PosicionId = proceso.PosicionId;
+                    detalleExistente.TipoProcesoId = proceso.Id;
+                    detalleExistente.Costo = (detalleExistente.Tiempo ?? 0) * (detalleExistente.Precio ?? 0);
+                    detalleExistente.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await context.SaveChangesAsync();
+        });
+
+        await ActualizarGastosFijosTiempoAsync();
+        cotizacionEditando = await RecargarCotizacion();
+    }
+
+    private async Task SincronizarProcesosCotizacionAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty) return;
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var existentes = await context.CotizacionSerigrafiaProcesos
+                .Include(p => p.TipoProceso)
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id)
+                .ToListAsync();
+
+            var existentesIds = existentes.Select(p => p.TipoProcesoId).ToHashSet();
+            var porEliminar = existentes.Where(p => !procesosSeleccionados.Contains(p.TipoProcesoId)).ToList();
+            if (porEliminar.Any())
+            {
+                context.CotizacionSerigrafiaProcesos.RemoveRange(porEliminar);
+            }
+
+            var porAgregar = procesosSeleccionados
+                .Where(id => !existentesIds.Contains(id))
+                .Select((id, index) =>
+                {
+                    var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == id);
+                    var proceso = new CotizacionSerigrafiaProceso
+                    {
+                        CotizacionSerigrafiaId = cotizacionEditando.Id,
+                        TipoProcesoId = id,
+                        Multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, tipoProceso?.MultiplicadorDefault ?? 1m),
+                        MinutosEstandarAplicados = tipoProceso?.MinutosEstandar ?? 0m,
+                        TiempoTotal = (tipoProceso?.MinutosEstandar ?? 0m) * (tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, tipoProceso?.MultiplicadorDefault ?? 1m)),
+                        Orden = existentes.Count + index + 1
+                    };
+
+                    PrepararNuevaEntidad(proceso);
+                    return proceso;
+                })
+                .ToList();
+
+            if (porAgregar.Any())
+            {
+                context.CotizacionSerigrafiaProcesos.AddRange(porAgregar);
+            }
+
+            if (porEliminar.Any() || porAgregar.Any())
+            {
+                await context.SaveChangesAsync();
+            }
+
+            procesosCotizacionAplicados = await context.CotizacionSerigrafiaProcesos
+                .AsNoTracking()
+                .Include(p => p.TipoProceso)
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id && p.IsActive)
+                .OrderBy(p => p.Orden)
+                .ToListAsync();
+        });
+    }
+
+    private async Task AgregarMaterialSeleccionadoAsync()
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            if (cotizacionEditando == null) return;
+            var grupo = ObtenerGrupoMaterialSeleccionado();
+            if (grupo == null) return;
+
+            var idStr = materialInventarioSeleccionadoId;
+            if (!Guid.TryParse(idStr, out var id)) return;
+            var item = grupo.Items.FirstOrDefault(i => i.Id == id);
+            if (item == null) return;
+
+            var categoria = grupo.Categoria;
+
+            var detalle = new CotizacionDetalle
+            {
+                CotizacionSerigrafiaId = cotizacionEditando.Id,
+                Categoria = categoria,
+                Concepto = item.Nombre,
+                InventarioItemId = item.Id,
+                PrecioUnitario = item.PrecioUnitario,
+                Orden = ObtenerDetalles(categoria).Count + 1
+            };
+
+            PrepararNuevaEntidad(detalle);
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                context.CotizacionDetalles.Add(detalle);
+                await context.SaveChangesAsync();
+            });
+            cotizacionEditando = await RecargarCotizacion();
+            materialInventarioSeleccionadoId = string.Empty;
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task AgregarActividad()
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            if (cotizacionEditando == null || !Guid.TryParse(selectedActividadId, out var id)) return;
+            var act = catalogoPosiciones?.FirstOrDefault(a => a.Id == id);
+            if (act == null) return;
+
+            var detalle = new CotizacionDetalle
+            {
+                CotizacionSerigrafiaId = cotizacionEditando.Id,
+                Categoria = CotizacionCategoria.ManoObra,
+                Concepto = act.Nombre,
+                Precio = Math.Round(act.TarifaPorMinuto, 4),
+                GananciaPorcentaje = 0,
+                PosicionId = act.Id,
+                Orden = ObtenerDetalles(CotizacionCategoria.ManoObra).Count + 1
+            };
+
+            PrepararNuevaEntidad(detalle);
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                context.CotizacionDetalles.Add(detalle);
+                await context.SaveChangesAsync();
+            });
+            cotizacionEditando = await RecargarCotizacion();
+            selectedActividadId = "";
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task AgregarGastoFijo()
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            if (cotizacionEditando == null || !Guid.TryParse(selectedGastoFijoId, out var id)) return;
+            var gf = catalogoGastosFijos?.FirstOrDefault(g => g.Id == id);
+            if (gf == null) return;
+
+            var tiempo = ObtenerTiempoManoObraTotal();
+            var precio = Math.Round(gf.CostoMensual, 4);
+            var detalle = new CotizacionDetalle
+            {
+                CotizacionSerigrafiaId = cotizacionEditando.Id,
+                Categoria = CotizacionCategoria.GastoFijo,
+                Concepto = gf.Concepto,
+                Tiempo = tiempo,
+                Precio = precio,
+                Costo = tiempo * precio,
+                GastoFijoId = gf.Id,
+                Orden = ObtenerDetalles(CotizacionCategoria.GastoFijo).Count + 1
+            };
+
+            PrepararNuevaEntidad(detalle);
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                context.CotizacionDetalles.Add(detalle);
+                await context.SaveChangesAsync();
+            });
+            cotizacionEditando = await RecargarCotizacion();
+            selectedGastoFijoId = "";
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task GuardarDetalle(CotizacionDetalle detalle)
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                var detalleDb = await context.CotizacionDetalles
+                    .FirstOrDefaultAsync(d => d.Id == detalle.Id);
+
+                if (detalleDb == null) return;
+
+                detalleDb.Consumo = detalle.Consumo;
+                detalleDb.PrecioUnitario = detalle.PrecioUnitario;
+                detalleDb.PesoInicial = detalle.PesoInicial;
+                detalleDb.PesoFinal = detalle.PesoFinal;
+                detalleDb.Tiempo = detalle.Tiempo;
+                detalleDb.Precio = detalle.Precio;
+                detalleDb.GananciaPorcentaje = detalle.GananciaPorcentaje;
+
+                if (detalleDb.Categoria == CotizacionCategoria.GastoFijo)
+                {
+                    detalleDb.Tiempo = ObtenerTiempoManoObraTotal();
+                    if ((detalleDb.Precio == null || detalleDb.Precio == 0) && detalleDb.GastoFijoId.HasValue)
+                    {
+                        var precioMin = await ObtenerPrecioMinGastoFijoAsync(detalleDb.GastoFijoId.Value);
+                        if (precioMin.HasValue)
+                        {
+                            detalleDb.Precio = precioMin.Value;
+                        }
+                    }
+                }
+
+                if (detalleDb.Categoria == CotizacionCategoria.ManoObra && detalleDb.TipoProcesoId.HasValue)
+                {
+                    var proceso = catalogoProcesos.FirstOrDefault(p => p.Id == detalleDb.TipoProcesoId.Value);
+                    if (proceso != null)
+                    {
+                        detalleDb.Concepto = proceso.Nombre;
+                        var tarifaOriginal = ObtenerTarifaPorMinuto(proceso);
+                        if (!detalleDb.Precio.HasValue || detalleDb.Precio <= 0)
+                        {
+                            detalleDb.Precio = tarifaOriginal;
+                        }
+
+                        detalleDb.GananciaPorcentaje = CalcularGananciaManoObra(detalleDb.Precio, tarifaOriginal);
+                        detalleDb.PosicionId = proceso.PosicionId;
+                    }
+                }
+
+                detalleDb.Costo = detalleDb.Categoria switch
+                {
+                    CotizacionCategoria.ManoObra => (detalleDb.Tiempo ?? 0) * (detalleDb.Precio ?? 0),
+                    CotizacionCategoria.GastoFijo => (detalleDb.Tiempo ?? 0) * (detalleDb.Precio ?? 0),
+                    _ => detalleDb.Consumo * detalleDb.PrecioUnitario
+                };
+
+                detalleDb.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+            });
+
+            if (detalle.Categoria == CotizacionCategoria.ManoObra)
+            {
+                await ActualizarGastosFijosTiempoAsync();
+            }
+
+            cotizacionEditando = await RecargarCotizacion();
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task EliminarDetalle(CotizacionDetalle detalle)
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                var detalleDb = await context.CotizacionDetalles
+                    .FirstOrDefaultAsync(d => d.Id == detalle.Id);
+
+                if (detalleDb == null) return;
+
+                detalleDb.IsActive = false;
+                detalleDb.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+            });
+
+            cotizacionEditando = await RecargarCotizacion();
+            if (detalle.Categoria == CotizacionCategoria.ManoObra)
+            {
+                await ActualizarGastosFijosTiempoAsync();
+            }
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task EliminarCotizacion(CotizacionSerigrafia cot)
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                var cotizacionDb = await context.CotizacionesSerigrafia
+                    .FirstOrDefaultAsync(c => c.Id == cot.Id);
+
+                if (cotizacionDb == null) return;
+
+                cotizacionDb.IsActive = false;
+                cotizacionDb.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+            });
+
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task DuplicarCotizacion(CotizacionSerigrafia cot)
+    {
+        await EjecutarConDbLock(async () =>
+        {
+            var nueva = new CotizacionSerigrafia
+            {
+                ProductoId = cot.ProductoId,
+                ClienteId = cot.ClienteId,
+                ParesPorLamina = cot.ParesPorLamina,
+                Utilidad = cot.Utilidad,
+                Descripcion = cot.Descripcion,
+                NumeroPersonas = cot.NumeroPersonas,
+                CostoTotalPorTarea = cot.CostoTotalPorTarea,
+                CostoTotalPorPar = cot.CostoTotalPorPar,
+                PrecioSugerido = cot.PrecioSugerido,
+                PrecioFinalContado = cot.PrecioFinalContado,
+                PrecioCredito = cot.PrecioCredito,
+                Ganancia = cot.Ganancia
+            };
+
+            PrepararNuevaEntidad(nueva);
+
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                context.CotizacionesSerigrafia.Add(nueva);
+
+                if (cot.Detalles != null)
+                {
+                    foreach (var detalle in cot.Detalles.Where(d => d.IsActive))
+                    {
+                        var nuevoDetalle = new CotizacionDetalle
+                        {
+                            CotizacionSerigrafiaId = nueva.Id,
+                            Categoria = detalle.Categoria,
+                            Concepto = detalle.Concepto,
+                            Consumo = detalle.Consumo,
+                            PrecioUnitario = detalle.PrecioUnitario,
+                            Costo = detalle.Costo,
+                            PesoInicial = detalle.PesoInicial,
+                            PesoFinal = detalle.PesoFinal,
+                            Tiempo = detalle.Tiempo,
+                            Precio = detalle.Precio,
+                            GananciaPorcentaje = detalle.GananciaPorcentaje,
+                            InventarioItemId = detalle.InventarioItemId,
+                        PosicionId = detalle.PosicionId,
+                            TipoProcesoId = detalle.TipoProcesoId,
+                            GastoFijoId = detalle.GastoFijoId,
+                            Orden = detalle.Orden
+                        };
+
+                        PrepararNuevaEntidad(nuevoDetalle);
+                        context.CotizacionDetalles.Add(nuevoDetalle);
+                    }
+                }
+
+                foreach (var proceso in cot.Procesos.Where(p => p.IsActive))
+                {
+                    var nuevoProceso = new CotizacionSerigrafiaProceso
+                    {
+                        CotizacionSerigrafiaId = nueva.Id,
+                        TipoProcesoId = proceso.TipoProcesoId
+                    };
+
+                    PrepararNuevaEntidad(nuevoProceso);
+                    context.CotizacionSerigrafiaProcesos.Add(nuevoProceso);
+                }
+
+                foreach (var precio in cot.PreciosVariantes.Where(p => p.IsActive))
+                {
+                    var nuevoPrecio = new CotizacionVariantePrecio
+                    {
+                        CotizacionSerigrafiaId = nueva.Id,
+                        ProductoVarianteId = precio.ProductoVarianteId,
+                        Etiqueta = precio.Etiqueta,
+                        Talla = precio.Talla,
+                        Color = precio.Color,
+                        EsPrecioBase = precio.EsPrecioBase,
+                        PorcentajeVariacionAplicado = precio.PorcentajeVariacionAplicado,
+                        PrecioContado = precio.PrecioContado,
+                        PrecioCredito = precio.PrecioCredito,
+                        Aceptada = precio.Aceptada
+                    };
+
+                    PrepararNuevaEntidad(nuevoPrecio);
+                    context.CotizacionVariantePrecios.Add(nuevoPrecio);
+                }
+
+                await context.SaveChangesAsync();
+            });
+
+            cotizacionEditando = await CargarCotizacionPorIdAsync(nueva.Id);
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            procesosSeleccionados = cotizacionEditando?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? [];
+            mostrarFormulario = true;
+            await CargarCotizaciones();
+        });
+    }
+
+    private void Cancelar()
+    {
+        cotizacionEditando = null;
+        procesosCotizacionAplicados = [];
+        procesosSeleccionados = [];
+        reglasVariacionCliente = [];
+        preciosVariantesEditando = [];
+        mostrarFormulario = false;
+    }
+
+    private async Task ActualizarMultiplicadorProcesoAsync(CotizacionSerigrafiaProceso proceso)
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConDbLock(async () =>
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                var procesoDb = await context.CotizacionSerigrafiaProcesos
+                    .FirstOrDefaultAsync(p => p.Id == proceso.Id);
+
+                if (procesoDb == null)
+                {
+                    return;
+                }
+
+                var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == procesoDb.TipoProcesoId);
+                var multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, proceso.Multiplicador);
+                procesoDb.Multiplicador = multiplicador;
+                procesoDb.MinutosEstandarAplicados = tipoProceso?.MinutosEstandar ?? procesoDb.MinutosEstandarAplicados;
+                procesoDb.TiempoTotal = procesoDb.MinutosEstandarAplicados * multiplicador;
+                procesoDb.UpdatedAt = DateTime.UtcNow;
+
+                await context.SaveChangesAsync();
+            });
+
+            await SincronizarManoObraDesdeProcesosAsync();
+            await SincronizarConsumosDesdeProcesosAsync();
+            cotizacionEditando = await RecargarCotizacion();
+            procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            await CargarCotizaciones();
+        });
+    }
+
+    private async Task SincronizarConsumosDesdeProcesosAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var procesosAplicados = await context.CotizacionSerigrafiaProcesos
+                .Include(p => p.TipoProceso)
+                    .ThenInclude(tp => tp.ConsumosEstandar.Where(c => c.IsActive && c.Activo))
+                .Where(p => p.CotizacionSerigrafiaId == cotizacionEditando.Id && p.IsActive)
+                .OrderBy(p => p.Orden)
+                .ToListAsync();
+
+            var detallesGenerados = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.IsActive && d.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso && d.Categoria != CotizacionCategoria.ManoObra)
+                .ToListAsync();
+
+            if (detallesGenerados.Count > 0)
+            {
+                context.CotizacionDetalles.RemoveRange(detallesGenerados);
+                await context.SaveChangesAsync();
+            }
+
+            var siguienteOrdenPorCategoria = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.IsActive)
+                .GroupBy(d => d.Categoria)
+                .Select(g => new { g.Key, Orden = g.Max(x => x.Orden) })
+                .ToDictionaryAsync(x => x.Key, x => x.Orden);
+
+            foreach (var procesoAplicado in procesosAplicados)
+            {
+                foreach (var consumo in procesoAplicado.TipoProceso.ConsumosEstandar.OrderBy(c => c.Orden))
+                {
+                    var categoria = consumo.CategoriaCotizacion;
+                    var cantidad = Math.Round(consumo.CantidadBase * Math.Max(1m, procesoAplicado.Multiplicador), 4);
+                    var siguienteOrden = siguienteOrdenPorCategoria.TryGetValue(categoria, out var ordenActual)
+                        ? ordenActual + 1
+                        : 1;
+                    siguienteOrdenPorCategoria[categoria] = siguienteOrden;
+
+                    var inventarioItem = consumo.InventarioItemId.HasValue
+                        ? catalogoInventarioMateriales.FirstOrDefault(i => i.Id == consumo.InventarioItemId.Value)
+                        : null;
+                    var concepto = inventarioItem?.Nombre ?? procesoAplicado.TipoProceso.Nombre;
+
+                    var precioUnitario = inventarioItem?.PrecioUnitario ?? 0m;
+
+                    context.CotizacionDetalles.Add(new CotizacionDetalle
+                    {
+                        Id = Guid.NewGuid(),
+                        CotizacionSerigrafiaId = cotizacionEditando.Id,
+                        CotizacionSerigrafiaProcesoId = procesoAplicado.Id,
+                        Categoria = categoria,
+                        OrigenDetalle = CotizacionDetalleOrigen.GeneradoPorProceso,
+                        Concepto = concepto,
+                        Consumo = cantidad,
+                        PrecioUnitario = precioUnitario,
+                        Costo = cantidad * precioUnitario,
+                        InventarioItemId = consumo.InventarioItemId,
+                        TipoProcesoId = procesoAplicado.TipoProcesoId,
+                        TipoProcesoConsumoId = consumo.Id,
+                        Orden = siguienteOrden,
+                        CreatedAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+        });
+
+        cotizacionEditando = await RecargarCotizacion();
+    }
+
+    private List<CotizacionDetalle> ObtenerDetalles(CotizacionCategoria categoria)
+    {
+        return cotizacionEditando?.Detalles?
+            .Where(d => d.Categoria == categoria && d.IsActive)
+            .OrderBy(d => d.Orden)
+            .ToList() ?? new List<CotizacionDetalle>();
+    }
+
+    private List<CotizacionDetalle> ObtenerDetallesMateriales()
+    {
+        if (cotizacionEditando?.Detalles == null)
+        {
+            return [];
+        }
+
+        return cotizacionEditando.Detalles
+            .Where(d => d.IsActive && (d.Categoria == CotizacionCategoria.Tinta || d.Categoria == CotizacionCategoria.InsumoBasico || d.Categoria == CotizacionCategoria.InsumoDiverso))
+            .OrderBy(d => d.Categoria)
+            .ThenBy(d => d.Orden)
+            .ThenBy(d => d.Concepto)
+            .ToList();
+    }
+
+    private decimal ObtenerTotalMateriales()
+        => (cotizacionEditando?.TotalTintas ?? 0m) + (cotizacionEditando?.TotalInsumosBasicos ?? 0m) + (cotizacionEditando?.TotalInsumosDiversos ?? 0m);
+
+    private List<MaterialGrupoCotizacion> ObtenerGruposMaterialesCotizacion()
+    {
+        return catalogoInventarioMateriales
+            .Where(i => i.IsActive && i.TipoInventarioId.HasValue)
+            .GroupBy(i => new
+            {
+                i.CategoriaInventarioId,
+                CategoriaNombre = i.CategoriaInventario?.Nombre ?? "Inventario",
+                i.TipoInventarioId,
+                TipoNombre = i.TipoInventario?.Nombre ?? "Tipo"
+            })
+            .OrderBy(g => g.Key.CategoriaNombre)
+            .ThenBy(g => g.Key.TipoNombre)
+            .Select(g => new MaterialGrupoCotizacion
+            {
+                Clave = g.Key.TipoInventarioId!.Value.ToString("N"),
+                Titulo = g.Key.TipoNombre,
+                Descripcion = g.Key.CategoriaNombre,
+                Categoria = ResolverCategoriaCotizacion(g.ToList()),
+                Items = g.OrderBy(i => i.Nombre).ToList()
+            })
+            .ToList();
+    }
+
+    private void OnTipoInventarioCotizacionChanged(string? valor)
+    {
+        tipoInventarioSeleccionadoId = valor ?? string.Empty;
+        materialInventarioSeleccionadoId = string.Empty;
+    }
+
+    private void OnMaterialInventarioChanged(string? valor)
+        => materialInventarioSeleccionadoId = valor ?? string.Empty;
+
+    private MaterialGrupoCotizacion? ObtenerGrupoMaterialSeleccionado()
+        => ObtenerGruposMaterialesCotizacion().FirstOrDefault(g => string.Equals(g.Clave, tipoInventarioSeleccionadoId, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<InventarioItem> ObtenerMaterialesDisponiblesSeleccionados()
+        => ObtenerGrupoMaterialSeleccionado()?.Items ?? [];
+
+    private static CotizacionCategoria ResolverCategoriaCotizacion(List<InventarioItem> items)
+    {
+        var categoriaCodigo = items.FirstOrDefault()?.CategoriaInventario?.Codigo;
+        if (string.Equals(categoriaCodigo, "MATERIA_PRIMA", StringComparison.OrdinalIgnoreCase))
+        {
+            return CotizacionCategoria.Tinta;
+        }
+
+        var esBasico = items.Any(i => string.Equals(i.TipoInventario?.Codigo, "BASICO", StringComparison.OrdinalIgnoreCase));
+        return esBasico ? CotizacionCategoria.InsumoBasico : CotizacionCategoria.InsumoDiverso;
+    }
+
+    private static string ObtenerEtiquetaGrupoMaterial(CotizacionDetalle detalle)
+        => detalle.InventarioItem?.TipoInventario?.Nombre
+            ?? detalle.Categoria switch
+            {
+                CotizacionCategoria.Tinta => "Material tipo tinta",
+                CotizacionCategoria.InsumoBasico => "Material básico",
+                CotizacionCategoria.InsumoDiverso => "Material de apoyo",
+                _ => "Material"
+            };
+
+    private string ObtenerOrigenProcesoMaterial(CotizacionDetalle detalle)
+    {
+        if (detalle.OrigenDetalle == CotizacionDetalleOrigen.GeneradoPorProceso && detalle.TipoProcesoId.HasValue)
+        {
+            var proceso = catalogoProcesos.FirstOrDefault(p => p.Id == detalle.TipoProcesoId.Value);
+            if (proceso != null)
+            {
+                return $"Generado por proceso: {proceso.Nombre}";
+            }
+        }
+
+        return "Capturado manualmente";
+    }
+
+    private string ObtenerNombreProcesoAplicado(CotizacionSerigrafiaProceso procesoAplicado)
+        => catalogoProcesos.FirstOrDefault(p => p.Id == procesoAplicado.TipoProcesoId)?.Nombre
+            ?? procesoAplicado.TipoProceso?.Nombre
+            ?? $"Proceso {procesoAplicado.Orden}";
+
+    private sealed class MaterialGrupoCotizacion
+    {
+        public string Clave { get; set; } = string.Empty;
+        public string Titulo { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public CotizacionCategoria Categoria { get; set; }
+        public List<InventarioItem> Items { get; set; } = [];
+    }
+
+    private static string ObtenerEtiquetaVariante(ProductoVariante variante)
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(variante.Talla))
+        {
+            partes.Add($"Talla {variante.Talla}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(variante.Color))
+        {
+            partes.Add($"Color {variante.Color}");
+        }
+
+        return partes.Count == 0 ? "Variante" : string.Join(" · ", partes);
+    }
+
+    private string ObtenerNombreProceso(CotizacionDetalle detalle)
+    {
+        if (detalle.TipoProcesoId.HasValue)
+        {
+            return catalogoProcesos.FirstOrDefault(p => p.Id == detalle.TipoProcesoId.Value)?.Nombre ?? detalle.Concepto;
+        }
+
+        return detalle.Concepto;
+    }
+
+    private string ObtenerNombreActividad(CotizacionDetalle detalle)
+    {
+        if (detalle.PosicionId.HasValue)
+        {
+            return catalogoPosiciones?.FirstOrDefault(a => a.Id == detalle.PosicionId.Value)?.Nombre ?? "—";
+        }
+
+        return "—";
+    }
+
+    private decimal ObtenerTiempoManoObraTotal()
+    {
+        return ObtenerDetalles(CotizacionCategoria.ManoObra)
+            .Sum(d => d.Tiempo ?? 0);
+    }
+
+    private decimal ObtenerTarifaPorMinuto(TipoProceso proceso)
+    {
+        if (proceso.PosicionId.HasValue)
+        {
+            return Math.Round(proceso.Posicion?.TarifaPorMinuto ?? 0m, 4);
+        }
+
+        return 0m;
+    }
+
+    private decimal ObtenerTarifaOriginalDetalle(CotizacionDetalle detalle)
+    {
+        if (detalle.TipoProcesoId.HasValue)
+        {
+            var proceso = catalogoProcesos.FirstOrDefault(p => p.Id == detalle.TipoProcesoId.Value);
+            if (proceso != null)
+            {
+                return ObtenerTarifaPorMinuto(proceso);
+            }
+        }
+
+        if (detalle.PosicionId.HasValue)
+        {
+            return Math.Round(catalogoPosiciones?.FirstOrDefault(a => a.Id == detalle.PosicionId.Value)?.TarifaPorMinuto ?? 0m, 4);
+        }
+
+        return 0m;
+    }
+
+    private decimal ObtenerGananciaManoObra(CotizacionDetalle detalle)
+        => detalle.Categoria == CotizacionCategoria.ManoObra
+            ? CalcularGananciaManoObra(detalle.Precio, ObtenerTarifaOriginalDetalle(detalle))
+            : detalle.GananciaPorcentaje ?? 0m;
+
+    private static decimal CalcularGananciaManoObra(decimal? precioCotizacion, decimal tarifaOriginal)
+    {
+        if (!precioCotizacion.HasValue || tarifaOriginal <= 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(((precioCotizacion.Value / tarifaOriginal) - 1m) * 100m, 2);
+    }
+
+    private decimal ObtenerCostoTarea()
+    {
+        if (cotizacionEditando == null) return 0;
+        return cotizacionEditando.CostoTotal;
+    }
+
+    private decimal ObtenerUtilidadMonto()
+    {
+        if (cotizacionEditando == null) return 0;
+        return ObtenerPrecioSugerido() - ObtenerCostoUnitarioBase();
+    }
+
+    private decimal ObtenerCostoUnitarioBase()
+    {
+        if (cotizacionEditando == null) return 0;
+        if (cotizacionEditando.ParesPorLamina <= 0) return 0;
+        return cotizacionEditando.CostoTotal / cotizacionEditando.ParesPorLamina;
+    }
+
+    private decimal ObtenerPrecioSugerido()
+    {
+        if (cotizacionEditando == null) return 0;
+        var baseUnit = ObtenerCostoUnitarioBase();
+        if (cotizacionEditando.Utilidad >= 100) return 0;
+        return baseUnit * (100m / (100m - cotizacionEditando.Utilidad));
+    }
+
+    private decimal ObtenerPrecioContado()
+    {
+        return ObtenerPrecioSugerido();
+    }
+
+    private decimal ObtenerPrecioCredito()
+    {
+        var precioSugerido = ObtenerPrecioSugerido();
+        return precioSugerido * 1.10m;
+    }
+
+    private Task OnPorcentajeVarianteChanged(CotizacionVariantePrecioEditor precio)
+    {
+        RecalcularPrecioVariante(precio);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPrecioVarianteChanged(CotizacionVariantePrecioEditor precio)
+    {
+        if (precio.EsPrecioBase)
+        {
+            RecalcularPreciosDependientesDesdeBase();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void RecalcularPrecioVariante(CotizacionVariantePrecioEditor precio)
+    {
+        if (precio.EsPrecioBase)
+        {
+            RecalcularPreciosDependientesDesdeBase();
+            return;
+        }
+
+        var factor = 1m + (precio.PorcentajeVariacionAplicado / 100m);
+        precio.PrecioContado = Math.Round(ObtenerPrecioContadoBaseVariantes() * factor, 2);
+        precio.PrecioCredito = Math.Round(ObtenerPrecioCreditoBaseVariantes() * factor, 2);
+    }
+
+    private void RecalcularPreciosDependientesDesdeBase()
+    {
+        foreach (var precio in preciosVariantesEditando.Where(p => !p.EsPrecioBase))
+        {
+            var factor = 1m + (precio.PorcentajeVariacionAplicado / 100m);
+            precio.PrecioContado = Math.Round(ObtenerPrecioContadoBaseVariantes() * factor, 2);
+            precio.PrecioCredito = Math.Round(ObtenerPrecioCreditoBaseVariantes() * factor, 2);
+        }
+    }
+
+    private decimal ObtenerPrecioContadoBaseVariantes()
+        => preciosVariantesEditando.FirstOrDefault(p => p.EsPrecioBase)?.PrecioContado ?? Math.Round(ObtenerPrecioContado(), 2);
+
+    private decimal ObtenerPrecioCreditoBaseVariantes()
+        => preciosVariantesEditando.FirstOrDefault(p => p.EsPrecioBase)?.PrecioCredito ?? Math.Round(ObtenerPrecioCredito(), 2);
+
+    private decimal ObtenerCostoUnitario()
+    {
+        if (cotizacionEditando == null) return 0;
+        if (cotizacionEditando.ParesPorLamina <= 0) return 0;
+        return ObtenerCostoTarea() / cotizacionEditando.ParesPorLamina;
+    }
+
+    private async Task ActualizarGastosFijosTiempoAsync()
+    {
+        if (cotizacionEditando == null || cotizacionEditando.Id == Guid.Empty) return;
+
+        var totalTiempo = ObtenerTiempoManoObraTotal();
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var gastosFijos = await context.CotizacionDetalles
+                .Where(d => d.CotizacionSerigrafiaId == cotizacionEditando.Id && d.Categoria == CotizacionCategoria.GastoFijo && d.IsActive)
+                .ToListAsync();
+
+            foreach (var gf in gastosFijos)
+            {
+                gf.Tiempo = totalTiempo;
+                if ((gf.Precio == null || gf.Precio == 0) && gf.GastoFijoId.HasValue)
+                {
+                    var precioMin = await ObtenerPrecioMinGastoFijoAsync(gf.GastoFijoId.Value);
+                    if (precioMin.HasValue)
+                    {
+                        gf.Precio = precioMin.Value;
+                    }
+                }
+
+                gf.Costo = (gf.Tiempo ?? 0) * (gf.Precio ?? 0);
+                gf.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await context.SaveChangesAsync();
+        });
+
+        cotizacionEditando = await RecargarCotizacion();
+    }
+
+    private async Task SincronizarProductoClienteCotizacionAsync()
+    {
+        if (cotizacionEditando?.ClienteId is not Guid clienteId || cotizacionEditando.ProductoId == Guid.Empty)
+        {
+            return;
+        }
+
+        await EjecutarConNuevoContextoAsync(async context =>
+        {
+            var asignacion = await context.ProductosClientes
+                .FirstOrDefaultAsync(pc => pc.ClienteId == clienteId && pc.ProductoId == cotizacionEditando.ProductoId);
+
+            if (asignacion == null)
+            {
+                asignacion = new ProductoCliente
+                {
+                    ClienteId = clienteId,
+                    ProductoId = cotizacionEditando.ProductoId,
+                    IsActive = true
+                };
+
+                PrepararNuevaEntidad(asignacion);
+                context.ProductosClientes.Add(asignacion);
+            }
+            else if (!asignacion.IsActive)
+            {
+                asignacion.IsActive = true;
+                asignacion.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await context.SaveChangesAsync();
+        });
+    }
+
+    private async Task EjecutarConNuevoContextoAsync(Func<CrmDbContext, Task> action)
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        await action(context);
+    }
+
+    private async Task<TResult> EjecutarConNuevoContextoAsync<TResult>(Func<CrmDbContext, Task<TResult>> action)
+    {
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        return await action(context);
+    }
+
+    private sealed class CotizacionVariantePrecioEditor
+    {
+        public Guid Id { get; set; }
+        public Guid? ProductoVarianteId { get; set; }
+        public string? Sku { get; set; }
+        public string Etiqueta { get; set; } = string.Empty;
+        public string? Talla { get; set; }
+        public string? Color { get; set; }
+        public bool EsPrecioBase { get; set; }
+        public int Orden { get; set; }
+        public decimal PorcentajeVariacionAplicado { get; set; }
+        public decimal PrecioContado { get; set; }
+        public decimal PrecioCredito { get; set; }
+        public bool Aceptada { get; set; } = true;
+    }
+
+    private static void PrepararNuevaEntidad(BaseEntity entity)
+    {
+        if (entity.Id == Guid.Empty)
+        {
+            entity.Id = Guid.NewGuid();
+        }
+
+        if (entity.CreatedAt == default)
+        {
+            entity.CreatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task EjecutarConDbLock(Func<Task> action)
+    {
+        await _dbLock.WaitAsync();
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+    }
+
+    private async Task<decimal?> ObtenerPrecioMinGastoFijoAsync(Guid gastoFijoId)
+    {
+        if (catalogoGastosFijos == null)
+        {
+            await EjecutarConNuevoContextoAsync(async context =>
+            {
+                catalogoGastosFijos = await context.GastosFijos
+                    .AsNoTracking()
+                    .Where(g => g.IsActive)
+                    .OrderBy(g => g.Orden)
+                    .ToListAsync();
+            });
+        }
+
+        var gf = catalogoGastosFijos?.FirstOrDefault(g => g.Id == gastoFijoId);
+        if (gf == null) return null;
+
+        return Math.Round(gf.CostoMensual, 4);
+    }
+
+    private async Task<CotizacionSerigrafia?> RecargarCotizacion()
+    {
+        if (cotizacionEditando == null) return null;
+
+        return await CargarCotizacionPorIdAsync(cotizacionEditando.Id);
+    }
+
+    private async Task<CotizacionSerigrafia?> CargarCotizacionPorIdAsync(Guid cotizacionId)
+    {
+        return await EjecutarConNuevoContextoAsync(context =>
+            context.CotizacionesSerigrafia
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(c => c.Cliente)
+                .Include(c => c.Producto)
+                .Include(c => c.Detalles.Where(d => d.IsActive))
+                .Include(c => c.Procesos)
+                .Include(c => c.PreciosVariantes.Where(p => p.IsActive))
+                    .ThenInclude(p => p.ProductoVariante)
+                .FirstOrDefaultAsync(c => c.Id == cotizacionId));
+    }
+}
+

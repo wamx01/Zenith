@@ -285,6 +285,7 @@
     private Guid? facturaProcesandoId;
     private FacturacionConfiguracion configuracionFacturacion = new();
     private bool preseleccionAplicada;
+    private Guid _empresaId;
 
     [SupplyParameterFromQuery(Name = "clienteId")]
     public string? ClientePreseleccionado { get; set; }
@@ -312,6 +313,7 @@
             || state.User.HasClaim("Capacidad", "facturas.ver");
         _puedeEditar = state.User.HasClaim("Capacidad", "contabilidad.cuentas_cobrar")
             || state.User.HasClaim("Capacidad", "facturas.editar");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }
 
     private async Task CargarConfiguracionAsync()
@@ -465,6 +467,7 @@
             if (facturaEditando.Id == Guid.Empty)
             {
                 facturaEditando.Id = Guid.NewGuid();
+                facturaEditando.EmpresaId = _empresaId;
                 db.Facturas.Add(facturaEditando);
             }
             else
@@ -873,6 +876,7 @@
                 db.FacturasNotasEntrega.Add(new FacturaNotaEntrega
                 {
                     Id = Guid.NewGuid(),
+                    EmpresaId = nota.EmpresaId,
                     FacturaId = facturaId,
                     NotaEntregaId = nota.Id,
                     Subtotal = nota.Subtotal,

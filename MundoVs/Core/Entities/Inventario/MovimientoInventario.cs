@@ -1,6 +1,4 @@
 using MundoVs.Core.Entities;
-using MundoVs.Core.Entities.Serigrafia;
-
 namespace MundoVs.Core.Entities.Inventario;
 
 public class MovimientoInventario : BaseEntity
@@ -11,11 +9,8 @@ public class MovimientoInventario : BaseEntity
     public MovimientoInventarioOrigenEnum Origen { get; set; }
     public MovimientoInventarioTipoEnum TipoMovimiento { get; set; }
 
-    public Guid? MateriaPrimaId { get; set; }
-    public MateriaPrima? MateriaPrima { get; set; }
-
-    public Guid? InsumoId { get; set; }
-    public Insumo? Insumo { get; set; }
+    public Guid? InventarioItemId { get; set; }
+    public InventarioItem? InventarioItem { get; set; }
 
     public decimal Cantidad { get; set; }
     public decimal ExistenciaAnterior { get; set; }

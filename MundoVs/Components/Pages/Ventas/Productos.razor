@@ -369,8 +369,6 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         productos = await db.Productos
             .AsNoTracking()
-            .IgnoreQueryFilters()
-            .Where(p => p.EmpresaId == _empresaId)
             .OrderBy(p => p.Nombre)
             .ToListAsync();
         AplicarFiltrosProductos();

@@ -326,7 +326,7 @@
     private static string ObtenerResumenCobro(NotaEntregaViewModel item)
     {
         if (item.NoRequiereFactura)
-            return "No aplica";
+            return "Pendiente";
 
         if (item.Facturas.Count == 0)
             return "Pendiente";

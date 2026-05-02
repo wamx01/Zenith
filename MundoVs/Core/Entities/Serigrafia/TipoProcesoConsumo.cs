@@ -6,10 +6,8 @@ public class TipoProcesoConsumo : BaseEntity
     public TipoProceso TipoProceso { get; set; } = null!;
     public TipoProcesoConsumoOrigen Origen { get; set; }
     public CotizacionCategoria CategoriaCotizacion { get; set; }
-    public Guid? MateriaPrimaId { get; set; }
-    public MateriaPrima? MateriaPrima { get; set; }
-    public Guid? InsumoId { get; set; }
-    public Insumo? Insumo { get; set; }
+    public Guid? InventarioItemId { get; set; }
+    public Inventario.InventarioItem? InventarioItem { get; set; }
     public decimal CantidadBase { get; set; }
     public int Orden { get; set; }
     public bool Activo { get; set; } = true;
