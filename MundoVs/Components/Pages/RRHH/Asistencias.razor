@@ -378,9 +378,20 @@
                 <p class="text-muted mb-0">Consulta asistencias calculadas, incidencias y registros que requieren revisión manual.</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-                <a class="btn btn-outline-info" href="/configuracion/asistencia"><i class="bi bi-sliders me-1"></i>Reglas descansos</a>
-                <a class="btn btn-outline-secondary" href="/rrhh/control-tiempo"><i class="bi bi-stopwatch me-1"></i>Control de tiempos</a>
-                <a class="btn btn-outline-success" href="/rrhh/asistencias-semanal"><i class="bi bi-calendar-week me-1"></i>Resumen semanal</a>
+                <a class="btn btn-success shadow-sm" href="/rrhh/asistencias-semanal"><i class="bi bi-calendar-week me-1"></i>Ver resumen semanal</a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-list me-1"></i>Más opciones
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li>
+                            <a class="dropdown-item" href="/configuracion/asistencia"><i class="bi bi-sliders me-2"></i>Reglas descansos</a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="/rrhh/control-tiempo"><i class="bi bi-stopwatch me-2"></i>Control de tiempos</a>
+                        </li>
+                    </ul>
+                </div>
                 @if (_puedeReprocesar)
                 {
                     <button class="btn btn-outline-primary" @onclick="AlternarReproceso" disabled="@cargando"><i class="bi bi-arrow-clockwise me-1"></i>@(mostrarReproceso ? "Ocultar reproceso" : "Reprocesar")</button>

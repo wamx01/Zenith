@@ -1,10 +1,12 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.JSInterop;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Interfaces;
+using MundoVs.Core.Models;
 using MundoVs.Core.Services;
 using MundoVs.Infrastructure.Data;
 
@@ -44,10 +46,18 @@ public partial class Asistencias : ComponentBase
     protected override async Task OnInitializedAsync()
     {
         await CargarAccesoAsync();
-        if (_puedeVer)
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !_puedeVer)
         {
-            await CargarAsync();
+            return;
         }
+
+        await CargarFiltrosPersistidosAsync();
+        await CargarAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task CargarAccesoAsync()
@@ -96,6 +106,7 @@ public partial class Asistencias : ComponentBase
 
             await CargarAusenciasDiasAsync(db);
             await CargarCompensacionesDiasAsync(db);
+            await GuardarFiltrosPersistidosAsync();
         }
         catch (Exception ex)
         {
@@ -109,13 +120,60 @@ public partial class Asistencias : ComponentBase
 
     private async Task LimpiarFiltros()
     {
-        filtroDesde = DateTime.Today.AddDays(-15);
-        filtroHasta = DateTime.Today;
-        filtroTurnoIdTexto = string.Empty;
-        filtroEstatus = "todos";
-        filtroRevision = "todos";
-        filtroEmpleado = null;
+        AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+        await LimpiarFiltrosPersistidosAsync();
         await CargarAsync();
+    }
+
+    private async Task CargarFiltrosPersistidosAsync()
+    {
+        try
+        {
+            var filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.StorageKey);
+            if (string.IsNullOrWhiteSpace(filtrosJson))
+            {
+                AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+                return;
+            }
+
+            var filtros = JsonSerializer.Deserialize<RrhhAsistenciasFiltroState>(filtrosJson);
+            AplicarFiltros(filtros ?? RrhhAsistenciasFiltroState.CreateDefault());
+        }
+        catch
+        {
+            AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+        }
+    }
+
+    private async Task GuardarFiltrosPersistidosAsync()
+    {
+        var filtros = CrearEstadoFiltros();
+        var filtrosJson = JsonSerializer.Serialize(filtros);
+        await JS.InvokeVoidAsync("mundoVsAuth.setLocal", RrhhAsistenciasFiltroState.StorageKey, filtrosJson);
+    }
+
+    private async Task LimpiarFiltrosPersistidosAsync()
+        => await JS.InvokeVoidAsync("mundoVsAuth.removeLocal", RrhhAsistenciasFiltroState.StorageKey);
+
+    private RrhhAsistenciasFiltroState CrearEstadoFiltros()
+        => new()
+        {
+            Desde = filtroDesde,
+            Hasta = filtroHasta,
+            TurnoIdTexto = filtroTurnoIdTexto,
+            Estatus = filtroEstatus,
+            Revision = filtroRevision,
+            Empleado = string.IsNullOrWhiteSpace(filtroEmpleado) ? null : filtroEmpleado.Trim()
+        };
+
+    private void AplicarFiltros(RrhhAsistenciasFiltroState filtros)
+    {
+        filtroDesde = filtros.Desde;
+        filtroHasta = filtros.Hasta;
+        filtroTurnoIdTexto = filtros.TurnoIdTexto ?? string.Empty;
+        filtroEstatus = string.IsNullOrWhiteSpace(filtros.Estatus) ? "todos" : filtros.Estatus;
+        filtroRevision = string.IsNullOrWhiteSpace(filtros.Revision) ? "todos" : filtros.Revision;
+        filtroEmpleado = string.IsNullOrWhiteSpace(filtros.Empleado) ? null : filtros.Empleado.Trim();
     }
 
     private void AlternarReproceso()

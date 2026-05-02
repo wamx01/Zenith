@@ -1,10 +1,12 @@
 @page "/rrhh/asistencias-semanal"
 @using System.Globalization
 @using System.Text
+@using System.Text.Json
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Models
 @using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
@@ -103,6 +105,34 @@
                         <label class="form-label">Empleado</label>
                         <InputText class="form-control" @bind-Value="filtroEmpleado" placeholder="Nombre, número o código" />
                     </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Turno</label>
+                        <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto">
+                            <option value="">Todos</option>
+                            @foreach (var turno in turnos)
+                            {
+                                <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Estatus</label>
+                        <InputSelect class="form-select" @bind-Value="filtroEstatus">
+                            <option value="todos">Todos</option>
+                            @foreach (var estatus in estatusDisponibles)
+                            {
+                                <option value="@((int)estatus).ToString()">@ObtenerTextoEstatus(estatus)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Revisión</label>
+                        <InputSelect class="form-select" @bind-Value="filtroRevision">
+                            <option value="todos">Todos</option>
+                            <option value="si">Con revisión</option>
+                            <option value="no">Sin revisión</option>
+                        </InputSelect>
+                    </div>
                     <div class="col-12 d-flex gap-2 flex-wrap">
                         <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar filtros</button>
                         <button class="btn btn-outline-secondary" @onclick="LimpiarFiltrosAsync" disabled="@cargando">Limpiar</button>
@@ -179,8 +209,10 @@
 
 @code {
     private static readonly CultureInfo CulturaEsMx = new("es-MX");
+    private static readonly List<RrhhAsistenciaEstatus> estatusDisponibles = Enum.GetValues<RrhhAsistenciaEstatus>().ToList();
     private List<DateOnly> diasPeriodo = [];
     private List<ResumenSemanalEmpleado> resumenes = [];
+    private List<TurnoBase> turnos = [];
     private Dictionary<DateOnly, int> totalesPorDia = new();
     private bool _puedeVer;
     private Guid _empresaId;
@@ -188,8 +220,11 @@
     private bool exportandoCsv;
     private string? error;
     private string? ok;
-    private DateTime? filtroDesde = DateTime.Today.AddDays(-6);
+    private DateTime? filtroDesde = DateTime.Today.AddDays(-15);
     private DateTime? filtroHasta = DateTime.Today;
+    private string filtroTurnoIdTexto = string.Empty;
+    private string filtroEstatus = "todos";
+    private string filtroRevision = "todos";
     private string? filtroEmpleado;
     private int totalMinutosPeriodo;
     private int promedioMinutosEmpleado;
@@ -198,10 +233,18 @@
     protected override async Task OnInitializedAsync()
     {
         await CargarAccesoAsync();
-        if (_puedeVer)
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !_puedeVer)
         {
-            await CargarAsync();
+            return;
         }
+
+        await CargarFiltrosPersistidosAsync();
+        await CargarAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task CargarAccesoAsync()
@@ -231,6 +274,13 @@
                 .ToList();
 
             await using var db = await DbFactory.CreateDbContextAsync();
+            turnos = await db.TurnosBase
+                .Include(t => t.Detalles)
+                .AsNoTracking()
+                .Where(t => t.EmpresaId == _empresaId && t.IsActive)
+                .OrderBy(t => t.Nombre)
+                .ToListAsync();
+
             var asistencias = await ConstruirConsulta(db, desde, hasta)
                 .OrderBy(a => a.Empleado.Nombre)
                 .ThenBy(a => a.Empleado.ApellidoPaterno)
@@ -265,12 +315,14 @@
             totalMinutosPeriodo = resumenes.Sum(x => x.TotalMinutos);
             promedioMinutosEmpleado = resumenes.Count == 0 ? 0 : totalMinutosPeriodo / resumenes.Count;
             totalesPorDia = diasPeriodo.ToDictionary(dia => dia, dia => resumenes.Sum(x => x.MinutosPorDia.GetValueOrDefault(dia)));
+            await GuardarFiltrosPersistidosAsync();
         }
         catch (Exception ex)
         {
             error = ex.InnerException?.Message ?? ex.Message;
             diasPeriodo = [];
             resumenes = [];
+            turnos = [];
             totalesPorDia = new();
             compensacionesPorDia = new();
             totalMinutosPeriodo = 0;
@@ -287,7 +339,26 @@
         var query = db.RrhhAsistencias
             .AsNoTracking()
             .Include(a => a.Empleado)
+            .Include(a => a.TurnoBase)
             .Where(a => a.EmpresaId == _empresaId && a.Fecha >= desde && a.Fecha <= hasta);
+
+        if (Guid.TryParse(filtroTurnoIdTexto, out var turnoId) && turnoId != Guid.Empty)
+        {
+            query = query.Where(a => a.TurnoBaseId == turnoId);
+        }
+
+        if (int.TryParse(filtroEstatus, out var estatusValor) && Enum.IsDefined(typeof(RrhhAsistenciaEstatus), estatusValor))
+        {
+            var estatus = (RrhhAsistenciaEstatus)estatusValor;
+            query = query.Where(a => a.Estatus == estatus);
+        }
+
+        query = filtroRevision switch
+        {
+            "si" => query.Where(a => a.RequiereRevision),
+            "no" => query.Where(a => !a.RequiereRevision),
+            _ => query
+        };
 
         if (!string.IsNullOrWhiteSpace(filtroEmpleado))
         {
@@ -327,11 +398,75 @@
 
     private async Task LimpiarFiltrosAsync()
     {
-        filtroDesde = DateTime.Today.AddDays(-6);
-        filtroHasta = DateTime.Today;
-        filtroEmpleado = null;
+        AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+        await LimpiarFiltrosPersistidosAsync();
         await CargarAsync();
     }
+
+    private async Task CargarFiltrosPersistidosAsync()
+    {
+        try
+        {
+            var filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.StorageKey);
+            if (string.IsNullOrWhiteSpace(filtrosJson))
+            {
+                AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+                return;
+            }
+
+            var filtros = JsonSerializer.Deserialize<RrhhAsistenciasFiltroState>(filtrosJson);
+            AplicarFiltros(filtros ?? RrhhAsistenciasFiltroState.CreateDefault());
+        }
+        catch
+        {
+            AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
+        }
+    }
+
+    private async Task GuardarFiltrosPersistidosAsync()
+    {
+        var filtros = CrearEstadoFiltros();
+        var filtrosJson = JsonSerializer.Serialize(filtros);
+        await JS.InvokeVoidAsync("mundoVsAuth.setLocal", RrhhAsistenciasFiltroState.StorageKey, filtrosJson);
+    }
+
+    private async Task LimpiarFiltrosPersistidosAsync()
+        => await JS.InvokeVoidAsync("mundoVsAuth.removeLocal", RrhhAsistenciasFiltroState.StorageKey);
+
+    private RrhhAsistenciasFiltroState CrearEstadoFiltros()
+        => new()
+        {
+            Desde = filtroDesde,
+            Hasta = filtroHasta,
+            TurnoIdTexto = filtroTurnoIdTexto,
+            Estatus = filtroEstatus,
+            Revision = filtroRevision,
+            Empleado = string.IsNullOrWhiteSpace(filtroEmpleado) ? null : filtroEmpleado.Trim()
+        };
+
+    private void AplicarFiltros(RrhhAsistenciasFiltroState filtros)
+    {
+        filtroDesde = filtros.Desde;
+        filtroHasta = filtros.Hasta;
+        filtroTurnoIdTexto = filtros.TurnoIdTexto ?? string.Empty;
+        filtroEstatus = string.IsNullOrWhiteSpace(filtros.Estatus) ? "todos" : filtros.Estatus;
+        filtroRevision = string.IsNullOrWhiteSpace(filtros.Revision) ? "todos" : filtros.Revision;
+        filtroEmpleado = string.IsNullOrWhiteSpace(filtros.Empleado) ? null : filtros.Empleado.Trim();
+    }
+
+    private static string ObtenerTextoEstatus(RrhhAsistenciaEstatus estatus)
+        => estatus switch
+        {
+            RrhhAsistenciaEstatus.AsistenciaNormal => "Normal",
+            RrhhAsistenciaEstatus.Retardo => "Retardo",
+            RrhhAsistenciaEstatus.Falta => "Falta",
+            RrhhAsistenciaEstatus.Descanso => "Descanso",
+            RrhhAsistenciaEstatus.DescansoTrabajado => "Descanso trabajado",
+            RrhhAsistenciaEstatus.Incompleta => "Incompleta",
+            RrhhAsistenciaEstatus.TurnoNoAsignado => "Sin turno",
+            RrhhAsistenciaEstatus.MarcaNoReconocida => "Marca no reconocida",
+            _ => "Pendiente"
+        };
 
     private async Task ExportarCsvAsync()
     {

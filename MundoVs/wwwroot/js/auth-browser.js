@@ -41,6 +41,42 @@ window.mundoVsAuth = {
     logout: async function (url) {
         await this.request(url, {});
     },
+    setLocal: function (key, value) {
+        try {
+            if (!key) {
+                return;
+            }
+
+            window.localStorage.setItem(key, value ?? '');
+        } catch (err) {
+            console.error('mundoVsAuth.setLocal failed', err);
+            throw err;
+        }
+    },
+    getLocal: function (key) {
+        try {
+            if (!key) {
+                return null;
+            }
+
+            return window.localStorage.getItem(key);
+        } catch (err) {
+            console.error('mundoVsAuth.getLocal failed', err);
+            throw err;
+        }
+    },
+    removeLocal: function (key) {
+        try {
+            if (!key) {
+                return;
+            }
+
+            window.localStorage.removeItem(key);
+        } catch (err) {
+            console.error('mundoVsAuth.removeLocal failed', err);
+            throw err;
+        }
+    },
     downloadCsv: function (fileName, content) {
         try {
             const safeName = (fileName && String(fileName).trim()) || `export-${Date.now()}.csv`;
