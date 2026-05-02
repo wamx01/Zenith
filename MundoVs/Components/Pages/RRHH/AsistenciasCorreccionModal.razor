@@ -441,12 +441,12 @@
                                             <div class="row g-2 mb-3">
                                                 <div class="col-md-4">
                                                     <label class="form-label">Minutos de compensación</label>
-                                                    <InputNumber class="form-control" @bind-Value="minutosCompensacionPermisoCaptura" min="0" step="1" />
-                                                    <div class="small text-muted mt-1">Puedes aprobar lo detectado o capturar manualmente otro valor.</div>
+                                                    <InputNumber class="form-control" @bind-Value="minutosCompensacionPermisoCaptura" min="0" max="@ObtenerMaximoMinutosCompensacionPermisoEditable()" step="1" />
+                                                    <div class="small text-muted mt-1">Aprueba solo lo necesario para compensar el faltante neto del día.</div>
                                                 </div>
                                                 <div class="col-md-8 d-flex align-items-end">
                                                     <div class="small text-muted">
-                                                        Detectado automáticamente: @FormatearMinutos(minutosRecuperablesPermisoAprobables). Aprobado actual: @FormatearMinutos(minutosCompensadosPermisoAprobados). Saldo banco: @saldoBancoHorasSeleccionado min.
+                                                        Detectado automáticamente: @FormatearMinutos(minutosRecuperablesPermisoAprobables). Sugerido para aprobar: @FormatearMinutos(ObtenerMinutosCompensacionPermisoSugeridosAprobacion()). Aprobado actual: @FormatearMinutos(minutosCompensadosPermisoAprobados).
                                                     </div>
                                                 </div>
                                             </div>

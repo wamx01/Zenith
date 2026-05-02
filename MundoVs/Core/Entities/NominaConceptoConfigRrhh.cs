@@ -5,7 +5,8 @@ public enum NaturalezaConceptoNominaRrhh
     Deduccion = 1,
     Obligacion = 2,
     Provision = 3,
-    Ajuste = 4
+    Ajuste = 4,
+    Percepcion = 5
 }
 
 public enum DestinoConceptoNominaRrhh

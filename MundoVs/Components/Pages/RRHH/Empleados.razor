@@ -270,6 +270,9 @@
 
                         <div class="col-12"><hr /><h6 class="text-muted">Conceptos recurrentes de nómina</h6></div>
                         <div class="col-12">
+                            <div class="alert alert-light border small py-2 mb-3">
+                                <strong>Uso rápido:</strong> para descuento fijo de IMSS usa <em>IMSS fijo obrero</em> o <em>IMSS fijo patronal</em>. Para ingresos recurrentes usa <em>Percepción recurrente</em>, <em>Premio puntualidad recurrente</em> o <em>Premio asistencia recurrente</em>.
+                            </div>
                             <div class="row g-2 mb-3">
                                 <div class="col-md-3">
                                     <label class="form-label">Concepto configurable</label>
@@ -369,7 +372,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="form-text">Aquí asignas descuentos fijos, provisiones y conceptos recurrentes específicos del empleado.</div>
+                            <div class="form-text">Aquí asignas descuentos fijos, IMSS/ISR fijo, provisiones y percepciones recurrentes específicas del empleado.</div>
                         </div>
 
                         <div class="col-12">
@@ -571,9 +574,99 @@
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
+            var conceptosExistentes = await db.NominasConceptosConfigRrhh
+                .AsNoTracking()
+                .Where(c => c.EmpresaId == _empresaId && c.IsActive)
+                .Select(c => c.Clave)
+                .ToListAsync();
+
+            var clavesBaseRequeridas = new[]
+            {
+                "DESCUENTO_FIJO",
+                "IMSS_FIJO_OBRERO",
+                "IMSS_FIJO_PATRONAL",
+                "ISR_FIJO",
+                "PERCEPCION_RECURRENTE",
+                "PREMIO_PUNTUALIDAD_REC",
+                "PREMIO_ASISTENCIA_REC"
+            };
+
+            if (_empresaId != Guid.Empty && clavesBaseRequeridas.Any(clave => !conceptosExistentes.Contains(clave, StringComparer.OrdinalIgnoreCase)))
+            {
+                var conceptosBase = new[]
+                {
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "DESCUENTO_FIJO", Nombre = "Descuento fijo empleado",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Deduccion, Destino = DestinoConceptoNominaRrhh.Empleado, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 1, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = false,
+                        AfectaPasivoSat = false, AfectaPasivoImss = false, AfectaProvision = false, AfectaBaseIsr = false, AfectaBaseImss = false,
+                        EsLegal = false, Observaciones = "Descuento fijo recurrente aplicado directo al neto del trabajador.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "IMSS_FIJO_OBRERO", Nombre = "IMSS fijo obrero",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion, Destino = DestinoConceptoNominaRrhh.Imss, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 5, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = false,
+                        AfectaPasivoSat = false, AfectaPasivoImss = true, AfectaProvision = false, AfectaBaseIsr = false, AfectaBaseImss = false,
+                        EsLegal = false, Observaciones = "Ajuste fijo de IMSS obrero capturado por empleado.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "IMSS_FIJO_PATRONAL", Nombre = "IMSS fijo patronal",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion, Destino = DestinoConceptoNominaRrhh.Imss, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 6, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = false, AfectaCostoEmpresa = true,
+                        AfectaPasivoSat = false, AfectaPasivoImss = true, AfectaProvision = false, AfectaBaseIsr = false, AfectaBaseImss = false,
+                        EsLegal = false, Observaciones = "Ajuste fijo de IMSS patronal capturado por empleado.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "ISR_FIJO", Nombre = "ISR fijo",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Obligacion, Destino = DestinoConceptoNominaRrhh.Sat, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 7, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = false,
+                        AfectaPasivoSat = true, AfectaPasivoImss = false, AfectaProvision = false, AfectaBaseIsr = false, AfectaBaseImss = false,
+                        EsLegal = false, Observaciones = "Ajuste fijo de ISR capturado por empleado.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "PERCEPCION_RECURRENTE", Nombre = "Percepción recurrente",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion, Destino = DestinoConceptoNominaRrhh.Empleado, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 13, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = true,
+                        AfectaPasivoSat = false, AfectaPasivoImss = false, AfectaProvision = false, AfectaBaseIsr = true, AfectaBaseImss = true,
+                        EsLegal = false, Observaciones = "Percepción recurrente genérica para el empleado; se refleja en el recibo como otros ingresos por salarios.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "PREMIO_PUNTUALIDAD_REC", Nombre = "Premio puntualidad recurrente",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion, Destino = DestinoConceptoNominaRrhh.Empleado, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 14, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = true,
+                        AfectaPasivoSat = false, AfectaPasivoImss = false, AfectaProvision = false, AfectaBaseIsr = true, AfectaBaseImss = true,
+                        EsLegal = false, Observaciones = "Percepción recurrente para premio de puntualidad del empleado.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    },
+                    new NominaConceptoConfigRrhh
+                    {
+                        Id = Guid.NewGuid(), EmpresaId = _empresaId, Clave = "PREMIO_ASISTENCIA_REC", Nombre = "Premio asistencia recurrente",
+                        Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion, Destino = DestinoConceptoNominaRrhh.Empleado, TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                        Orden = 15, EsRecurrente = true, AplicaPorEmpleado = true, AfectaNetoEmpleado = true, AfectaCostoEmpresa = true,
+                        AfectaPasivoSat = false, AfectaPasivoImss = false, AfectaProvision = false, AfectaBaseIsr = true, AfectaBaseImss = true,
+                        EsLegal = false, Observaciones = "Percepción recurrente para premio de asistencia del empleado.", CreatedAt = DateTime.UtcNow, IsActive = true
+                    }
+                };
+
+                var faltantes = conceptosBase
+                    .Where(baseConcepto => !conceptosExistentes.Contains(baseConcepto.Clave, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (faltantes.Count > 0)
+                {
+                    db.NominasConceptosConfigRrhh.AddRange(faltantes);
+                    await db.SaveChangesAsync();
+                }
+            }
+
             conceptosNominaDisponibles = await db.NominasConceptosConfigRrhh
                 .AsNoTracking()
-                .Where(c => c.IsActive && c.AplicaPorEmpleado)
+                .Where(c => c.EmpresaId == _empresaId && c.IsActive && c.AplicaPorEmpleado)
                 .OrderBy(c => c.Orden)
                 .ThenBy(c => c.Nombre)
                 .ToListAsync();

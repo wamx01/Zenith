@@ -2254,6 +2254,66 @@
                     AfectaProvision = true,
                     EsLegal = true,
                     Observaciones = "Reserva de PTU estimada por porcentaje o monto fijo."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PERCEPCION_RECURRENTE",
+                    Nombre = "Percepción recurrente",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion,
+                    Destino = DestinoConceptoNominaRrhh.Empleado,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 13,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = false,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = true,
+                    AfectaBaseImss = true,
+                    EsLegal = false,
+                    Observaciones = "Percepción recurrente genérica para el empleado; se refleja en el recibo como otros ingresos por salarios."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PREMIO_PUNTUALIDAD_REC",
+                    Nombre = "Premio puntualidad recurrente",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion,
+                    Destino = DestinoConceptoNominaRrhh.Empleado,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 14,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = false,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = true,
+                    AfectaBaseImss = true,
+                    EsLegal = false,
+                    Observaciones = "Percepción recurrente para premio de puntualidad del empleado."
+                },
+                new NominaConceptoConfigRrhh
+                {
+                    Clave = "PREMIO_ASISTENCIA_REC",
+                    Nombre = "Premio asistencia recurrente",
+                    Naturaleza = NaturalezaConceptoNominaRrhh.Percepcion,
+                    Destino = DestinoConceptoNominaRrhh.Empleado,
+                    TipoCalculo = TipoCalculoConceptoNominaRrhh.MontoFijo,
+                    Orden = 15,
+                    EsRecurrente = true,
+                    AplicaPorEmpleado = true,
+                    AfectaNetoEmpleado = true,
+                    AfectaCostoEmpresa = true,
+                    AfectaPasivoSat = false,
+                    AfectaPasivoImss = false,
+                    AfectaProvision = false,
+                    AfectaBaseIsr = true,
+                    AfectaBaseImss = true,
+                    EsLegal = false,
+                    Observaciones = "Percepción recurrente para premio de asistencia del empleado."
                 }
             };
 

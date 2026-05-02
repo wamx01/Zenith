@@ -201,7 +201,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         minutosCompensadosPermisoAprobados = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(bitacoraCorreccionDia, AsistenciaActual.EmpleadoId, AsistenciaActual.Fecha);
         minutosRecuperablesPermisoAprobables = RrhhPermisoCompensationPolicy.ObtenerMinutosRecuperablesAprobables(AsistenciaActual, minutosMinimosTiempoExtraConfigurado);
-        minutosCompensacionPermisoCaptura = minutosCompensadosPermisoAprobados > 0 ? minutosCompensadosPermisoAprobados : minutosRecuperablesPermisoAprobables;
+        var minutosCompensacionSugeridos = ObtenerMinutosCompensacionPermisoSugeridosAprobacion();
+        minutosCompensacionPermisoCaptura = minutosCompensadosPermisoAprobados > 0
+            ? minutosCompensadosPermisoAprobados
+            : minutosCompensacionSugeridos;
 
         var ausenciasDia = await db.RrhhAusencias
             .AsNoTracking()
@@ -1272,7 +1275,21 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         => asesorCorreccionActual?.Segmentos.Where(s => s.EsAjuste).ToList() ?? [];
 
     private bool PuedeAprobarCompensacionPermiso()
-        => PuedeReprocesar && (minutosRecuperablesPermisoAprobables > 0 || minutosCompensadosPermisoAprobados > 0 || minutosCompensacionPermisoCaptura > 0);
+        => PuedeAprobarTiempoExtra && (ObtenerMaximoMinutosCompensacionPermisoEditable() > 0 || minutosCompensadosPermisoAprobados > 0);
+
+    private int ObtenerMinutosCompensacionPermisoSugeridosAprobacion()
+    {
+        if (AsistenciaActual == null)
+        {
+            return 0;
+        }
+
+        var faltanteNeto = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(AsistenciaActual));
+        return Math.Max(0, Math.Min(faltanteNeto, minutosRecuperablesPermisoAprobables));
+    }
+
+    private int ObtenerMaximoMinutosCompensacionPermisoEditable()
+        => Math.Max(minutosCompensadosPermisoAprobados, ObtenerMinutosCompensacionPermisoSugeridosAprobacion());
 
     private int ObtenerMinutosCompensacionPermisoPendientes()
         => Math.Max(0, minutosRecuperablesPermisoAprobables - minutosCompensadosPermisoAprobados);
@@ -1284,15 +1301,19 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return "No se detecta tiempo recuperable por aprobación para este día.";
         }
 
+        var minutosSugeridos = ObtenerMinutosCompensacionPermisoSugeridosAprobacion();
+
         if (minutosCompensadosPermisoAprobados > 0)
         {
             var pendientes = ObtenerMinutosCompensacionPermisoPendientes();
             return pendientes > 0
-                ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. También suma al tiempo visible y al banco. Quedan {FormatearMinutos(pendientes)} recuperables por aprobar si también deben ajustarse."
-                : $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya fue aplicada al permiso sugerido, al tiempo visible y al banco del día.";
+                ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya reduce el faltante y el permiso sugerido del día. Quedan {FormatearMinutos(pendientes)} recuperables detectados por revisar."
+                : $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya fue aplicada al faltante y al tiempo visible operativo del día.";
         }
 
-        return $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Requiere aprobación para ajustar permiso, tiempo visible y banco del día.";
+        return minutosSugeridos < minutosRecuperablesPermisoAprobables
+            ? $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Para este día solo conviene aprobar hasta {FormatearMinutos(minutosSugeridos)} porque ese es el faltante neto a compensar."
+            : $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Requiere aprobación para ajustar faltante, permiso sugerido y tiempo visible del día.";
     }
 
     private async Task AprobarCompensacionPermisoAsync()
@@ -1304,6 +1325,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         error = null;
         ok = null;
+
+        if (!PuedeAprobarTiempoExtra)
+        {
+            error = "No tienes permisos para aprobar compensaciones del día.";
+            return;
+        }
 
         if (!PuedeAprobarCompensacionPermiso())
         {
@@ -1317,18 +1344,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             await using var db = await DbFactory.CreateDbContextAsync();
             var fecha = AsistenciaActual.Fecha;
             var minutosAprobados = Math.Max(0, minutosCompensacionPermisoCaptura);
+            var maximoEditable = ObtenerMaximoMinutosCompensacionPermisoEditable();
 
-            saldoBancoHorasSeleccionado = minutosAprobados > 0
-                ? await TiempoExtraResolutionService.AplicarCompensacionPermisoBancoHorasAsync(db, new RrhhCompensacionPermisoBancoHorasCommand
-                {
-                    EmpresaId = _empresaId,
-                    EmpleadoId = AsistenciaActual.EmpleadoId,
-                    Fecha = fecha,
-                    MinutosCompensados = minutosAprobados,
-                    Observaciones = "Compensación aprobada de permiso desde asistencias.",
-                    UsuarioActual = usuarioActual
-                })
-                : await TiempoExtraResolutionService.RemoverCompensacionPermisoBancoHorasAsync(db, _empresaId, AsistenciaActual.EmpleadoId, fecha);
+            if (minutosAprobados > maximoEditable)
+            {
+                error = $"Solo puedes aprobar hasta {FormatearMinutos(maximoEditable)} para este día.";
+                return;
+            }
+
+            saldoBancoHorasSeleccionado = await TiempoExtraResolutionService.RemoverCompensacionPermisoBancoHorasAsync(db, _empresaId, AsistenciaActual.EmpleadoId, fecha);
 
             await RegistrarBitacoraCorreccionAsync(
                 db,
@@ -1339,8 +1363,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             await CargarMarcacionesDiaAsync();
             await NotificarActualizacionAsync();
             ok = minutosAprobados > 0
-                ? $"Compensación guardada por {FormatearMinutos(minutosAprobados)}. Se ajustaron permiso, tiempo visible y banco del día."
-                : "Compensación retirada. Se restauraron permiso sugerido, tiempo visible y banco del día.";
+                ? $"Compensación guardada por {FormatearMinutos(minutosAprobados)}. Solo ajusta el faltante y el permiso sugerido del día."
+                : "Compensación retirada. Se restauraron el faltante y el permiso sugerido del día.";
         }
         catch (Exception ex)
         {

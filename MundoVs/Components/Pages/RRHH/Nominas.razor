@@ -1720,10 +1720,22 @@
                 .Include(b => b.Detalles)
                 .Where(b => b.IsActive && detalleIdsExistentes.Contains(b.NominaDetalleId))
                 .ToDictionaryAsync(b => b.NominaDetalleId, b => b.Detalles.Where(d => d.IsActive).Sum(d => d.Importe));
+        var percepcionesConfigurablesReferenciaPrefijo = "CONCEPTO_CONFIG:";
+        var detalleConPercepcionesPersistidas = detalleIdsExistentes.Count == 0
+            ? []
+            : await db.NominasPercepciones
+                .Where(p => p.IsActive && detalleIdsExistentes.Contains(p.NominaDetalleId))
+                .Select(p => p.NominaDetalleId)
+                .Distinct()
+                .ToHashSetAsync();
         var montoPercepcionesPorDetalle = detalleIdsExistentes.Count == 0
             ? new Dictionary<Guid, decimal>()
             : await db.NominasPercepciones
-                .Where(p => p.IsActive && detalleIdsExistentes.Contains(p.NominaDetalleId))
+                .Where(p => p.IsActive
+                    && detalleIdsExistentes.Contains(p.NominaDetalleId)
+                    && !(p.Origen == OrigenPercepcionNomina.Ajuste
+                        && p.Referencia != null
+                        && p.Referencia.StartsWith(percepcionesConfigurablesReferenciaPrefijo)))
                 .GroupBy(p => p.NominaDetalleId)
                 .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Importe));
         var deduccionesPorDetalle = detalleIdsExistentes.Count == 0
@@ -1778,6 +1790,10 @@
             : await db.NominasPercepciones
                 .Where(p => detalleIdsExistentes.Contains(p.NominaDetalleId))
                 .ToListAsync();
+        var tiposPercepcionPorClave = await db.NominasPercepcionesTipos
+            .Where(t => t.IsActive)
+            .ToDictionaryAsync(t => t.Clave);
+        var tipoPercepcionOtrosIngresos = await ObtenerOCrearTipoPercepcionOtrosIngresosAsync(db, tiposPercepcionPorClave);
         if (detalleIdsExistentes.Count > 0)
         {
             var provisionesExistentes = await db.NominasProvisionesDetalleRrhh
@@ -1960,10 +1976,21 @@
             var montoBono = bonosPrenomina.Count > 0
                 ? bonosPrenomina.Sum(b => b.Importe)
                 : bonoDistribuido?.Detalle.MontoAsignado ?? montoBonoPorDetalle.GetValueOrDefault(detalle.Id);
-            var percepcionesManual = percepcionesPrenomina.Count > 0 ? percepcionesPrenomina.Sum(p => p.Importe) : montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual) ? totalPercepcionesManual : detalle.Bonos;
+            var conceptosEmpleado = conceptosActivosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
+            var baseCalculoConceptos = detalle.SueldoBase + detalle.MontoDestajo + montoBono + detalle.MontoFestivoTrabajado
+                + detalle.MontoDescansoTrabajado + detalle.MontoPrimaDominical + detalle.MontoPrimaVacacional + detalle.ComplementoSalarioMinimo
+                + detalle.MontoHorasExtra;
+            var percepcionesConfigurables = ConstruirPercepcionesConfigurablesEmpleado(conceptosEmpleado, baseCalculoConceptos, tipoPercepcionOtrosIngresos.Id, tiposPercepcionPorClave);
+            var totalPercepcionesConfigurables = percepcionesConfigurables.Sum(p => p.Importe);
+            var percepcionesManual = percepcionesPrenomina.Count > 0
+                ? percepcionesPrenomina.Sum(p => p.Importe)
+                : montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual)
+                    ? totalPercepcionesManual
+                    : detalleConPercepcionesPersistidas.Contains(detalle.Id)
+                        ? 0m
+                        : detalle.Bonos;
             var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : detalle.Deducciones;
             detalle.ConceptoDeducciones = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : detalle.ConceptoDeducciones;
-            var conceptosEmpleado = conceptosActivosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
             var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
             var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
                 ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
@@ -1995,7 +2022,7 @@
                 HorasExtra = detalle.HorasExtra,
                 MontoDestajo = detalle.MontoDestajo,
                 MontoBono = detalle.MontoBono,
-                MontoPercepcionesManuales = percepcionesManual,
+                MontoPercepcionesManuales = percepcionesManual + totalPercepcionesConfigurables,
                 MontoDeducciones = totalDeducciones,
                 ComplementoSalarioMinimo = detalle.ComplementoSalarioMinimo,
                 FactorFestivo = factorFestivoAplicado,
@@ -2004,7 +2031,7 @@
             });
 
             AplicarResultadoCalculo(detalle, resultado);
-            AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, detalle.ConceptoDeducciones, detalle.AplicaImss, empleado.AplicaIsr);
+            AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, detalle.ConceptoDeducciones);
 
             if (bonosPrenomina.Count > 0)
                 SincronizarBonosPrenomina(db, bonosNominaExistentes, detalle, bonosPrenomina, nomina.EmpresaId);
@@ -2013,6 +2040,8 @@
 
             if (percepcionesPrenomina.Count > 0)
                 SincronizarPercepcionesPrenomina(db, percepcionesNominaExistentes, detalle, percepcionesPrenomina, nomina.EmpresaId);
+
+            SincronizarPercepcionesConfigurables(db, percepcionesNominaExistentes, detalle, percepcionesConfigurables, nomina.EmpresaId, percepcionesConfigurablesReferenciaPrefijo);
         }
 
         nomina.UpdatedAt = DateTime.UtcNow;
@@ -2546,7 +2575,7 @@
         detalle.PrimaVacacionalProvision = resultado.PrimaVacacionalProvision;
     }
 
-    private static void AplicarConceptosConfigurablesEmpleado(CrmDbContext db, Nomina nomina, NominaDetalle detalle, IReadOnlyCollection<EmpleadoConceptoRrhh> conceptosEmpleado, decimal totalDeduccionesBase, string? conceptoDeduccionBase, bool aplicaImssAutomatico, bool aplicaIsrAutomatico)
+    private static void AplicarConceptosConfigurablesEmpleado(CrmDbContext db, Nomina nomina, NominaDetalle detalle, IReadOnlyCollection<EmpleadoConceptoRrhh> conceptosEmpleado, decimal totalDeduccionesBase, string? conceptoDeduccionBase)
     {
         if (conceptosEmpleado.Count == 0)
         {
@@ -2597,16 +2626,13 @@
 
             if (concepto.AfectaPasivoImss)
             {
-                if (aplicaImssAutomatico)
-                    continue;
-
                 if (concepto.AfectaNetoEmpleado)
                     ajusteImssObrero += importe;
 
                 if (concepto.AfectaCostoEmpresa)
                     ajusteImssPatronal += importe;
 
-                if (concepto.AfectaNetoEmpleado || concepto.AfectaCostoEmpresa)
+                if (concepto.AfectaNetoEmpleado)
                     etiquetasDeduccion.Add(concepto.Nombre);
 
                 continue;
@@ -2614,9 +2640,6 @@
 
             if (concepto.AfectaPasivoSat)
             {
-                if (aplicaIsrAutomatico)
-                    continue;
-
                 if (concepto.AfectaNetoEmpleado)
                     ajusteIsr += importe;
 
@@ -2665,6 +2688,139 @@
 
     private static decimal ObtenerTarifaConcepto(EmpleadoConceptoRrhh conceptoEmpleado)
         => conceptoEmpleado.Tarifa > 0 ? conceptoEmpleado.Tarifa : conceptoEmpleado.ConceptoConfig.TarifaDefault;
+
+    private static List<PercepcionConfigurableAplicada> ConstruirPercepcionesConfigurablesEmpleado(IReadOnlyCollection<EmpleadoConceptoRrhh> conceptosEmpleado, decimal baseCalculo, Guid tipoPercepcionOtrosIngresosId, IReadOnlyDictionary<string, NominaPercepcionTipo> tiposPercepcionPorClave)
+    {
+        var percepciones = new List<PercepcionConfigurableAplicada>();
+        if (conceptosEmpleado.Count == 0)
+            return percepciones;
+
+        foreach (var conceptoEmpleado in conceptosEmpleado)
+        {
+            if (!EsPercepcionConfigurable(conceptoEmpleado.ConceptoConfig))
+                continue;
+
+            var importe = ResolverImporteConcepto(conceptoEmpleado, baseCalculo);
+            if (importe <= 0)
+                continue;
+
+            var claveSat = ResolverClavePercepcionConfigurable(conceptoEmpleado.ConceptoConfig.Clave, conceptoEmpleado.ConceptoConfig.Nombre);
+            var tipoPercepcionId = tiposPercepcionPorClave.TryGetValue(claveSat, out var tipoPercepcion)
+                ? tipoPercepcion.Id
+                : tipoPercepcionOtrosIngresosId;
+            var observaciones = string.IsNullOrWhiteSpace(conceptoEmpleado.Observaciones)
+                ? conceptoEmpleado.ConceptoConfig.Observaciones
+                : conceptoEmpleado.Observaciones;
+
+            percepciones.Add(new PercepcionConfigurableAplicada
+            {
+                ConceptoConfigId = conceptoEmpleado.ConceptoConfigId,
+                TipoPercepcionId = tipoPercepcionId,
+                Importe = importe,
+                Descripcion = conceptoEmpleado.ConceptoConfig.Nombre,
+                Referencia = conceptoEmpleado.ConceptoConfig.Clave,
+                Observaciones = observaciones,
+                ClaveSat = claveSat
+            });
+        }
+
+        return percepciones;
+    }
+
+    private static bool EsPercepcionConfigurable(NominaConceptoConfigRrhh concepto)
+        => (concepto.Naturaleza == NaturalezaConceptoNominaRrhh.Percepcion || concepto.Naturaleza == NaturalezaConceptoNominaRrhh.Ajuste)
+            && concepto.Destino == DestinoConceptoNominaRrhh.Empleado
+            && concepto.AfectaNetoEmpleado
+            && !concepto.AfectaPasivoImss
+            && !concepto.AfectaPasivoSat
+            && !concepto.AfectaProvision;
+
+    private static string ResolverClavePercepcionConfigurable(string? claveConfigurada, string? nombre)
+    {
+        var texto = string.Join(" ", new[] { claveConfigurada, nombre }.Where(t => !string.IsNullOrWhiteSpace(t))).ToUpperInvariant();
+        if (texto.Contains("PUNTUALIDAD"))
+            return NominaSatCatalogos.Sistema.PercepcionPremioPuntualidad;
+        if (texto.Contains("ASISTENCIA"))
+            return NominaSatCatalogos.Sistema.PercepcionPremioAsistencia;
+        if (texto.Contains("DESPENSA"))
+            return NominaSatCatalogos.Sistema.PercepcionValesDespensa;
+        if (texto.Contains("CAJA_AHORRO"))
+            return NominaSatCatalogos.Sistema.PercepcionCajaAhorro;
+        if (texto.Contains("FONDO_AHORRO"))
+            return NominaSatCatalogos.Sistema.PercepcionFondoAhorro;
+        if (texto.Contains("COMISION"))
+            return NominaSatCatalogos.Sistema.PercepcionComisiones;
+
+        return NominaSatCatalogos.Sistema.PercepcionOtrosIngresosSalarios;
+    }
+
+    private static void SincronizarPercepcionesConfigurables(CrmDbContext db, List<NominaPercepcion> existentes, NominaDetalle detalle, IReadOnlyCollection<PercepcionConfigurableAplicada> percepcionesConfigurables, Guid empresaId, string referenciaPrefijo)
+    {
+        var existentesDetalle = existentes
+            .Where(p => p.NominaDetalleId == detalle.Id
+                && p.Origen == OrigenPercepcionNomina.Ajuste
+                && p.Referencia != null
+                && p.Referencia.StartsWith(referenciaPrefijo))
+            .ToDictionary(p => p.Referencia!, p => p);
+        var referenciasActuales = percepcionesConfigurables
+            .Select(p => $"{referenciaPrefijo}{p.ConceptoConfigId}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var eliminar in existentesDetalle.Values.Where(p => !referenciasActuales.Contains(p.Referencia!)).ToList())
+        {
+            db.NominasPercepciones.Remove(eliminar);
+            existentes.Remove(eliminar);
+        }
+
+        foreach (var percepcion in percepcionesConfigurables)
+        {
+            var referencia = $"{referenciaPrefijo}{percepcion.ConceptoConfigId}";
+            if (!existentesDetalle.TryGetValue(referencia, out var actual))
+            {
+                actual = new NominaPercepcion
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = empresaId,
+                    NominaDetalleId = detalle.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasPercepciones.Add(actual);
+                existentes.Add(actual);
+            }
+
+            actual.TipoPercepcionId = percepcion.TipoPercepcionId;
+            actual.Descripcion = percepcion.Descripcion;
+            actual.Importe = percepcion.Importe;
+            actual.Origen = OrigenPercepcionNomina.Ajuste;
+            actual.Referencia = referencia;
+            actual.Observaciones = percepcion.Observaciones;
+            actual.IsActive = true;
+            actual.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static async Task<NominaPercepcionTipo> ObtenerOCrearTipoPercepcionOtrosIngresosAsync(CrmDbContext db, IDictionary<string, NominaPercepcionTipo> tiposPercepcionPorClave)
+    {
+        if (tiposPercepcionPorClave.TryGetValue(NominaSatCatalogos.Sistema.PercepcionOtrosIngresosSalarios, out var tipo))
+            return tipo;
+
+        tipo = new NominaPercepcionTipo
+        {
+            Id = Guid.NewGuid(),
+            Clave = NominaSatCatalogos.Sistema.PercepcionOtrosIngresosSalarios,
+            Nombre = "Otros ingresos por salarios",
+            Categoria = CategoriaPercepcionNomina.OtroIngreso,
+            AfectaBaseImss = true,
+            AfectaBaseIsr = true,
+            Orden = 38,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        await db.NominasPercepcionesTipos.AddAsync(tipo);
+        tiposPercepcionPorClave[tipo.Clave] = tipo;
+        return tipo;
+    }
 
     private static string? ConstruirConceptoDeduccion(string? conceptoBase, IReadOnlyCollection<string> etiquetasConfigurables)
     {
@@ -2924,6 +3080,17 @@
         public bool EsRetencionLegal { get; set; }
         public string? Observaciones { get; set; }
         public int Orden { get; set; }
+    }
+
+    private sealed class PercepcionConfigurableAplicada
+    {
+        public Guid ConceptoConfigId { get; set; }
+        public Guid TipoPercepcionId { get; set; }
+        public decimal Importe { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
+        public string? Referencia { get; set; }
+        public string? Observaciones { get; set; }
+        public string ClaveSat { get; set; } = NominaSatCatalogos.Sistema.PercepcionOtrosIngresosSalarios;
     }
 
     private sealed class FestivoAplicadoVm
