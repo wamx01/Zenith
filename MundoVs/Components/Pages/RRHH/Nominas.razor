@@ -1989,8 +1989,9 @@
                     : detalleConPercepcionesPersistidas.Contains(detalle.Id)
                         ? 0m
                         : detalle.Bonos;
-            var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : detalle.Deducciones;
-            detalle.ConceptoDeducciones = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : detalle.ConceptoDeducciones;
+            var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : 0m;
+            var conceptoDeduccionBase = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : null;
+            detalle.ConceptoDeducciones = conceptoDeduccionBase;
             var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
             var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
                 ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
@@ -2031,7 +2032,7 @@
             });
 
             AplicarResultadoCalculo(detalle, resultado);
-            AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, detalle.ConceptoDeducciones);
+            AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, conceptoDeduccionBase);
 
             if (bonosPrenomina.Count > 0)
                 SincronizarBonosPrenomina(db, bonosNominaExistentes, detalle, bonosPrenomina, nomina.EmpresaId);
@@ -2824,13 +2825,18 @@
 
     private static string? ConstruirConceptoDeduccion(string? conceptoBase, IReadOnlyCollection<string> etiquetasConfigurables)
     {
-        if (etiquetasConfigurables.Count == 0)
-            return conceptoBase;
+        var conceptoNormalizado = string.IsNullOrWhiteSpace(conceptoBase) ? null : conceptoBase.Trim();
 
-        if (string.IsNullOrWhiteSpace(conceptoBase))
+        if (etiquetasConfigurables.Count == 0)
+            return conceptoNormalizado;
+
+        if (string.IsNullOrWhiteSpace(conceptoNormalizado))
             return etiquetasConfigurables.Count == 1 ? etiquetasConfigurables.First() : "Deducciones configurables";
 
-        return $"{conceptoBase} + configurables";
+        if (conceptoNormalizado.Contains("configurables", StringComparison.OrdinalIgnoreCase))
+            return conceptoNormalizado;
+
+        return $"{conceptoNormalizado} + configurables";
     }
 
     private static void SincronizarBonosPrenomina(CrmDbContext db, List<NominaBono> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaBono> bonosPrenomina, Guid empresaId)
