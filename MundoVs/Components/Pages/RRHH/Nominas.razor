@@ -1736,6 +1736,11 @@
                     .ThenInclude(p => p.TipoPercepcion)
             .FirstOrDefaultAsync(p => p.Id == prenomina.Id);
 
+        if (prenomina == null)
+        {
+            throw new InvalidOperationException("No se pudo cargar la prenómina vinculada para sincronizar la nómina.");
+        }
+
         if (!string.IsNullOrWhiteSpace(prenomina.SnapshotConfiguracionJson))
         {
             try

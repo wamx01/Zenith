@@ -39,6 +39,22 @@ public sealed class NominaPdfService : INominaPdfService
         return GeneratePdf(detalles);
     }
 
+    public Task<byte[]> GenerateDashboardCostosPdfAsync(NominaDashboardCostosReport report, CancellationToken cancellationToken = default)
+    {
+        var pdf = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.Letter.Landscape());
+                page.Margin(20);
+                page.DefaultTextStyle(x => x.FontFamily(Fonts.Arial).FontSize(9));
+                page.Content().Element(content => ComposeDashboardCostos(content, report));
+            });
+        }).GeneratePdf();
+
+        return Task.FromResult(pdf);
+    }
+
     private byte[] GeneratePdf(IReadOnlyList<NominaDetalle> detalles)
     {
         var recibos = detalles.ToDictionary(d => d.Id, _nominaReciboBuilder.Build);
@@ -57,6 +73,178 @@ public sealed class NominaPdfService : INominaPdfService
                 });
             }
         }).GeneratePdf();
+    }
+
+    private static void ComposeDashboardCostos(IContainer container, NominaDashboardCostosReport report)
+    {
+        container.Column(column =>
+        {
+            column.Spacing(12);
+
+            column.Item().Row(row =>
+            {
+                row.RelativeItem().Column(col =>
+                {
+                    col.Item().Text("Reporte ejecutivo de costos de nómina").Bold().FontSize(18).FontColor("#0f172a");
+                    col.Item().Text(report.Empresa).SemiBold().FontSize(11);
+                    col.Item().Text($"Período: {report.Desde:dd/MM/yyyy} al {report.Hasta:dd/MM/yyyy}").FontSize(9);
+                    col.Item().Text($"Periodicidad: {report.Periodicidad} · Empleado: {report.EmpleadoFiltro}").FontSize(9);
+                });
+
+                row.ConstantItem(170).Background("#0f172a").Padding(12).Column(col =>
+                {
+                    col.Item().Text("Costo empresa").FontColor(Colors.White).FontSize(9);
+                    col.Item().Text(report.CostoEmpresa.ToString("C2")).Bold().FontColor(Colors.White).FontSize(16);
+                    col.Item().PaddingTop(6).Text($"Neto pagado: {report.NetoPagado:C2}").FontColor(Colors.White).FontSize(9);
+                });
+            });
+
+            column.Item().Element(c => ComposeMetricGrid(c, report));
+
+            if (report.PrestacionesAplicadas.Count > 0 || report.PercepcionesAplicadas.Count > 0 || report.DescuentosAplicados.Count > 0)
+            {
+                column.Item().Row(row =>
+                {
+                    row.RelativeItem().Element(c => ComposeConceptList(c, "Percepciones aplicadas", report.PercepcionesAplicadas));
+                    row.RelativeItem().Element(c => ComposeConceptList(c, "Prestaciones y cargas", report.PrestacionesAplicadas));
+                    row.RelativeItem().Element(c => ComposeConceptList(c, "Descuentos aplicados", report.DescuentosAplicados));
+                });
+            }
+
+            column.Item().Element(c => ComposeDepartmentTable(c, report.CostosPorDepartamento));
+
+            if (report.EmpleadosTop.Count > 0)
+            {
+                column.Item().Element(c => ComposeTopEmployees(c, report.EmpleadosTop));
+            }
+        });
+    }
+
+    private static void ComposeMetricGrid(IContainer container, NominaDashboardCostosReport report)
+    {
+        var metrics = new (string Title, decimal Value, string Hint)[]
+        {
+            ("Neto pagado", report.NetoPagado, "Pago al empleado"),
+            ("IMSS obrero", report.ImssObrero, "Retenido al trabajador"),
+            ("IMSS patronal", report.ImssPatronal, "Costo empresa"),
+            ("ISR", report.Isr, "Retención acumulada"),
+            ("Infonavit", report.Infonavit, "Descuento aplicado"),
+            ("Provisiones", report.Provisiones, "Reserva acumulada"),
+            ("Horas extra", report.HorasExtra, "Monto del período"),
+            ("Bonos", report.Bonos, "Bonos aplicados")
+        };
+
+        container.Grid(grid =>
+        {
+            grid.Columns(4);
+            grid.Spacing(8);
+
+            foreach (var metric in metrics)
+            {
+                grid.Item().Border(1).BorderColor("#dbe3ee").Background("#f8fafc").Padding(8).Column(col =>
+                {
+                    col.Item().Text(metric.Title).FontSize(8).FontColor("#64748b");
+                    col.Item().PaddingTop(2).Text(metric.Value.ToString("C2")).Bold().FontSize(12).FontColor("#0f172a");
+                    col.Item().PaddingTop(2).Text(metric.Hint).FontSize(7).FontColor("#64748b");
+                });
+            }
+        });
+    }
+
+    private static void ComposeConceptList(IContainer container, string title, IReadOnlyList<NominaDashboardConceptoItem> items)
+    {
+        container.Border(1).BorderColor("#dbe3ee").Padding(8).Column(col =>
+        {
+            col.Item().Text(title).Bold().FontSize(10).FontColor("#0f172a");
+            col.Item().PaddingTop(4).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn();
+                    columns.ConstantColumn(85);
+                });
+
+                foreach (var item in items)
+                {
+                    table.Cell().PaddingVertical(3).Text(item.Nombre).FontSize(8.5f);
+                    table.Cell().PaddingVertical(3).AlignRight().Text(item.Total.ToString("C2")).SemiBold().FontSize(8.5f);
+                }
+            });
+        });
+    }
+
+    private static void ComposeDepartmentTable(IContainer container, IReadOnlyList<NominaDashboardDepartamentoItem> items)
+    {
+        container.Column(col =>
+        {
+            col.Item().Text("Costo por departamento").Bold().FontSize(11).FontColor("#0f172a");
+            col.Item().PaddingTop(4).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(1.4f);
+                    columns.ConstantColumn(42);
+                    columns.ConstantColumn(74);
+                    columns.ConstantColumn(80);
+                    columns.ConstantColumn(68);
+                    columns.ConstantColumn(60);
+                    columns.ConstantColumn(60);
+                    columns.ConstantColumn(68);
+                    columns.ConstantColumn(62);
+                    columns.ConstantColumn(62);
+                    columns.ConstantColumn(68);
+                    columns.ConstantColumn(68);
+                });
+
+                var headers = new[] { "Departamento", "Emp.", "Neto", "Costo emp.", "IMSS", "ISR", "Info.", "Prov.", "Extra", "Bonos", "Deduc.", "Desc. min." };
+                foreach (var header in headers)
+                {
+                    table.Cell().Background("#0f172a").Padding(4).Text(header).FontColor(Colors.White).FontSize(7.5f).Bold();
+                }
+
+                foreach (var item in items)
+                {
+                    table.Cell().Padding(4).Text(item.Departamento).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Empleados.ToString()).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Neto.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.CostoEmpresa.ToString("C0")).FontSize(8f).SemiBold();
+                    table.Cell().Padding(4).AlignRight().Text(item.ImssTotal.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Isr.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Infonavit.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Provisiones.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.HorasExtra.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Bonos.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.Deducciones.ToString("C0")).FontSize(8f);
+                    table.Cell().Padding(4).AlignRight().Text(item.DescuentoMinutos.ToString("C0")).FontSize(8f);
+                }
+            });
+        });
+    }
+
+    private static void ComposeTopEmployees(IContainer container, IReadOnlyList<NominaDashboardEmpleadoItem> items)
+    {
+        container.Border(1).BorderColor("#dbe3ee").Padding(8).Column(col =>
+        {
+            col.Item().Text("Empleados con mayor costo empresa").Bold().FontSize(10).FontColor("#0f172a");
+            col.Item().PaddingTop(4).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(1.5f);
+                    columns.RelativeColumn();
+                    columns.ConstantColumn(85);
+                    columns.ConstantColumn(85);
+                });
+
+                foreach (var item in items)
+                {
+                    table.Cell().PaddingVertical(3).Text(item.Empleado).FontSize(8.5f);
+                    table.Cell().PaddingVertical(3).Text(item.Departamento).FontSize(8.5f).FontColor("#64748b");
+                    table.Cell().PaddingVertical(3).AlignRight().Text(item.Neto.ToString("C2")).FontSize(8.5f);
+                    table.Cell().PaddingVertical(3).AlignRight().Text(item.CostoEmpresa.ToString("C2")).SemiBold().FontSize(8.5f);
+                }
+            });
+        });
     }
 
     private static void ComposeRecibo(IContainer container, NominaDetalle detalle, NominaReciboResult recibo)

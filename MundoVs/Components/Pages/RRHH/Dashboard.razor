@@ -1,12 +1,14 @@
 @page "/rrhh/dashboard"
 @using System.Globalization
 @using System.Text
+@using MundoVs.Core.Interfaces
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject INominaPdfService NominaPdfService
 @inject IJSRuntime JS
 @rendermode InteractiveServer
 
@@ -77,6 +79,10 @@
                         <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar</button>
                         <button class="btn btn-outline-secondary" @onclick="RestablecerPeriodoAsync" disabled="@cargando">Mes actual</button>
                         <button class="btn btn-outline-success" @onclick="ExportarCostosCsvAsync" disabled="@(cargando || costosPorEmpleadoFiltrados.Count == 0)"><i class="bi bi-download me-1"></i>CSV costos</button>
+                        @if (_puedeVerNominas)
+                        {
+                            <button class="btn btn-outline-danger" @onclick="ExportarReporteCostosPdfAsync" disabled="@(cargando || exportandoReportePdf || costosPorEmpleadoFiltrados.Count == 0)"><i class="bi bi-file-earmark-pdf me-1"></i>@(exportandoReportePdf ? "Generando PDF..." : "Exportar PDF")</button>
+                        }
                     </div>
                 </div>
             </div>
@@ -141,6 +147,133 @@
 
         @if (_puedeVerNominas)
         {
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-danger text-white py-2 d-flex justify-content-between align-items-center">
+                    <span>Reporte ejecutivo de costos de nómina</span>
+                    <span class="badge bg-light text-danger">Solo conceptos aplicados</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-xl-4">
+                            <div class="border rounded p-3 h-100 bg-light-subtle">
+                                <div class="small text-muted text-uppercase">Resumen general</div>
+                                <div class="rh-exec-list mt-3">
+                                    <div><span>Neto pagado</span><strong>@reporteCostos.NetoPagado.ToString("C2")</strong></div>
+                                    <div><span>Costo empresa</span><strong>@reporteCostos.CostoEmpresa.ToString("C2")</strong></div>
+                                    <div><span>IMSS obrero</span><strong>@reporteCostos.ImssObrero.ToString("C2")</strong></div>
+                                    <div><span>IMSS patronal</span><strong>@reporteCostos.ImssPatronal.ToString("C2")</strong></div>
+                                    <div><span>ISR</span><strong>@reporteCostos.Isr.ToString("C2")</strong></div>
+                                    <div><span>Infonavit</span><strong>@reporteCostos.Infonavit.ToString("C2")</strong></div>
+                                    <div><span>Provisiones</span><strong>@reporteCostos.Provisiones.ToString("C2")</strong></div>
+                                    <div><span>Horas extra</span><strong>@reporteCostos.HorasExtra.ToString("C2")</strong></div>
+                                    <div><span>Bonos</span><strong>@reporteCostos.Bonos.ToString("C2")</strong></div>
+                                    <div><span>Deducciones</span><strong>@reporteCostos.Deducciones.ToString("C2")</strong></div>
+                                    <div><span>Desc. minutos</span><strong>@reporteCostos.DescuentoMinutos.ToString("C2")</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-xl-4">
+                            <div class="border rounded p-3 h-100">
+                                <div class="small text-muted text-uppercase mb-2">Percepciones aplicadas</div>
+                                @if (reporteCostos.PercepcionesAplicadas.Count == 0)
+                                {
+                                    <div class="text-muted small">Sin percepciones variables aplicadas en el período.</div>
+                                }
+                                else
+                                {
+                                    <div class="rh-exec-list">
+                                        @foreach (var item in reporteCostos.PercepcionesAplicadas)
+                                        {
+                                            <div><span>@item.Nombre</span><strong>@item.Total.ToString("C2")</strong></div>
+                                        }
+                                    </div>
+                                }
+
+                                <div class="small text-muted text-uppercase mt-4 mb-2">Prestaciones y cargas</div>
+                                @if (reporteCostos.PrestacionesAplicadas.Count == 0)
+                                {
+                                    <div class="text-muted small">Sin prestaciones o cargas adicionales aplicadas.</div>
+                                }
+                                else
+                                {
+                                    <div class="rh-exec-list">
+                                        @foreach (var item in reporteCostos.PrestacionesAplicadas)
+                                        {
+                                            <div><span>@item.Nombre</span><strong>@item.Total.ToString("C2")</strong></div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-xl-4">
+                            <div class="border rounded p-3 h-100">
+                                <div class="small text-muted text-uppercase mb-2">Descuentos aplicados</div>
+                                @if (reporteCostos.DescuentosAplicados.Count == 0)
+                                {
+                                    <div class="text-muted small">No hubo descuentos aplicados en el período.</div>
+                                }
+                                else
+                                {
+                                    <div class="rh-exec-list">
+                                        @foreach (var item in reporteCostos.DescuentosAplicados)
+                                        {
+                                            <div><span>@item.Nombre</span><strong>@item.Total.ToString("C2")</strong></div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Departamento</th>
+                                    <th class="text-end">Emp.</th>
+                                    <th class="text-end">Neto</th>
+                                    <th class="text-end">Costo empresa</th>
+                                    <th class="text-end">IMSS</th>
+                                    <th class="text-end">ISR</th>
+                                    <th class="text-end">Infonavit</th>
+                                    <th class="text-end">Provisiones</th>
+                                    <th class="text-end">Extra</th>
+                                    <th class="text-end">Bonos</th>
+                                    <th class="text-end">Deduc.</th>
+                                    <th class="text-end">Desc. min.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (reporteCostos.Departamentos.Count == 0)
+                                {
+                                    <tr><td colspan="12" class="text-center text-muted py-3">No hay costos de nómina para resumir en el período.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in reporteCostos.Departamentos)
+                                    {
+                                        <tr>
+                                            <td class="fw-semibold">@item.Departamento</td>
+                                            <td class="text-end">@item.Empleados</td>
+                                            <td class="text-end">@item.Neto.ToString("C2")</td>
+                                            <td class="text-end fw-semibold">@item.CostoEmpresa.ToString("C2")</td>
+                                            <td class="text-end">@item.ImssTotal.ToString("C2")</td>
+                                            <td class="text-end">@item.Isr.ToString("C2")</td>
+                                            <td class="text-end">@item.Infonavit.ToString("C2")</td>
+                                            <td class="text-end">@item.Provisiones.ToString("C2")</td>
+                                            <td class="text-end">@item.HorasExtra.ToString("C2")</td>
+                                            <td class="text-end">@item.Bonos.ToString("C2")</td>
+                                            <td class="text-end">@item.Deducciones.ToString("C2")</td>
+                                            <td class="text-end">@item.DescuentoMinutos.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="row g-3 mb-4">
                 <div class="col-sm-6 col-xl-2">
                     <div class="card border-0 shadow-sm h-100">
@@ -684,6 +817,7 @@
     private DateTime filtroHasta;
     private string? error;
     private bool cargando;
+    private bool exportandoReportePdf;
     private bool _puedeVer;
     private bool _puedeVerEmpleados;
     private bool _puedeVerNominas;
@@ -698,6 +832,7 @@
     private List<BonoAreaVm> bonosPorArea = [];
     private List<CostoEmpleadoVm> costosPorEmpleado = [];
     private List<CostoEmpleadoVm> costosPorEmpleadoFiltrados = [];
+    private DashboardCostosReporteVm reporteCostos = new();
     private List<EmpleadoFiltroVm> empleadosFiltro = [];
     private List<DashboardAlertaVm> alertas = [];
     private string filtroPeriodicidad = string.Empty;
@@ -869,7 +1004,38 @@
                     .ToListAsync()
                 : [];
 
-            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios);
+            var detalleIdsNomina = detallesNomina.Select(d => d.Id).Distinct().ToList();
+            var bonosDetalle = _puedeVerNominas && detalleIdsNomina.Count > 0
+                ? await db.NominasBonosDetalle
+                    .AsNoTracking()
+                    .Include(b => b.BonoRubroRrhh)
+                    .Include(b => b.NominaBono)
+                    .Where(b => b.IsActive && b.NominaBono.IsActive && detalleIdsNomina.Contains(b.NominaBono.NominaDetalleId))
+                    .ToListAsync()
+                : [];
+            var percepcionesDetalle = _puedeVerNominas && detalleIdsNomina.Count > 0
+                ? await db.NominasPercepciones
+                    .AsNoTracking()
+                    .Include(p => p.TipoPercepcion)
+                    .Where(p => p.IsActive && detalleIdsNomina.Contains(p.NominaDetalleId))
+                    .ToListAsync()
+                : [];
+            var deduccionesDetalle = _puedeVerNominas && detalleIdsNomina.Count > 0
+                ? await db.NominasDeducciones
+                    .AsNoTracking()
+                    .Include(d => d.TipoDeduccion)
+                    .Where(d => d.IsActive && detalleIdsNomina.Contains(d.NominaDetalleId))
+                    .ToListAsync()
+                : [];
+            var provisionesDetalle = _puedeVerNominas && detalleIdsNomina.Count > 0
+                ? await db.NominasProvisionesDetalleRrhh
+                    .AsNoTracking()
+                    .Include(p => p.ConceptoConfig)
+                    .Where(p => p.IsActive && detalleIdsNomina.Contains(p.NominaDetalleId))
+                    .ToListAsync()
+                : [];
+
+            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle);
         }
         catch (Exception ex)
         {
@@ -892,7 +1058,11 @@
         List<MovimientoBancoResumenRaw> movimientosBancoTotales,
         List<NominaDetalle> detallesNomina,
         List<Nomina> nominasPrevias,
-        List<NominaDetalle> detallesNominaPrevios)
+        List<NominaDetalle> detallesNominaPrevios,
+        List<NominaBonoDetalle> bonosDetalle,
+        List<NominaPercepcion> percepcionesDetalle,
+        List<NominaDeduccion> deduccionesDetalle,
+        List<NominaProvisionDetalleRrhh> provisionesDetalle)
     {
         var totalEmpleados = empleadosActivos.Count;
         var heartbeatLimite = DateTime.UtcNow.AddHours(-12);
@@ -998,6 +1168,7 @@
             .ToList();
 
         AplicarFiltrosCostos();
+        reporteCostos = ConstruirReporteCostos(detallesNomina, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle);
 
         nominasRecientes = nominas
             .Take(6)
@@ -1137,6 +1308,185 @@
         }
 
         await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", $"rh-costos-{filtroDesde:yyyyMMdd}-{filtroHasta:yyyyMMdd}.csv", builder.ToString());
+    }
+
+    private async Task ExportarReporteCostosPdfAsync()
+    {
+        if (!_puedeVerNominas || costosPorEmpleadoFiltrados.Count == 0)
+            return;
+
+        exportandoReportePdf = true;
+        error = null;
+
+        try
+        {
+            var pdf = await NominaPdfService.GenerateDashboardCostosPdfAsync(new NominaDashboardCostosReport
+            {
+                Empresa = empresaEtiqueta,
+                Desde = filtroDesde,
+                Hasta = filtroHasta,
+                Periodicidad = string.IsNullOrWhiteSpace(filtroPeriodicidad) ? "Todas" : filtroPeriodicidad,
+                EmpleadoFiltro = Guid.TryParse(filtroEmpleadoId, out var empleadoId)
+                    ? empleadosFiltro.FirstOrDefault(x => x.Id == empleadoId)?.NombreCompleto ?? "Todos"
+                    : "Todos",
+                NetoPagado = reporteCostos.NetoPagado,
+                CostoEmpresa = reporteCostos.CostoEmpresa,
+                ImssObrero = reporteCostos.ImssObrero,
+                ImssPatronal = reporteCostos.ImssPatronal,
+                Isr = reporteCostos.Isr,
+                Infonavit = reporteCostos.Infonavit,
+                Provisiones = reporteCostos.Provisiones,
+                HorasExtra = reporteCostos.HorasExtra,
+                Bonos = reporteCostos.Bonos,
+                Deducciones = reporteCostos.Deducciones,
+                DescuentoMinutos = reporteCostos.DescuentoMinutos,
+                PercepcionesAplicadas = reporteCostos.PercepcionesAplicadas.Select(x => new NominaDashboardConceptoItem { Nombre = x.Nombre, Total = x.Total, Categoria = x.Categoria }).ToList(),
+                PrestacionesAplicadas = reporteCostos.PrestacionesAplicadas.Select(x => new NominaDashboardConceptoItem { Nombre = x.Nombre, Total = x.Total, Categoria = x.Categoria }).ToList(),
+                DescuentosAplicados = reporteCostos.DescuentosAplicados.Select(x => new NominaDashboardConceptoItem { Nombre = x.Nombre, Total = x.Total, Categoria = x.Categoria }).ToList(),
+                CostosPorDepartamento = reporteCostos.Departamentos.Select(x => new NominaDashboardDepartamentoItem
+                {
+                    Departamento = x.Departamento,
+                    Empleados = x.Empleados,
+                    Neto = x.Neto,
+                    CostoEmpresa = x.CostoEmpresa,
+                    ImssTotal = x.ImssTotal,
+                    Isr = x.Isr,
+                    Infonavit = x.Infonavit,
+                    Provisiones = x.Provisiones,
+                    HorasExtra = x.HorasExtra,
+                    Bonos = x.Bonos,
+                    Deducciones = x.Deducciones,
+                    DescuentoMinutos = x.DescuentoMinutos
+                }).ToList(),
+                EmpleadosTop = reporteCostos.EmpleadosTop.Select(x => new NominaDashboardEmpleadoItem
+                {
+                    Empleado = x.Empleado,
+                    Departamento = x.Departamento,
+                    Neto = x.Neto,
+                    CostoEmpresa = x.CostoEmpresa
+                }).ToList()
+            });
+
+            await JS.InvokeVoidAsync("mundoVsAuth.downloadFileFromBase64", $"rh-reporte-costos-{filtroDesde:yyyyMMdd}-{filtroHasta:yyyyMMdd}.pdf", Convert.ToBase64String(pdf), "application/pdf");
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            exportandoReportePdf = false;
+        }
+    }
+
+    private DashboardCostosReporteVm ConstruirReporteCostos(
+        List<NominaDetalle> detallesNomina,
+        List<NominaBonoDetalle> bonosDetalle,
+        List<NominaPercepcion> percepcionesDetalle,
+        List<NominaDeduccion> deduccionesDetalle,
+        List<NominaProvisionDetalleRrhh> provisionesDetalle)
+    {
+        if (detallesNomina.Count == 0)
+            return new DashboardCostosReporteVm();
+
+        var percepciones = new List<DashboardConceptoMontoVm>();
+        void AgregarPercepcion(string nombre, decimal total, string categoria = "Percepción")
+        {
+            if (total > 0m)
+                percepciones.Add(new DashboardConceptoMontoVm { Nombre = nombre, Total = total, Categoria = categoria });
+        }
+
+        var prestaciones = new List<DashboardConceptoMontoVm>();
+        void AgregarPrestacion(string nombre, decimal total, string categoria = "Prestación")
+        {
+            if (total > 0m)
+                prestaciones.Add(new DashboardConceptoMontoVm { Nombre = nombre, Total = total, Categoria = categoria });
+        }
+
+        var descuentos = new List<DashboardConceptoMontoVm>();
+        void AgregarDescuento(string nombre, decimal total, string categoria = "Descuento")
+        {
+            if (total > 0m)
+                descuentos.Add(new DashboardConceptoMontoVm { Nombre = nombre, Total = total, Categoria = categoria });
+        }
+
+        AgregarPercepcion("Sueldo base", detallesNomina.Sum(x => x.SueldoBase));
+        AgregarPercepcion("Destajo", detallesNomina.Sum(x => x.MontoDestajo));
+        AgregarPercepcion("Bono general", detallesNomina.Sum(x => x.MontoBono));
+        AgregarPercepcion("Horas extra", detallesNomina.Sum(x => x.MontoHorasExtra));
+        AgregarPercepcion("Festivo trabajado", detallesNomina.Sum(x => x.MontoFestivoTrabajado));
+        AgregarPercepcion("Descanso trabajado", detallesNomina.Sum(x => x.MontoDescansoTrabajado));
+        AgregarPercepcion("Prima dominical", detallesNomina.Sum(x => x.MontoPrimaDominical));
+        AgregarPercepcion("Prima vacacional", detallesNomina.Sum(x => x.MontoPrimaVacacional));
+        AgregarPercepcion("Complemento salario mínimo", detallesNomina.Sum(x => x.ComplementoSalarioMinimo));
+        foreach (var item in bonosDetalle.GroupBy(x => x.BonoRubroRrhh.Nombre).Select(g => new { Nombre = g.Key, Total = g.Sum(x => x.Importe) }).Where(x => x.Total > 0m).OrderByDescending(x => x.Total))
+            AgregarPercepcion(item.Nombre, item.Total, "Bono");
+        foreach (var item in percepcionesDetalle.GroupBy(x => x.TipoPercepcion.Nombre).Select(g => new { Nombre = g.Key, Total = g.Sum(x => x.Importe) }).Where(x => x.Total > 0m).OrderByDescending(x => x.Total))
+            AgregarPercepcion(item.Nombre, item.Total, "Percepción manual");
+
+        AgregarPrestacion("IMSS patronal", detallesNomina.Sum(x => x.CuotaImssPatronal), "Carga patronal");
+        AgregarPrestacion("Provisiones base", detallesNomina.Sum(x => x.TotalProvisiones), "Provisión");
+        foreach (var item in provisionesDetalle.GroupBy(x => x.ConceptoConfig.Nombre).Select(g => new { Nombre = g.Key, Total = g.Sum(x => x.Importe) }).Where(x => x.Total > 0m).OrderByDescending(x => x.Total))
+            AgregarPrestacion(item.Nombre, item.Total, "Provisión configurable");
+
+        AgregarDescuento("ISR", detallesNomina.Sum(x => x.RetencionIsr));
+        AgregarDescuento("IMSS obrero", detallesNomina.Sum(x => x.CuotaImssObrera));
+        AgregarDescuento("Infonavit", detallesNomina.Sum(x => x.MontoInfonavit));
+        AgregarDescuento("Descuento por minutos", detallesNomina.Sum(x => x.MontoDescuentoMinutos));
+        foreach (var item in deduccionesDetalle.GroupBy(x => x.TipoDeduccion.Nombre).Select(g => new { Nombre = g.Key, Total = g.Sum(x => x.Importe) }).Where(x => x.Total > 0m).OrderByDescending(x => x.Total))
+            AgregarDescuento(item.Nombre, item.Total, "Deducción estructurada");
+
+        var departamentos = detallesNomina
+            .GroupBy(d => string.IsNullOrWhiteSpace(d.Empleado.Departamento) ? "Sin departamento" : d.Empleado.Departamento.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new DashboardDepartamentoCostoVm
+            {
+                Departamento = g.Key,
+                Empleados = g.Select(x => x.EmpleadoId).Distinct().Count(),
+                Neto = g.Sum(x => x.TotalPagar),
+                CostoEmpresa = g.Sum(x => x.CostoEmpresa),
+                ImssTotal = g.Sum(x => x.CuotaImssObrera + x.CuotaImssPatronal),
+                Isr = g.Sum(x => x.RetencionIsr),
+                Infonavit = g.Sum(x => x.MontoInfonavit),
+                Provisiones = g.Sum(x => x.TotalProvisiones),
+                HorasExtra = g.Sum(x => x.MontoHorasExtra),
+                Bonos = g.Sum(x => x.MontoBono + x.Bonos),
+                Deducciones = g.Sum(x => x.Deducciones),
+                DescuentoMinutos = g.Sum(x => x.MontoDescuentoMinutos)
+            })
+            .OrderByDescending(x => x.CostoEmpresa)
+            .ThenBy(x => x.Departamento)
+            .ToList();
+
+        var topEmpleados = costosPorEmpleadoFiltrados
+            .Take(10)
+            .Select(x => new DashboardEmpleadoCostoResumenVm
+            {
+                Empleado = x.Empleado,
+                Departamento = detallesNomina.FirstOrDefault(d => d.EmpleadoId == x.EmpleadoId)?.Empleado.Departamento?.Trim() ?? "Sin departamento",
+                Neto = x.Neto,
+                CostoEmpresa = x.CostoEmpresa
+            })
+            .ToList();
+
+        return new DashboardCostosReporteVm
+        {
+            NetoPagado = detallesNomina.Sum(x => x.TotalPagar),
+            CostoEmpresa = detallesNomina.Sum(x => x.CostoEmpresa),
+            ImssObrero = detallesNomina.Sum(x => x.CuotaImssObrera),
+            ImssPatronal = detallesNomina.Sum(x => x.CuotaImssPatronal),
+            Isr = detallesNomina.Sum(x => x.RetencionIsr),
+            Infonavit = detallesNomina.Sum(x => x.MontoInfonavit),
+            Provisiones = detallesNomina.Sum(x => x.TotalProvisiones),
+            HorasExtra = detallesNomina.Sum(x => x.MontoHorasExtra),
+            Bonos = detallesNomina.Sum(x => x.MontoBono + x.Bonos),
+            Deducciones = detallesNomina.Sum(x => x.Deducciones),
+            DescuentoMinutos = detallesNomina.Sum(x => x.MontoDescuentoMinutos),
+            PercepcionesAplicadas = percepciones.OrderByDescending(x => x.Total).ToList(),
+            PrestacionesAplicadas = prestaciones.OrderByDescending(x => x.Total).ToList(),
+            DescuentosAplicados = descuentos.OrderByDescending(x => x.Total).ToList(),
+            Departamentos = departamentos,
+            EmpleadosTop = topEmpleados
+        };
     }
 
     private static string EscapeCsv(string? value)
@@ -1326,6 +1676,57 @@
         public decimal ImssObrero { get; set; }
         public decimal ImssPatronal { get; set; }
         public decimal Isr { get; set; }
+        public decimal Neto { get; set; }
+        public decimal CostoEmpresa { get; set; }
+    }
+
+    private sealed class DashboardCostosReporteVm
+    {
+        public decimal NetoPagado { get; set; }
+        public decimal CostoEmpresa { get; set; }
+        public decimal ImssObrero { get; set; }
+        public decimal ImssPatronal { get; set; }
+        public decimal Isr { get; set; }
+        public decimal Infonavit { get; set; }
+        public decimal Provisiones { get; set; }
+        public decimal HorasExtra { get; set; }
+        public decimal Bonos { get; set; }
+        public decimal Deducciones { get; set; }
+        public decimal DescuentoMinutos { get; set; }
+        public List<DashboardConceptoMontoVm> PercepcionesAplicadas { get; set; } = [];
+        public List<DashboardConceptoMontoVm> PrestacionesAplicadas { get; set; } = [];
+        public List<DashboardConceptoMontoVm> DescuentosAplicados { get; set; } = [];
+        public List<DashboardDepartamentoCostoVm> Departamentos { get; set; } = [];
+        public List<DashboardEmpleadoCostoResumenVm> EmpleadosTop { get; set; } = [];
+    }
+
+    private sealed class DashboardConceptoMontoVm
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public decimal Total { get; set; }
+        public string Categoria { get; set; } = string.Empty;
+    }
+
+    private sealed class DashboardDepartamentoCostoVm
+    {
+        public string Departamento { get; set; } = string.Empty;
+        public int Empleados { get; set; }
+        public decimal Neto { get; set; }
+        public decimal CostoEmpresa { get; set; }
+        public decimal ImssTotal { get; set; }
+        public decimal Isr { get; set; }
+        public decimal Infonavit { get; set; }
+        public decimal Provisiones { get; set; }
+        public decimal HorasExtra { get; set; }
+        public decimal Bonos { get; set; }
+        public decimal Deducciones { get; set; }
+        public decimal DescuentoMinutos { get; set; }
+    }
+
+    private sealed class DashboardEmpleadoCostoResumenVm
+    {
+        public string Empleado { get; set; } = string.Empty;
+        public string Departamento { get; set; } = string.Empty;
         public decimal Neto { get; set; }
         public decimal CostoEmpresa { get; set; }
     }

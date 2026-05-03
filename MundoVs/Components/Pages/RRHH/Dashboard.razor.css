@@ -118,3 +118,33 @@
     background: radial-gradient(circle, rgba(13, 110, 253, 0.08) 0%, transparent 70%);
     pointer-events: none;
 }
+
+.rh-exec-list {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+}
+
+.rh-exec-list > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 1rem;
+    font-size: .82rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.rh-exec-list > div:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.rh-exec-list span {
+    color: #64748b;
+}
+
+.rh-exec-list strong {
+    color: #0f172a;
+    text-align: right;
+}

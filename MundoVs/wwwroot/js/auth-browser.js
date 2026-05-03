@@ -95,5 +95,29 @@ window.mundoVsAuth = {
             console.error('mundoVsAuth.downloadCsv failed', err);
             throw err;
         }
+    },
+    downloadFileFromBase64: function (fileName, base64Content, contentType) {
+        try {
+            const safeName = (fileName && String(fileName).trim()) || `export-${Date.now()}`;
+            const binary = window.atob(base64Content || '');
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+
+            const blob = new Blob([bytes], { type: contentType || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = safeName;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (err) {
+            console.error('mundoVsAuth.downloadFileFromBase64 failed', err);
+            throw err;
+        }
     }
 };

@@ -52,6 +52,14 @@
         font-weight: 700;
         font-variant-numeric: tabular-nums;
     }
+
+    .asis-week-metric {
+        min-width: 92px;
+        text-align: right;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        background: #f8fafc;
+    }
 </style>
 
 <div class="container-fluid px-4">
@@ -160,6 +168,11 @@
                                         <div class="asis-week-date-label">@dia.ToString("dd/MM")</div>
                                     </th>
                                 }
+                                 <th class="text-end">Extra</th>
+                                 <th class="text-end">Extra pago</th>
+                                 <th class="text-end">Extra banco</th>
+                                 <th class="text-end">Permisos</th>
+                                 <th class="text-end">Comp.</th>
                                 <th class="text-end">Total</th>
                             </tr>
                         </thead>
@@ -167,7 +180,7 @@
                             @if (resumenes.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="@(diasPeriodo.Count + 3)" class="text-center text-muted py-4">No hay asistencias procesadas para el rango seleccionado.</td>
+                                     <td colspan="@(diasPeriodo.Count + 8)" class="text-center text-muted py-4">No hay asistencias procesadas para el rango seleccionado.</td>
                                 </tr>
                             }
                             else
@@ -185,6 +198,11 @@
                                             var minutos = resumen.MinutosPorDia.GetValueOrDefault(dia);
                                             <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@(minutos > 0 ? FormatearMinutos(minutos) : "—")</td>
                                         }
+                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtra)</td>
+                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</td>
+                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</td>
+                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosPermiso)</td>
+                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosCompensacion)</td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                     </tr>
                                 }
@@ -196,6 +214,11 @@
                                     {
                                         <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</td>
                                     }
+                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))</td>
+                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</td>
+                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</td>
+                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</td>
+                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</td>
                                     <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
                                 </tr>
                             }
@@ -214,6 +237,7 @@
     private List<ResumenSemanalEmpleado> resumenes = [];
     private List<TurnoBase> turnos = [];
     private Dictionary<DateOnly, int> totalesPorDia = new();
+    private Dictionary<string, int> permisosPorEmpleado = new();
     private bool _puedeVer;
     private Guid _empresaId;
     private bool cargando;
@@ -289,6 +313,7 @@
                 .ToListAsync();
 
             compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
+            permisosPorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta);
 
             resumenes = asistencias
                 .GroupBy(a => new
@@ -304,6 +329,11 @@
                     NombreCompleto = grupo.Key.Nombre,
                     NumeroEmpleado = grupo.Key.NumeroEmpleado,
                     CodigoChecador = grupo.Key.CodigoChecador,
+                    TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
+                    TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
+                    TotalMinutosExtraAprobadoBanco = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)),
+                    TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
+                    TotalMinutosPermiso = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
                         .GroupBy(a => a.Fecha)
                         .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x)))
@@ -325,6 +355,7 @@
             turnos = [];
             totalesPorDia = new();
             compensacionesPorDia = new();
+            permisosPorEmpleado = new();
             totalMinutosPeriodo = 0;
             promedioMinutosEmpleado = 0;
         }
@@ -485,6 +516,16 @@
             var builder = new StringBuilder();
             var encabezados = new List<string> { "Empleado", "NumeroEmpleado", "CodigoChecador" };
             encabezados.AddRange(diasPeriodo.Select(d => d.ToString("yyyy-MM-dd")));
+            encabezados.Add("TiempoExtraSemanal");
+            encabezados.Add("TiempoExtraSemanalMin");
+            encabezados.Add("TiempoExtraAprobadoPagoSemanal");
+            encabezados.Add("TiempoExtraAprobadoPagoSemanalMin");
+            encabezados.Add("TiempoExtraAprobadoBancoSemanal");
+            encabezados.Add("TiempoExtraAprobadoBancoSemanalMin");
+            encabezados.Add("PermisosSemanal");
+            encabezados.Add("PermisosSemanalMin");
+            encabezados.Add("CompensacionesSemanal");
+            encabezados.Add("CompensacionesSemanalMin");
             encabezados.Add("TotalHoras");
             encabezados.Add("TotalMinutos");
             builder.AppendLine(string.Join(",", encabezados.Select(EscapeCsv)));
@@ -499,6 +540,16 @@
                 };
 
                 columnas.AddRange(diasPeriodo.Select(dia => EscapeCsv(FormatearMinutos(resumen.MinutosPorDia.GetValueOrDefault(dia)))));
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtra)));
+                columnas.Add(resumen.TotalMinutosExtra.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)));
+                columnas.Add(resumen.TotalMinutosExtraAprobadoPago.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)));
+                columnas.Add(resumen.TotalMinutosExtraAprobadoBanco.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermiso)));
+                columnas.Add(resumen.TotalMinutosPermiso.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosCompensacion)));
+                columnas.Add(resumen.TotalMinutosCompensacion.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutos)));
                 columnas.Add(resumen.TotalMinutos.ToString());
                 builder.AppendLine(string.Join(",", columnas));
@@ -512,6 +563,16 @@
             };
 
             totales.AddRange(diasPeriodo.Select(dia => EscapeCsv(FormatearMinutos(totalesPorDia.GetValueOrDefault(dia)))));
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosExtra).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosPermiso).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosCompensacion).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(totalMinutosPeriodo)));
             totales.Add(totalMinutosPeriodo.ToString());
             builder.AppendLine(string.Join(",", totales));
@@ -594,12 +655,43 @@
             a => RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, a.EmpleadoId, a.Fecha));
     }
 
+    private async Task<Dictionary<string, int>> ConstruirPermisosPorEmpleadoAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta)
+    {
+        if (asistencias.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+
+        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
+        var permisos = await db.RrhhAusencias
+            .AsNoTracking()
+            .Where(a => a.EmpresaId == _empresaId
+                && empleadoIds.Contains(a.EmpleadoId)
+                && a.IsActive
+                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
+                && a.FechaInicio <= hasta
+                && a.FechaFin >= desde)
+            .ToListAsync();
+
+        return permisos
+            .GroupBy(a => a.EmpleadoId.ToString("N"))
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(a => (int)Math.Round(Math.Max(0m, a.Horas) * 60m, MidpointRounding.AwayFromZero)));
+    }
+
     private sealed class ResumenSemanalEmpleado
     {
         public Guid EmpleadoId { get; init; }
         public string NombreCompleto { get; init; } = string.Empty;
         public string? NumeroEmpleado { get; init; }
         public string? CodigoChecador { get; init; }
+        public int TotalMinutosExtra { get; init; }
+        public int TotalMinutosExtraAprobadoPago { get; init; }
+        public int TotalMinutosExtraAprobadoBanco { get; init; }
+        public int TotalMinutosPermiso { get; init; }
+        public int TotalMinutosCompensacion { get; init; }
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
         public int TotalMinutos => MinutosPorDia.Values.Sum();
     }
