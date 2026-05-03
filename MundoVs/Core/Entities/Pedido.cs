@@ -19,6 +19,8 @@ public class Pedido : BaseEntity
     public ICollection<PedidoSeguimiento> Seguimientos { get; set; } = new List<PedidoSeguimiento>();
     public ICollection<PagoPedido> Pagos { get; set; } = new List<PagoPedido>();
     public ICollection<NotaEntrega> NotasEntrega { get; set; } = new List<NotaEntrega>();
+    public ICollection<NotaEntregaPedido> NotasEntregaRelacionadas { get; set; } = new List<NotaEntregaPedido>();
+    public ICollection<NotaEntregaAsignacion> NotasEntregaAsignaciones { get; set; } = new List<NotaEntregaAsignacion>();
     public ICollection<Factura> Facturas { get; set; } = new List<Factura>();
     public ICollection<PagoRecibido> PagosRecibidos { get; set; } = new List<PagoRecibido>();
 }

@@ -21,6 +21,7 @@
 - En este flujo, la validación previa de consumos e inventario debe implementarse en `MundoVs/Components/Pages/Ventas/Pedidos.razor`; la cotización solo sirve como fuente de consumos, no como lugar del cambio UI.
 - Para esta arquitectura, el agente interno debe vivir en `ZkTecoApi` porque se desplegará en el servidor interno del cliente; no debe asumirse `Zenith.Workers.Asistencia` como agente final.
 - La documentación operativa se debe guardar en `docs/manual/`, organizada por secuencia o módulos, con un índice navegable.
+- Al crear notas multipedido, se debe hacer desde la lista de `PedidosSerigrafia` por cliente, con un botón para crear nota y seleccionar varios pedidos del mismo cliente; además, llevar el seguimiento del diseño en un archivo Markdown robusto.
 
 ## Order Management Guidelines
 - Al agregar un pedido, primero se debe definir si se capturarán productos o servicios; los servicios también deben manejar descripción y precio.

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MundoVs.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using MundoVs.Infrastructure.Data;
 namespace MundoVs.Migrations
 {
     [DbContext(typeof(CrmDbContext))]
-    partial class CrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260503063735_NotaEntregaAsignacionBase")]
+    partial class NotaEntregaAsignacionBase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1236,10 +1239,6 @@ namespace MundoVs.Migrations
 
                     b.Property<int>("Industria")
                         .HasColumnType("int");
-
-                    b.Property<string>("IndustriaPersonalizada")
-                        .HasMaxLength(120)
-                        .HasColumnType("varchar(120)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");

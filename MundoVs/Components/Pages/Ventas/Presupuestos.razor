@@ -124,9 +124,8 @@
                                 @foreach (var proceso in catalogoProcesos)
                                 {
                                     var sel = procesosSeleccionados.Contains(proceso.Id);
-                                    <label class="cot-proceso-chip @(sel ? "cot-proceso-chip--on" : "")"
-                                           @onchange="async (e) => await ToggleProcesoCotizacion(proceso.Id, e.Value)">
-                                        <input type="checkbox" class="d-none" checked="@sel" />
+                                    <label class="cot-proceso-chip @(sel ? "cot-proceso-chip--on" : "")">
+                                        <input type="checkbox" class="d-none" checked="@sel" @onchange="async (e) => await ToggleProcesoCotizacion(proceso.Id, e.Value)" />
                                         <span class="cot-proceso-chip__icon">
                                             <i class="bi @(sel ? "bi-check-circle-fill" : "bi-circle")"></i>
                                         </span>

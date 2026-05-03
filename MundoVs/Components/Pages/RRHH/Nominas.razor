@@ -27,12 +27,16 @@
     }
     else
     {
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
         <h1 class="display-6 fw-bold"><i class="bi bi-wallet2 me-2"></i>Nóminas</h1>
-        @if (_puedeEditar)
-        {
-            <button class="btn btn-primary" @onclick="NuevaNomina"><i class="bi bi-plus-circle me-1"></i>Nueva Nómina</button>
-        }
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary" href="/rrhh/prenominas"><i class="bi bi-calendar2-week me-1"></i>Ir a prenómina</a>
+            <a class="btn btn-outline-secondary" href="/rrhh/asistencias"><i class="bi bi-calendar-check me-1"></i>Ir a asistencias</a>
+            @if (_puedeEditar)
+            {
+                <button class="btn btn-primary" @onclick="NuevaNomina"><i class="bi bi-plus-circle me-1"></i>Nueva Nómina</button>
+            }
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }

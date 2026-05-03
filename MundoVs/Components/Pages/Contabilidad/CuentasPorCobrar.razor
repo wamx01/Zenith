@@ -1,8 +1,14 @@
 @page "/contabilidad/cuentas-por-cobrar"
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @inject CrmDbContext DbContext
+@inject ICuentasPorCobrarPdfService CuentasPorCobrarPdfService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Cuentas por Cobrar</PageTitle>
@@ -54,6 +60,273 @@
             <option value="mayor_atraso">Mayor atraso</option>
             <option value="nombre">Nombre A-Z</option>
         </select>
+        <button type="button" class="btn cpc-btn-action btn-sm" @onclick="MostrarFormularioCargo">
+            <i class="bi bi-journal-plus me-1"></i>Nuevo cargo
+        </button>
+    </div>
+
+    @if (mostrarCargoManualForm)
+    {
+        <div class="cpc-report-card">
+            <div class="cpc-report-title mb-2"><i class="bi bi-journal-text me-1"></i>Cargo manual / nota de cargo</div>
+            @if (!string.IsNullOrWhiteSpace(errorCargoManual))
+            {
+                <div class="cpc-alert-danger mb-2"><i class="bi bi-exclamation-circle me-1"></i>@errorCargoManual</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(okCargoManual))
+            {
+                <div class="cpc-alert-ok mb-2"><i class="bi bi-check-circle me-1"></i>@okCargoManual</div>
+            }
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="cpc-lbl">Cliente</label>
+                    <InputSelect class="form-select form-select-sm cpc-inp" @bind-Value="cargoManualClienteIdTexto" @bind-Value:after="CargarNotasCargoManualAsync">
+                        <option value="">Seleccione</option>
+                        @foreach (var cliente in clientesDisponiblesReporte)
+                        {
+                            <option value="@cliente.Id.ToString()">@cliente.Nombre</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-2">
+                    <label class="cpc-lbl">Tipo</label>
+                    <InputSelect class="form-select form-select-sm cpc-inp" @bind-Value="nuevoCargoManual.Tipo">
+                        @foreach (var tipo in Enum.GetValues<CargoManualCxCTipo>())
+                        {
+                            <option value="@tipo">@tipo</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-2">
+                    <label class="cpc-lbl">Fecha</label>
+                    <InputDate class="form-control form-control-sm cpc-inp" @bind-Value="nuevoCargoManual.FechaCargo" />
+                </div>
+                <div class="col-md-2">
+                    <label class="cpc-lbl">Monto</label>
+                    <InputNumber class="form-control form-control-sm cpc-inp" @bind-Value="nuevoCargoManual.Monto" />
+                </div>
+                <div class="col-md-3">
+                    <label class="cpc-lbl">Referencia</label>
+                    <InputText class="form-control form-control-sm cpc-inp" @bind-Value="nuevoCargoManual.Referencia" />
+                </div>
+                <div class="col-md-8">
+                    <label class="cpc-lbl">Concepto</label>
+                    <InputText class="form-control form-control-sm cpc-inp" @bind-Value="nuevoCargoManual.Concepto" />
+                </div>
+                <div class="col-md-4">
+                    <label class="cpc-lbl">Notas</label>
+                    <InputText class="form-control form-control-sm cpc-inp" @bind-Value="nuevoCargoManual.Notas" />
+                </div>
+                <div class="col-md-4">
+                    <label class="cpc-lbl">Buscar nota</label>
+                    <input class="form-control form-control-sm cpc-inp" type="text" placeholder="Número de nota..." value="@textoBusquedaNotaCargo" @oninput="OnBusquedaNotaInput" />
+                </div>
+                <div class="col-md-8">
+                    <label class="cpc-lbl">Nota relacionada</label>
+                    <select class="form-select form-select-sm cpc-inp" value="@notaCargoIdTexto" @onchange="OnNotaCargoChanged">
+                        <option value="">Sin nota relacionada</option>
+                        @foreach (var nota in notasCargoDisponiblesFiltradas)
+                        {
+                            <option value="@nota.Id.ToString()">@nota.Etiqueta</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button type="button" class="btn cpc-btn-action btn-sm" @onclick="GuardarCargoManualAsync">Guardar cargo</button>
+                    <button type="button" class="btn cpc-btn-secondary btn-sm" @onclick="CancelarCargoManual">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="cpc-report-card">
+        <div class="cpc-report-head">
+            <div>
+                <div class="cpc-report-title"><i class="bi bi-bar-chart-line me-1"></i>Reportes contables de cuentas por cobrar</div>
+                <div class="cpc-subtitle">Antigüedad de cartera, estado de cuenta por cliente y salida en PDF.</div>
+            </div>
+            <button type="button" class="btn cpc-btn-action btn-sm" @onclick="ExportarReportePdfAsync" disabled="@(exportandoPdf || reporteAntiguedad.Count == 0)">
+                <i class="bi bi-filetype-pdf me-1"></i>@(exportandoPdf ? "Generando PDF..." : "Exportar PDF")
+            </button>
+        </div>
+
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-3">
+                <label class="cpc-lbl">Desde</label>
+                <InputDate class="form-control form-control-sm cpc-inp" @bind-Value="reporteDesde" @bind-Value:after="AplicarFiltros" />
+            </div>
+            <div class="col-md-3">
+                <label class="cpc-lbl">Hasta</label>
+                <InputDate class="form-control form-control-sm cpc-inp" @bind-Value="reporteHasta" @bind-Value:after="AplicarFiltros" />
+            </div>
+            <div class="col-md-3">
+                <label class="cpc-lbl">Cliente para estado de cuenta</label>
+                <InputSelect class="form-select form-select-sm cpc-inp" @bind-Value="reporteClienteIdTexto" @bind-Value:after="AplicarFiltros">
+                    <option value="">Todos</option>
+                    @foreach (var cliente in clientesDisponiblesReporte)
+                    {
+                        <option value="@cliente.Id.ToString()">@cliente.Nombre</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="button" class="btn cpc-btn-secondary btn-sm" @onclick="LimpiarReporte">Limpiar</button>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-xl-7">
+                <div class="cpc-report-panel h-100">
+                    <div class="cpc-section-title">Antigüedad por cliente</div>
+                    <div class="table-responsive">
+                        <table class="cpc-report-table">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th class="text-end">0-30</th>
+                                    <th class="text-end">31-60</th>
+                                    <th class="text-end">61-90</th>
+                                    <th class="text-end">+90</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (reporteAntiguedad.Count == 0)
+                                {
+                                    <tr><td colspan="6" class="text-center text-muted py-3">No hay saldos para el período seleccionado.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in reporteAntiguedad)
+                                    {
+                                        <tr>
+                                            <td class="fw-semibold">@item.ClienteNombre</td>
+                                            <td class="text-end">@item.Rango0a30.ToString("C2")</td>
+                                            <td class="text-end">@item.Rango31a60.ToString("C2")</td>
+                                            <td class="text-end">@item.Rango61a90.ToString("C2")</td>
+                                            <td class="text-end @(item.RangoMas90 > 0 ? "text-danger fw-semibold" : string.Empty)">@item.RangoMas90.ToString("C2")</td>
+                                            <td class="text-end fw-bold">@item.Total.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-5">
+                <div class="cpc-report-panel h-100">
+                    <div class="cpc-section-title">Gráfica de antigüedad</div>
+                    @foreach (var bucket in graficaAntiguedad)
+                    {
+                        <div class="cpc-chart-row">
+                            <div class="cpc-chart-label">@bucket.Titulo</div>
+                            <div class="cpc-chart-track">
+                                <div class="cpc-chart-bar" style="width:@bucket.Porcentaje%; background:@bucket.Color"></div>
+                            </div>
+                            <div class="cpc-chart-value">@bucket.Monto.ToString("C2")</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="cpc-report-panel">
+                    <div class="cpc-section-title">Estado de cuenta</div>
+                    <div class="cpc-state-head">
+                        <div><strong>Cliente:</strong> @estadoCuentaClienteNombre</div>
+                        <div><strong>Saldo inicial:</strong> @estadoCuentaSaldoInicial.ToString("C2")</div>
+                        <div><strong>Saldo final:</strong> @estadoCuentaSaldoFinal.ToString("C2")</div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="cpc-report-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Tipo</th>
+                                    <th>Referencia</th>
+                                    <th>Concepto</th>
+                                    <th class="text-end">Cargo</th>
+                                    <th class="text-end">Abono</th>
+                                    <th class="text-end">Saldo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (estadoCuentaMovimientos.Count == 0)
+                                {
+                                    <tr><td colspan="7" class="text-center text-muted py-3">Selecciona un cliente con movimientos para ver su estado de cuenta.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in estadoCuentaMovimientos)
+                                    {
+                                        <tr>
+                                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td>@item.Tipo</td>
+                                            <td>@item.Referencia</td>
+                                            <td>@item.Concepto</td>
+                                            <td class="text-end">@(item.Cargo == 0 ? "—" : item.Cargo.ToString("C2"))</td>
+                                            <td class="text-end text-success">@(item.Abono == 0 ? "—" : item.Abono.ToString("C2"))</td>
+                                            <td class="text-end fw-semibold">@item.Saldo.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="cpc-report-panel">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <div class="cpc-section-title mb-0">Reporte de movimientos</div>
+                        <div class="small text-muted">Vista global o por cliente con cargos y cobros cronológicos.</div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="cpc-report-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Cliente</th>
+                                    <th>Tipo</th>
+                                    <th>Referencia</th>
+                                    <th>Concepto</th>
+                                    <th class="text-end">Cargo</th>
+                                    <th class="text-end">Cobro</th>
+                                    <th class="text-end">Saldo cliente</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (reporteMovimientos.Count == 0)
+                                {
+                                    <tr><td colspan="8" class="text-center text-muted py-3">No hay movimientos para los filtros seleccionados.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in reporteMovimientos)
+                                    {
+                                        <tr>
+                                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td>
+                                                <div class="fw-semibold">@item.ClienteNombre</div>
+                                            </td>
+                                            <td>@item.Tipo</td>
+                                            <td>@item.Referencia</td>
+                                            <td>@item.Concepto</td>
+                                            <td class="text-end">@(item.Cargo == 0 ? "—" : item.Cargo.ToString("C2"))</td>
+                                            <td class="text-end text-success">@(item.Abono == 0 ? "—" : item.Abono.ToString("C2"))</td>
+                                            <td class="text-end fw-semibold">@item.Saldo.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     @if (clientesAgrupados == null)
@@ -293,6 +566,23 @@
     .cpc-search-box input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); outline: none; }
     .cpc-select { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem; background: #fff; color: #1e293b; height: 28px; cursor: pointer; }
 
+    .cpc-report-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: .85rem; margin-bottom: .85rem; box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .cpc-report-head { display: flex; justify-content: space-between; align-items: start; gap: .75rem; margin-bottom: .65rem; flex-wrap: wrap; }
+    .cpc-report-title { font-size: .9rem; font-weight: 800; color: #1e3a5f; }
+    .cpc-report-panel { border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; padding: .65rem; }
+    .cpc-report-table { width: 100%; border-collapse: collapse; font-size: .72rem; }
+    .cpc-report-table thead th { background: #e2e8f0; color: #334155; font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: .35rem .45rem; border-bottom: 1px solid #cbd5e1; }
+    .cpc-report-table tbody td { background: #fff; padding: .38rem .45rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .cpc-chart-row { display: grid; grid-template-columns: 56px 1fr 90px; align-items: center; gap: .5rem; margin-bottom: .55rem; }
+    .cpc-chart-label { font-size: .68rem; font-weight: 700; color: #475569; }
+    .cpc-chart-track { height: 14px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+    .cpc-chart-bar { height: 100%; border-radius: 999px; }
+    .cpc-chart-value { text-align: right; font-size: .7rem; font-weight: 700; color: #0f172a; }
+    .cpc-state-head { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .72rem; color: #334155; margin-bottom: .5rem; }
+    .cpc-btn-secondary { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; border-radius: 7px; font-size: .72rem; font-weight: 600; }
+    .cpc-alert-danger { background: #fee2e2; color: #991b1b; padding: .45rem .75rem; border-radius: 8px; font-size: .75rem; font-weight: 600; }
+    .cpc-alert-ok { background: #d1fae5; color: #065f46; padding: .45rem .75rem; border-radius: 8px; font-size: .75rem; font-weight: 600; }
+
     /* ── Empty state ── */
     .cpc-empty { display: flex; align-items: center; justify-content: center; gap: .5rem; padding: 3rem 1rem; color: #94a3b8; font-size: .82rem; background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; }
 
@@ -379,11 +669,33 @@
     private string ordenarPor = "mayor_adeudo";
     private string textoBusqueda = "";
     private string? errorPago;
+    private bool mostrarCargoManualForm;
+    private string cargoManualClienteIdTexto = string.Empty;
+    private string notaCargoIdTexto = string.Empty;
+    private string textoBusquedaNotaCargo = string.Empty;
+    private string? errorCargoManual;
+    private string? okCargoManual;
+    private DateTime reporteDesde = DateTime.Today.AddMonths(-1);
+    private DateTime reporteHasta = DateTime.Today;
+    private string reporteClienteIdTexto = string.Empty;
+    private bool exportandoPdf;
 
     private decimal totalCobrado;
     private decimal totalPendiente;
     private int clientesConAdeudo;
     private decimal montoVencido;
+    private List<ClienteReporteItem> clientesDisponiblesReporte = [];
+    private List<AntiguedadReporteItem> reporteAntiguedad = [];
+    private List<GraficaAntiguedadItem> graficaAntiguedad = [];
+    private List<EstadoCuentaMovimientoItem> estadoCuentaMovimientos = [];
+    private List<MovimientoReporteItem> reporteMovimientos = [];
+    private string estadoCuentaClienteNombre = "Sin selección";
+    private decimal estadoCuentaSaldoInicial;
+    private decimal estadoCuentaSaldoFinal;
+    private CargoManualCxC nuevoCargoManual = new() { FechaCargo = DateTime.Today, Tipo = CargoManualCxCTipo.Ajuste };
+    private List<CargoManualCxC> cargosManuales = [];
+    private List<NotaCargoOption> notasCargoDisponibles = [];
+    private List<NotaCargoOption> notasCargoDisponiblesFiltradas = [];
 
     private DateTime nuevoPagoFecha = DateTime.Now;
     private decimal nuevoPagoMonto;
@@ -424,6 +736,13 @@
             .AsNoTracking()
             .Where(p => p.IsActive && p.NotaEntregaId.HasValue)
             .Where(p => !DbContext.PagosAplicacionDocumento.Any(a => a.PagoRecibidoId == p.Id && a.IsActive))
+            .ToListAsync();
+
+        cargosManuales = await DbContext.CargosManualesCxC
+            .AsNoTracking()
+            .Include(c => c.Cliente)
+            .Where(c => c.IsActive)
+            .OrderByDescending(c => c.FechaCargo)
             .ToListAsync();
 
         pagosPorDocumento = aplicaciones
@@ -577,12 +896,18 @@
             .ToList();
 
         clientesConAdeudo = todosClientes.Count(c => c.Saldo > 0);
+        clientesDisponiblesReporte = todosClientes
+            .OrderBy(c => c.ClienteNombre)
+            .Select(c => new ClienteReporteItem { Id = c.ClienteId, Nombre = c.ClienteNombre })
+            .ToList();
 
         AplicarFiltros();
     }
 
     private void AplicarFiltros()
     {
+        ConstruirReportes();
+
         var lista = todosClientes.AsEnumerable();
 
         lista = filtro switch
@@ -607,6 +932,441 @@
         };
 
         clientesAgrupados = lista.ToList();
+    }
+
+    private void ConstruirReportes()
+    {
+        var clienteIdFiltro = Guid.TryParse(reporteClienteIdTexto, out var clienteId) ? clienteId : Guid.Empty;
+
+        var documentos = todosClientes
+            .SelectMany(c => c.Facturas)
+            .Where(f => !reporteDesde.Date.Equals(default(DateTime)) ? f.FechaFactura.Date >= reporteDesde.Date : true)
+            .Where(f => !reporteHasta.Date.Equals(default(DateTime)) ? f.FechaFactura.Date <= reporteHasta.Date : true)
+            .Where(f => clienteIdFiltro == Guid.Empty || f.ClienteId == clienteIdFiltro)
+            .ToList();
+
+        reporteAntiguedad = documentos
+            .GroupBy(f => new { f.ClienteId, f.ClienteNombre })
+            .Select(g => new AntiguedadReporteItem
+            {
+                ClienteId = g.Key.ClienteId,
+                ClienteNombre = g.Key.ClienteNombre,
+                Rango0a30 = g.Where(x => ObtenerSaldoDocumento(x) > 0 && x.DiasAtraso <= 30).Sum(ObtenerSaldoDocumento),
+                Rango31a60 = g.Where(x => ObtenerSaldoDocumento(x) > 0 && x.DiasAtraso is >= 31 and <= 60).Sum(ObtenerSaldoDocumento),
+                Rango61a90 = g.Where(x => ObtenerSaldoDocumento(x) > 0 && x.DiasAtraso is >= 61 and <= 90).Sum(ObtenerSaldoDocumento),
+                RangoMas90 = g.Where(x => ObtenerSaldoDocumento(x) > 0 && x.DiasAtraso > 90).Sum(ObtenerSaldoDocumento)
+            })
+            .Where(x => x.Total > 0)
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        var bucket0a30 = reporteAntiguedad.Sum(x => x.Rango0a30);
+        var bucket31a60 = reporteAntiguedad.Sum(x => x.Rango31a60);
+        var bucket61a90 = reporteAntiguedad.Sum(x => x.Rango61a90);
+        var bucketMas90 = reporteAntiguedad.Sum(x => x.RangoMas90);
+        var maximo = new[] { bucket0a30, bucket31a60, bucket61a90, bucketMas90 }.Max();
+        if (maximo <= 0) maximo = 1;
+
+        graficaAntiguedad =
+        [
+            new() { Titulo = "0-30", Monto = bucket0a30, Color = "#10b981", Porcentaje = (double)(bucket0a30 / maximo * 100m) },
+            new() { Titulo = "31-60", Monto = bucket31a60, Color = "#f59e0b", Porcentaje = (double)(bucket31a60 / maximo * 100m) },
+            new() { Titulo = "61-90", Monto = bucket61a90, Color = "#f97316", Porcentaje = (double)(bucket61a90 / maximo * 100m) },
+            new() { Titulo = "+90", Monto = bucketMas90, Color = "#ef4444", Porcentaje = (double)(bucketMas90 / maximo * 100m) }
+        ];
+
+        ConstruirEstadoCuenta(documentos, clienteIdFiltro);
+        ConstruirReporteMovimientos(documentos, clienteIdFiltro);
+    }
+
+    private void ConstruirEstadoCuenta(List<FacturaViewModel> documentos, Guid clienteIdFiltro)
+    {
+        estadoCuentaMovimientos = [];
+        estadoCuentaSaldoInicial = 0;
+        estadoCuentaSaldoFinal = 0;
+
+        if (clienteIdFiltro == Guid.Empty)
+        {
+            estadoCuentaClienteNombre = "Selecciona un cliente";
+            return;
+        }
+
+        estadoCuentaClienteNombre = clientesDisponiblesReporte.FirstOrDefault(x => x.Id == clienteIdFiltro)?.Nombre ?? "Cliente";
+
+        var movimientos = new List<EstadoCuentaMovimientoItem>();
+        decimal saldo = 0;
+
+        foreach (var documento in documentos.Where(x => x.ClienteId == clienteIdFiltro).OrderBy(x => x.FechaFactura).ThenBy(x => x.NumeroFactura))
+        {
+            var saldoDocumento = ObtenerSaldoDocumento(documento);
+            saldo += documento.Total;
+            movimientos.Add(new EstadoCuentaMovimientoItem
+            {
+                Fecha = documento.FechaFactura,
+                Tipo = documento.EsNotaEntrega ? "Nota" : "Factura",
+                Referencia = documento.NumeroFactura,
+                Concepto = documento.NumeroPedido ?? documento.NumeroNota ?? documento.EtiquetaTipoDocumento,
+                Cargo = documento.Total,
+                Abono = 0,
+                Saldo = saldo
+            });
+
+            foreach (var pago in pagosPorDocumento.GetValueOrDefault(documento.FacturaId, []).OrderBy(x => x.FechaPago))
+            {
+                saldo -= pago.ImporteAplicado;
+                movimientos.Add(new EstadoCuentaMovimientoItem
+                {
+                    Fecha = pago.FechaPago,
+                    Tipo = "Pago",
+                    Referencia = pago.Referencia ?? GetFormaPagoLabel(pago.FormaPagoSat),
+                    Concepto = documento.NumeroFactura,
+                    Cargo = 0,
+                    Abono = pago.ImporteAplicado,
+                    Saldo = saldo
+                });
+            }
+        }
+
+        foreach (var cargo in cargosManuales.Where(x => x.ClienteId == clienteIdFiltro).OrderBy(x => x.FechaCargo))
+        {
+            saldo += cargo.Monto;
+            movimientos.Add(new EstadoCuentaMovimientoItem
+            {
+                Fecha = cargo.FechaCargo,
+                Tipo = cargo.Tipo.ToString(),
+                Referencia = cargo.Referencia,
+                Concepto = cargo.Concepto,
+                Cargo = cargo.Monto,
+                Abono = 0,
+                Saldo = saldo
+            });
+        }
+
+        estadoCuentaMovimientos = movimientos.OrderBy(x => x.Fecha).ThenBy(x => x.Tipo).ToList();
+        estadoCuentaSaldoFinal = estadoCuentaMovimientos.LastOrDefault()?.Saldo ?? 0;
+    }
+
+    private void ConstruirReporteMovimientos(List<FacturaViewModel> documentos, Guid clienteIdFiltro)
+    {
+        var movimientos = new List<MovimientoReporteItem>();
+        var movimientosPorCliente = new Dictionary<Guid, decimal>();
+
+        foreach (var documento in documentos
+            .Where(x => clienteIdFiltro == Guid.Empty || x.ClienteId == clienteIdFiltro)
+            .OrderBy(x => x.FechaFactura)
+            .ThenBy(x => x.ClienteNombre)
+            .ThenBy(x => x.NumeroFactura))
+        {
+            movimientosPorCliente.TryAdd(documento.ClienteId, 0m);
+            movimientosPorCliente[documento.ClienteId] += documento.Total;
+
+            movimientos.Add(new MovimientoReporteItem
+            {
+                Fecha = documento.FechaFactura,
+                ClienteNombre = documento.ClienteNombre,
+                Tipo = documento.EsNotaEntrega ? "Cargo nota" : "Cargo factura",
+                Referencia = documento.NumeroFactura,
+                Concepto = ConstruirConceptoMovimiento(documento),
+                Cargo = documento.Total,
+                Abono = 0,
+                Saldo = movimientosPorCliente[documento.ClienteId]
+            });
+
+            foreach (var pago in pagosPorDocumento.GetValueOrDefault(documento.FacturaId, []).OrderBy(x => x.FechaPago))
+            {
+                movimientosPorCliente[documento.ClienteId] -= pago.ImporteAplicado;
+
+                movimientos.Add(new MovimientoReporteItem
+                {
+                    Fecha = pago.FechaPago,
+                    ClienteNombre = documento.ClienteNombre,
+                    Tipo = "Cobro",
+                    Referencia = pago.Referencia ?? GetFormaPagoLabel(pago.FormaPagoSat),
+                    Concepto = string.IsNullOrWhiteSpace(pago.Notas)
+                        ? $"Cobro aplicado a {documento.NumeroFactura}"
+                        : pago.Notas!,
+                    Cargo = 0,
+                    Abono = pago.ImporteAplicado,
+                    Saldo = movimientosPorCliente[documento.ClienteId]
+                });
+            }
+        }
+
+        foreach (var cargo in cargosManuales
+            .Where(x => clienteIdFiltro == Guid.Empty || x.ClienteId == clienteIdFiltro)
+            .OrderBy(x => x.FechaCargo)
+            .ThenBy(x => x.Cliente.RazonSocial))
+        {
+            movimientosPorCliente.TryAdd(cargo.ClienteId, 0m);
+            movimientosPorCliente[cargo.ClienteId] += cargo.Monto;
+
+            movimientos.Add(new MovimientoReporteItem
+            {
+                Fecha = cargo.FechaCargo,
+                ClienteNombre = cargo.Cliente.RazonSocial,
+                Tipo = cargo.Tipo.ToString(),
+                Referencia = cargo.Referencia,
+                Concepto = cargo.Concepto,
+                Cargo = cargo.Monto,
+                Abono = 0,
+                Saldo = movimientosPorCliente[cargo.ClienteId]
+            });
+        }
+
+        reporteMovimientos = movimientos
+            .OrderBy(x => x.Fecha)
+            .ThenBy(x => x.ClienteNombre)
+            .ThenBy(x => x.Tipo)
+            .ToList();
+    }
+
+    private static string ConstruirConceptoMovimiento(FacturaViewModel documento)
+    {
+        var conceptoBase = documento.NumeroPedido ?? documento.NumeroNota ?? documento.EtiquetaTipoDocumento;
+        if (!string.IsNullOrWhiteSpace(conceptoBase) && conceptoBase.Contains("garant", StringComparison.OrdinalIgnoreCase))
+            return conceptoBase;
+
+        return conceptoBase;
+    }
+
+    private decimal ObtenerSaldoDocumento(FacturaViewModel documento)
+        => Math.Max(0, documento.Total - pagosPorDocumento.GetValueOrDefault(documento.FacturaId, []).Sum(x => x.ImporteAplicado));
+
+    private void LimpiarReporte()
+    {
+        reporteDesde = DateTime.Today.AddMonths(-1);
+        reporteHasta = DateTime.Today;
+        reporteClienteIdTexto = string.Empty;
+        AplicarFiltros();
+    }
+
+    private void MostrarFormularioCargo()
+    {
+        mostrarCargoManualForm = true;
+        cargoManualClienteIdTexto = string.Empty;
+        notaCargoIdTexto = string.Empty;
+        textoBusquedaNotaCargo = string.Empty;
+        errorCargoManual = null;
+        okCargoManual = null;
+        notasCargoDisponibles = [];
+        notasCargoDisponiblesFiltradas = [];
+        nuevoCargoManual = new CargoManualCxC { FechaCargo = DateTime.Today, Tipo = CargoManualCxCTipo.Ajuste };
+    }
+
+    private void CancelarCargoManual()
+    {
+        mostrarCargoManualForm = false;
+        cargoManualClienteIdTexto = string.Empty;
+        notaCargoIdTexto = string.Empty;
+        textoBusquedaNotaCargo = string.Empty;
+        errorCargoManual = null;
+        okCargoManual = null;
+    }
+
+    private async Task CargarNotasCargoManualAsync()
+    {
+        notaCargoIdTexto = string.Empty;
+        textoBusquedaNotaCargo = string.Empty;
+        nuevoCargoManual.NotaEntregaId = null;
+        errorCargoManual = null;
+        okCargoManual = null;
+
+        if (!Guid.TryParse(cargoManualClienteIdTexto, out var clienteId) || clienteId == Guid.Empty)
+        {
+            notasCargoDisponibles = [];
+            notasCargoDisponiblesFiltradas = [];
+            return;
+        }
+
+        notasCargoDisponibles = await DbContext.NotasEntrega
+            .AsNoTracking()
+            .Where(n => n.IsActive && n.ClienteId == clienteId && n.Estatus != NotaEntregaEstatus.Cancelada)
+            .OrderByDescending(n => n.FechaNota)
+            .Select(n => new NotaCargoOption
+            {
+                Id = n.Id,
+                NumeroNota = n.NumeroNota,
+                Fecha = n.FechaNota,
+                Total = n.Total,
+                Etiqueta = $"{n.NumeroNota} · {n.FechaNota:dd/MM/yyyy} · {n.Total:C2}"
+            })
+            .ToListAsync();
+
+        notasCargoDisponiblesFiltradas = notasCargoDisponibles.ToList();
+    }
+
+    private void FiltrarNotasCargo()
+    {
+        if (string.IsNullOrWhiteSpace(textoBusquedaNotaCargo))
+        {
+            notasCargoDisponiblesFiltradas = notasCargoDisponibles.ToList();
+            return;
+        }
+
+        var texto = textoBusquedaNotaCargo.Trim();
+        notasCargoDisponiblesFiltradas = notasCargoDisponibles
+            .Where(n => n.NumeroNota.Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || n.Etiqueta.Contains(texto, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private void OnBusquedaNotaInput(ChangeEventArgs args)
+    {
+        textoBusquedaNotaCargo = args.Value?.ToString() ?? string.Empty;
+        FiltrarNotasCargo();
+    }
+
+    private void OnNotaCargoChanged(ChangeEventArgs args)
+    {
+        notaCargoIdTexto = args.Value?.ToString() ?? string.Empty;
+        SeleccionarNotaCargo();
+    }
+
+    private void SeleccionarNotaCargo()
+    {
+        nuevoCargoManual.NotaEntregaId = Guid.TryParse(notaCargoIdTexto, out var notaId) && notaId != Guid.Empty
+            ? notaId
+            : null;
+
+        if (nuevoCargoManual.NotaEntregaId.HasValue)
+        {
+            var nota = notasCargoDisponibles.FirstOrDefault(x => x.Id == nuevoCargoManual.NotaEntregaId.Value);
+            if (nota != null && string.IsNullOrWhiteSpace(nuevoCargoManual.Referencia))
+                nuevoCargoManual.Referencia = nota.NumeroNota;
+        }
+    }
+
+    private async Task GuardarCargoManualAsync()
+    {
+        errorCargoManual = null;
+        okCargoManual = null;
+
+        if (!Guid.TryParse(cargoManualClienteIdTexto, out var clienteId) || clienteId == Guid.Empty)
+        {
+            errorCargoManual = "Selecciona un cliente para registrar el cargo.";
+            return;
+        }
+
+        if (nuevoCargoManual.Monto <= 0 || string.IsNullOrWhiteSpace(nuevoCargoManual.Referencia) || string.IsNullOrWhiteSpace(nuevoCargoManual.Concepto))
+        {
+            errorCargoManual = "Captura monto, referencia y concepto para guardar el cargo.";
+            return;
+        }
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out var empresaId);
+        if (empresaId == Guid.Empty)
+        {
+            errorCargoManual = "No hay empresa activa para guardar el cargo.";
+            return;
+        }
+
+        nuevoCargoManual.Id = Guid.NewGuid();
+        nuevoCargoManual.EmpresaId = empresaId;
+        nuevoCargoManual.ClienteId = clienteId;
+        nuevoCargoManual.IsActive = true;
+        nuevoCargoManual.CreatedAt = DateTime.UtcNow;
+
+        try
+        {
+            DbContext.CargosManualesCxC.Add(nuevoCargoManual);
+            await DbContext.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorCargoManual = ex.InnerException?.Message ?? ex.Message;
+            return;
+        }
+
+        okCargoManual = "Cargo guardado correctamente.";
+        nuevoCargoManual = new CargoManualCxC { FechaCargo = DateTime.Today, Tipo = CargoManualCxCTipo.Ajuste };
+        notaCargoIdTexto = string.Empty;
+        textoBusquedaNotaCargo = string.Empty;
+        notasCargoDisponibles = [];
+        notasCargoDisponiblesFiltradas = [];
+        cargoManualClienteIdTexto = string.Empty;
+        mostrarCargoManualForm = false;
+        await CargarDatos();
+    }
+
+    private async Task ExportarReportePdfAsync()
+    {
+        if (reporteAntiguedad.Count == 0)
+            return;
+
+        exportandoPdf = true;
+        try
+        {
+            var pdf = await CuentasPorCobrarPdfService.GenerateReportePdfAsync(new CuentasPorCobrarPdfReport
+            {
+                Empresa = "Zenith",
+                Desde = reporteDesde,
+                Hasta = reporteHasta,
+                ClienteFiltro = string.IsNullOrWhiteSpace(reporteClienteIdTexto) ? "Todos" : estadoCuentaClienteNombre,
+                TotalPendiente = totalPendiente,
+                TotalCobrado = totalCobrado,
+                MontoVencido = montoVencido,
+                ClientesConAdeudo = clientesConAdeudo,
+                Bucket0a30 = graficaAntiguedad.FirstOrDefault(x => x.Titulo == "0-30")?.Monto ?? 0,
+                Bucket31a60 = graficaAntiguedad.FirstOrDefault(x => x.Titulo == "31-60")?.Monto ?? 0,
+                Bucket61a90 = graficaAntiguedad.FirstOrDefault(x => x.Titulo == "61-90")?.Monto ?? 0,
+                BucketMas90 = graficaAntiguedad.FirstOrDefault(x => x.Titulo == "+90")?.Monto ?? 0,
+                AntiguedadClientes = reporteAntiguedad.Select(x => new CuentasPorCobrarAntiguedadPdfItem
+                {
+                    Cliente = x.ClienteNombre,
+                    Rango0a30 = x.Rango0a30,
+                    Rango31a60 = x.Rango31a60,
+                    Rango61a90 = x.Rango61a90,
+                    RangoMas90 = x.RangoMas90
+                }).ToList(),
+                DocumentosVencidos = todosClientes.SelectMany(x => x.Facturas)
+                    .Where(x => ObtenerSaldoDocumento(x) > 0 && x.DiasAtraso > 0)
+                    .OrderByDescending(x => x.DiasAtraso)
+                    .Take(40)
+                    .Select(x => new CuentasPorCobrarVencidaPdfItem
+                    {
+                        Cliente = x.ClienteNombre,
+                        Documento = x.NumeroFactura,
+                        FechaEmision = x.FechaFactura,
+                        FechaVencimiento = x.FechaVencimiento,
+                        DiasAtraso = x.DiasAtraso,
+                        Saldo = ObtenerSaldoDocumento(x)
+                    }).ToList(),
+                EstadoCuenta = new CuentasPorCobrarEstadoCuentaPdf
+                {
+                    Cliente = estadoCuentaClienteNombre,
+                    SaldoInicial = estadoCuentaSaldoInicial,
+                    SaldoFinal = estadoCuentaSaldoFinal,
+                    Movimientos = estadoCuentaMovimientos.Select(x => new CuentasPorCobrarEstadoCuentaMovimientoPdfItem
+                    {
+                        Fecha = x.Fecha,
+                        Tipo = x.Tipo,
+                        Referencia = x.Referencia,
+                        Concepto = x.Concepto,
+                        Cargo = x.Cargo,
+                        Abono = x.Abono,
+                        Saldo = x.Saldo
+                    }).ToList()
+                },
+                Movimientos = reporteMovimientos.Select(x => new CuentasPorCobrarMovimientoPdfItem
+                {
+                    Fecha = x.Fecha,
+                    Cliente = x.ClienteNombre,
+                    Tipo = x.Tipo,
+                    Referencia = x.Referencia,
+                    Concepto = x.Concepto,
+                    Cargo = x.Cargo,
+                    Abono = x.Abono,
+                    Saldo = x.Saldo
+                }).ToList()
+            });
+
+            await JS.InvokeVoidAsync("mundoVsAuth.downloadFileFromBase64", $"cxc-reporte-{reporteDesde:yyyyMMdd}-{reporteHasta:yyyyMMdd}.pdf", Convert.ToBase64String(pdf), "application/pdf");
+        }
+        finally
+        {
+            exportandoPdf = false;
+        }
     }
 
     private void ToggleCliente(Guid clienteId)
@@ -924,5 +1684,62 @@
         public decimal Saldo { get; set; }
         public int MayorDiasAtraso { get; set; }
         public List<FacturaViewModel> Facturas { get; set; } = [];
+    }
+
+    private class ClienteReporteItem
+    {
+        public Guid Id { get; set; }
+        public string Nombre { get; set; } = string.Empty;
+    }
+
+    private class AntiguedadReporteItem
+    {
+        public Guid ClienteId { get; set; }
+        public string ClienteNombre { get; set; } = string.Empty;
+        public decimal Rango0a30 { get; set; }
+        public decimal Rango31a60 { get; set; }
+        public decimal Rango61a90 { get; set; }
+        public decimal RangoMas90 { get; set; }
+        public decimal Total => Rango0a30 + Rango31a60 + Rango61a90 + RangoMas90;
+    }
+
+    private class GraficaAntiguedadItem
+    {
+        public string Titulo { get; set; } = string.Empty;
+        public decimal Monto { get; set; }
+        public string Color { get; set; } = "#3b82f6";
+        public double Porcentaje { get; set; }
+    }
+
+    private class EstadoCuentaMovimientoItem
+    {
+        public DateTime Fecha { get; set; }
+        public string Tipo { get; set; } = string.Empty;
+        public string Referencia { get; set; } = string.Empty;
+        public string Concepto { get; set; } = string.Empty;
+        public decimal Cargo { get; set; }
+        public decimal Abono { get; set; }
+        public decimal Saldo { get; set; }
+    }
+
+    private class MovimientoReporteItem
+    {
+        public DateTime Fecha { get; set; }
+        public string ClienteNombre { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string Referencia { get; set; } = string.Empty;
+        public string Concepto { get; set; } = string.Empty;
+        public decimal Cargo { get; set; }
+        public decimal Abono { get; set; }
+        public decimal Saldo { get; set; }
+    }
+
+    private class NotaCargoOption
+    {
+        public Guid Id { get; set; }
+        public string NumeroNota { get; set; } = string.Empty;
+        public DateTime Fecha { get; set; }
+        public decimal Total { get; set; }
+        public string Etiqueta { get; set; } = string.Empty;
     }
 }

@@ -52,6 +52,57 @@ public class NotaEntrega : BaseEntity
 
     public ICollection<NotaEntregaDetalle> Detalles { get; set; } = [];
     public ICollection<FacturaNotaEntrega> FacturasRelacionadas { get; set; } = [];
+    public ICollection<NotaEntregaPedido> PedidosRelacionados { get; set; } = [];
+    public ICollection<NotaEntregaAsignacion> Asignaciones { get; set; } = [];
+}
+
+public class NotaEntregaPedido : BaseEntity
+{
+    public Guid EmpresaId { get; set; }
+    public Empresa Empresa { get; set; } = null!;
+
+    public Guid NotaEntregaId { get; set; }
+    public NotaEntrega NotaEntrega { get; set; } = null!;
+
+    public Guid PedidoId { get; set; }
+    public Pedido Pedido { get; set; } = null!;
+
+    public int Orden { get; set; }
+    public bool EsPrincipal { get; set; }
+}
+
+public enum NotaEntregaAsignacionOrigenTipo
+{
+    Producto = 1,
+    Servicio = 2
+}
+
+public class NotaEntregaAsignacion : BaseEntity
+{
+    public Guid EmpresaId { get; set; }
+    public Empresa Empresa { get; set; } = null!;
+
+    public Guid NotaEntregaId { get; set; }
+    public NotaEntrega NotaEntrega { get; set; } = null!;
+
+    public Guid PedidoId { get; set; }
+    public Pedido Pedido { get; set; } = null!;
+
+    public Guid? PedidoDetalleId { get; set; }
+    public PedidoDetalle? PedidoDetalle { get; set; }
+
+    public Guid? PedidoDetalleTallaId { get; set; }
+    public PedidoDetalleTalla? PedidoDetalleTalla { get; set; }
+
+    public Guid? PedidoConceptoId { get; set; }
+    public PedidoConcepto? PedidoConcepto { get; set; }
+
+    public NotaEntregaAsignacionOrigenTipo TipoOrigen { get; set; } = NotaEntregaAsignacionOrigenTipo.Producto;
+    public decimal Cantidad { get; set; }
+    public decimal CantidadFgTomada { get; set; }
+    public decimal PrecioUnitario { get; set; }
+    public decimal Importe { get; set; }
+    public bool EsParcial { get; set; }
 }
 
 public class NotaEntregaDetalle : BaseEntity
@@ -270,6 +321,39 @@ public class PagoAplicacionDocumento : BaseEntity
     public decimal ImporteAplicado { get; set; }
     public decimal SaldoAnterior { get; set; }
     public decimal SaldoInsoluto { get; set; }
+}
+
+public enum CargoManualCxCTipo
+{
+    Ajuste = 1,
+    Garantia = 2,
+    NotaCargo = 3,
+    Otro = 4
+}
+
+public class CargoManualCxC : BaseEntity
+{
+    public Guid EmpresaId { get; set; }
+    public Empresa Empresa { get; set; } = null!;
+
+    public Guid ClienteId { get; set; }
+    public Cliente Cliente { get; set; } = null!;
+
+    public Guid? PedidoId { get; set; }
+    public Pedido? Pedido { get; set; }
+
+    public Guid? NotaEntregaId { get; set; }
+    public NotaEntrega? NotaEntrega { get; set; }
+
+    public Guid? FacturaId { get; set; }
+    public Factura? Factura { get; set; }
+
+    public CargoManualCxCTipo Tipo { get; set; } = CargoManualCxCTipo.Ajuste;
+    public DateTime FechaCargo { get; set; } = DateTime.UtcNow;
+    public string Referencia { get; set; } = string.Empty;
+    public string Concepto { get; set; } = string.Empty;
+    public decimal Monto { get; set; }
+    public string? Notas { get; set; }
 }
 
 public class ComplementoPago : BaseEntity

@@ -1,6 +1,7 @@
 @page "/serigrafia/pedidos"
 @using MundoVs.Core.Entities
 @using MundoVs.Core.Entities.Calzado
+@using MundoVs.Core.Entities.Inventario
 @using MundoVs.Core.Entities.Serigrafia
 @using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
@@ -13,6 +14,8 @@
 @inject IProductoClienteRepository ProductoClienteRepository
 @inject IRepository<TipoProceso> TipoProcesoRepository
 @inject IRepository<PedidoDetalle> PedidoDetalleRepository
+@inject INotaEntregaConsolidadaService NotaEntregaConsolidadaService
+@inject INotaEntregaPdfService NotaEntregaPdfService
 @inject CrmDbContext DbContext
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -29,10 +32,231 @@
             <h1 class="ps-title mb-1"><i class="bi bi-clipboard-check me-2"></i>Pedidos</h1>
             <p class="text-muted mb-0" style="font-size:.85rem">Gestión y seguimiento de pedidos</p>
         </div>
-        <button class="btn ps-btn-primary" @onclick="NuevoPedido">
-            <i class="bi bi-plus-circle me-1"></i> Nuevo Pedido
-        </button>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn ps-btn-secondary" @onclick="AbrirModalNotaConsolidada">
+                <i class="bi bi-journal-plus me-1"></i> Crear nota
+            </button>
+            <button class="btn ps-btn-primary" @onclick="NuevoPedido">
+                <i class="bi bi-plus-circle me-1"></i> Nuevo Pedido
+            </button>
+        </div>
     </div>
+
+    @if (modalNotaConsolidadaAbierto)
+    {
+        <div class="ps-modal-backdrop" @onclick="CerrarModalNotaConsolidada"></div>
+        <div class="ps-modal-card">
+            <div class="ps-form-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-journal-text fs-5"></i>
+                    <h5 class="mb-0">Nota consolidada por cliente</h5>
+                </div>
+                <button type="button" class="btn-close" @onclick="CerrarModalNotaConsolidada"></button>
+            </div>
+            <div class="p-3">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="ps-label">Cliente</label>
+                        <select class="form-select ps-input" value="@clienteNotaConsolidadaId" @onchange="OnClienteNotaConsolidadaChanged">
+                            <option value="">Seleccione cliente...</option>
+                            @if (clientes != null)
+                            {
+                                @foreach (var cliente in clientes)
+                                {
+                                    <option value="@cliente.Id">@cliente.RazonSocial</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="ps-filter-pill">@pedidosElegiblesNotaConsolidada.Count pedido(s) elegible(s)</div>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(errorNotaConsolidada))
+                {
+                    <div class="alert alert-danger py-2">@errorNotaConsolidada</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(okNotaConsolidada))
+                {
+                    <div class="alert alert-success py-2">@okNotaConsolidada</div>
+                }
+
+                @if (cargandoPedidosNotaConsolidada)
+                {
+                    <div class="text-muted">Cargando pedidos elegibles...</div>
+                }
+                else if (!pedidosElegiblesNotaConsolidada.Any())
+                {
+                    <div class="text-muted">Selecciona un cliente para ver pedidos elegibles.</div>
+                }
+                else
+                {
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:36px"></th>
+                                    <th>Pedido</th>
+                                    <th>Fecha</th>
+                                    <th class="text-end">Producto pendiente</th>
+                                    <th class="text-end">Servicios pendientes</th>
+                                    <th>Estatus</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in pedidosElegiblesNotaConsolidada)
+                                {
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input" checked="@pedidosNotaConsolidadaSeleccionados.Contains(item.PedidoId)" disabled="@(!item.Elegible)" @onchange="e => OnPedidoNotaConsolidadaChanged(item.PedidoId, e)" />
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold">@item.NumeroPedido</div>
+                                            <div class="small text-muted">@item.TotalPedido.ToString("C2")</div>
+                                        </td>
+                                        <td>@item.FechaPedido.ToString("dd/MM/yyyy")</td>
+                                        <td class="text-end">@item.CantidadProductoPendiente.ToString("N2")</td>
+                                        <td class="text-end">@item.CantidadServiciosPendientes.ToString("N0")</td>
+                                        <td>
+                                            @if (item.Elegible)
+                                            {
+                                                <span class="badge bg-success-subtle text-success-emphasis">Elegible</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger-subtle text-danger-emphasis">@item.MotivoBloqueo</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="alert alert-info py-2 mb-0">
+                        <strong>Seleccionados:</strong>
+                        @(pedidosNotaConsolidadaSeleccionados.Count == 0
+                            ? "Ninguno"
+                            : string.Join(", ", pedidosElegiblesNotaConsolidada.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId)).Select(p => p.NumeroPedido)))
+                    </div>
+
+                    @if (pedidosNotaConsolidadaSeleccionados.Any())
+                    {
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button type="button" class="btn btn-sm ps-btn-secondary" @onclick="TomarMaximoLineasNotaConsolidada">
+                                    <i class="bi bi-box-arrow-in-down-right me-1"></i>Tomar máximo
+                                </button>
+                                <button type="button" class="btn btn-sm ps-btn-secondary" @onclick="LimpiarLineasNotaConsolidada">
+                                    <i class="bi bi-eraser me-1"></i>Limpiar
+                                </button>
+                            </div>
+                            <div class="form-check form-switch">
+                                <InputCheckbox class="form-check-input" @bind-Value="aplicaIvaNotaConsolidada" />
+                                <label class="form-check-label">Aplica IVA</label>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive mt-3">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Pedido</th>
+                                        <th class="text-end">Pendiente producto</th>
+                                        <th class="text-end">Pendiente servicios</th>
+                                        <th class="text-end">Importe base</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in pedidosElegiblesNotaConsolidada.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId)))
+                                    {
+                                        <tr>
+                                            <td class="fw-semibold">@item.NumeroPedido</td>
+                                            <td class="text-end">@item.CantidadProductoPendiente.ToString("N2")</td>
+                                            <td class="text-end">@item.CantidadServiciosPendientes.ToString("N0")</td>
+                                            <td class="text-end">@item.TotalPedido.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td class="fw-bold">Resumen</td>
+                                        <td class="text-end fw-bold">@pedidosElegiblesNotaConsolidada.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId)).Sum(p => p.CantidadProductoPendiente).ToString("N2")</td>
+                                        <td class="text-end fw-bold">@pedidosElegiblesNotaConsolidada.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId)).Sum(p => p.CantidadServiciosPendientes).ToString("N0")</td>
+                                        <td class="text-end fw-bold">@pedidosElegiblesNotaConsolidada.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId)).Sum(p => p.TotalPedido).ToString("C2")</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-3">
+                            <button type="button" class="btn ps-btn-primary" @onclick="GenerarNotaConsolidadaInicialAsync" disabled="@guardandoNotaConsolidada">
+                                @if (guardandoNotaConsolidada)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                                }
+                                <i class="bi bi-save me-1"></i>Generar nota inicial
+                            </button>
+                        </div>
+
+                        @if (lineasNotaConsolidada.Any())
+                        {
+                            <div class="table-responsive mt-3">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Pedido</th>
+                                            <th>Tipo</th>
+                                            <th>Descripción</th>
+                                            <th>Talla</th>
+                                        <th class="text-end">FG disp.</th>
+                                        <th class="text-end">Máx.</th>
+                                        <th class="text-end">Cantidad</th>
+                                            <th class="text-end">Precio</th>
+                                            <th class="text-end">Importe</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var linea in lineasNotaConsolidada)
+                                        {
+                                            <tr>
+                                                <td class="fw-semibold">@linea.NumeroPedido</td>
+                                                <td>@linea.TipoOrigen</td>
+                                                <td>@linea.Descripcion</td>
+                                                <td>@(linea.Talla ?? "—")</td>
+                                                <td class="text-end">@(linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto ? linea.CantidadDisponibleFg.ToString("N2") : "—")</td>
+                                                <td class="text-end">@linea.CantidadMaximaTomable.ToString("N2")</td>
+                                                <td class="text-end" style="min-width:110px">
+                                                    <input type="number"
+                                                           step="0.01"
+                                                           min="0"
+                                                           max="@((linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto ? Math.Min(linea.CantidadMaximaTomable, linea.CantidadDisponibleFg) : linea.CantidadMaximaTomable).ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                                                           class="form-control form-control-sm text-end"
+                                                           value="@linea.CantidadSeleccionada.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                           @onchange="@(e => OnLineaNotaCantidadInput(linea, e))" />
+                                                </td>
+                                                <td class="text-end">@linea.PrecioUnitario.ToString("C2")</td>
+                                                <td class="text-end">@linea.Importe.ToString("C2")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="d-flex justify-content-end mt-3">
+                                <div class="ps-box" style="min-width:280px">
+                                    <div class="d-flex justify-content-between"><span>Subtotal</span><strong>@SubtotalNotaConsolidada.ToString("C2")</strong></div>
+                                    <div class="d-flex justify-content-between"><span>IVA</span><strong>@ImpuestosNotaConsolidada.ToString("C2")</strong></div>
+                                    <div class="d-flex justify-content-between border-top pt-2 mt-2"><span>Total</span><strong>@TotalNotaConsolidada.ToString("C2")</strong></div>
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+        </div>
+    }
 
     <!-- Filtros -->
     <div class="ps-card mb-4">
@@ -1316,6 +1540,8 @@
     .ps-action-edit:hover   { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
     .ps-action-delete { background: #fdecea; color: #c1121f; border-color: #f4b8b4; }
     .ps-action-delete:hover { background: #c1121f; color: #fff; border-color: #c1121f; }
+    .ps-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 1040; }
+    .ps-modal-card { position: fixed; top: 6vh; left: 50%; transform: translateX(-50%); width: min(980px, calc(100vw - 2rem)); max-height: 88vh; overflow: auto; background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.22); z-index: 1050; }
 
     @@media (max-width: 991px) {
         .ps-filter-hint { width: 100%; }
@@ -1365,6 +1591,19 @@
     private DateTime? inventarioComprobadoEn;
     private bool descontarInventarioMaterialesAlGuardar;
     private Guid _empresaId;
+    private bool modalNotaConsolidadaAbierto;
+    private string? clienteNotaConsolidadaId;
+    private bool cargandoPedidosNotaConsolidada;
+    private bool guardandoNotaConsolidada;
+    private bool aplicaIvaNotaConsolidada;
+    private string? errorNotaConsolidada;
+    private string? okNotaConsolidada;
+    private List<NotaEntregaPedidoElegibleVm> pedidosElegiblesNotaConsolidada = [];
+    private List<NotaEntregaLineaConsolidadaVm> lineasNotaConsolidada = [];
+    private HashSet<Guid> pedidosNotaConsolidadaSeleccionados = [];
+    private decimal SubtotalNotaConsolidada => Math.Round(lineasNotaConsolidada.Sum(l => l.Importe), 2);
+    private decimal ImpuestosNotaConsolidada => aplicaIvaNotaConsolidada ? Math.Round(SubtotalNotaConsolidada * 0.16m, 2) : 0m;
+    private decimal TotalNotaConsolidada => SubtotalNotaConsolidada + ImpuestosNotaConsolidada;
 
     // Pagos
     private List<PagoPedido> pagosDelPedido = new();
@@ -1408,6 +1647,317 @@
             .ThenBy(e => e.ApellidoPaterno)
             .ToListAsync();
         await CargarPedidos();
+    }
+
+    private void AbrirModalNotaConsolidada()
+    {
+        modalNotaConsolidadaAbierto = true;
+        clienteNotaConsolidadaId = null;
+        errorNotaConsolidada = null;
+        okNotaConsolidada = null;
+        pedidosElegiblesNotaConsolidada = [];
+        lineasNotaConsolidada = [];
+        pedidosNotaConsolidadaSeleccionados.Clear();
+        aplicaIvaNotaConsolidada = false;
+    }
+
+    private void CerrarModalNotaConsolidada()
+    {
+        modalNotaConsolidadaAbierto = false;
+        clienteNotaConsolidadaId = null;
+        errorNotaConsolidada = null;
+        okNotaConsolidada = null;
+        pedidosElegiblesNotaConsolidada = [];
+        lineasNotaConsolidada = [];
+        pedidosNotaConsolidadaSeleccionados.Clear();
+        aplicaIvaNotaConsolidada = false;
+    }
+
+    private async Task OnClienteNotaConsolidadaChanged(ChangeEventArgs e)
+    {
+        clienteNotaConsolidadaId = e.Value?.ToString();
+        pedidosNotaConsolidadaSeleccionados.Clear();
+        pedidosElegiblesNotaConsolidada = [];
+        lineasNotaConsolidada = [];
+        errorNotaConsolidada = null;
+        okNotaConsolidada = null;
+        aplicaIvaNotaConsolidada = false;
+
+        if (!Guid.TryParse(clienteNotaConsolidadaId, out var clienteId) || clienteId == Guid.Empty)
+            return;
+
+        cargandoPedidosNotaConsolidada = true;
+        try
+        {
+            pedidosElegiblesNotaConsolidada = (await NotaEntregaConsolidadaService.GetPedidosElegiblesAsync(clienteId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorNotaConsolidada = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargandoPedidosNotaConsolidada = false;
+        }
+    }
+
+    private void OnPedidoNotaConsolidadaChanged(Guid pedidoId, ChangeEventArgs e)
+    {
+        var seleccionado = e.Value is bool value && value;
+        if (seleccionado)
+            pedidosNotaConsolidadaSeleccionados.Add(pedidoId);
+        else
+            pedidosNotaConsolidadaSeleccionados.Remove(pedidoId);
+
+        lineasNotaConsolidada = [];
+    }
+
+    private void OnLineaNotaCantidadChanged(NotaEntregaLineaConsolidadaVm linea, decimal? value)
+    {
+        var cantidad = Math.Max(0m, value ?? 0m);
+        var maximoOperativo = linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto
+            ? Math.Min(linea.CantidadMaximaTomable, linea.CantidadDisponibleFg)
+            : linea.CantidadMaximaTomable;
+
+        linea.CantidadSeleccionada = Math.Min(cantidad, maximoOperativo);
+    }
+
+    private void OnLineaNotaCantidadInput(NotaEntregaLineaConsolidadaVm linea, ChangeEventArgs args)
+    {
+        decimal? cantidad = null;
+        if (args.Value is string text && decimal.TryParse(text, out var parsed))
+        {
+            cantidad = parsed;
+        }
+
+        OnLineaNotaCantidadChanged(linea, cantidad);
+    }
+
+    private void TomarMaximoLineasNotaConsolidada()
+    {
+        foreach (var linea in lineasNotaConsolidada)
+        {
+            linea.CantidadSeleccionada = linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto
+                ? Math.Min(linea.CantidadMaximaTomable, linea.CantidadDisponibleFg)
+                : linea.CantidadMaximaTomable;
+        }
+    }
+
+    private void LimpiarLineasNotaConsolidada()
+    {
+        foreach (var linea in lineasNotaConsolidada)
+        {
+            linea.CantidadSeleccionada = 0m;
+        }
+    }
+
+    private async Task GenerarNotaConsolidadaInicialAsync()
+    {
+        errorNotaConsolidada = null;
+        okNotaConsolidada = null;
+
+        if (!Guid.TryParse(clienteNotaConsolidadaId, out var clienteId) || clienteId == Guid.Empty)
+        {
+            errorNotaConsolidada = "Selecciona un cliente.";
+            return;
+        }
+
+        var seleccionados = pedidosElegiblesNotaConsolidada
+            .Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.PedidoId) && p.Elegible)
+            .ToList();
+
+        if (!seleccionados.Any())
+        {
+            errorNotaConsolidada = "Selecciona al menos un pedido elegible.";
+            return;
+        }
+
+        lineasNotaConsolidada = (await NotaEntregaConsolidadaService.BuildLineasConsolidadasAsync(seleccionados.Select(s => s.PedidoId).ToList())).ToList();
+        if (!lineasNotaConsolidada.Any())
+        {
+            errorNotaConsolidada = "Los pedidos seleccionados no tienen líneas entregables reales.";
+            return;
+        }
+
+        lineasNotaConsolidada = lineasNotaConsolidada
+            .Where(l => l.CantidadSeleccionada > 0)
+            .ToList();
+
+        if (!lineasNotaConsolidada.Any())
+        {
+            errorNotaConsolidada = "Captura al menos una línea con cantidad mayor a cero.";
+            return;
+        }
+
+        var lineasProductoSinFg = lineasNotaConsolidada
+            .Where(l => l.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto && l.CantidadDisponibleFg < l.CantidadSeleccionada)
+            .ToList();
+
+        if (lineasProductoSinFg.Any())
+        {
+            errorNotaConsolidada = $"No hay FG suficiente para: {string.Join(", ", lineasProductoSinFg.Select(l => $"{l.NumeroPedido} {l.Talla}"))}.";
+            return;
+        }
+
+        guardandoNotaConsolidada = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var usuario = (await AuthStateProvider.GetAuthenticationStateAsync()).User.Identity?.Name;
+
+            var cliente = await db.Clientes.AsNoTracking().FirstOrDefaultAsync(c => c.Id == clienteId);
+            if (cliente == null)
+            {
+                errorNotaConsolidada = "No se encontró el cliente seleccionado.";
+                return;
+            }
+
+            var codigoService = new MundoVs.Core.Services.CodigoNegocioService(DbFactory);
+            var numeroNota = await codigoService.GetNextEntityCodeAsync(_empresaId, "NOT", "Consecutivo:NotaEntrega");
+            var pedidoPrincipalId = seleccionados.First().PedidoId;
+
+            var nota = new NotaEntrega
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                ClienteId = clienteId,
+                PedidoId = pedidoPrincipalId,
+                NumeroNota = numeroNota,
+                FechaNota = DateTime.Now,
+                Estatus = NotaEntregaEstatus.Emitida,
+                NoRequiereFactura = false,
+                Observaciones = $"Nota consolidada desde lista de pedidos. Pedidos: {string.Join(", ", seleccionados.Select(s => s.NumeroPedido))}",
+                Subtotal = SubtotalNotaConsolidada,
+                Impuestos = ImpuestosNotaConsolidada,
+                Total = TotalNotaConsolidada,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            };
+
+            var orden = 0;
+            foreach (var item in seleccionados)
+            {
+                nota.PedidosRelacionados.Add(new NotaEntregaPedido
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    PedidoId = item.PedidoId,
+                    Orden = orden++,
+                    EsPrincipal = item.PedidoId == pedidoPrincipalId,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                });
+            }
+
+            foreach (var linea in lineasNotaConsolidada)
+            {
+                nota.Detalles.Add(new NotaEntregaDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    PedidoDetalleId = linea.PedidoDetalleId,
+                    PedidoConceptoId = linea.PedidoConceptoId,
+                    Descripcion = linea.Descripcion,
+                    Cantidad = linea.CantidadSeleccionada,
+                    PrecioUnitario = linea.PrecioUnitario,
+                    Importe = linea.Importe,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                });
+
+                nota.Asignaciones.Add(new NotaEntregaAsignacion
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    PedidoId = linea.PedidoId,
+                    PedidoDetalleId = linea.PedidoDetalleId,
+                    PedidoDetalleTallaId = linea.PedidoDetalleTallaId,
+                    PedidoConceptoId = linea.PedidoConceptoId,
+                    TipoOrigen = linea.TipoOrigen,
+                    Cantidad = linea.CantidadSeleccionada,
+                    CantidadFgTomada = linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto ? linea.CantidadSeleccionada : 0,
+                    PrecioUnitario = linea.PrecioUnitario,
+                    Importe = linea.Importe,
+                    EsParcial = true,
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                });
+
+                if (linea.TipoOrigen == NotaEntregaAsignacionOrigenTipo.Producto && linea.PedidoDetalleTallaId.HasValue)
+                {
+                    var detalleTalla = await db.PedidosDetalleTalla
+                        .Include(t => t.ProductoVariante)
+                        .Include(t => t.PedidoDetalle)
+                        .FirstOrDefaultAsync(t => t.Id == linea.PedidoDetalleTallaId.Value);
+
+                    if (detalleTalla?.ProductoVarianteId is Guid varianteId && detalleTalla.ProductoVariante != null)
+                    {
+                        var inventarioFg = await db.InventariosFinishedGoods.FirstOrDefaultAsync(i => i.EmpresaId == _empresaId && i.ClienteId == clienteId && i.ProductoVarianteId == varianteId);
+                        if (inventarioFg == null || inventarioFg.CantidadDisponible < linea.CantidadSeleccionada)
+                            throw new InvalidOperationException($"FG insuficiente para {linea.NumeroPedido} {(linea.Talla ?? "")}".Trim());
+
+                        var existenciaAnterior = inventarioFg.CantidadDisponible;
+                        inventarioFg.CantidadDisponible -= linea.CantidadSeleccionada;
+                        inventarioFg.UpdatedAt = DateTime.UtcNow;
+                        inventarioFg.UpdatedBy = usuario;
+
+                        db.MovimientosFinishedGoods.Add(new MovimientoFinishedGood
+                        {
+                            Id = Guid.NewGuid(),
+                            EmpresaId = _empresaId,
+                            InventarioFinishedGoodId = inventarioFg.Id,
+                            TipoMovimiento = MovimientoFinishedGoodTipoEnum.SalidaNotaEntrega,
+                            Cantidad = linea.CantidadSeleccionada,
+                            ExistenciaAnterior = existenciaAnterior,
+                            ExistenciaNueva = inventarioFg.CantidadDisponible,
+                            FechaMovimiento = DateTime.UtcNow,
+                            Referencia = numeroNota,
+                            Observaciones = $"Salida por nota consolidada {numeroNota}",
+                            PedidoId = linea.PedidoId,
+                            PedidoDetalleTallaId = linea.PedidoDetalleTallaId,
+                            NotaEntregaId = nota.Id,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = usuario,
+                            IsActive = true
+                        });
+                    }
+                }
+            }
+
+            db.NotasEntrega.Add(nota);
+            await db.SaveChangesAsync();
+            await NotaEntregaPdfService.GenerateAndStoreAsync(nota.Id);
+
+            var pedidosRelacionados = await db.Pedidos.Where(p => pedidosNotaConsolidadaSeleccionados.Contains(p.Id)).ToListAsync();
+            foreach (var pedidoRelacionado in pedidosRelacionados)
+            {
+                var tieneAsignacionesActivas = await db.NotasEntregaAsignaciones
+                    .AnyAsync(a => a.PedidoId == pedidoRelacionado.Id && a.IsActive && a.NotaEntrega.IsActive && a.NotaEntrega.Estatus != NotaEntregaEstatus.Cancelada);
+
+                pedidoRelacionado.Estado = tieneAsignacionesActivas ? EstadoPedidoEnum.Entregado : EstadoPedidoEnum.EnProceso;
+                pedidoRelacionado.UpdatedAt = DateTime.UtcNow;
+                pedidoRelacionado.UpdatedBy = usuario;
+            }
+
+            await db.SaveChangesAsync();
+
+            okNotaConsolidada = $"Nota {numeroNota} generada correctamente.";
+            pedidosNotaConsolidadaSeleccionados.Clear();
+            await CargarPedidos();
+            pedidosElegiblesNotaConsolidada = (await NotaEntregaConsolidadaService.GetPedidosElegiblesAsync(clienteId)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorNotaConsolidada = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardandoNotaConsolidada = false;
+        }
     }
 
     private async Task CargarPedidos()

@@ -133,6 +133,8 @@
             .AsNoTracking()
             .Include(n => n.Cliente)
             .Include(n => n.Pedido)
+            .Include(n => n.PedidosRelacionados)
+                .ThenInclude(r => r.Pedido)
             .Include(n => n.Detalles)
             .Include(n => n.FacturasRelacionadas)
                 .ThenInclude(r => r.Factura)
@@ -152,6 +154,10 @@
                 NumeroNota = n.NumeroNota,
                 ClienteNombre = n.Cliente.RazonSocial,
                 PedidoNumero = n.Pedido.NumeroPedido,
+                PedidosRelacionados = n.PedidosRelacionados
+                    .OrderBy(r => r.Orden)
+                    .Select(r => r.Pedido.NumeroPedido)
+                    .ToList(),
                 FechaNota = n.FechaNota,
                 Estatus = n.Estatus,
                 NoRequiereFactura = n.NoRequiereFactura,
@@ -254,7 +260,7 @@
                 }
                 builder.AddMarkupContent(seq++, $"<td class=\"fw-semibold\">{item.NumeroNota}</td>");
                 builder.AddMarkupContent(seq++, $"<td>{item.ClienteNombre}</td>");
-                builder.AddMarkupContent(seq++, $"<td>{item.PedidoNumero}</td>");
+                builder.AddMarkupContent(seq++, $"<td>{ObtenerResumenPedidos(item)}</td>");
                 builder.AddMarkupContent(seq++, $"<td>{item.FechaNota:dd/MM/yyyy}</td>");
                 builder.AddMarkupContent(seq++, $"<td class=\"text-center\">{item.Piezas:0.##}</td>");
                 builder.AddMarkupContent(seq++, $"<td class=\"text-end\">{item.Total:C2}</td>");
@@ -345,6 +351,11 @@
             ? "<span class='text-muted'>Pendiente</span>"
             : $"<a class='btn btn-sm btn-outline-danger' href='{item.PdfUrl}' target='_blank' download><i class='bi bi-file-earmark-pdf'></i></a>";
 
+    private static string ObtenerResumenPedidos(NotaEntregaViewModel item)
+        => item.PedidosRelacionados.Count == 0
+            ? item.PedidoNumero
+            : string.Join(", ", item.PedidosRelacionados);
+
     private sealed class NotaEntregaViewModel
     {
         public Guid Id { get; set; }
@@ -352,6 +363,7 @@
         public string NumeroNota { get; set; } = string.Empty;
         public string ClienteNombre { get; set; } = string.Empty;
         public string PedidoNumero { get; set; } = string.Empty;
+        public List<string> PedidosRelacionados { get; set; } = [];
         public DateTime FechaNota { get; set; }
         public NotaEntregaEstatus Estatus { get; set; }
         public bool NoRequiereFactura { get; set; }

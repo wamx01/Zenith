@@ -126,111 +126,105 @@
 
                     <div class="row">
                         <div class="col-md-4 mb-3 d-flex align-items-end">
-                            <div class="form-check form-switch">
-                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.TieneVariantes" @bind-Value:after="OnTieneVariantesChanged" />
-                                <label class="form-check-label">Este producto usa variantes</label>
-                            </div>
+                            <div class="small text-muted fw-semibold">Todos los productos usan variantes por defecto.</div>
                         </div>
                         <div class="col-md-4 mb-3 d-flex align-items-end">
                             <div class="form-check form-switch">
-                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesTalla" disabled="@(!productoEditando.TieneVariantes)" @bind-Value:after="OnConfigVariantesChanged" />
+                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesTalla" @bind-Value:after="OnConfigVariantesChanged" />
                                 <label class="form-check-label">Generar variantes por talla</label>
                             </div>
                         </div>
                         <div class="col-md-4 mb-3 d-flex align-items-end">
                             <div class="form-check form-switch">
-                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesColor" disabled="@(!productoEditando.TieneVariantes)" @bind-Value:after="OnConfigVariantesChanged" />
+                                <InputCheckbox class="form-check-input" @bind-Value="productoEditando.UsaVariantesColor" @bind-Value:after="OnConfigVariantesChanged" />
                                 <label class="form-check-label">Generar variantes por color</label>
                             </div>
                         </div>
                     </div>
 
-                    @if (productoEditando.TieneVariantes)
-                    {
-                        <div class="card border-0 bg-light mb-3">
-                            <div class="card-body">
-                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-                                    <div>
-                                        <h6 class="mb-0">Variantes y SKU</h6>
-                                        <div class="text-muted small">Define si el SKU se genera por talla, color o ambas dimensiones.</div>
-                                    </div>
-                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="GenerarVariantes">
-                                        <i class="bi bi-upc-scan me-1"></i>Generar variantes
-                                    </button>
+                    <div class="card border-0 bg-light mb-3">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                                <div>
+                                    <h6 class="mb-0">Variantes y SKU</h6>
+                                    <div class="text-muted small">Define si el SKU se genera por talla, color o ambas dimensiones.</div>
                                 </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="GenerarVariantes">
+                                    <i class="bi bi-upc-scan me-1"></i>Generar variantes
+                                </button>
+                            </div>
 
-                                @if (!string.IsNullOrWhiteSpace(variantesError))
-                                {
-                                    <div class="alert alert-warning py-2">@variantesError</div>
-                                }
+                            @if (!string.IsNullOrWhiteSpace(variantesError))
+                            {
+                                <div class="alert alert-warning py-2">@variantesError</div>
+                            }
 
-                                @if (productoEditando.UsaVariantesTalla)
-                                {
-                                    <div class="mb-3">
-                                        <label class="form-label">Tallas disponibles</label>
-                                        @if (!tallasCatalogo.Any())
-                                        {
-                                            <div class="text-muted small">No hay tallas base configuradas para la empresa.</div>
-                                        }
-                                        else
-                                        {
-                                            <div class="d-flex flex-wrap gap-2">
-                                                @foreach (var talla in tallasCatalogo.OrderBy(t => t.Orden).ThenBy(t => t.Talla))
-                                                {
-                                                    <label class="badge rounded-pill bg-white text-dark border d-inline-flex align-items-center gap-2 px-3 py-2">
-                                                        <InputCheckbox class="form-check-input mt-0" @bind-Value="talla.Seleccionada" />
-                                                        <span>@talla.Talla <span class="text-muted">@talla.Sistema</span></span>
-                                                    </label>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                }
+                            @if (productoEditando.UsaVariantesTalla)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Tallas disponibles</label>
+                                    @if (!tallasCatalogo.Any())
+                                    {
+                                        <div class="text-muted small">No hay tallas base configuradas para la empresa.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="d-flex flex-wrap gap-2">
+                                            @foreach (var talla in tallasCatalogo.OrderBy(t => t.Orden).ThenBy(t => t.Talla))
+                                            {
+                                                <label class="badge rounded-pill bg-white text-dark border d-inline-flex align-items-center gap-2 px-3 py-2">
+                                                    <InputCheckbox class="form-check-input mt-0" @bind-Value="talla.Seleccionada" />
+                                                    <span>@talla.Talla <span class="text-muted">@talla.Sistema</span></span>
+                                                </label>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
 
-                                @if (productoEditando.UsaVariantesColor)
-                                {
-                                    <div class="mb-3">
-                                        <label class="form-label">Colores</label>
-                                        <InputText class="form-control" @bind-Value="coloresVariantesTexto" placeholder="Ej. Negro, Blanco, Azul Marino" />
-                                        <div class="form-text">Separar colores por coma.</div>
-                                    </div>
-                                }
+                            @if (productoEditando.UsaVariantesColor)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Colores</label>
+                                    <InputText class="form-control" @bind-Value="coloresVariantesTexto" placeholder="Ej. Negro, Blanco, Azul Marino" />
+                                    <div class="form-text">Separar colores por coma.</div>
+                                </div>
+                            }
 
-                                @if (!variantesEditando.Any())
-                                {
-                                    <div class="text-muted small">Genera las combinaciones para crear los SKU del producto.</div>
-                                }
-                                else
-                                {
-                                    <div class="table-responsive">
-                                        <table class="table table-sm align-middle mb-0">
-                                            <thead class="table-light">
+                            @if (!variantesEditando.Any())
+                            {
+                                <div class="text-muted small">Genera las combinaciones para crear los SKU del producto.</div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>SKU</th>
+                                                <th>Talla</th>
+                                                <th>Color</th>
+                                                <th>Precio variante</th>
+                                                <th>Activa</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var variante in variantesEditando.OrderBy(v => v.Talla).ThenBy(v => v.Color).ThenBy(v => v.Sku))
+                                            {
                                                 <tr>
-                                                    <th>SKU</th>
-                                                    <th>Talla</th>
-                                                    <th>Color</th>
-                                                    <th>Precio variante</th>
-                                                    <th>Activa</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach (var variante in variantesEditando.OrderBy(v => v.Talla).ThenBy(v => v.Color).ThenBy(v => v.Sku))
-                                                {
-                                                    <tr>
-                                                        <td><InputText class="form-control form-control-sm" @bind-Value="variante.Sku" /></td>
+                                                    <td><InputText class="form-control form-control-sm" @bind-Value="variante.Sku" /></td>
                                                         <td>@(string.IsNullOrWhiteSpace(variante.Talla) ? "—" : variante.Talla)</td>
                                                         <td>@(string.IsNullOrWhiteSpace(variante.Color) ? "—" : variante.Color)</td>
                                                         <td><InputNumber class="form-control form-control-sm" @bind-Value="variante.PrecioOverride" /></td>
                                                         <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="variante.Activa" /></td>
                                                     </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                }
-                            </div>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
                         </div>
-                    }
+                    </div>
 
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-success">
@@ -539,6 +533,8 @@
     private void CancelarEdicion()
     {
         productoEditando = new();
+        productoEditando.TieneVariantes = true;
+        productoEditando.UsaVariantesTalla = true;
         variantesEditando = [];
         coloresVariantesTexto = string.Empty;
         variantesError = null;
@@ -549,25 +545,10 @@
         mostrarFormulario = false;
     }
 
-    private void OnTieneVariantesChanged()
-    {
-        if (!productoEditando.TieneVariantes)
-        {
-            productoEditando.UsaVariantesTalla = false;
-            productoEditando.UsaVariantesColor = false;
-            variantesEditando = [];
-            coloresVariantesTexto = string.Empty;
-            foreach (var talla in tallasCatalogo)
-            {
-                talla.Seleccionada = false;
-            }
-        }
-
-        variantesError = null;
-    }
-
     private void OnConfigVariantesChanged()
     {
+        productoEditando.TieneVariantes = true;
+
         if (!productoEditando.UsaVariantesTalla)
         {
             foreach (var talla in tallasCatalogo)
@@ -579,6 +560,11 @@
         if (!productoEditando.UsaVariantesColor)
         {
             coloresVariantesTexto = string.Empty;
+        }
+
+        if (!productoEditando.UsaVariantesTalla && !productoEditando.UsaVariantesColor)
+        {
+            productoEditando.UsaVariantesTalla = true;
         }
 
         variantesError = null;
@@ -618,11 +604,7 @@
     {
         variantesError = null;
 
-        if (!productoEditando.TieneVariantes)
-        {
-            variantesEditando = [];
-            return;
-        }
+        productoEditando.TieneVariantes = true;
 
         if (!productoEditando.UsaVariantesTalla && !productoEditando.UsaVariantesColor)
         {

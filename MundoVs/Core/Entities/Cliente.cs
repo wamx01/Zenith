@@ -29,6 +29,7 @@ public class Cliente : BaseEntity
     public decimal? LimiteCredito { get; set; }
     
     public IndustriaEnum Industria { get; set; }
+    public string? IndustriaPersonalizada { get; set; }
     
     public ICollection<Pedido> Pedidos { get; set; } = new List<Pedido>();
     public ICollection<Contacto> Contactos { get; set; } = new List<Contacto>();
@@ -39,6 +40,7 @@ public class Cliente : BaseEntity
     public ICollection<NotaEntrega> NotasEntrega { get; set; } = new List<NotaEntrega>();
     public ICollection<Factura> Facturas { get; set; } = new List<Factura>();
     public ICollection<PagoRecibido> PagosRecibidos { get; set; } = new List<PagoRecibido>();
+    public ICollection<CargoManualCxC> CargosManualesCxC { get; set; } = new List<CargoManualCxC>();
     public ICollection<ClienteDatoFiscalSnapshot> DatosFiscalesSnapshot { get; set; } = new List<ClienteDatoFiscalSnapshot>();
 }
 

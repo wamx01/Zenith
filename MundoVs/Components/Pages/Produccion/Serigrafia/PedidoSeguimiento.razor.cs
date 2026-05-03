@@ -221,6 +221,7 @@ public partial class PedidoSeguimiento
     private async Task CargarNotasEntregaAsync()
     {
         notasEntrega = await DbContext.NotasEntrega
+            .IgnoreAutoIncludes()
             .Include(n => n.Detalles)
                 .ThenInclude(d => d.PedidoConcepto)
             .Include(n => n.Detalles)
@@ -1055,6 +1056,18 @@ public partial class PedidoSeguimiento
                 CreatedBy = usuario,
                 IsActive = true
             };
+
+            nota.PedidosRelacionados.Add(new NotaEntregaPedido
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresaIdActual,
+                PedidoId = pedido.Id,
+                Orden = 0,
+                EsPrincipal = true,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            });
 
             foreach (var detalleNota in detallesNota)
             {

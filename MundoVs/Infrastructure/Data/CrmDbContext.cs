@@ -104,6 +104,8 @@ public class CrmDbContext : DbContext
 
     // Facturacion / Cobranza
     public DbSet<NotaEntrega> NotasEntrega => Set<NotaEntrega>();
+    public DbSet<NotaEntregaPedido> NotasEntregaPedidos => Set<NotaEntregaPedido>();
+    public DbSet<NotaEntregaAsignacion> NotasEntregaAsignaciones => Set<NotaEntregaAsignacion>();
     public DbSet<NotaEntregaDetalle> NotasEntregaDetalle => Set<NotaEntregaDetalle>();
     public DbSet<NotaEntregaDetalleTalla> NotasEntregaDetalleTalla => Set<NotaEntregaDetalleTalla>();
     public DbSet<Factura> Facturas => Set<Factura>();
@@ -114,6 +116,7 @@ public class CrmDbContext : DbContext
     public DbSet<FacturaEvento> FacturaEventos => Set<FacturaEvento>();
     public DbSet<PagoRecibido> PagosRecibidos => Set<PagoRecibido>();
     public DbSet<PagoAplicacionDocumento> PagosAplicacionDocumento => Set<PagoAplicacionDocumento>();
+    public DbSet<CargoManualCxC> CargosManualesCxC => Set<CargoManualCxC>();
     public DbSet<ComplementoPago> ComplementosPago => Set<ComplementoPago>();
     public DbSet<ComplementoPagoDocumentoRelacionado> ComplementosPagoDocumentosRelacionados => Set<ComplementoPagoDocumentoRelacionado>();
     public DbSet<ClienteDatoFiscalSnapshot> ClientesDatosFiscalesSnapshot => Set<ClienteDatoFiscalSnapshot>();
@@ -633,10 +636,84 @@ public class CrmDbContext : DbContext
                 .HasForeignKey(e => e.PedidoId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.Navigation(e => e.PedidosRelacionados).AutoInclude();
+
             entity.HasIndex(e => new { e.EmpresaId, e.NumeroNota }).IsUnique();
             entity.HasIndex(e => e.ClienteId);
             entity.HasIndex(e => e.PedidoId);
             entity.HasIndex(e => e.FechaNota);
+        });
+
+        modelBuilder.Entity<NotaEntregaPedido>(entity =>
+        {
+            entity.ToTable("contabilidad_nota_entrega_pedido");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Orden).HasDefaultValue(0);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.NotaEntrega)
+                .WithMany(n => n.PedidosRelacionados)
+                .HasForeignKey(e => e.NotaEntregaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Pedido)
+                .WithMany(p => p.NotasEntregaRelacionadas)
+                .HasForeignKey(e => e.PedidoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.NotaEntregaId, e.PedidoId }).IsUnique();
+            entity.HasIndex(e => new { e.PedidoId, e.EsPrincipal });
+        });
+
+        modelBuilder.Entity<NotaEntregaAsignacion>(entity =>
+        {
+            entity.ToTable("contabilidad_nota_entrega_asignacion");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TipoOrigen).HasConversion<int>();
+            entity.Property(e => e.Cantidad).HasPrecision(18, 4);
+            entity.Property(e => e.CantidadFgTomada).HasPrecision(18, 4);
+            entity.Property(e => e.PrecioUnitario).HasPrecision(18, 4);
+            entity.Property(e => e.Importe).HasPrecision(18, 2);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.NotaEntrega)
+                .WithMany(n => n.Asignaciones)
+                .HasForeignKey(e => e.NotaEntregaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Pedido)
+                .WithMany(p => p.NotasEntregaAsignaciones)
+                .HasForeignKey(e => e.PedidoId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.PedidoDetalle)
+                .WithMany()
+                .HasForeignKey(e => e.PedidoDetalleId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.PedidoDetalleTalla)
+                .WithMany()
+                .HasForeignKey(e => e.PedidoDetalleTallaId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.PedidoConcepto)
+                .WithMany()
+                .HasForeignKey(e => e.PedidoConceptoId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.NotaEntregaId);
+            entity.HasIndex(e => e.PedidoId);
+            entity.HasIndex(e => e.PedidoDetalleId);
+            entity.HasIndex(e => e.PedidoDetalleTallaId);
+            entity.HasIndex(e => e.PedidoConceptoId);
         });
 
         modelBuilder.Entity<NotaEntregaDetalle>(entity =>
@@ -932,6 +1009,47 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.FacturaId);
         });
 
+        modelBuilder.Entity<CargoManualCxC>(entity =>
+        {
+            entity.ToTable("contabilidad_cargo_manual_cxc");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Tipo).HasConversion<int>();
+            entity.Property(e => e.FechaCargo).HasColumnType("datetime(6)");
+            entity.Property(e => e.Referencia).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Concepto).HasMaxLength(250).IsRequired();
+            entity.Property(e => e.Monto).HasPrecision(18, 2);
+            entity.Property(e => e.Notas).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Cliente)
+                .WithMany(c => c.CargosManualesCxC)
+                .HasForeignKey(e => e.ClienteId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Pedido)
+                .WithMany()
+                .HasForeignKey(e => e.PedidoId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.NotaEntrega)
+                .WithMany()
+                .HasForeignKey(e => e.NotaEntregaId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.Factura)
+                .WithMany()
+                .HasForeignKey(e => e.FacturaId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.ClienteId, e.FechaCargo });
+            entity.HasIndex(e => e.FacturaId);
+            entity.HasIndex(e => e.NotaEntregaId);
+        });
+
         modelBuilder.Entity<ComplementoPago>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -1104,6 +1222,7 @@ public class CrmDbContext : DbContext
             entity.Property(e => e.Estado).HasMaxLength(100);
             entity.Property(e => e.CodigoPostal).HasMaxLength(10);
             entity.Property(e => e.Pais).HasMaxLength(50);
+            entity.Property(e => e.IndustriaPersonalizada).HasMaxLength(120);
             entity.Property(e => e.DomicilioFiscalCp).HasMaxLength(10);
             entity.Property(e => e.RegimenFiscalReceptor).HasMaxLength(10);
             entity.Property(e => e.UsoCfdi).HasMaxLength(10);
@@ -3213,6 +3332,7 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<ColorSerigrafia>().HasQueryFilter(e => _empresaId == Guid.Empty || e.ProductoSerigrafia.Producto.EmpresaId == _empresaId);
         modelBuilder.Entity<CategoriaInventario>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<TipoInventario>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<InventarioItem>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<MovimientoInventario>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<InventarioFinishedGood>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<MovimientoFinishedGood>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);

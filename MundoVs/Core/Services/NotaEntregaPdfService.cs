@@ -28,6 +28,8 @@ public class NotaEntregaPdfService : INotaEntregaPdfService
             .Include(n => n.Empresa)
             .Include(n => n.Cliente)
             .Include(n => n.Pedido)
+            .Include(n => n.PedidosRelacionados)
+                .ThenInclude(r => r.Pedido)
             .Include(n => n.Detalles)
                 .ThenInclude(d => d.Tallas)
             .FirstOrDefaultAsync(n => n.Id == notaEntregaId, cancellationToken);
@@ -39,6 +41,9 @@ public class NotaEntregaPdfService : INotaEntregaPdfService
         var importeEnLetra = ConvertirImporteALetras(nota.Total);
         var elaboradoPor = string.IsNullOrWhiteSpace(nota.CreatedBy) ? "—" : nota.CreatedBy.Trim();
         var fechaEntrega = nota.Pedido.FechaEntregaEstimada?.ToString("dd/MM/yyyy") ?? "—";
+        var pedidosRelacionadosTexto = nota.PedidosRelacionados.Any()
+            ? string.Join(", ", nota.PedidosRelacionados.OrderBy(r => r.Orden).Select(r => r.Pedido.NumeroPedido))
+            : nota.Pedido.NumeroPedido;
         var fechaVencimiento = ObtenerFechaVencimiento(nota);
         var lugarPago = ObtenerLugarPago(nota);
         var nombreEmpresa = nota.Empresa.NombreComercial ?? nota.Empresa.RazonSocial;
@@ -85,8 +90,8 @@ public class NotaEntregaPdfService : INotaEntregaPdfService
                             });
                             right.Item().Row(info =>
                             {
-                                info.RelativeItem().Text("PEDIDO No.").SemiBold();
-                                info.RelativeItem().AlignRight().Text(nota.Pedido.NumeroPedido);
+                                info.RelativeItem().Text("PEDIDO(S)").SemiBold();
+                                info.RelativeItem().AlignRight().Text(pedidosRelacionadosTexto);
                             });
                             right.Item().Row(info =>
                             {
@@ -127,6 +132,7 @@ public class NotaEntregaPdfService : INotaEntregaPdfService
                                 col.Item().Row(x => { x.ConstantItem(92).Text("Fecha").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(nota.FechaNota.ToString("dd/MM/yyyy")); });
                                 col.Item().Row(x => { x.ConstantItem(92).Text("Fecha Ent.").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(fechaEntrega); });
                                 col.Item().Row(x => { x.ConstantItem(92).Text("Fecha Doc.").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(nota.FechaNota.ToString("dd/MM/yyyy")); });
+                                col.Item().Row(x => { x.ConstantItem(92).Text("Pedidos").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(pedidosRelacionadosTexto); });
                                 col.Item().Row(x => { x.ConstantItem(92).Text("Vendedor").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(elaboradoPor); });
                                 col.Item().Row(x => { x.ConstantItem(92).Text("Condición").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(nota.Pedido.TipoPrecio == TipoPrecioEnum.Credito ? "Crédito" : "Contado"); });
                                 col.Item().Row(x => { x.ConstantItem(92).Text("CFDI").SemiBold(); x.ConstantItem(10).Text(":"); x.RelativeItem().Text(nota.NoRequiereFactura ? "No requerida" : "Requerida"); });

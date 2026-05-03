@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MundoVs.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using MundoVs.Infrastructure.Data;
 namespace MundoVs.Migrations
 {
     [DbContext(typeof(CrmDbContext))]
-    partial class CrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260503053110_CxcCargosManuales")]
+    partial class CxcCargosManuales
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1236,10 +1239,6 @@ namespace MundoVs.Migrations
 
                     b.Property<int>("Industria")
                         .HasColumnType("int");
-
-                    b.Property<string>("IndustriaPersonalizada")
-                        .HasMaxLength(120)
-                        .HasColumnType("varchar(120)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
@@ -4222,84 +4221,6 @@ namespace MundoVs.Migrations
                     b.ToTable("notasentrega");
                 });
 
-            modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaAsignacion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<decimal>("Cantidad")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("CantidadFgTomada")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("EmpresaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<bool>("EsParcial")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<decimal>("Importe")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<Guid>("NotaEntregaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid?>("PedidoConceptoId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid?>("PedidoDetalleId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid?>("PedidoDetalleTallaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("PedidoId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<decimal>("PrecioUnitario")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<int>("TipoOrigen")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EmpresaId");
-
-                    b.HasIndex("NotaEntregaId");
-
-                    b.HasIndex("PedidoConceptoId");
-
-                    b.HasIndex("PedidoDetalleId");
-
-                    b.HasIndex("PedidoDetalleTallaId");
-
-                    b.HasIndex("PedidoId");
-
-                    b.ToTable("contabilidad_nota_entrega_asignacion", (string)null);
-                });
-
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaDetalle", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4414,56 +4335,6 @@ namespace MundoVs.Migrations
                     b.HasIndex("NotaEntregaDetalleId", "Talla");
 
                     b.ToTable("notasentregadetalletalla");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaPedido", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("EmpresaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<bool>("EsPrincipal")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<Guid>("NotaEntregaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<int>("Orden")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0);
-
-                    b.Property<Guid>("PedidoId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EmpresaId");
-
-                    b.HasIndex("NotaEntregaId", "PedidoId")
-                        .IsUnique();
-
-                    b.HasIndex("PedidoId", "EsPrincipal");
-
-                    b.ToTable("contabilidad_nota_entrega_pedido", (string)null);
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoAplicacionDocumento", b =>
@@ -9148,54 +9019,6 @@ namespace MundoVs.Migrations
                     b.Navigation("Pedido");
                 });
 
-            modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaAsignacion", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
-                        .WithMany()
-                        .HasForeignKey("EmpresaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.NotaEntrega", "NotaEntrega")
-                        .WithMany("Asignaciones")
-                        .HasForeignKey("NotaEntregaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.PedidoConcepto", "PedidoConcepto")
-                        .WithMany()
-                        .HasForeignKey("PedidoConceptoId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("MundoVs.Core.Entities.PedidoDetalle", "PedidoDetalle")
-                        .WithMany()
-                        .HasForeignKey("PedidoDetalleId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("MundoVs.Core.Entities.PedidoDetalleTalla", "PedidoDetalleTalla")
-                        .WithMany()
-                        .HasForeignKey("PedidoDetalleTallaId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("MundoVs.Core.Entities.Pedido", "Pedido")
-                        .WithMany("NotasEntregaAsignaciones")
-                        .HasForeignKey("PedidoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Empresa");
-
-                    b.Navigation("NotaEntrega");
-
-                    b.Navigation("Pedido");
-
-                    b.Navigation("PedidoConcepto");
-
-                    b.Navigation("PedidoDetalle");
-
-                    b.Navigation("PedidoDetalleTalla");
-                });
-
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaDetalle", b =>
                 {
                     b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
@@ -9246,33 +9069,6 @@ namespace MundoVs.Migrations
                     b.Navigation("Empresa");
 
                     b.Navigation("NotaEntregaDetalle");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaPedido", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
-                        .WithMany()
-                        .HasForeignKey("EmpresaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.NotaEntrega", "NotaEntrega")
-                        .WithMany("PedidosRelacionados")
-                        .HasForeignKey("NotaEntregaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.Pedido", "Pedido")
-                        .WithMany("NotasEntregaRelacionadas")
-                        .HasForeignKey("PedidoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Empresa");
-
-                    b.Navigation("NotaEntrega");
-
-                    b.Navigation("Pedido");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.PagoAplicacionDocumento", b =>
@@ -10484,13 +10280,9 @@ namespace MundoVs.Migrations
 
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntrega", b =>
                 {
-                    b.Navigation("Asignaciones");
-
                     b.Navigation("Detalles");
 
                     b.Navigation("FacturasRelacionadas");
-
-                    b.Navigation("PedidosRelacionados");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NotaEntregaDetalle", b =>
@@ -10514,10 +10306,6 @@ namespace MundoVs.Migrations
                     b.Navigation("Facturas");
 
                     b.Navigation("NotasEntrega");
-
-                    b.Navigation("NotasEntregaAsignaciones");
-
-                    b.Navigation("NotasEntregaRelacionadas");
 
                     b.Navigation("Pagos");
 

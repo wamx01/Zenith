@@ -86,6 +86,8 @@ builder.Services.AddScoped<IAppConfigRepository, AppConfigRepository>();
 builder.Services.AddScoped<INominaCalculator, NominaCalculator>();
 builder.Services.AddScoped<INominaLegalPolicyService, NominaLegalPolicyService>();
 builder.Services.AddScoped<INominaPdfService, NominaPdfService>();
+builder.Services.AddScoped<ICuentasPorCobrarPdfService, CuentasPorCobrarPdfService>();
+builder.Services.AddScoped<INotaEntregaConsolidadaService, NotaEntregaConsolidadaService>();
 builder.Services.AddScoped<INominaReciboBuilder, NominaReciboBuilder>();
 builder.Services.AddScoped<INominaResumenBuilder, NominaResumenBuilder>();
 builder.Services.AddScoped<INominaSatCatalogInitializer, NominaSatCatalogInitializer>();

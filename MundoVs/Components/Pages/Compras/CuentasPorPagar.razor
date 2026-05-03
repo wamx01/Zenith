@@ -72,6 +72,187 @@
             </select>
         </div>
 
+        <div class="cxp-report-card">
+            <div class="cxp-report-head">
+                <div>
+                    <div class="cxp-form-title mb-1"><i class="bi bi-bar-chart-line me-1"></i>Reportes de cuentas por pagar</div>
+                    <div class="cxp-subtitle">Consulta movimientos por periodo, antigüedad de saldos y documentos vencidos por proveedor.</div>
+                </div>
+            </div>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="cxp-lbl">Desde</label>
+                    <InputDate class="form-control form-control-sm cxp-inp" @bind-Value="reporteDesde" @bind-Value:after="AplicarFiltros" />
+                </div>
+                <div class="col-md-3">
+                    <label class="cxp-lbl">Hasta</label>
+                    <InputDate class="form-control form-control-sm cxp-inp" @bind-Value="reporteHasta" @bind-Value:after="AplicarFiltros" />
+                </div>
+                <div class="col-md-3">
+                    <label class="cxp-lbl">Proveedor</label>
+                    <InputSelect class="form-select form-select-sm cxp-inp" @bind-Value="reporteProveedorIdTexto" @bind-Value:after="AplicarFiltros">
+                        <option value="">Todos</option>
+                        @foreach (var proveedor in proveedores)
+                        {
+                            <option value="@proveedor.Id.ToString()">@proveedor.Nombre</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-3 d-flex gap-2">
+                    <button type="button" class="cxp-btn-cancel btn-sm" @onclick="LimpiarReporte">Limpiar reporte</button>
+                </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+                <div class="col-xl-7">
+                    <div class="cxp-report-section">
+                        <div class="cxp-section-title">Movimientos por proveedor en el periodo</div>
+                        <div class="table-responsive">
+                            <table class="cxp-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Proveedor</th>
+                                        <th class="text-end">Docs</th>
+                                        <th class="text-end">Emitido</th>
+                                        <th class="text-end">Pagado</th>
+                                        <th class="text-end">Saldo</th>
+                                        <th class="text-end">Vencido</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (reporteMovimientos.Count == 0)
+                                    {
+                                        <tr><td colspan="6" class="text-center text-muted py-3">No hay movimientos para el periodo seleccionado.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in reporteMovimientos)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.ProveedorNombre</div>
+                                                    <div class="small text-muted">Último mov. @(item.UltimoMovimiento?.ToString("dd/MM/yyyy") ?? "—")</div>
+                                                </td>
+                                                <td class="text-end">@item.Documentos</td>
+                                                <td class="text-end">@item.TotalEmitido.ToString("C2")</td>
+                                                <td class="text-end text-success fw-semibold">@item.TotalPagado.ToString("C2")</td>
+                                                <td class="text-end fw-bold @(item.SaldoPendiente > 0 ? "text-danger" : "text-success")">@item.SaldoPendiente.ToString("C2")</td>
+                                                <td class="text-end @(item.Vencido > 0 ? "text-danger fw-semibold" : "text-muted")">@item.Vencido.ToString("C2")</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                                @if (reporteMovimientos.Count > 0)
+                                {
+                                    <tfoot>
+                                        <tr>
+                                            <td>Total</td>
+                                            <td class="text-end">@reporteMovimientos.Sum(x => x.Documentos)</td>
+                                            <td class="text-end">@reporteMovimientos.Sum(x => x.TotalEmitido).ToString("C2")</td>
+                                            <td class="text-end">@reporteMovimientos.Sum(x => x.TotalPagado).ToString("C2")</td>
+                                            <td class="text-end">@reporteMovimientos.Sum(x => x.SaldoPendiente).ToString("C2")</td>
+                                            <td class="text-end">@reporteMovimientos.Sum(x => x.Vencido).ToString("C2")</td>
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-5">
+                    <div class="cxp-report-section">
+                        <div class="cxp-section-title">Antigüedad de saldos</div>
+                        <div class="table-responsive">
+                            <table class="cxp-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Proveedor</th>
+                                        <th class="text-end">0-30</th>
+                                        <th class="text-end">31-60</th>
+                                        <th class="text-end">61-90</th>
+                                        <th class="text-end">+90</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (reporteAntiguedad.Count == 0)
+                                    {
+                                        <tr><td colspan="5" class="text-center text-muted py-3">No hay saldos pendientes para antigüedad.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in reporteAntiguedad)
+                                        {
+                                            <tr>
+                                                <td class="fw-semibold">@item.ProveedorNombre</td>
+                                                <td class="text-end">@item.Rango0a30.ToString("C2")</td>
+                                                <td class="text-end">@item.Rango31a60.ToString("C2")</td>
+                                                <td class="text-end">@item.Rango61a90.ToString("C2")</td>
+                                                <td class="text-end @(item.RangoMas90 > 0 ? "text-danger fw-semibold" : string.Empty)">@item.RangoMas90.ToString("C2")</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                                @if (reporteAntiguedad.Count > 0)
+                                {
+                                    <tfoot>
+                                        <tr>
+                                            <td>Total</td>
+                                            <td class="text-end">@reporteAntiguedad.Sum(x => x.Rango0a30).ToString("C2")</td>
+                                            <td class="text-end">@reporteAntiguedad.Sum(x => x.Rango31a60).ToString("C2")</td>
+                                            <td class="text-end">@reporteAntiguedad.Sum(x => x.Rango61a90).ToString("C2")</td>
+                                            <td class="text-end">@reporteAntiguedad.Sum(x => x.RangoMas90).ToString("C2")</td>
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="cxp-report-section">
+                        <div class="cxp-section-title">Documentos vencidos</div>
+                        <div class="table-responsive">
+                            <table class="cxp-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Proveedor</th>
+                                        <th>Documento</th>
+                                        <th>Emisión</th>
+                                        <th>Vencimiento</th>
+                                        <th class="text-end">Días</th>
+                                        <th class="text-end">Saldo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (reporteVencidas.Count == 0)
+                                    {
+                                        <tr><td colspan="6" class="text-center text-muted py-3">No hay cuentas vencidas para los filtros seleccionados.</td></tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var item in reporteVencidas)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-semibold">@item.ProveedorNombre</div>
+                                                    <div class="small text-muted">@item.Concepto</div>
+                                                </td>
+                                                <td>@item.Documento</td>
+                                                <td>@item.FechaEmision.ToString("dd/MM/yyyy")</td>
+                                                <td>@item.FechaVencimiento?.ToString("dd/MM/yyyy")</td>
+                                                <td class="text-end text-danger fw-semibold">@item.DiasAtraso</td>
+                                                <td class="text-end text-danger fw-bold">@item.Saldo.ToString("C2")</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         @* ══ FORMULARIO NUEVA/EDITAR CUENTA ══ *@
         @if (mostrarForm)
         {
@@ -364,6 +545,14 @@
     .cxp-search-box input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.1); outline: none; }
     .cxp-select { font-size: .75rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .28rem .5rem; background: #fff; color: #1e293b; height: 28px; cursor: pointer; }
 
+    .cxp-report-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: .85rem; margin-bottom: .85rem; box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .cxp-report-head { display: flex; justify-content: space-between; align-items: start; gap: .5rem; margin-bottom: .6rem; }
+    .cxp-report-section { border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; padding: .65rem; height: 100%; }
+    .cxp-report-table { width: 100%; border-collapse: collapse; font-size: .72rem; }
+    .cxp-report-table thead th { background: #e2e8f0; color: #334155; font-size: .58rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: .4rem .45rem; border-bottom: 1px solid #cbd5e1; }
+    .cxp-report-table tbody td { background: #fff; padding: .42rem .45rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .cxp-report-table tfoot td { background: #e2e8f0; color: #0f172a; font-weight: 800; padding: .42rem .45rem; border-top: 1px solid #cbd5e1; }
+
     /* Empty */
     .cxp-empty { display: flex; align-items: center; justify-content: center; gap: .5rem; padding: 3rem 1rem; color: #94a3b8; font-size: .82rem; background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; }
 
@@ -456,6 +645,9 @@
     private string textoBusqueda = "";
     private string filtroEstatus = "pendientes";
     private string ordenarPor = "mayor_adeudo";
+    private DateTime? reporteDesde = DateTime.Today.AddMonths(-1);
+    private DateTime? reporteHasta = DateTime.Today;
+    private string reporteProveedorIdTexto = string.Empty;
     private Guid? expandedProveedor;
     private Guid? expandedCuenta;
 
@@ -463,6 +655,9 @@
     private decimal totalPagado;
     private int proveedoresConAdeudo;
     private decimal montoVencido;
+    private List<ReporteMovimientoProveedor> reporteMovimientos = [];
+    private List<ReporteAntiguedadProveedor> reporteAntiguedad = [];
+    private List<ReporteVencidaDetalle> reporteVencidas = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -550,6 +745,8 @@
 
     private void AplicarFiltros()
     {
+        ConstruirReportes();
+
         var lista = todosProveedores.AsEnumerable();
 
         lista = filtroEstatus switch
@@ -574,6 +771,74 @@
         };
 
         proveedoresAgrupados = lista.ToList();
+    }
+
+    private void ConstruirReportes()
+    {
+        var proveedorIdFiltro = Guid.TryParse(reporteProveedorIdTexto, out var proveedorId) ? proveedorId : Guid.Empty;
+
+        var cuentasReporte = todosProveedores
+            .SelectMany(p => p.Cuentas)
+            .Where(c => proveedorIdFiltro == Guid.Empty || c.ProveedorId == proveedorIdFiltro)
+            .Where(c => !reporteDesde.HasValue || c.FechaEmision.Date >= reporteDesde.Value.Date)
+            .Where(c => !reporteHasta.HasValue || c.FechaEmision.Date <= reporteHasta.Value.Date)
+            .ToList();
+
+        reporteMovimientos = cuentasReporte
+            .GroupBy(c => new { c.ProveedorId, c.ProveedorNombre })
+            .Select(g => new ReporteMovimientoProveedor
+            {
+                ProveedorId = g.Key.ProveedorId,
+                ProveedorNombre = g.Key.ProveedorNombre,
+                Documentos = g.Count(),
+                TotalEmitido = g.Sum(x => x.Total),
+                TotalPagado = g.Sum(x => x.PagadoTotal),
+                SaldoPendiente = g.Sum(x => Math.Max(0, x.Total - x.PagadoTotal)),
+                Vencido = g.Where(x => x.DiasAtraso > 0).Sum(x => Math.Max(0, x.Total - x.PagadoTotal)),
+                UltimoMovimiento = g.Max(x => x.FechaEmision)
+            })
+            .OrderByDescending(x => x.SaldoPendiente)
+            .ThenBy(x => x.ProveedorNombre)
+            .ToList();
+
+        reporteAntiguedad = cuentasReporte
+            .Where(c => c.Total - c.PagadoTotal > 0)
+            .GroupBy(c => new { c.ProveedorId, c.ProveedorNombre })
+            .Select(g => new ReporteAntiguedadProveedor
+            {
+                ProveedorId = g.Key.ProveedorId,
+                ProveedorNombre = g.Key.ProveedorNombre,
+                Rango0a30 = g.Where(x => x.DiasAtraso <= 30).Sum(x => Math.Max(0, x.Total - x.PagadoTotal)),
+                Rango31a60 = g.Where(x => x.DiasAtraso is >= 31 and <= 60).Sum(x => Math.Max(0, x.Total - x.PagadoTotal)),
+                Rango61a90 = g.Where(x => x.DiasAtraso is >= 61 and <= 90).Sum(x => Math.Max(0, x.Total - x.PagadoTotal)),
+                RangoMas90 = g.Where(x => x.DiasAtraso > 90).Sum(x => Math.Max(0, x.Total - x.PagadoTotal))
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        reporteVencidas = cuentasReporte
+            .Where(c => c.DiasAtraso > 0 && c.Total - c.PagadoTotal > 0)
+            .OrderByDescending(c => c.DiasAtraso)
+            .ThenBy(c => c.ProveedorNombre)
+            .Select(c => new ReporteVencidaDetalle
+            {
+                ProveedorNombre = c.ProveedorNombre,
+                Documento = c.NumeroDocumento,
+                Concepto = c.Concepto,
+                FechaEmision = c.FechaEmision,
+                FechaVencimiento = c.FechaVencimiento,
+                DiasAtraso = c.DiasAtraso,
+                Saldo = Math.Max(0, c.Total - c.PagadoTotal)
+            })
+            .ToList();
+    }
+
+    private void LimpiarReporte()
+    {
+        reporteDesde = DateTime.Today.AddMonths(-1);
+        reporteHasta = DateTime.Today;
+        reporteProveedorIdTexto = string.Empty;
+        AplicarFiltros();
     }
 
     private void ToggleProveedor(Guid id)
@@ -720,6 +985,40 @@
         public decimal PagadoTotal { get; set; }
         public List<PagoCxP> Pagos { get; set; } = [];
         public CuentaPorPagar CuentaOriginal { get; set; } = null!;
+    }
+
+    private class ReporteMovimientoProveedor
+    {
+        public Guid ProveedorId { get; set; }
+        public string ProveedorNombre { get; set; } = string.Empty;
+        public int Documentos { get; set; }
+        public decimal TotalEmitido { get; set; }
+        public decimal TotalPagado { get; set; }
+        public decimal SaldoPendiente { get; set; }
+        public decimal Vencido { get; set; }
+        public DateTime? UltimoMovimiento { get; set; }
+    }
+
+    private class ReporteAntiguedadProveedor
+    {
+        public Guid ProveedorId { get; set; }
+        public string ProveedorNombre { get; set; } = string.Empty;
+        public decimal Rango0a30 { get; set; }
+        public decimal Rango31a60 { get; set; }
+        public decimal Rango61a90 { get; set; }
+        public decimal RangoMas90 { get; set; }
+        public decimal Total => Rango0a30 + Rango31a60 + Rango61a90 + RangoMas90;
+    }
+
+    private class ReporteVencidaDetalle
+    {
+        public string ProveedorNombre { get; set; } = string.Empty;
+        public string Documento { get; set; } = string.Empty;
+        public string? Concepto { get; set; }
+        public DateTime FechaEmision { get; set; }
+        public DateTime? FechaVencimiento { get; set; }
+        public int DiasAtraso { get; set; }
+        public decimal Saldo { get; set; }
     }
 
     private class ProveedorAgrupado

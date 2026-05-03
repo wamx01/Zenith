@@ -27,10 +27,14 @@
                 <h1 class="display-6 fw-bold"><i class="bi bi-calendar2-week me-2"></i>Prenóminas</h1>
                 <p class="text-muted mb-0">Consolida días trabajados, vacaciones, horas extra y otras incidencias antes de cerrar la nómina.</p>
             </div>
-            @if (_puedeEditar)
-            {
-                <button class="btn btn-primary" @onclick="NuevaPrenomina"><i class="bi bi-plus-circle me-1"></i>Nueva Prenómina</button>
-            }
+            <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-outline-secondary" href="/rrhh/asistencias"><i class="bi bi-calendar-check me-1"></i>Ir a asistencias</a>
+                <a class="btn btn-outline-secondary" href="/rrhh/nominas"><i class="bi bi-wallet2 me-1"></i>Ir a nómina</a>
+                @if (_puedeEditar)
+                {
+                    <button class="btn btn-primary" @onclick="NuevaPrenomina"><i class="bi bi-plus-circle me-1"></i>Nueva Prenómina</button>
+                }
+            </div>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(error))

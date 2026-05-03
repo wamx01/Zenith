@@ -208,6 +208,8 @@ public partial class Presupuestos
         {
             catalogoInventarioMateriales = await context.InventarioItems
                 .AsNoTracking()
+                .Include(i => i.TipoInventario)
+                    .ThenInclude(t => t.CategoriaInventario)
                 .Where(i => i.IsActive)
                 .OrderBy(i => i.Nombre)
                 .ToListAsync();
@@ -408,6 +410,40 @@ public partial class Presupuestos
             await SincronizarProcesosCotizacionAsync();
             await SincronizarManoObraDesdeProcesosAsync();
             await SincronizarConsumosDesdeProcesosAsync();
+
+            cotizacionEditando = await RecargarCotizacion();
+            if (cotizacionEditando != null)
+            {
+                cotizacionEditando.CostoTotalPorTarea = ObtenerCostoTarea();
+                cotizacionEditando.CostoTotalPorPar = ObtenerCostoUnitarioBase();
+                cotizacionEditando.PrecioSugerido = ObtenerPrecioSugerido();
+                cotizacionEditando.PrecioFinalContado = ObtenerPrecioContado();
+                cotizacionEditando.PrecioCredito = ObtenerPrecioCredito();
+                cotizacionEditando.Ganancia = ObtenerUtilidadMonto();
+
+                var precioBaseRecargado = cotizacionEditando.PreciosVariantes.FirstOrDefault(p => p.IsActive && p.EsPrecioBase);
+                if (precioBaseRecargado != null)
+                {
+                    cotizacionEditando.PrecioFinalContado = precioBaseRecargado.PrecioContado;
+                    cotizacionEditando.PrecioCredito = precioBaseRecargado.PrecioCredito;
+                }
+
+                await EjecutarConNuevoContextoAsync(async context =>
+                {
+                    var cotizacionDb = await context.CotizacionesSerigrafia.FirstOrDefaultAsync(c => c.Id == cotizacionEditando.Id);
+                    if (cotizacionDb == null) return;
+
+                    cotizacionDb.CostoTotalPorTarea = cotizacionEditando.CostoTotalPorTarea;
+                    cotizacionDb.CostoTotalPorPar = cotizacionEditando.CostoTotalPorPar;
+                    cotizacionDb.PrecioSugerido = cotizacionEditando.PrecioSugerido;
+                    cotizacionDb.PrecioFinalContado = cotizacionEditando.PrecioFinalContado;
+                    cotizacionDb.PrecioCredito = cotizacionEditando.PrecioCredito;
+                    cotizacionDb.Ganancia = cotizacionEditando.Ganancia;
+                    cotizacionDb.UpdatedAt = DateTime.UtcNow;
+
+                    await context.SaveChangesAsync();
+                });
+            }
 
             await CargarCotizaciones();
         });

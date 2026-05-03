@@ -548,6 +548,8 @@
         await using var context = await DbContextFactory.CreateDbContextAsync();
         inventarioItemsCatalogo = await context.InventarioItems
             .AsNoTracking()
+            .Include(i => i.TipoInventario)
+                .ThenInclude(t => t.CategoriaInventario)
             .Where(i => i.IsActive)
             .OrderBy(i => i.Nombre)
             .ToListAsync();
@@ -568,8 +570,18 @@
 
     private IEnumerable<InventarioItem> ObtenerInventarioItemsPorOrigen(TipoProcesoConsumoOrigen origen)
         => origen == TipoProcesoConsumoOrigen.MateriaPrima
-            ? inventarioItemsCatalogo.Where(i => i.MateriaPrimaOrigenId.HasValue)
-            : inventarioItemsCatalogo.Where(i => i.InsumoOrigenId.HasValue);
+            ? inventarioItemsCatalogo.Where(EsInventarioMateriaPrima)
+            : inventarioItemsCatalogo.Where(EsInventarioInsumo);
+
+    private static bool EsInventarioMateriaPrima(InventarioItem item)
+        => item.MateriaPrimaOrigenId.HasValue
+            || item.OrigenLegacy == InventarioItemOrigenLegacy.MateriaPrima
+            || string.Equals(item.TipoInventario?.CategoriaInventario?.Codigo, "MATERIA_PRIMA", StringComparison.OrdinalIgnoreCase);
+
+    private static bool EsInventarioInsumo(InventarioItem item)
+        => item.InsumoOrigenId.HasValue
+            || item.OrigenLegacy == InventarioItemOrigenLegacy.Insumo
+            || string.Equals(item.TipoInventario?.CategoriaInventario?.Codigo, "INSUMO", StringComparison.OrdinalIgnoreCase);
 
     private void OnInventarioItemChanged(TipoProcesoConsumoEditor consumo)
     {
@@ -577,7 +589,7 @@
             ? inventarioItemsCatalogo.FirstOrDefault(i => i.Id == consumo.InventarioItemId.Value)
             : null;
 
-        if (item?.InsumoOrigenId.HasValue == true)
+        if (item != null && EsInventarioInsumo(item))
         {
             AjustarCategoriaPorInsumo(consumo);
         }
@@ -592,7 +604,7 @@
             ? inventarioItemsCatalogo.FirstOrDefault(i => i.Id == consumo.InventarioItemId.Value)
             : null;
 
-        if (item?.InsumoOrigenId.HasValue != true)
+        if (item == null || !EsInventarioInsumo(item))
         {
             return;
         }

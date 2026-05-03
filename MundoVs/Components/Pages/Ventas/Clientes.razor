@@ -150,11 +150,13 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Industria</label>
-                            <InputSelect class="form-select" @bind-Value="clienteEditando.Industria">
+                            <InputSelect class="form-select mb-2" @bind-Value="clienteEditando.Industria">
                                 <option value="@IndustriaEnum.Calzado">Calzado</option>
                                 <option value="@IndustriaEnum.Serigrafia">Serigrafía</option>
                                 <option value="@IndustriaEnum.Ambas">Ambas</option>
                             </InputSelect>
+                            <InputText class="form-control" @bind-Value="clienteEditando.IndustriaPersonalizada" placeholder="Ej. Tintas playeras" />
+                            <small class="text-muted">Si capturas un texto aquí, se mostrará como industria principal del cliente.</small>
                         </div>
                     </div>
 
@@ -503,7 +505,7 @@
                                     <td>@cliente.Email</td>
                                     <td>@cliente.Telefono</td>
                                     <td>
-                                        <span class="badge bg-@ObtenerColorIndustria(cliente.Industria)" style="font-size:0.68rem">@cliente.Industria</span>
+                                        <span class="badge bg-@ObtenerColorIndustria(cliente.Industria)" style="font-size:0.68rem">@ObtenerEtiquetaIndustria(cliente)</span>
                                     </td>
                                     <td>@cliente.Ciudad</td>
                                 </tr>
@@ -730,6 +732,11 @@
 
     private bool EsClienteCalzado()
         => clienteEditando.Industria is IndustriaEnum.Calzado or IndustriaEnum.Ambas;
+
+    private static string ObtenerEtiquetaIndustria(Cliente cliente)
+        => string.IsNullOrWhiteSpace(cliente.IndustriaPersonalizada)
+            ? cliente.Industria.ToString()
+            : cliente.IndustriaPersonalizada.Trim();
 
     private void AgregarReglaVariacionPrecio()
     {

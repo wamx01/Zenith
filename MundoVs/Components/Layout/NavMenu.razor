@@ -323,13 +323,6 @@
                         <span>Roles y Permisos</span>
                     </NavLink>
                 }
-                @if (HasCapacidad("rrhh.marcaciones.auditoria"))
-                {
-                    <NavLink class="nav-link nav-link-sub" href="rrhh/marcaciones" @onclick="CloseMobileMenu" title="Marcaciones (auditoría)">
-                        <span class="bi bi-list-check"></span>
-                        <span>Marcaciones</span>
-                    </NavLink>
-                }
             }
             else if (activeModuleId == 6)
             {
@@ -380,14 +373,6 @@
                     <NavLink class="nav-link nav-link-sub" href="rrhh/checadores" @onclick="CloseMobileMenu" title="Checadores">
                         <span class="bi bi-hdd-network"></span>
                         <span>Checadores</span>
-                    </NavLink>
-                    <NavLink class="nav-link nav-link-sub" href="rrhh/control-tiempo" @onclick="CloseMobileMenu" title="Control de tiempos">
-                        <span class="bi bi-stopwatch"></span>
-                        <span>Control de tiempos</span>
-                    </NavLink>
-                    <NavLink class="nav-link nav-link-sub" href="rrhh/estado-agente" @onclick="CloseMobileMenu" title="Estado del agente">
-                        <span class="bi bi-broadcast-pin"></span>
-                        <span>Estado del agente</span>
                     </NavLink>
                 }
 
