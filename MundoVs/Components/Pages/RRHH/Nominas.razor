@@ -245,6 +245,10 @@
                                         {
                                             <span class="badge text-bg-light">Infonavit</span>
                                         }
+                                        @if (TieneDiferenciaAsistenciaNomina(d))
+                                        {
+                                            <span class="badge text-bg-warning">Revisar asistencia</span>
+                                        }
                                     </div>
                                 </td>
                                 <td class="small">
@@ -304,6 +308,7 @@
                                     <span class="badge text-bg-light">Trab @detalleModalSeleccionado.DiasTrabajados</span>
                                     <span class="badge text-bg-light">Pag @detalleModalSeleccionado.DiasPagados</span>
                                     <span class="badge text-bg-light">Vac @detalleModalSeleccionado.DiasVacaciones</span>
+                                    <span class="badge text-bg-light">Netas asistencia @ObtenerHorasTrabajadasNetasAsistencia(detalleModalSeleccionado.EmpleadoId).ToString("0.##") h</span>
                                     <span class="badge text-bg-light">Extra @detalleModalSeleccionado.HorasExtra.ToString("0.##") h</span>
                                     @if (TieneFestivosAplicados(detalleModalSeleccionado.EmpleadoId))
                                     {
@@ -353,20 +358,40 @@
                                                         <InputNumber class="form-control form-control-sm text-center" @bind-Value="detalleModalSeleccionado.DiasVacaciones" disabled="true" />
                                                     </div>
                                                     <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Horas pagadas equiv.</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtra" @bind-Value:after="OnResumenNominaChangedAsync" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                        <label class="form-label small mb-1">Horas netas asistencia</label>
+                                                        <input class="form-control form-control-sm text-end" value="@($"{ObtenerHorasTrabajadasNetasAsistencia(detalleModalSeleccionado.EmpleadoId):0.##}")" readonly />
                                                     </div>
                                                     <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Horas base reales</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBase" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                        <label class="form-label small mb-1">Extra detectada</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBase" disabled="true" />
                                                     </div>
                                                     <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Banco horas</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBanco" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                        <label class="form-label small mb-1">Extra aprobada banco</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtraBanco" disabled="true" />
                                                     </div>
                                                     <div class="col-12">
-                                                        <div class="small text-muted">Las horas dobles/triples se muestran como tiempo real trabajado. Las horas pagadas equivalentes solo sirven para el cálculo del importe con factor.</div>
+                                                        <div class="small text-muted">El tiempo neto trabajado viene de Asistencias. El tiempo extra solo se paga o manda a banco cuando existe resolución aprobada.</div>
                                                     </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small mb-1">Extra aprobada pago</label>
+                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtra" disabled="true" />
+                                                    </div>
+                                                    <div class="col-md-8">
+                                                        @if (TieneDiferenciaAsistenciaNomina(detalleModalSeleccionado))
+                                                        {
+                                                            <div class="alert alert-warning py-2 small mb-0">@ObtenerMensajeDiferenciaAsistenciaNomina(detalleModalSeleccionado)</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="alert alert-success py-2 small mb-0">Tiempo aprobado sincronizado con Asistencias.</div>
+                                                        }
+                                                    </div>
+                                                    @if (ObtenerDiasTiempoExtraPendiente(detalleModalSeleccionado.EmpleadoId) > 0)
+                                                    {
+                                                        <div class="col-12">
+                                                            <div class="alert alert-info py-2 small mb-0">Hay @ObtenerDiasTiempoExtraPendiente(detalleModalSeleccionado.EmpleadoId) día(s) con tiempo extra pendiente de aprobación en Asistencias. Ese tiempo no se paga automáticamente.</div>
+                                                        </div>
+                                                    }
                                                     <div class="col-md-4">
                                                         <label class="form-label small mb-1">Retardo</label>
                                                         <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosRetardo" disabled="@(!PuedeModificarNominaSeleccionada)" />
@@ -710,6 +735,7 @@
 @code {
     private List<Nomina> nominas = [];
     private List<NominaDetalle> detallesNomina = [];
+    private Dictionary<Guid, ResumenAsistenciaNominaVm> resumenAsistenciaPorEmpleado = [];
     private Dictionary<Guid, List<ValeResumenVm>> valesPorEmpleado = [];
     private Dictionary<Guid, string> esquemaNombrePorId = [];
     private List<Empleado> empleados = [];
@@ -791,6 +817,7 @@
         if (nominaSeleccionada == null)
         {
             detallesNomina = [];
+            resumenAsistenciaPorEmpleado = [];
             RecalcularResumenNomina();
             return;
         }
@@ -807,8 +834,43 @@
             .OrderBy(d => d.Empleado.Nombre)
             .AsNoTracking()
             .ToListAsync();
+        await CargarResumenAsistenciaNominaAsync(nominaSeleccionada.FechaInicio, nominaSeleccionada.FechaFin, detallesNomina.Select(d => d.EmpleadoId));
         await CargarFestivosAplicadosAsync(nominaSeleccionada.FechaInicio, nominaSeleccionada.FechaFin, detallesNomina.Select(d => d.EmpleadoId));
         RecalcularResumenNomina();
+    }
+
+    private async Task CargarResumenAsistenciaNominaAsync(DateTime inicio, DateTime fin, IEnumerable<Guid> empleadoIds)
+    {
+        var ids = empleadoIds.Distinct().Where(id => id != Guid.Empty).ToList();
+        if (ids.Count == 0)
+        {
+            resumenAsistenciaPorEmpleado = [];
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var asistencias = await db.RrhhAsistencias
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.EmpleadoId)
+                && a.Fecha >= DateOnly.FromDateTime(inicio)
+                && a.Fecha <= DateOnly.FromDateTime(fin))
+            .ToListAsync();
+
+        resumenAsistenciaPorEmpleado = asistencias
+            .GroupBy(a => a.EmpleadoId)
+            .ToDictionary(
+                g => g.Key,
+                g => new ResumenAsistenciaNominaVm
+                {
+                    HorasTrabajadasNetas = Math.Round(g.Sum(a => Math.Max(0, a.MinutosTrabajadosNetos)) / 60m, 2),
+                    HorasExtraDetectadas = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtra)) / 60m, 2),
+                    HorasExtraAprobadasPago = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)) / 60m, 2),
+                    HorasExtraAprobadasBanco = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)) / 60m, 2),
+                    DiasConTiempoExtraPendiente = g.Count(a => a.MinutosExtra > 0
+                        && a.MinutosExtraAutorizadosPago == 0
+                        && a.MinutosExtraAutorizadosBanco == 0
+                        && string.IsNullOrWhiteSpace(a.ResolucionTiempoExtra))
+                });
     }
 
     private async Task CargarDesgloseValesAsync()
@@ -824,7 +886,7 @@
         var inicio = nominaSeleccionada.FechaInicio.Date;
         var fin = nominaSeleccionada.FechaFin.Date;
 
-        var vales = await db.ValesDestajo
+        var vales = await db.ValesDestajo 
             .Include(v => v.Detalles).ThenInclude(d => d.TipoProceso)
             .Include(v => v.Detalles).ThenInclude(d => d.RegistrosOrigen)
             .Where(v => v.IsActive
@@ -1931,6 +1993,7 @@
             detalle.DiasConMarcacion = incidencia?.DiasConMarcacion ?? 0;
             detalle.DiasDomingoTrabajado = incidencia?.DiasDomingoTrabajado ?? 0;
             detalle.DiasFestivoTrabajado = incidencia?.DiasFestivoTrabajado ?? 0;
+            detalle.HorasTrabajadasNetas = incidencia?.HorasTrabajadasNetas ?? detalle.HorasTrabajadasNetas;
             detalle.HorasExtraBase = incidencia?.HorasExtraBase ?? detalle.HorasExtraBase;
             detalle.HorasExtraBanco = incidencia?.HorasBancoAcumuladas ?? detalle.HorasExtraBanco;
             detalle.MinutosRetardo = incidencia?.MinutosRetardo ?? 0;
@@ -2112,9 +2175,6 @@
                 return;
             }
 
-            existente.HorasExtra = detalle.HorasExtra;
-            existente.HorasExtraBase = detalle.HorasExtraBase;
-            existente.HorasExtraBanco = detalle.HorasExtraBanco;
             existente.MinutosRetardo = detalle.MinutosRetardo;
             existente.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
             existente.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
@@ -2443,6 +2503,31 @@
     private int ObtenerMinutosDescuentoPreview(NominaDetalle detalle)
         => detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual;
 
+    private ResumenAsistenciaNominaVm ObtenerResumenAsistenciaNomina(Guid empleadoId)
+        => resumenAsistenciaPorEmpleado.TryGetValue(empleadoId, out var resumen)
+            ? resumen
+            : new ResumenAsistenciaNominaVm();
+
+    private decimal ObtenerHorasTrabajadasNetasAsistencia(Guid empleadoId)
+        => ObtenerResumenAsistenciaNomina(empleadoId).HorasTrabajadasNetas;
+
+    private int ObtenerDiasTiempoExtraPendiente(Guid empleadoId)
+        => ObtenerResumenAsistenciaNomina(empleadoId).DiasConTiempoExtraPendiente;
+
+    private bool TieneDiferenciaAsistenciaNomina(NominaDetalle detalle)
+    {
+        var resumen = ObtenerResumenAsistenciaNomina(detalle.EmpleadoId);
+        return Math.Abs(resumen.HorasExtraDetectadas - detalle.HorasExtraBase) > 0.01m
+            || Math.Abs(resumen.HorasExtraAprobadasPago - detalle.HorasExtra) > 0.01m
+            || Math.Abs(resumen.HorasExtraAprobadasBanco - detalle.HorasExtraBanco) > 0.01m;
+    }
+
+    private string ObtenerMensajeDiferenciaAsistenciaNomina(NominaDetalle detalle)
+    {
+        var resumen = ObtenerResumenAsistenciaNomina(detalle.EmpleadoId);
+        return $"Asistencias registra netas {resumen.HorasTrabajadasNetas:0.##} h, extra detectada {resumen.HorasExtraDetectadas:0.##} h, aprobada para pago {resumen.HorasExtraAprobadasPago:0.##} h y aprobada a banco {resumen.HorasExtraAprobadasBanco:0.##} h. Nómina tiene base {detalle.HorasExtraBase:0.##} h, pago {detalle.HorasExtra:0.##} h y banco {detalle.HorasExtraBanco:0.##} h.";
+    }
+
     private static decimal ObtenerProvisionesConfigurables(NominaDetalle detalle)
         => detalle.ProvisionesDetalle.Where(p => p.IsActive).Sum(p => p.Importe);
 
@@ -2647,6 +2732,11 @@
                 if (concepto.AfectaNetoEmpleado)
                     etiquetasDeduccion.Add(concepto.Nombre);
 
+                continue;
+            }
+
+            if (EsPercepcionConfigurable(concepto))
+            {
                 continue;
             }
 
@@ -3105,5 +3195,14 @@
         public string Nombre { get; set; } = string.Empty;
         public decimal Factor { get; set; }
         public bool UsaFallback { get; set; }
+    }
+
+    private sealed class ResumenAsistenciaNominaVm
+    {
+        public decimal HorasTrabajadasNetas { get; set; }
+        public decimal HorasExtraDetectadas { get; set; }
+        public decimal HorasExtraAprobadasPago { get; set; }
+        public decimal HorasExtraAprobadasBanco { get; set; }
+        public int DiasConTiempoExtraPendiente { get; set; }
     }
 }

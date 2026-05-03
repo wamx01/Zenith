@@ -90,6 +90,7 @@ builder.Services.AddScoped<INominaReciboBuilder, NominaReciboBuilder>();
 builder.Services.AddScoped<INominaResumenBuilder, NominaResumenBuilder>();
 builder.Services.AddScoped<INominaSatCatalogInitializer, NominaSatCatalogInitializer>();
 builder.Services.AddScoped<IRrhhAsistenciaProcessor, RrhhAsistenciaProcessor>();
+builder.Services.AddScoped<IRrhhAsistenciasPageService, RrhhAsistenciasPageService>();
 builder.Services.AddScoped<IRrhhAsistenciaCorreccionAdvisor, RrhhAsistenciaCorreccionAdvisor>();
 builder.Services.AddScoped<IRrhhTiempoExtraResolutionService, RrhhTiempoExtraResolutionService>();
 builder.Services.AddScoped<IRrhhPrenominaSnapshotService, RrhhPrenominaSnapshotService>();

@@ -155,6 +155,7 @@
                         <span class="badge text-bg-light">Domingos: @detallesEditando.Sum(d => d.DiasDomingoTrabajado)</span>
                         <span class="badge text-bg-light">Horas extra pagables: @detallesEditando.Sum(d => d.HorasExtra).ToString("0.##")</span>
                         <span class="badge text-bg-light">Extra base: @detallesEditando.Sum(d => d.HorasExtraBase).ToString("0.##")</span>
+                        <span class="badge text-bg-light">Netas asistencia: @detallesEditando.Sum(d => d.HorasTrabajadasNetas).ToString("0.##")</span>
                         <span class="badge text-bg-light">Min. retardo: @detallesEditando.Sum(d => d.MinutosRetardo)</span>
                         <span class="badge text-bg-light">Min. salida ant.: @detallesEditando.Sum(d => d.MinutosSalidaAnticipada)</span>
                         <span class="badge text-bg-light">Min. desc. manual: @detallesEditando.Sum(d => d.MinutosDescuentoManual)</span>
@@ -221,6 +222,7 @@
                                         <td class="small">
                                             <div>Extra @FormatearHorasResumen(detalle.HorasExtra)</div>
                                             <div>Base @FormatearHorasResumen(detalle.HorasExtraBase)</div>
+                                            <div>Netas @FormatearHorasResumen(detalle.HorasTrabajadasNetas)</div>
                                             <div>Min desc. @ObtenerMinutosDescuentoTotal(detalle)</div>
                                         </td>
                                         <td class="text-end">@detalle.MontoDestajoInformativo.ToString("C2")</td>
@@ -254,6 +256,7 @@
                                             <span class="badge text-bg-light">Trab. @detalleModalSeleccionado.DiasTrabajados</span>
                                             <span class="badge text-bg-light">Pag. @detalleModalSeleccionado.DiasPagados</span>
                                             <span class="badge text-bg-light">Vac. @detalleModalSeleccionado.DiasVacaciones</span>
+                                            <span class="badge text-bg-light">Netas @FormatearHorasResumen(detalleModalSeleccionado.HorasTrabajadasNetas)</span>
                                             <span class="badge text-bg-light">Extra @FormatearHorasResumen(detalleModalSeleccionado.HorasExtra)</span>
                                             <span class="badge text-bg-light">Destajo @detalleModalSeleccionado.MontoDestajoInformativo.ToString("C2")</span>
                                             <span class="badge text-bg-light">Comp. mín. @detalleModalSeleccionado.ComplementoSalarioMinimoSugerido.ToString("C2")</span>
@@ -317,6 +320,10 @@
                                                     <div class="card-body">
                                                         <div class="row g-2">
                                                             <div class="col-md-4">
+                                                                <label class="form-label small mb-1">Horas netas</label>
+                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasTrabajadasNetas" disabled="true" />
+                                                            </div>
+                                                            <div class="col-md-4">
                                                                 <label class="form-label small mb-1">Horas extra pagables</label>
                                                                 <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasExtra" disabled="@(!PuedeModificarPrenominaActual || !reglasPrenomina.PermitirHorasExtraManual)" />
                                                             </div>
@@ -351,6 +358,16 @@
                                                             <div class="col-md-4">
                                                                 <label class="form-label small mb-1">Comp. mín.</label>
                                                                 <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.ComplementoSalarioMinimoSugerido" disabled="true" />
+                                                            </div>
+                                                            <div class="col-12">
+                                                                @if (TieneDiferenciaTiempoAprobado(detalleModalSeleccionado))
+                                                                {
+                                                                    <div class="alert alert-warning py-2 small mb-0">El tiempo neto trabajado es @FormatearHorasResumen(detalleModalSeleccionado.HorasTrabajadasNetas). La extra detectada es @FormatearHorasResumen(detalleModalSeleccionado.HorasExtraBase), pero solo @FormatearHorasResumen(detalleModalSeleccionado.HorasExtra) está aprobada para pago y @FormatearHorasResumen(detalleModalSeleccionado.HorasBancoAcumuladas) para banco.</div>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <div class="alert alert-success py-2 small mb-0">La prenómina ya distingue correctamente tiempo neto trabajado y tiempo extra aprobado.</div>
+                                                                }
                                                             </div>
                                                         </div>
                                                     </div>
@@ -763,6 +780,7 @@
             DiasConMarcacion = d.DiasConMarcacion,
             DiasDomingoTrabajado = d.DiasDomingoTrabajado,
             DiasFestivoTrabajado = d.DiasFestivoTrabajado,
+            HorasTrabajadasNetas = d.HorasTrabajadasNetas,
             HorasExtraBase = d.HorasExtraBase,
             HorasExtra = d.HorasExtra,
             HorasBancoAcumuladas = d.HorasBancoAcumuladas,
@@ -1002,6 +1020,7 @@
             DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado,
             HorasExtraBase = snapshot.HorasExtraBase,
             HorasExtra = snapshot.HorasExtra,
+            HorasTrabajadasNetas = snapshot.HorasTrabajadasNetas,
             HorasBancoAcumuladas = snapshot.HorasBancoAcumuladas,
             HorasBancoConsumidas = snapshot.HorasBancoConsumidas,
             HorasDescansoTomado = snapshot.HorasDescansoTomado,
@@ -1235,6 +1254,7 @@
                 entity.DiasFestivoTrabajado = detalle.DiasFestivoTrabajado;
                 entity.HorasExtraBase = detalle.HorasExtraBase;
                 entity.HorasExtra = detalle.HorasExtra;
+                entity.HorasTrabajadasNetas = detalle.HorasTrabajadasNetas;
                 entity.HorasBancoAcumuladas = detalle.HorasBancoAcumuladas;
                 entity.HorasBancoConsumidas = detalle.HorasBancoConsumidas;
                 entity.HorasDescansoTomado = detalle.HorasDescansoTomado;
@@ -1857,6 +1877,9 @@
             detalle.HorasExtra = Math.Max(0m, detalle.HorasExtra);
     }
 
+    private static bool TieneDiferenciaTiempoAprobado(PrenominaDetalleEditable detalle)
+        => Math.Abs(detalle.HorasExtraBase - (detalle.HorasExtra + detalle.HorasBancoAcumuladas)) > 0.01m;
+
     private sealed class PrenominaDetalleEditable
     {
         public Guid Id { get; set; }
@@ -1873,6 +1896,7 @@
         public int DiasConMarcacion { get; set; }
         public int DiasDomingoTrabajado { get; set; }
         public int DiasFestivoTrabajado { get; set; }
+        public decimal HorasTrabajadasNetas { get; set; }
         public decimal HorasExtraBase { get; set; }
         public decimal HorasExtra { get; set; }
         public decimal HorasBancoAcumuladas { get; set; }

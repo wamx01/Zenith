@@ -1,0 +1,196 @@
+@using Microsoft.AspNetCore.Components
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Models
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        @if (PuedeMostrarResolucion)
+        {
+            <div class="asis-section-card h-100">
+                <div class="asis-section-card__head">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="asis-section-card__num asis-section-card__num--time"><i class="bi bi-clock-history asis-section-card__num-icon"></i></span>
+                        <strong class="small">Tiempo extra y banco</strong>
+                    </div>
+                    <span class="badge @ClaseEstadoTiempoSeccion asis-badge--xs">@EstadoTiempoSeccion</span>
+                </div>
+                <div class="asis-section-card__body">
+                    @if (!string.IsNullOrWhiteSpace(NotaTiempo))
+                    {
+                        <div class="asis-banner asis-banner--warn asis-banner--normal d-flex mb-2"><i class="bi bi-exclamation-triangle me-1 flex-shrink-0"></i>@NotaTiempo</div>
+                    }
+
+                    <div class="asis-banner asis-banner--info asis-banner--normal d-flex mb-2"><i class="bi bi-info-circle me-1 flex-shrink-0"></i>@GuiaTiempoResolucion</div>
+
+                    <div class="asis-metrics-row mb-3">
+                        <div class="asis-metric-pill asis-metric-pill--warn">
+                            <span class="asis-metric-pill__label">Extra detectada</span>
+                            <span class="asis-metric-pill__val">@ExtraDetectadaTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--info">
+                            <span class="asis-metric-pill__label">Puedes aprobar</span>
+                            <span class="asis-metric-pill__val">@ExtraResolubleTexto</span>
+                        </div>
+                        <div class="asis-metric-pill @(ExtraAprobadaTexto == "0:00 h" ? "asis-metric-pill--muted" : "asis-metric-pill--success")">
+                            <span class="asis-metric-pill__label">Ya aprobado</span>
+                            <span class="asis-metric-pill__val">@ExtraAprobadaTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--primary">
+                            <span class="asis-metric-pill__label">Faltante real</span>
+                            <span class="asis-metric-pill__val">@FaltanteNetoTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--muted">
+                            <span class="asis-metric-pill__label">Saldo banco</span>
+                            <span class="asis-metric-pill__val">@SaldoBancoTexto</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 align-items-end mb-2">
+                        <div class="col-sm-6">
+                            <label class="asis-field-label">Tipo de resolución</label>
+                            <InputSelect class="form-select form-select-sm" Value="@TipoResolucionTiempoExtra" ValueChanged="OnTipoResolucionTiempoExtraChanged" ValueExpression="@(() => TipoResolucionTiempoExtra)">
+                                @foreach (var opcion in ResolucionesDisponibles)
+                                {
+                                    <option value="@opcion.Value">@opcion.Label</option>
+                                }
+                            </InputSelect>
+                            @if (OpcionSeleccionada is not null)
+                            {
+                                <div class="asis-field-hint">@OpcionSeleccionada.Description</div>
+                            }
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="asis-field-label">Notas / autorización</label>
+                            <InputText class="form-control form-control-sm" Value="@ResolucionTiempoExtraObservaciones" ValueChanged="OnResolucionTiempoExtraObservacionesChanged" ValueExpression="@(() => ResolucionTiempoExtraObservaciones)" placeholder="Criterio aplicado" />
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="asis-field-label">Min. a pago</label>
+                            <InputNumber class="form-control form-control-sm" Value="@MinutosExtraPagoCaptura" ValueChanged="OnMinutosExtraPagoCapturaChanged" ValueExpression="@(() => MinutosExtraPagoCaptura)" min="0" disabled="@(TipoResolucionTiempoExtra is "CubrirFaltanteConBanco" or "SinAccion")" />
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="asis-field-label">Min. a banco</label>
+                            <InputNumber class="form-control form-control-sm" Value="@MinutosExtraBancoCaptura" ValueChanged="OnMinutosExtraBancoCapturaChanged" ValueExpression="@(() => MinutosExtraBancoCaptura)" min="0" disabled="@(TipoResolucionTiempoExtra is "CubrirFaltanteConBanco" or "SinAccion" || !BancoHorasHabilitadoConfigurado)" />
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="asis-field-label">Min. cubrir faltante</label>
+                            <InputNumber class="form-control form-control-sm" Value="@MinutosCubrirBancoCaptura" ValueChanged="OnMinutosCubrirBancoCapturaChanged" ValueExpression="@(() => MinutosCubrirBancoCaptura)" min="0" disabled="@(TipoResolucionTiempoExtra is not "CubrirFaltanteConBanco" || !BancoHorasHabilitadoConfigurado)" />
+                        </div>
+                    </div>
+
+                    <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
+                        <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Este paso es solo para decidir qué haces con el tiempo extra o con el banco. El permiso se define en el paso anterior.
+                    </div>
+
+                    <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
+                        <i class="bi bi-check2-circle me-1 flex-shrink-0"></i><strong class="me-1">Detectado</strong> es lo que el sistema encontró. <strong class="mx-1">Aprobable</strong> es lo máximo que puedes autorizar. <strong class="mx-1">Aprobada</strong> es lo que ya quedó aplicado.
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(ExplicacionAprobacionTexto))
+                    {
+                        <div class="asis-banner asis-banner--warn asis-banner--dense d-flex mb-2">
+                            <i class="bi bi-lightbulb me-1 flex-shrink-0"></i>@ExplicacionAprobacionTexto
+                        </div>
+                    }
+
+                    <div class="d-flex flex-wrap gap-2 mb-2 small text-muted">
+                        <span>Base trabajada: <strong>@NetoTrabajadoTexto</strong></span>
+                        <span>·</span>
+                        <span>Visible: <strong>@VisibleTrabajadoTexto</strong></span>
+                        <span>·</span>
+                        <span>Extra aprobable: <strong>@ExtraResolubleTexto</strong></span>
+                        <span>·</span>
+                        <span>Extra aprobada: <strong>@ExtraAprobadaTexto</strong></span>
+                        <span>·</span>
+                        <span>Faltante: <strong>@FaltanteNetoTexto</strong></span>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button class="btn btn-warning btn-sm asis-btn-xs" @onclick="OnAplicarResolucionTiempo" disabled="@Cargando">
+                            <i class="bi bi-check2-circle me-1"></i>Guardar resolución
+                        </button>
+                        @if (PuedeQuitarResolucion)
+                        {
+                            <button class="btn btn-outline-danger btn-sm asis-btn-xs" @onclick="OnQuitarResolucionTiempo" disabled="@Cargando">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Quitar resolución
+                            </button>
+                        }
+                        <span class="small text-muted">Actual: @ResumenResolucionActual</span>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="asis-empty-state">
+                <i class="bi bi-clock d-block mb-2 asis-empty-icon asis-empty-icon--lg"></i>
+                <div class="small text-muted">No hay resolución de tiempo extra o banco pendiente para este día.</div>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-4">
+        <div class="asis-section-card h-100">
+            <div class="asis-section-card__head">
+                <strong class="small"><i class="bi bi-journal-text me-1"></i>Bitácora del día</strong>
+            </div>
+            <div class="asis-section-card__body">
+                <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
+                    <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Solo muestra cambios ya realizados. No sustituye permiso, compensación ni resolución.
+                </div>
+                @if (BitacoraCorreccionDia.Count == 0)
+                {
+                    <div class="text-muted small text-center py-3"><i class="bi bi-journal d-block mb-1 asis-empty-icon asis-empty-icon--muted"></i>Sin movimientos</div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-2">
+                        @foreach (var log in BitacoraCorreccionDia)
+                        {
+                            <div class="asis-log-item">
+                                <div class="asis-log-item__msg">@FormatearMensajeBitacora(log)</div>
+                                <div class="asis-log-item__meta">@FormatearFechaBitacora(log)</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool PuedeMostrarResolucion { get; set; }
+    [Parameter, EditorRequired] public string ClaseEstadoTiempoSeccion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string EstadoTiempoSeccion { get; set; } = string.Empty;
+    [Parameter] public string? NotaTiempo { get; set; }
+    [Parameter, EditorRequired] public string GuiaTiempoResolucion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ExtraDetectadaTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ExtraResolubleTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ExtraAprobadaTexto { get; set; } = string.Empty;
+    [Parameter] public string? ExplicacionAprobacionTexto { get; set; }
+    [Parameter, EditorRequired] public string FaltanteNetoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string SaldoBancoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<RrhhAsistenciaCorreccionResolucionOption> ResolucionesDisponibles { get; set; } = [];
+    [Parameter, EditorRequired] public string TipoResolucionTiempoExtra { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnTipoResolucionTiempoExtraChanged { get; set; }
+    [Parameter] public RrhhAsistenciaCorreccionResolucionOption? OpcionSeleccionada { get; set; }
+    [Parameter] public string? ResolucionTiempoExtraObservaciones { get; set; }
+    [Parameter] public EventCallback<string?> OnResolucionTiempoExtraObservacionesChanged { get; set; }
+    [Parameter] public int MinutosExtraPagoCaptura { get; set; }
+    [Parameter] public EventCallback<int> OnMinutosExtraPagoCapturaChanged { get; set; }
+    [Parameter] public int MinutosExtraBancoCaptura { get; set; }
+    [Parameter] public EventCallback<int> OnMinutosExtraBancoCapturaChanged { get; set; }
+    [Parameter] public int MinutosCubrirBancoCaptura { get; set; }
+    [Parameter] public EventCallback<int> OnMinutosCubrirBancoCapturaChanged { get; set; }
+    [Parameter] public bool BancoHorasHabilitadoConfigurado { get; set; }
+    [Parameter, EditorRequired] public string NetoTrabajadoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string VisibleTrabajadoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ResumenResolucionActual { get; set; } = string.Empty;
+    [Parameter] public bool Cargando { get; set; }
+    [Parameter] public EventCallback OnAplicarResolucionTiempo { get; set; }
+    [Parameter] public EventCallback OnQuitarResolucionTiempo { get; set; }
+    [Parameter] public bool PuedeQuitarResolucion { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<RrhhLogChecador> BitacoraCorreccionDia { get; set; } = [];
+    [Parameter, EditorRequired] public Func<RrhhLogChecador, string> FormatearMensajeBitacora { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<RrhhLogChecador, string> FormatearFechaBitacora { get; set; } = default!;
+}

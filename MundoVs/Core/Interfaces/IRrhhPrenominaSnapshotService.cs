@@ -23,6 +23,7 @@ public sealed class RrhhPrenominaSnapshotItem
     public int DiasConMarcacion { get; init; }
     public int DiasDomingoTrabajado { get; init; }
     public int DiasFestivoTrabajado { get; init; }
+    public decimal HorasTrabajadasNetas { get; init; }
     public decimal HorasExtraBase { get; init; }
     public decimal HorasExtra { get; init; }
     public decimal HorasBancoAcumuladas { get; init; }

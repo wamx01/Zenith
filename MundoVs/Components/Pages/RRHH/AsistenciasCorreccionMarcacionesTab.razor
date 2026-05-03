@@ -1,0 +1,151 @@
+@using Microsoft.AspNetCore.Components
+@using MundoVs.Core.Entities
+
+<div class="asis-banner asis-banner--info asis-banner--normal d-flex mb-3">
+    <i class="bi bi-signpost-split me-1 flex-shrink-0"></i>Primero confirma que las checadas del día estén correctas. Si aquí hay un error, permiso o tiempo extra pueden verse mal.
+</div>
+
+<div class="asis-add-row mb-3">
+    <div class="asis-add-row__label"><i class="bi bi-plus-circle text-success me-1"></i>Agregar marcación</div>
+    <div class="asis-add-row__fields">
+        <div class="asis-add-row__field asis-field--time">
+            <label class="asis-field-label">Hora</label>
+            <InputText class="form-control form-control-sm" Value="@ManualHoraTexto" ValueChanged="OnManualHoraTextoChanged" ValueExpression="@(() => ManualHoraTexto)" placeholder="08:00" />
+        </div>
+        <div class="asis-add-row__field asis-field--type">
+            <label class="asis-field-label">Tipo</label>
+            <InputSelect class="form-select form-select-sm" Value="@ManualClasificacion" ValueChanged="OnManualClasificacionChanged" ValueExpression="@(() => ManualClasificacion)">
+                @foreach (var clasificacion in Enum.GetValues<TipoClasificacionMarcacionRrhh>())
+                {
+                    <option value="@clasificacion">@clasificacion</option>
+                }
+            </InputSelect>
+        </div>
+        <div class="asis-add-row__field flex-grow-1">
+            <label class="asis-field-label">Observación</label>
+            <InputText class="form-control form-control-sm" Value="@ManualObservacion" ValueChanged="OnManualObservacionChanged" ValueExpression="@(() => ManualObservacion)" placeholder="Ej. olvidó checar salida" />
+        </div>
+        <div class="asis-add-row__action">
+            <button class="btn btn-success btn-sm asis-btn-xs" @onclick="OnGuardarMarcacionManual" disabled="@Cargando">
+                <i class="bi bi-plus-lg me-1"></i>Agregar
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-sm align-middle mb-0 asis-check-table">
+        <thead>
+            <tr>
+                <th class="asis-table-col--time">Hora</th>
+                <th class="asis-table-col--origin">Origen</th>
+                <th>Tipo / Cambio rápido</th>
+                <th>Observación</th>
+                <th class="asis-table-col--status">Estado</th>
+                <th class="text-muted asis-table-col--audit">Auditoría</th>
+                <th class="asis-table-col--actions"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (MarcacionesDia.Count == 0)
+            {
+                <tr>
+                    <td colspan="7" class="text-center py-4">
+                        <div class="text-muted small"><i class="bi bi-fingerprint d-block mb-1 asis-empty-icon"></i>Sin marcaciones para este día</div>
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var item in MarcacionesDia)
+                {
+                    <tr class="@(item.EsAnulada ? "asis-row-anulada" : "")">
+                        <td>
+                            <span class="asis-hora-badge @(item.EsManual ? "asis-hora-badge--manual" : "")">@ObtenerHoraMarcacion(item)</span>
+                        </td>
+                        <td>
+                            <span class="asis-chip @(item.EsManual ? "asis-chip--resolved" : "asis-chip--muted") asis-chip--xs">
+                                @(item.EsManual ? "Manual" : (item.Origen ?? "Sistema"))
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-1 flex-wrap">
+                                <span class="small fw-semibold me-1">@item.ClasificacionOperativa</span>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary asis-clsf-btn" title="Entrada" @onclick="() => OnCambiarClasificacion.InvokeAsync((item.Id, TipoClasificacionMarcacionRrhh.Entrada))">E</button>
+                                    <button class="btn btn-outline-secondary asis-clsf-btn" title="Salida" @onclick="() => OnCambiarClasificacion.InvokeAsync((item.Id, TipoClasificacionMarcacionRrhh.Salida))">S</button>
+                                    <button class="btn btn-outline-secondary asis-clsf-btn" title="Inicio descanso" @onclick="() => OnCambiarClasificacion.InvokeAsync((item.Id, TipoClasificacionMarcacionRrhh.InicioDescanso))">DI</button>
+                                    <button class="btn btn-outline-secondary asis-clsf-btn" title="Fin descanso" @onclick="() => OnCambiarClasificacion.InvokeAsync((item.Id, TipoClasificacionMarcacionRrhh.FinDescanso))">DF</button>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="small">
+                            @if (item.EsManual && MarcacionManualEditandoId == item.Id)
+                            {
+                                <div class="d-flex gap-1">
+                                    <InputText class="form-control form-control-sm asis-input--time-edit" Value="@MarcacionManualEditandoHoraTexto" ValueChanged="OnMarcacionManualEditandoHoraTextoChanged" ValueExpression="@(() => MarcacionManualEditandoHoraTexto)" placeholder="hora" />
+                                    <InputText class="form-control form-control-sm flex-grow-1" Value="@MarcacionManualEditandoObservacion" ValueChanged="OnMarcacionManualEditandoObservacionChanged" ValueExpression="@(() => MarcacionManualEditandoObservacion)" placeholder="observación" />
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="text-truncate asis-truncate-note">@(string.IsNullOrWhiteSpace(item.ObservacionManual) ? "—" : item.ObservacionManual)</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="asis-chip @(item.EsAnulada ? "asis-chip--muted" : "asis-chip--success") asis-chip--xs">
+                                <i class="bi @(item.EsAnulada ? "bi-slash-circle" : "bi-check2") me-1"></i>@(item.EsAnulada ? "Anulada" : "Activa")
+                            </span>
+                        </td>
+                        <td class="asis-audit-cell">@ObtenerAuditoriaMarcacion(item)</td>
+                        <td class="text-end">
+                            @if (item.EsManual && MarcacionManualEditandoId == item.Id)
+                            {
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-success asis-btn-xs" @onclick="OnGuardarEdicionMarcacionManual"><i class="bi bi-check-lg"></i></button>
+                                    <button class="btn btn-outline-secondary asis-btn-xs" @onclick="OnCancelarEdicionMarcacionManual"><i class="bi bi-x-lg"></i></button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="btn-group btn-group-sm">
+                                    @if (item.EsManual)
+                                    {
+                                        <button class="btn btn-outline-primary asis-btn-xs" title="Editar" @onclick="() => OnIniciarEdicionMarcacionManual.InvokeAsync(item)"><i class="bi bi-pencil"></i></button>
+                                    }
+                                    <button class="btn @(item.EsAnulada ? "btn-outline-success" : "btn-outline-warning") asis-btn-xs" title="@(item.EsAnulada ? "Reactivar" : "Anular")" @onclick="() => OnAlternarAnulacionMarcacion.InvokeAsync(item.Id)">
+                                        <i class="bi @(item.EsAnulada ? "bi-arrow-counterclockwise" : "bi-slash-circle")"></i>
+                                    </button>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RrhhMarcacion> MarcacionesDia { get; set; } = [];
+    [Parameter, EditorRequired] public string ManualHoraTexto { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnManualHoraTextoChanged { get; set; }
+    [Parameter, EditorRequired] public TipoClasificacionMarcacionRrhh ManualClasificacion { get; set; }
+    [Parameter] public EventCallback<TipoClasificacionMarcacionRrhh> OnManualClasificacionChanged { get; set; }
+    [Parameter] public string? ManualObservacion { get; set; }
+    [Parameter] public EventCallback<string?> OnManualObservacionChanged { get; set; }
+    [Parameter] public bool Cargando { get; set; }
+    [Parameter] public EventCallback OnGuardarMarcacionManual { get; set; }
+    [Parameter, EditorRequired] public Func<RrhhMarcacion, string> ObtenerHoraMarcacion { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<RrhhMarcacion, string> ObtenerAuditoriaMarcacion { get; set; } = default!;
+    [Parameter] public Guid? MarcacionManualEditandoId { get; set; }
+    [Parameter, EditorRequired] public string MarcacionManualEditandoHoraTexto { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnMarcacionManualEditandoHoraTextoChanged { get; set; }
+    [Parameter] public string? MarcacionManualEditandoObservacion { get; set; }
+    [Parameter] public EventCallback<string?> OnMarcacionManualEditandoObservacionChanged { get; set; }
+    [Parameter] public EventCallback<RrhhMarcacion> OnIniciarEdicionMarcacionManual { get; set; }
+    [Parameter] public EventCallback OnGuardarEdicionMarcacionManual { get; set; }
+    [Parameter] public EventCallback OnCancelarEdicionMarcacionManual { get; set; }
+    [Parameter] public EventCallback<Guid> OnAlternarAnulacionMarcacion { get; set; }
+    [Parameter] public EventCallback<(Guid MarcacionId, TipoClasificacionMarcacionRrhh Clasificacion)> OnCambiarClasificacion { get; set; }
+}

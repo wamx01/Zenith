@@ -1,0 +1,252 @@
+@using Microsoft.AspNetCore.Components
+@using MundoVs.Core.Entities
+
+<div class="row g-3">
+
+    <div class="col-lg-8 d-flex flex-column gap-3">
+
+        <div class="asis-banner asis-banner--info asis-banner--normal d-flex">
+            <i class="bi bi-signpost-split me-1 flex-shrink-0"></i>Aquí decides si realmente faltó tiempo por permiso. Si el empleado recuperó tiempo ese mismo día, primero revísalo como compensación antes de subir más horas de permiso.
+        </div>
+
+        <div class="asis-section-card">
+            <div class="asis-section-card__head">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="asis-section-card__num">1</span>
+                    <strong class="small">Permiso parcial del día</strong>
+                </div>
+                <span class="badge @ClaseEstadoPermisoSeccion asis-badge--xs">@EstadoPermisoSeccion</span>
+            </div>
+            <div class="asis-section-card__body">
+                @if (!string.IsNullOrWhiteSpace(NotaPermiso))
+                {
+                    <div class="asis-banner asis-banner--info mb-2 d-flex"><i class="bi bi-signpost-split me-1 flex-shrink-0"></i>@NotaPermiso</div>
+                }
+
+                <div class="asis-permiso-estado mb-2 @(HayPermisoRegistrado ? "asis-permiso-estado--ok" : "asis-permiso-estado--empty")">
+                    <i class="bi @(HayPermisoRegistrado ? "bi-shield-check" : "bi-shield-exclamation") me-1"></i>
+                    <strong>@(HayPermisoRegistrado ? "Permiso registrado:" : "Sin permiso:")</strong>
+                    <span class="ms-1">@(HayPermisoRegistrado ? ResumenPermisoDiaCaptura : GuiaRapidaPermiso)</span>
+                </div>
+
+                @if (MostrarResumenOperativo)
+                {
+                    <div class="asis-metrics-row mb-2">
+                        <div class="asis-metric-pill asis-metric-pill--primary">
+                            <span class="asis-metric-pill__label">Faltante</span>
+                            <span class="asis-metric-pill__val">@FaltanteNetoTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--info">
+                            <span class="asis-metric-pill__label">Capturado</span>
+                            <span class="asis-metric-pill__val">@PermisoCapturadoTexto</span>
+                        </div>
+                        <div class="asis-metric-pill @(FaltanteRemanenteTexto == "0:00 h" ? "asis-metric-pill--success" : "asis-metric-pill--warn")">
+                            <span class="asis-metric-pill__label">Remanente</span>
+                            <span class="asis-metric-pill__val">@FaltanteRemanenteTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--muted">
+                            <span class="asis-metric-pill__label">Visible</span>
+                            <span class="asis-metric-pill__val">@TrabajoVisibleTexto</span>
+                        </div>
+                        <div class="asis-metric-pill asis-metric-pill--muted">
+                            <span class="asis-metric-pill__label">Desc. excl.</span>
+                            <span class="asis-metric-pill__val">@DescansoExcluidoTexto</span>
+                        </div>
+                    </div>
+                    <div class="asis-banner asis-banner--info asis-banner--normal mb-2 d-flex">
+                        <i class="bi bi-lightbulb me-1 flex-shrink-0"></i>Sugerido: @ResumenPermisoSugerido
+                    </div>
+                }
+
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-sm-3">
+                        <label class="asis-field-label">Horas</label>
+                        <InputNumber class="form-control form-control-sm" Value="@HorasPermisoDiaCaptura" ValueChanged="OnHorasPermisoDiaCapturaChanged" ValueExpression="@(() => HorasPermisoDiaCaptura)" min="0" step="0.25" />
+                    </div>
+                    <div class="col-sm-2 d-flex align-items-end">
+                        <div class="form-check mb-1">
+                            <InputCheckbox class="form-check-input" Value="@PermisoDiaConGoceCaptura" ValueChanged="OnPermisoDiaConGoceCapturaChanged" ValueExpression="@(() => PermisoDiaConGoceCaptura)" id="chkGoce" />
+                            <label class="form-check-label asis-field-label" for="chkGoce">Con goce</label>
+                        </div>
+                    </div>
+                    <div class="col-sm-7">
+                        <label class="asis-field-label">Motivo</label>
+                        <InputText class="form-control form-control-sm" Value="@PermisoDiaMotivo" ValueChanged="OnPermisoDiaMotivoChanged" ValueExpression="@(() => PermisoDiaMotivo)" placeholder="Cita médica, salida autorizada…" />
+                    </div>
+                    <div class="col-12">
+                        <label class="asis-field-label">Observaciones</label>
+                        <InputText class="form-control form-control-sm" Value="@PermisoDiaObservaciones" ValueChanged="OnPermisoDiaObservacionesChanged" ValueExpression="@(() => PermisoDiaObservaciones)" placeholder="Para evitar descuento doble de descansos" />
+                    </div>
+                </div>
+
+                @if (PermisoDiaConGoceCaptura)
+                {
+                    <div class="asis-banner asis-banner--info asis-banner--normal mb-2 d-flex">
+                        <i class="bi bi-bank me-1 flex-shrink-0"></i>Saldo banco actual: @SaldoBancoHorasTexto — puede quedar negativo.
+                    </div>
+                }
+
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <button class="btn btn-outline-primary btn-sm asis-btn-xs" @onclick="OnAplicarPermisoSugerido" disabled="@DeshabilitarGuardarPermiso">
+                        <i class="bi bi-magic me-1"></i>Usar sugerido
+                    </button>
+                    <button class="btn btn-info btn-sm asis-btn-xs" @onclick="OnGuardarPermisoDia" disabled="@DeshabilitarGuardarPermiso">
+                        <i class="bi bi-shield-check me-1"></i>@TextoGuardarPermiso
+                    </button>
+                    @if (HayPermisoRegistrado)
+                    {
+                        <button class="btn btn-outline-danger btn-sm asis-btn-xs" @onclick="OnQuitarPermisoDia" disabled="@DeshabilitarGuardarPermiso">
+                            <i class="bi bi-x-circle me-1"></i>Quitar
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="asis-section-card">
+            <div class="asis-section-card__head">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="asis-section-card__num">2</span>
+                    <strong class="small">Compensación del permiso</strong>
+                </div>
+                <span class="badge @ClaseEstadoCompensacionSeccion asis-badge--xs">@EstadoCompensacionSeccion</span>
+            </div>
+            <div class="asis-section-card__body">
+                <div class="asis-banner @(TieneCompensacionPermisoAprobada ? "asis-banner--info" : "asis-banner--warn") asis-banner--normal d-flex mb-2">
+                    <i class="bi bi-info-circle me-1 flex-shrink-0"></i>@GuiaCompensacionPermiso
+                </div>
+
+                <div class="asis-metrics-row mb-2">
+                    <div class="asis-metric-pill asis-metric-pill--muted">
+                        <span class="asis-metric-pill__label">Recuperable</span>
+                        <span class="asis-metric-pill__val">@RecuperableDetectadoTexto</span>
+                    </div>
+                    <div class="asis-metric-pill asis-metric-pill--info">
+                        <span class="asis-metric-pill__label">Sugerido</span>
+                        <span class="asis-metric-pill__val">@SugeridoAprobarTexto</span>
+                    </div>
+                    <div class="asis-metric-pill @(TieneCompensacionPermisoAprobada ? "asis-metric-pill--success" : "asis-metric-pill--muted")">
+                        <span class="asis-metric-pill__label">Aprobado</span>
+                        <span class="asis-metric-pill__val">@AprobadoActualTexto</span>
+                    </div>
+                </div>
+
+                <div class="asis-banner @(TieneCompensacionPermisoAprobada ? "asis-banner--info" : "asis-banner--warn") asis-banner--normal d-flex mb-2">
+                    <i class="bi bi-check2-all me-1 flex-shrink-0"></i>@ResumenCompensacionPermiso
+                </div>
+
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-sm-5">
+                        <label class="asis-field-label">Minutos a aprobar</label>
+                        <InputNumber class="form-control form-control-sm" Value="@MinutosCompensacionPermisoCaptura" ValueChanged="OnMinutosCompensacionPermisoCapturaChanged" ValueExpression="@(() => MinutosCompensacionPermisoCaptura)" min="0" max="@MaximoMinutosCompensacionPermisoEditable" step="1" />
+                    </div>
+                    <div class="col-sm-7 small text-muted">Solo valida tiempo recuperado para reducir el faltante. No registra el permiso.</div>
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-info btn-sm asis-btn-xs" @onclick="OnAprobarCompensacionPermiso" disabled="@DeshabilitarCompensacion">
+                        <i class="bi bi-check2-square me-1"></i>@(TieneCompensacionPermisoAprobada ? "Guardar compensación" : "Aprobar compensación")
+                    </button>
+                    @if (TieneCompensacionPermisoAprobada)
+                    {
+                        <button class="btn btn-outline-danger btn-sm asis-btn-xs" @onclick="OnQuitarCompensacionPermiso" disabled="@GuardandoPermisoDia">
+                            <i class="bi bi-x-circle me-1"></i>Quitar
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="asis-section-card h-100">
+            <div class="asis-section-card__head">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="asis-section-card__num asis-section-card__num--muted">3</span>
+                    <strong class="small">Turno del día</strong>
+                </div>
+                <span class="badge text-bg-light border asis-badge--xxs">Opcional</span>
+            </div>
+            <div class="asis-section-card__body">
+                <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-3">
+                    <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Usa esto solo si la jornada no coincide con el turno asignado.
+                </div>
+                <div class="mb-2">
+                    <label class="asis-field-label">Turno</label>
+                    <InputSelect class="form-select form-select-sm" Value="@TurnoDiaSeleccionadoIdTexto" ValueChanged="OnTurnoDiaSeleccionadoIdTextoChanged" ValueExpression="@(() => TurnoDiaSeleccionadoIdTexto)">
+                        <option value="">(sin turno)</option>
+                        @foreach (var turno in Turnos)
+                        {
+                            <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="mb-2">
+                    <label class="asis-field-label">Observación</label>
+                    <InputText class="form-control form-control-sm" Value="@TurnoDiaObservaciones" ValueChanged="OnTurnoDiaObservacionesChanged" ValueExpression="@(() => TurnoDiaObservaciones)" placeholder="Cobertura, relevo…" />
+                </div>
+                <button class="btn btn-outline-secondary btn-sm w-100 mb-3" @onclick="OnGuardarTurnoDia" disabled="@Cargando">
+                    <i class="bi bi-check2 me-1"></i>Aplicar turno
+                </button>
+                <div class="asis-turno-info small">
+                    <div><span class="text-muted">Horario:</span> @HorarioTurnoSeleccionadoDia</div>
+                    <div><span class="text-muted">Descansos:</span> @DescansosTurnoSeleccionadoDia</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool HayPermisoRegistrado { get; set; }
+    [Parameter, EditorRequired] public string ClaseEstadoPermisoSeccion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string EstadoPermisoSeccion { get; set; } = string.Empty;
+    [Parameter] public string? NotaPermiso { get; set; }
+    [Parameter, EditorRequired] public string GuiaRapidaPermiso { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ResumenPermisoDiaCaptura { get; set; } = string.Empty;
+    [Parameter] public bool MostrarResumenOperativo { get; set; }
+    [Parameter, EditorRequired] public string ResumenPermisoSugerido { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string FaltanteNetoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string PermisoCapturadoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string FaltanteRemanenteTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string TrabajoVisibleTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string DescansoExcluidoTexto { get; set; } = string.Empty;
+    [Parameter] public bool DeshabilitarGuardarPermiso { get; set; }
+    [Parameter] public EventCallback OnAplicarPermisoSugerido { get; set; }
+    [Parameter] public decimal HorasPermisoDiaCaptura { get; set; }
+    [Parameter] public EventCallback<decimal> OnHorasPermisoDiaCapturaChanged { get; set; }
+    [Parameter] public bool PermisoDiaConGoceCaptura { get; set; }
+    [Parameter] public EventCallback<bool> OnPermisoDiaConGoceCapturaChanged { get; set; }
+    [Parameter] public string? PermisoDiaMotivo { get; set; }
+    [Parameter] public EventCallback<string?> OnPermisoDiaMotivoChanged { get; set; }
+    [Parameter] public string? PermisoDiaObservaciones { get; set; }
+    [Parameter] public EventCallback<string?> OnPermisoDiaObservacionesChanged { get; set; }
+    [Parameter, EditorRequired] public string TextoGuardarPermiso { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnGuardarPermisoDia { get; set; }
+    [Parameter] public EventCallback OnQuitarPermisoDia { get; set; }
+    [Parameter, EditorRequired] public string SaldoBancoHorasTexto { get; set; } = string.Empty;
+    [Parameter] public bool TieneCompensacionPermisoAprobada { get; set; }
+    [Parameter, EditorRequired] public string ClaseEstadoCompensacionSeccion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string EstadoCompensacionSeccion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string GuiaCompensacionPermiso { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ResumenCompensacionPermiso { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RecuperableDetectadoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string SugeridoAprobarTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string AprobadoActualTexto { get; set; } = string.Empty;
+    [Parameter] public int MinutosCompensacionPermisoCaptura { get; set; }
+    [Parameter] public EventCallback<int> OnMinutosCompensacionPermisoCapturaChanged { get; set; }
+    [Parameter] public int MaximoMinutosCompensacionPermisoEditable { get; set; }
+    [Parameter] public bool DeshabilitarCompensacion { get; set; }
+    [Parameter] public bool GuardandoPermisoDia { get; set; }
+    [Parameter] public EventCallback OnAprobarCompensacionPermiso { get; set; }
+    [Parameter] public EventCallback OnQuitarCompensacionPermiso { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<TurnoBase> Turnos { get; set; } = [];
+    [Parameter, EditorRequired] public string TurnoDiaSeleccionadoIdTexto { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> OnTurnoDiaSeleccionadoIdTextoChanged { get; set; }
+    [Parameter] public string? TurnoDiaObservaciones { get; set; }
+    [Parameter] public EventCallback<string?> OnTurnoDiaObservacionesChanged { get; set; }
+    [Parameter] public bool Cargando { get; set; }
+    [Parameter] public EventCallback OnGuardarTurnoDia { get; set; }
+    [Parameter, EditorRequired] public string HorarioTurnoSeleccionadoDia { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string DescansosTurnoSeleccionadoDia { get; set; } = string.Empty;
+}

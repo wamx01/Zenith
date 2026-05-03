@@ -15,6 +15,7 @@ public sealed record RrhhAsistenciaCorreccionSegmento(
     decimal WidthPercent,
     string CssClass,
     string TextoCorto,
+    bool EsInformativo = false,
     bool EsAjuste = false);
 
 public sealed record RrhhAsistenciaCorreccionResolucionOption(

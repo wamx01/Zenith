@@ -26,13 +26,24 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     [Parameter] public EventCallback OnUpdated { get; set; }
 
     private const string TabModalResumen = "resumen";
+    private const string TabModalAjustes = "ajustes";
     private const string TabModalMarcaciones = "marcaciones";
     private const string TabModalPermisos = "permisos";
     private const string TabModalTiempo = "tiempo";
 
+    private sealed record ResumenVisualBarra(
+        string Clave,
+        string Titulo,
+        string Icono,
+        string CssClass,
+        int Minutos,
+        string Estado,
+        string? Aprobacion);
+
     private Guid _empresaId;
     private Guid? _ultimaAsistenciaCargadaId;
     private string _tabModalActiva = TabModalResumen;
+    private string _seccionAjustesActiva = TabModalMarcaciones;
     private bool cargando;
     private bool guardandoPermisoDia;
     private string? error;
@@ -94,6 +105,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         error = null;
         ok = null;
         _tabModalActiva = TabModalResumen;
+        _seccionAjustesActiva = TabModalMarcaciones;
         await CargarEmpresaAsync();
 
         if (Asistencia == null || _empresaId == Guid.Empty)
@@ -257,11 +269,459 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         }
     }
 
+    private async Task QuitarResolucionTiempoAsync()
+    {
+        if (AsistenciaActual == null || !PuedeAprobarTiempoExtra)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        var resolucionAnterior = AsistenciaActual.ResolucionTiempoExtra;
+        tipoResolucionTiempoExtra = string.IsNullOrWhiteSpace(resolucionAnterior) ? "SinAccion" : resolucionAnterior;
+        minutosExtraPagoCaptura = 0;
+        minutosExtraBancoCaptura = 0;
+        minutosCubrirBancoCaptura = 0;
+        resolucionTiempoExtraObservaciones = "Resolución revertida desde el wizard de asistencias.";
+
+        await AplicarResolucionTiempoAsync();
+
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            ok = "Se quitó la resolución de tiempo extra / banco de horas del día.";
+        }
+    }
+
     private void SeleccionarTabModal(string tab)
         => _tabModalActiva = tab;
 
+    private void SeleccionarTabPrincipal(string tab)
+        => _tabModalActiva = tab;
+
+    private void SeleccionarSeccionAjustes(string seccion)
+    {
+        _tabModalActiva = TabModalAjustes;
+        _seccionAjustesActiva = seccion;
+    }
+
+    private string ObtenerClaseTabPrincipal(string tab)
+        => _tabModalActiva == tab ? "asis-main-tab active" : "asis-main-tab";
+
+    private string ObtenerClaseSeccionAjuste(string seccion)
+        => _seccionAjustesActiva == seccion ? "asis-detail-tab active" : "asis-detail-tab";
+
+    private string ObtenerTituloVistaActual()
+        => _tabModalActiva == TabModalResumen ? "Resumen del día" : "Ajustes del día";
+
+    private string ObtenerDescripcionVistaActual()
+        => _tabModalActiva == TabModalResumen
+            ? "Visualiza rápido el tiempo visible, faltantes y aprobaciones antes de mover algo."
+            : "Aquí ajustas marcaciones, permiso, compensación y la resolución de tiempo o banco.";
+
+    private IReadOnlyList<ResumenVisualBarra> ObtenerBarrasResumen()
+    {
+        if (AsistenciaActual == null)
+        {
+            return [];
+        }
+
+        var permisoMinutos = permisoDiaSeleccionado != null
+            ? ObtenerMinutosPermisoCapturados()
+            : ObtenerMinutosPermisoSugeridos(AsistenciaActual);
+        var compensacionSugerida = ObtenerMinutosCompensacionPermisoSugeridosAprobacion();
+        var compensacionVisible = TieneCompensacionPermisoAprobada()
+            ? minutosCompensadosPermisoAprobados
+            : compensacionSugerida;
+
+        return
+        [
+            new ResumenVisualBarra(
+                "base",
+                "Tiempo trabajado",
+                "bi bi-stopwatch",
+                "asis-time-bar__fill--base",
+                ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual),
+                "Base trabajada sin extra no aprobada.",
+                null),
+            new ResumenVisualBarra(
+                "extra",
+                "Tiempo extra",
+                "bi bi-plus-circle",
+                "asis-time-bar__fill--extra",
+                AsistenciaActual.MinutosExtra,
+                AsistenciaActual.MinutosExtra > 0
+                    ? $"Resoluble: {FormatearMinutos(ObtenerMinutosResolubles(AsistenciaActual))}."
+                    : "No se detecta extra pendiente.",
+                ObtenerMinutosExtraAprobados(AsistenciaActual) > 0
+                    ? $"Aprobada: {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}"
+                    : null),
+            new ResumenVisualBarra(
+                "compensacion",
+                "Compensación",
+                "bi bi-arrow-left-right",
+                "asis-time-bar__fill--compensacion",
+                compensacionVisible,
+                ObtenerResumenCompensacionPermiso(),
+                TieneCompensacionPermisoAprobada()
+                    ? $"Aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}"
+                    : (compensacionSugerida > 0 ? $"Sugerida: {FormatearMinutos(compensacionSugerida)}" : null)),
+            new ResumenVisualBarra(
+                "permiso",
+                "Permiso",
+                "bi bi-calendar-x",
+                "asis-time-bar__fill--permiso",
+                permisoMinutos,
+                ObtenerResumenPermisoSugerido(),
+                permisoDiaSeleccionado != null
+                    ? $"Capturado: {FormatearMinutos(ObtenerMinutosPermisoCapturados())}"
+                    : (permisoMinutos > 0 ? $"Sugerido: {FormatearMinutos(permisoMinutos)}" : null)),
+            new ResumenVisualBarra(
+                "faltante",
+                "Faltante neto",
+                "bi bi-exclamation-circle",
+                "asis-time-bar__fill--faltante",
+                ObtenerMinutosFaltanteBanco(AsistenciaActual),
+                "Solo debe cubrirse si sigue existiendo después de revisar marcaciones, permiso y compensación.",
+                null)
+        ];
+    }
+
+    private decimal ObtenerPorcentajeBarraResumen(int minutos)
+    {
+        if (AsistenciaActual == null || minutos <= 0)
+        {
+            return 0;
+        }
+
+        var referencia = new[]
+        {
+            AsistenciaActual.MinutosJornadaNetaProgramada,
+            ObtenerMinutosTrabajadosVisibles(AsistenciaActual),
+            ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual),
+            AsistenciaActual.MinutosExtra,
+            ObtenerMinutosPermisoSugeridos(AsistenciaActual),
+            ObtenerMinutosPermisoCapturados(),
+            minutosCompensadosPermisoAprobados,
+            ObtenerMinutosCompensacionPermisoSugeridosAprobacion(),
+            ObtenerMinutosFaltanteBanco(AsistenciaActual),
+            1
+        }.Max();
+
+        var porcentaje = decimal.Round(minutos * 100m / referencia, 2, MidpointRounding.AwayFromZero);
+        return Math.Clamp(porcentaje, 8m, 100m);
+    }
+
+    private void PrepararPermisoSugeridoResumen()
+    {
+        AplicarPermisoDiaSugerido();
+        SeleccionarSeccionAjustes(TabModalPermisos);
+    }
+
+    private async Task AprobarCompensacionSugeridaResumenAsync()
+    {
+        minutosCompensacionPermisoCaptura = TieneCompensacionPermisoAprobada()
+            ? minutosCompensadosPermisoAprobados
+            : ObtenerMinutosCompensacionPermisoSugeridosAprobacion();
+
+        await AprobarCompensacionPermisoAsync();
+    }
+
+    private void AbrirTiempoDesdeResumen()
+        => SeleccionarSeccionAjustes(TabModalTiempo);
+
+    private void AbrirMarcacionesDesdeResumen()
+        => SeleccionarSeccionAjustes(TabModalMarcaciones);
+
+    private void OnResumenTipoResolucionChanged(ChangeEventArgs args)
+        => CambiarTipoResolucionTiempoExtra(args.Value?.ToString() ?? "SinAccion");
+
+    private int ObtenerMaximoMinutosResolublesResumen()
+        => AsistenciaActual == null ? 0 : ObtenerMinutosResolubles(AsistenciaActual);
+
+    private int ObtenerMaximoMinutosCubrirBancoResumen()
+        => AsistenciaActual == null ? 0 : ObtenerMinutosFaltanteBanco(AsistenciaActual);
+
+    private string ObtenerTituloCapturaTiempoResumen()
+        => tipoResolucionTiempoExtra switch
+        {
+            "PagarTodo" => "Minutos aprobados a pagar",
+            "BancoTodo" => "Minutos aprobados a banco",
+            "MitadMitad" => "Minutos aprobados",
+            "CubrirFaltanteConBanco" => "Minutos a cubrir con banco",
+            _ => "Minutos aprobados"
+        };
+
+    private string ObtenerAyudaCapturaTiempoResumen()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos para capturar.";
+        }
+
+        var resoluble = ObtenerMinutosResolubles(AsistenciaActual);
+        var faltante = ObtenerMinutosFaltanteBanco(AsistenciaActual);
+
+        return tipoResolucionTiempoExtra switch
+        {
+            "PagarTodo" => $"Puedes aprobar hasta {FormatearMinutos(resoluble)} para pago.",
+            "BancoTodo" => $"Puedes aprobar hasta {FormatearMinutos(resoluble)} para banco.",
+            "MitadMitad" => $"La suma de pago y banco no debe exceder {FormatearMinutos(resoluble)}.",
+            "CubrirFaltanteConBanco" => $"Puedes cubrir hasta {FormatearMinutos(faltante)} con banco.",
+            _ => "Selecciona una resolución para capturar el aprobado."
+        };
+    }
+
+    private string ObtenerResumenPermisoRapido()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos para permiso.";
+        }
+
+        var sugerido = ObtenerMinutosPermisoSugeridos(AsistenciaActual);
+        var capturado = ObtenerMinutosPermisoCapturados();
+        var remanente = ObtenerMinutosFaltanteRemanenteActual();
+
+        if (permisoDiaSeleccionado != null)
+        {
+            return $"Permiso actual: {permisoDiaSeleccionado.Horas:0.##} h {(permisoDiaSeleccionado.ConGocePago ? "con goce" : "sin goce")}. Remanente actual: {FormatearMinutos(remanente)}.";
+        }
+
+        if (sugerido <= 0)
+        {
+            return "Hoy no se sugiere permiso adicional, salvo que quieras registrar una justificación operativa del día.";
+        }
+
+        return capturado > 0
+            ? $"Sugerido: {FormatearMinutos(sugerido)}. Con tu captura actual vas en {FormatearMinutos(capturado)} y quedarían {FormatearMinutos(remanente)} por cubrir."
+            : $"Sugerido neto: {FormatearMinutos(sugerido)}. Puedes ajustar horas y guardar aquí mismo.";
+    }
+
+    private string ObtenerHoraMarcacion(RrhhMarcacion marcacion)
+        => ObtenerFechaHoraLocalMarcacion(marcacion).ToString("HH:mm");
+
+    private int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(asistencia);
+
+    private int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+
+    private int ObtenerMinutosCompensadosAprobadosActual()
+        => Math.Max(0, minutosCompensadosPermisoAprobados);
+
+    private bool TieneResolucionTiempoActual()
+        => AsistenciaActual != null && RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual);
+
+    private string ObtenerAuditoriaMarcacionPresentacion(RrhhMarcacion marcacion)
+        => ObtenerAuditoriaMarcacion(marcacion);
+
+    private async Task CambiarClasificacionMarcacionDesdeUiAsync((Guid MarcacionId, TipoClasificacionMarcacionRrhh Clasificacion) cambio)
+        => await CambiarClasificacionMarcacionAsync(cambio.MarcacionId, cambio.Clasificacion);
+
+    private void CambiarTipoResolucionTiempoExtra(string tipo)
+    {
+        tipoResolucionTiempoExtra = tipo;
+        AjustarResolucionTiempoSugerida();
+    }
+
+    private static string FormatearMensajeBitacora(RrhhLogChecador log)
+        => log.Mensaje.Replace("Se aplicó corrección de asistencia: ", string.Empty);
+
+    private static string FormatearFechaBitacora(RrhhLogChecador log)
+        => $"{log.FechaUtc.ToLocalTime():dd/MM/yyyy HH:mm} · {ObtenerUsuarioBitacora(log)}";
+
     private string ObtenerClaseTabModal(string tab)
         => _tabModalActiva == tab ? "nav-link active" : "nav-link";
+
+    private static readonly string[] WizardSteps = [TabModalResumen, TabModalMarcaciones, TabModalPermisos, TabModalTiempo];
+
+    private string ObtenerClasePasoWizard(string tab)
+        => _tabModalActiva == tab ? "asis-wizard-step active" : (EsPasoWizardCompletado(tab) ? "asis-wizard-step done" : "asis-wizard-step");
+
+    private string ObtenerEstadoPasoWizard(string tab)
+        => tab switch
+        {
+            var t when t == TabModalResumen => "Diagnóstico",
+            var t when t == TabModalMarcaciones => marcacionesDia.Count == 0 ? "Sin checadas" : (asesorCorreccionActual?.PriorizarMarcaciones == true ? "Revisar" : "Listo"),
+            var t when t == TabModalPermisos => permisoDiaSeleccionado != null ? "Registrado" : (asesorCorreccionActual?.PriorizarPermiso == true ? "Pendiente" : "Opcional"),
+            var t when t == TabModalTiempo => ObtenerEstadoPasoTiempoWizard(),
+            _ => string.Empty
+        };
+
+    private bool EsPasoWizardCompletado(string tab)
+        => tab switch
+        {
+            var t when t == TabModalResumen => true,
+            var t when t == TabModalMarcaciones => asesorCorreccionActual?.PriorizarMarcaciones != true,
+            var t when t == TabModalPermisos => asesorCorreccionActual?.PriorizarPermiso != true || permisoDiaSeleccionado != null,
+            var t when t == TabModalTiempo => EsPasoTiempoWizardCompletado(),
+            _ => false
+        };
+
+    private bool PuedeIrAPasoAnterior()
+        => Array.IndexOf(WizardSteps, _tabModalActiva) > 0;
+
+    private bool PuedeIrAPasoSiguiente()
+        => Array.IndexOf(WizardSteps, _tabModalActiva) < WizardSteps.Length - 1;
+
+    private void IrAPasoAnterior()
+    {
+        var indice = Array.IndexOf(WizardSteps, _tabModalActiva);
+        if (indice > 0)
+        {
+            _tabModalActiva = WizardSteps[indice - 1];
+        }
+    }
+
+    private void IrAPasoSiguiente()
+    {
+        var indice = Array.IndexOf(WizardSteps, _tabModalActiva);
+        if (indice >= 0 && indice < WizardSteps.Length - 1)
+        {
+            _tabModalActiva = WizardSteps[indice + 1];
+        }
+    }
+
+    private string ObtenerTituloPasoActual()
+        => _tabModalActiva switch
+        {
+            var t when t == TabModalResumen => "Paso 1 · Entender el día",
+            var t when t == TabModalMarcaciones => "Paso 2 · Corregir marcaciones",
+            var t when t == TabModalPermisos => "Paso 3 · Decidir permiso y compensación",
+            var t when t == TabModalTiempo => "Paso 4 · Resolver tiempo extra o banco",
+            _ => "Revisión del día"
+        };
+
+    private string ObtenerDescripcionPasoActual()
+        => _tabModalActiva switch
+        {
+            var t when t == TabModalResumen => "Aquí entiendes qué pasó en el día y cuál es la acción recomendada antes de mover algo.",
+            var t when t == TabModalMarcaciones => "Corrige primero checadas faltantes, mal clasificadas o anuladas para no tomar una decisión equivocada.",
+            var t when t == TabModalPermisos => "Define si realmente aplica permiso y si existe compensación del mismo día que reduzca el faltante.",
+            var t when t == TabModalTiempo => "Aquí solo resuelves el tiempo extra o banco cuando lo anterior ya está claro. Te mostramos separado lo detectado, lo aprobable y lo aprobado.",
+            _ => string.Empty
+        };
+
+    private string ObtenerDecisionRapidaWizard()
+        => asesorCorreccionActual == null
+            ? "Sin diagnóstico actual."
+            : $"Ahora mismo te conviene: {ObtenerDecisionRapidaLegible()}.";
+
+    private string ObtenerResumenWizardMarcaciones()
+        => marcacionesDia.Count == 0 ? "Sin marcaciones" : $"{marcacionesDia.Count} registradas";
+
+    private string ObtenerResumenWizardPermiso()
+        => permisoDiaSeleccionado == null ? "No registrado" : $"{permisoDiaSeleccionado.Horas:0.##} h {(permisoDiaSeleccionado.ConGocePago ? "con goce" : "sin goce")}";
+
+    private string ObtenerResumenWizardCompensacion()
+        => TieneCompensacionPermisoAprobada()
+            ? FormatearMinutos(minutosCompensadosPermisoAprobados)
+            : (ObtenerMinutosCompensacionPermisoSugeridosAprobacion() > 0 ? $"Útil {FormatearMinutos(ObtenerMinutosCompensacionPermisoSugeridosAprobacion())}" : "No necesaria");
+
+    private string ObtenerResumenWizardTiempoDetectado()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "—";
+        }
+
+        if (AsistenciaActual.MinutosExtra > 0)
+        {
+            return FormatearMinutos(AsistenciaActual.MinutosExtra);
+        }
+
+        return PuedeMostrarResolucionTiempo() ? "Pendiente" : "Sin acción";
+    }
+
+    private string ObtenerResumenWizardTiempoAprobado()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "—";
+        }
+
+        var aprobado = ObtenerMinutosExtraAprobados(AsistenciaActual);
+        return aprobado > 0 ? FormatearMinutos(aprobado) : "0:00 h";
+    }
+
+    private string ObtenerResumenVisibleWizard()
+        => AsistenciaActual == null ? "Sin datos" : FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual));
+
+    private string ObtenerResumenVisibleExplicado()
+        => AsistenciaActual == null
+            ? string.Empty
+            : $"Base {FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}.";
+
+    private string? ObtenerExplicacionTiempoExtraWizard()
+    {
+        if (AsistenciaActual == null || AsistenciaActual.MinutosExtra <= 0)
+        {
+            return null;
+        }
+
+        var detectado = AsistenciaActual.MinutosExtra;
+        var aprobable = ObtenerMinutosResolubles(AsistenciaActual);
+        var aprobado = ObtenerMinutosExtraAprobados(AsistenciaActual);
+
+        if (aprobado > detectado)
+        {
+            return $"Lo aprobado puede verse mayor que lo detectado porque la aprobación usa el factor configurado. Detectado: {FormatearMinutos(detectado)}. Aprobable: {FormatearMinutos(aprobable)}.";
+        }
+
+        if (aprobado > 0)
+        {
+            return $"Ya hay {FormatearMinutos(aprobado)} aprobados. Si cambias la decisión, puedes guardarla de nuevo o quitar la resolución actual.";
+        }
+
+        return $"Detectado: {FormatearMinutos(detectado)}. Máximo aprobable con la regla actual: {FormatearMinutos(aprobable)}.";
+    }
+
+    private string ObtenerDecisionRapidaLegible()
+        => asesorCorreccionActual?.Escenario == "CompensacionPermisoPendiente"
+            ? "Revisar si la compensación realmente reduce el permiso o faltante"
+            : (asesorCorreccionActual?.AccionPrincipalTexto ?? "Revisar el día");
+
+    private string ObtenerEstadoPasoTiempoWizard()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos";
+        }
+
+        if (asesorCorreccionActual?.PriorizarTiempo == true && !RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual))
+        {
+            return "Pendiente";
+        }
+
+        if (RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual))
+        {
+            return "Resuelto";
+        }
+
+        if (AsistenciaActual.MinutosExtra > 0)
+        {
+            return "Informativo";
+        }
+
+        return PuedeMostrarResolucionTiempo() ? "Pendiente" : "Sin acción";
+    }
+
+    private bool EsPasoTiempoWizardCompletado()
+    {
+        if (AsistenciaActual == null)
+        {
+            return false;
+        }
+
+        if (asesorCorreccionActual?.PriorizarTiempo == true)
+        {
+            return RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual);
+        }
+
+        return true;
+    }
 
     private void IrATabSugerida()
     {
@@ -1218,6 +1678,106 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string ObtenerSiguientePasoCorreccionActual()
         => asesorCorreccionActual?.AccionPrincipalTexto ?? "Revisar resumen";
 
+    private string ObtenerEstadoPermisoSeccion()
+        => permisoDiaSeleccionado == null
+            ? "Pendiente"
+            : "Registrado";
+
+    private string ObtenerClaseEstadoPermisoSeccion()
+        => permisoDiaSeleccionado == null
+            ? "text-bg-warning"
+            : "text-bg-success";
+
+    private string ObtenerEstadoCompensacionSeccion()
+    {
+        if (TieneCompensacionPermisoAprobada())
+        {
+            return "Aprobada";
+        }
+
+        return minutosRecuperablesPermisoAprobables > 0
+            ? "Por revisar"
+            : "No aplica";
+    }
+
+    private string ObtenerClaseEstadoCompensacionSeccion()
+    {
+        if (TieneCompensacionPermisoAprobada())
+        {
+            return "text-bg-info";
+        }
+
+        return minutosRecuperablesPermisoAprobables > 0
+            ? "text-bg-warning"
+            : "text-bg-light";
+    }
+
+    private string ObtenerEstadoTiempoSeccion()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos";
+        }
+
+        if (RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual))
+        {
+            return "Resuelto";
+        }
+
+        return PuedeMostrarResolucionTiempo()
+            ? "Pendiente"
+            : "Sin pendiente";
+    }
+
+    private string ObtenerClaseEstadoTiempoSeccion()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "text-bg-light";
+        }
+
+        if (RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual))
+        {
+            return "text-bg-success";
+        }
+
+        return PuedeMostrarResolucionTiempo()
+            ? "text-bg-warning"
+            : "text-bg-light";
+    }
+
+    private string ObtenerGuiaCompensacionPermiso()
+    {
+        if (TieneCompensacionPermisoAprobada())
+        {
+            return "Ya existe una compensación aprobada. Ajústala solo si el tiempo recuperado validado cambió.";
+        }
+
+        return minutosRecuperablesPermisoAprobables > 0
+            ? "Úsala solo si el empleado recuperó tiempo y quieres descontarlo del faltante o del permiso sugerido." 
+            : "No hay tiempo recuperable pendiente; primero revisa permiso, turno o marcaciones.";
+    }
+
+    private string ObtenerGuiaTiempoResolucion()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos para resolver.";
+        }
+
+        if (AsistenciaActual.MinutosExtra > 0)
+        {
+            return "Cuando el permiso y las marcaciones ya están claros, aquí decides si el extra se paga o se envía a banco.";
+        }
+
+        if (ObtenerMinutosFaltanteBanco(AsistenciaActual) > 0)
+        {
+            return "Si después de revisar permiso y compensación aún queda faltante real, aquí puedes cubrirlo con banco si hay saldo.";
+        }
+
+        return "Usa esta sección solo cuando quede una decisión pendiente de pago o banco.";
+    }
+
     private string ObtenerGuiaRapidaPermiso()
         => permisoDiaSeleccionado == null
             ? "Paso rápido: usa el sugerido, confirma si es con goce y guarda para reprocesar el día."
@@ -1512,7 +2072,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         }
 
         if (observaciones.Contains("jornada extraordinaria", StringComparison.OrdinalIgnoreCase)
-            || observaciones.Contains("Entrada anticipada", StringComparison.OrdinalIgnoreCase))
+            || (observaciones.Contains("Entrada anticipada", StringComparison.OrdinalIgnoreCase)
+                && asistencia.MinutosExtra > 0))
         {
             return "Jornada irregular";
         }

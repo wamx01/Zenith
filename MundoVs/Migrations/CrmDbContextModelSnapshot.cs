@@ -3709,6 +3709,12 @@ namespace MundoVs.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<decimal>("HorasTrabajadasNetas")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<int>("DiasIncapacidad")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")

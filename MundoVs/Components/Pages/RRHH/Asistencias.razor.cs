@@ -14,6 +14,8 @@ namespace MundoVs.Components.Pages.RRHH;
 
 public partial class Asistencias : ComponentBase
 {
+    [Inject] private IRrhhAsistenciasPageService AsistenciasPageService { get; set; } = default!;
+
     private readonly List<RrhhAsistenciaEstatus> estatusDisponibles = Enum.GetValues<RrhhAsistenciaEstatus>().ToList();
     private List<RrhhAsistencia> lista = [];
     private List<TurnoBase> turnos = [];
@@ -83,29 +85,12 @@ public partial class Asistencias : ComponentBase
             }
 
             await using var db = await DbFactory.CreateDbContextAsync();
-
-            turnos = await db.TurnosBase
-                .Include(t => t.Detalles)
-                .AsNoTracking()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive)
-                .OrderBy(t => t.Nombre)
-                .ToListAsync();
-
-            empleadosReproceso = await db.Empleados
-                .AsNoTracking()
-                .Where(e => e.EmpresaId == _empresaId && e.IsActive)
-                .OrderBy(e => e.Nombre)
-                .ThenBy(e => e.ApellidoPaterno)
-                .ToListAsync();
-
-            lista = await ConstruirConsultaAsistencias(db)
-                .OrderByDescending(a => a.Fecha)
-                .ThenBy(a => a.Empleado.Nombre)
-                .Take(200)
-                .ToListAsync();
-
-            await CargarAusenciasDiasAsync(db);
-            await CargarCompensacionesDiasAsync(db);
+            var resultado = await AsistenciasPageService.CargarAsync(db, _empresaId, CrearEstadoFiltros());
+            turnos = resultado.Turnos.ToList();
+            empleadosReproceso = resultado.EmpleadosReproceso.ToList();
+            lista = resultado.Asistencias.ToList();
+            ausenciasPorDia = resultado.AusenciasPorDia;
+            compensacionesPorDia = resultado.CompensacionesPorDia;
             await GuardarFiltrosPersistidosAsync();
         }
         catch (Exception ex)
@@ -299,7 +284,9 @@ public partial class Asistencias : ComponentBase
     {
         if (asistencia.RequiereRevision)
         {
-            return "bg-warning text-dark";
+            return EsRevisionOperativaLeve(asistencia)
+                ? "bg-success"
+                : "bg-warning text-dark";
         }
 
         return asistencia.Estatus switch
@@ -345,6 +332,18 @@ public partial class Asistencias : ComponentBase
             return new PresentacionRevision("OK", senal ?? "Procesado sin intervención manual pendiente.", "asis-chip--success", "bi-check-circle", false);
         }
 
+        if (EsRevisionOperativaLeve(asistencia))
+        {
+            return new PresentacionRevision(
+                "Ajuste fácil",
+                CombinarTooltip(
+                    "La variación detectada es menor y normalmente se resuelve rápido.",
+                    observaciones),
+                "asis-chip--success",
+                "bi-magic",
+                false);
+        }
+
         if (observaciones.Contains("zona ambigua", StringComparison.OrdinalIgnoreCase))
         {
             return new PresentacionRevision("Ambigua", "El día quedó entre umbrales y requiere confirmación operativa.", "asis-chip--warn", "bi-exclamation-triangle", false);
@@ -366,6 +365,38 @@ public partial class Asistencias : ComponentBase
             "asis-chip--danger",
             "bi-exclamation-circle",
             false);
+    }
+
+    private static bool EsRevisionOperativaLeve(RrhhAsistencia asistencia)
+    {
+        if (!asistencia.RequiereRevision)
+        {
+            return false;
+        }
+
+        if (asistencia.Estatus != RrhhAsistenciaEstatus.AsistenciaNormal)
+        {
+            return false;
+        }
+
+        if (asistencia.MinutosRetardo > 0
+            || asistencia.MinutosSalidaAnticipada > 0
+            || asistencia.MinutosExtra > 0)
+        {
+            return false;
+        }
+
+        var observaciones = asistencia.Observaciones ?? string.Empty;
+        if (observaciones.Contains("zona ambigua", StringComparison.OrdinalIgnoreCase)
+            || observaciones.Contains("solo se detectó una marcación", StringComparison.OrdinalIgnoreCase)
+            || observaciones.Contains("marca no reconocida", StringComparison.OrdinalIgnoreCase)
+            || observaciones.Contains("sin turno", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return observaciones.Contains("cambio de turno", StringComparison.OrdinalIgnoreCase)
+            || observaciones.Contains("jornada extraordinaria", StringComparison.OrdinalIgnoreCase);
     }
 
     private static PresentacionDescansos ObtenerVisualDescansos(RrhhAsistencia asistencia)
@@ -479,6 +510,18 @@ public partial class Asistencias : ComponentBase
             return new PresentacionResolucion("Ajuste", ObtenerTextoResolucionCorto(asistencia.ResolucionTiempoExtra), tooltip, "asis-chip--resolved", "bi-sliders");
         }
 
+        if (asistencia.MinutosExtra > 0)
+        {
+            return new PresentacionResolucion(
+                "Pend.",
+                $"Sin aprobar {asistencia.MinutosExtra}m",
+                CombinarTooltip(
+                    tooltip,
+                    "Hay tiempo extra detectado, pero todavía no tiene aprobación para pago o banco."),
+                "asis-chip--warn",
+                "bi-hourglass-split");
+        }
+
         if (RrhhTiempoExtraPolicy.TieneCoberturaAusencia(resumenAusencia))
         {
             var esVacacion = resumenAusencia.Contains("Vacaciones", StringComparison.OrdinalIgnoreCase);
@@ -586,7 +629,8 @@ public partial class Asistencias : ComponentBase
         }
 
         if (observaciones.Contains("jornada extraordinaria", StringComparison.OrdinalIgnoreCase)
-            || observaciones.Contains("Entrada anticipada", StringComparison.OrdinalIgnoreCase))
+            || (observaciones.Contains("Entrada anticipada", StringComparison.OrdinalIgnoreCase)
+                && asistencia.MinutosExtra > 0))
         {
             return "Jornada irregular";
         }
@@ -652,14 +696,19 @@ public partial class Asistencias : ComponentBase
             _ => ObtenerTextoEstatus(estatus)
         };
 
-    private async Task CargarAusenciasDiasAsync(CrmDbContext db)
+    private static string ObtenerClaseFilaAsistencia(RrhhAsistencia asistencia)
     {
-        ausenciasPorDia = await ConstruirAusenciasPorDiaAsync(db, lista);
-    }
+        if (asistencia.RequiereRevision)
+        {
+            return "asis-row--review";
+        }
 
-    private async Task CargarCompensacionesDiasAsync(CrmDbContext db)
-    {
-        compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, lista);
+        if (TieneResolucionTiempoAplicada(asistencia))
+        {
+            return "asis-row--resolved";
+        }
+
+        return "asis-row--normal";
     }
 
     private static string CrearClaveAusencia(Guid empleadoId, DateOnly fecha)
@@ -686,124 +735,6 @@ public partial class Asistencias : ComponentBase
     private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, ObtenerMinutosCompensados(asistencia));
 
-    private async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
-    {
-        if (asistencias.Count == 0)
-        {
-            return new Dictionary<string, int>();
-        }
-
-        var logs = await db.RrhhLogsChecador
-            .AsNoTracking()
-            .Where(l => l.EmpresaId == _empresaId
-                && l.Detalle != null
-                && l.Mensaje.Contains("compensación aprobada de permiso"))
-            .OrderByDescending(l => l.FechaUtc)
-            .ToListAsync();
-
-        var resultado = new Dictionary<string, int>();
-        foreach (var asistencia in asistencias)
-        {
-            var minutos = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, asistencia.EmpleadoId, asistencia.Fecha);
-            resultado[CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha)] = minutos;
-        }
-
-        return resultado;
-    }
-
-    private IQueryable<RrhhAsistencia> ConstruirConsultaAsistencias(CrmDbContext db)
-    {
-        var query = db.RrhhAsistencias
-            .AsNoTracking()
-            .Include(a => a.Empleado)
-            .Include(a => a.TurnoBase)
-            .Where(a => a.EmpresaId == _empresaId);
-
-        if (filtroDesde.HasValue)
-        {
-            var desde = DateOnly.FromDateTime(filtroDesde.Value.Date);
-            query = query.Where(a => a.Fecha >= desde);
-        }
-
-        if (filtroHasta.HasValue)
-        {
-            var hasta = DateOnly.FromDateTime(filtroHasta.Value.Date);
-            query = query.Where(a => a.Fecha <= hasta);
-        }
-
-        if (Guid.TryParse(filtroTurnoIdTexto, out var turnoId) && turnoId != Guid.Empty)
-        {
-            query = query.Where(a => a.TurnoBaseId == turnoId);
-        }
-
-        if (int.TryParse(filtroEstatus, out var estatusValor) && Enum.IsDefined(typeof(RrhhAsistenciaEstatus), estatusValor))
-        {
-            var estatus = (RrhhAsistenciaEstatus)estatusValor;
-            query = query.Where(a => a.Estatus == estatus);
-        }
-
-        query = filtroRevision switch
-        {
-            "si" => query.Where(a => a.RequiereRevision),
-            "no" => query.Where(a => !a.RequiereRevision),
-            _ => query
-        };
-
-        if (!string.IsNullOrWhiteSpace(filtroEmpleado))
-        {
-            var texto = filtroEmpleado.Trim();
-            query = query.Where(a =>
-                a.Empleado.Nombre.Contains(texto) ||
-                (a.Empleado.ApellidoPaterno != null && a.Empleado.ApellidoPaterno.Contains(texto)) ||
-                (a.Empleado.ApellidoMaterno != null && a.Empleado.ApellidoMaterno.Contains(texto)) ||
-                a.Empleado.NumeroEmpleado.Contains(texto) ||
-                (a.Empleado.CodigoChecador != null && a.Empleado.CodigoChecador.Contains(texto)));
-        }
-
-        return query;
-    }
-
-    private async Task<Dictionary<string, string>> ConstruirAusenciasPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
-    {
-        if (asistencias.Count == 0)
-        {
-            return new Dictionary<string, string>();
-        }
-
-        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
-        var fechaMin = asistencias.Min(a => a.Fecha);
-        var fechaMax = asistencias.Max(a => a.Fecha);
-        var ausencias = await db.RrhhAusencias
-            .AsNoTracking()
-            .Where(a => a.EmpresaId == _empresaId
-                && empleadoIds.Contains(a.EmpleadoId)
-                && a.IsActive
-                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
-                && a.FechaInicio <= fechaMax
-                && a.FechaFin >= fechaMin)
-            .ToListAsync();
-
-        var mapa = new Dictionary<string, List<string>>();
-        foreach (var ausencia in ausencias)
-        {
-            var inicio = ausencia.FechaInicio < fechaMin ? fechaMin : ausencia.FechaInicio;
-            var fin = ausencia.FechaFin > fechaMax ? fechaMax : ausencia.FechaFin;
-            for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(1))
-            {
-                var clave = CrearClaveAusencia(ausencia.EmpleadoId, fecha);
-                if (!mapa.TryGetValue(clave, out var valores))
-                {
-                    valores = [];
-                    mapa[clave] = valores;
-                }
-
-                valores.Add(FormatearAusencia(ausencia));
-            }
-        }
-
-        return mapa.ToDictionary(kvp => kvp.Key, kvp => string.Join(" | ", kvp.Value.Distinct()));
-    }
-
     private async Task ExportarCsvAsync()
     {
         error = null;
@@ -819,7 +750,29 @@ public partial class Asistencias : ComponentBase
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            var asistencias = await ConstruirConsultaAsistencias(db)
+            Guid? turnoFiltroId = Guid.TryParse(filtroTurnoIdTexto, out var turnoId) && turnoId != Guid.Empty ? turnoId : null;
+            RrhhAsistenciaEstatus? estatusFiltro = int.TryParse(filtroEstatus, out var estatusValor) && Enum.IsDefined(typeof(RrhhAsistenciaEstatus), estatusValor)
+                ? (RrhhAsistenciaEstatus)estatusValor
+                : null;
+            var textoEmpleadoFiltro = string.IsNullOrWhiteSpace(filtroEmpleado) ? null : filtroEmpleado.Trim();
+
+            var asistencias = await db.RrhhAsistencias
+                .AsNoTracking()
+                .Include(a => a.Empleado)
+                .Include(a => a.TurnoBase)
+                .Where(a => a.EmpresaId == _empresaId)
+                .Where(a => !filtroDesde.HasValue || a.Fecha >= DateOnly.FromDateTime(filtroDesde.Value.Date))
+                .Where(a => !filtroHasta.HasValue || a.Fecha <= DateOnly.FromDateTime(filtroHasta.Value.Date))
+                .Where(a => !turnoFiltroId.HasValue || a.TurnoBaseId == turnoFiltroId.Value)
+                .Where(a => !estatusFiltro.HasValue || a.Estatus == estatusFiltro.Value)
+                .Where(a => filtroRevision != "si" || a.RequiereRevision)
+                .Where(a => filtroRevision != "no" || !a.RequiereRevision)
+                .Where(a => string.IsNullOrWhiteSpace(textoEmpleadoFiltro)
+                    || a.Empleado.Nombre.Contains(textoEmpleadoFiltro)
+                    || (a.Empleado.ApellidoPaterno != null && a.Empleado.ApellidoPaterno.Contains(textoEmpleadoFiltro))
+                    || (a.Empleado.ApellidoMaterno != null && a.Empleado.ApellidoMaterno.Contains(textoEmpleadoFiltro))
+                    || a.Empleado.NumeroEmpleado.Contains(textoEmpleadoFiltro)
+                    || (a.Empleado.CodigoChecador != null && a.Empleado.CodigoChecador.Contains(textoEmpleadoFiltro)))
                 .OrderBy(a => a.Fecha)
                 .ThenBy(a => a.Empleado.Nombre)
                 .ThenBy(a => a.Empleado.ApellidoPaterno)
@@ -831,7 +784,8 @@ public partial class Asistencias : ComponentBase
                 return;
             }
 
-            var ausenciasExportacion = await ConstruirAusenciasPorDiaAsync(db, asistencias);
+            var ausenciasExportacion = await AsistenciasPageService.CargarAsync(db, _empresaId, CrearEstadoFiltros());
+            var ausenciasPorDiaExportacion = ausenciasExportacion.AusenciasPorDia;
             var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
             var fechaMinima = asistencias.Min(a => a.Fecha).ToDateTime(TimeOnly.MinValue).AddHours(-14);
             var fechaMaximaExclusiva = asistencias.Max(a => a.Fecha).AddDays(1).ToDateTime(TimeOnly.MinValue).AddHours(14);
@@ -930,9 +884,9 @@ public partial class Asistencias : ComponentBase
                     EscapeCsv(FormatearMinutos(asistencia.MinutosJornadaNetaProgramada)),
                     asistencia.MinutosJornadaNetaProgramada.ToString(),
                     asistencia.TotalMarcaciones.ToString(),
-                    EscapeCsv(ausenciasExportacion.GetValueOrDefault(claveDia, "—")),
+                    EscapeCsv(ausenciasPorDiaExportacion.GetValueOrDefault(claveDia, "—")),
                     EscapeCsv(asistencia.ResumenDescansos),
-                    EscapeCsv(ObtenerResumenResolucion(asistencia, ausenciasExportacion.GetValueOrDefault(claveDia, "—"))),
+                    EscapeCsv(ObtenerResumenResolucion(asistencia, ausenciasPorDiaExportacion.GetValueOrDefault(claveDia, "—"))),
                     EscapeCsv(asistencia.Observaciones),
                     EscapeCsv("Primeras 9 horas extra pagadas por semana como dobles; excedente como triple.")));
             }

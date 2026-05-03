@@ -25,6 +25,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         var faltanteAjustadoMinutos = Math.Max(0, faltanteMinutos - Math.Max(0, minutosCompensadosAprobados));
         var permisoCubriendoMinutos = Math.Min(faltanteAjustadoMinutos, permisoMinutos);
         var faltanteRemanenteMinutos = Math.Max(0, faltanteAjustadoMinutos - permisoCubriendoMinutos);
+        var minutosCompensacionUtiles = ObtenerMinutosCompensacionUtiles(faltanteMinutos, permisoMinutos, minutosRecuperablesAprobables);
         var marcacionesIncompletas = asistencia.Estatus is RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.MarcaNoReconocida || asistencia.TotalMarcaciones <= 1;
         var turnoInconsistente = asistencia.Estatus == RrhhAsistenciaEstatus.TurnoNoAsignado
             || (asistencia.Observaciones?.Contains("cambio de turno", StringComparison.OrdinalIgnoreCase) ?? false)
@@ -32,29 +33,8 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         var salidaTempranaCompensaDescanso = asistencia.Observaciones?.Contains("salida anticipada sugiere permiso o descanso no tomado", StringComparison.OrdinalIgnoreCase) ?? false;
 
         var resolucionesDisponibles = ConstruirResolucionesDisponibles(extraMinutos, extraResoluble, faltanteRemanenteMinutos, bancoHorasHabilitado, puedeAprobarTiempoExtra, saldoBancoHorasMinutos);
-        var segmentos = ConstruirSegmentos(asistencia, permisoCubriendoMinutos, faltanteRemanenteMinutos, extraMinutos, minutosCompensadosAprobados);
-
-        if (minutosRecuperablesAprobables > 0 && minutosCompensadosAprobados <= 0)
-        {
-            return new RrhhAsistenciaCorreccionAdvice(
-                "CompensacionPermisoPendiente",
-                $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesAprobables)}",
-                "El empleado recuperó tiempo fuera del horario, pero esos minutos no deben aplicarse solos. Revísalos y apruébalos si deben reducir el permiso del día.",
-                "text-bg-info",
-                "bi-hourglass-bottom",
-                RrhhAsistenciaCorreccionTabs.Permisos,
-                "Aprobar compensación",
-                null,
-                segmentos,
-                resolucionesDisponibles,
-                permisoDia != null
-                    ? $"Hay {FormatearMinutos(minutosRecuperablesAprobables)} recuperables por aprobación. Si los apruebas, el permiso efectivo del día se reducirá antes de usar banco o capturar más horas."
-                    : $"Hay {FormatearMinutos(minutosRecuperablesAprobables)} recuperables por aprobación. Si el día también tuvo ausencia real, apruébalos antes de capturar el permiso final.",
-                resolucionesDisponibles.Count > 0 ? "La resolución de tiempo queda como ajuste secundario; primero decide si estos minutos compensan el permiso." : null,
-                false,
-                true,
-                false);
-        }
+        var extraAprobadaMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+        var segmentos = ConstruirSegmentos(asistencia, permisoCubriendoMinutos, faltanteRemanenteMinutos, extraMinutos, extraAprobadaMinutos, minutosCompensadosAprobados);
 
         if (marcacionesIncompletas)
         {
@@ -111,6 +91,28 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
                 [],
                 "Si confirmas que la salida temprana sustituyó el descanso, evita aplicar permiso o banco por ese mismo tramo.",
                 "Las resoluciones de tiempo se ocultan hasta confirmar si la salida temprana ya compensó el descanso no tomado.",
+                false,
+                true,
+                false);
+        }
+
+        if (minutosCompensacionUtiles > 0 && minutosCompensadosAprobados <= 0)
+        {
+            return new RrhhAsistenciaCorreccionAdvice(
+                "CompensacionPermisoPendiente",
+                $"Tiempo recuperable útil: {FormatearMinutos(minutosCompensacionUtiles)}",
+                "El empleado recuperó tiempo, pero solo conviene aprobarlo si de verdad reduce el permiso o el faltante del día.",
+                "text-bg-info",
+                "bi-hourglass-bottom",
+                RrhhAsistenciaCorreccionTabs.Permisos,
+                "Revisar compensación",
+                null,
+                segmentos,
+                resolucionesDisponibles,
+                permisoDia != null
+                    ? $"Se detectaron {FormatearMinutos(minutosRecuperablesAprobables)} recuperables y hasta {FormatearMinutos(minutosCompensacionUtiles)} sí ayudan a reducir el permiso efectivo del día."
+                    : $"Se detectaron {FormatearMinutos(minutosRecuperablesAprobables)} recuperables y hasta {FormatearMinutos(minutosCompensacionUtiles)} sí ayudan a reducir el faltante real del día.",
+                resolucionesDisponibles.Count > 0 ? "La resolución de tiempo queda como ajuste secundario; primero valida si esta compensación realmente cambia el día." : null,
                 false,
                 true,
                 false);
@@ -288,18 +290,19 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         return opciones;
     }
 
-    private static IReadOnlyList<RrhhAsistenciaCorreccionSegmento> ConstruirSegmentos(RrhhAsistencia asistencia, int permisoMinutos, int faltanteMinutos, int extraMinutos, int compensadoMinutos)
+    private static IReadOnlyList<RrhhAsistenciaCorreccionSegmento> ConstruirSegmentos(RrhhAsistencia asistencia, int permisoMinutos, int faltanteMinutos, int extraMinutos, int extraAprobadaMinutos, int compensadoMinutos)
     {
         var trabajoMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, compensadoMinutos);
         var descansoMinutos = Math.Max(0, asistencia.MinutosDescansoTomado);
-        var baseVisual = Math.Max(1, trabajoMinutos + descansoMinutos + permisoMinutos + faltanteMinutos + extraMinutos);
+        var extraPendienteMinutos = Math.Max(0, extraMinutos - extraAprobadaMinutos);
+        var baseVisual = Math.Max(1, trabajoMinutos + descansoMinutos + permisoMinutos + faltanteMinutos + extraPendienteMinutos);
 
         var segmentos = new List<RrhhAsistenciaCorreccionSegmento>();
         AgregarSegmento(segmentos, "trabajo", "Trabajado", trabajoMinutos, baseVisual, "asis-timeline__segment--worked", FormatearMinutos(trabajoMinutos));
         AgregarSegmento(segmentos, "descanso", "Descansos", descansoMinutos, baseVisual, "asis-timeline__segment--break", FormatearMinutos(descansoMinutos));
         AgregarSegmento(segmentos, "permiso", "Permiso", permisoMinutos, baseVisual, "asis-timeline__segment--permission", FormatearMinutos(permisoMinutos), true);
         AgregarSegmento(segmentos, "faltante", "Faltante", faltanteMinutos, baseVisual, "asis-timeline__segment--missing", FormatearMinutos(faltanteMinutos), true);
-        AgregarSegmento(segmentos, "extra", "Extra", extraMinutos, baseVisual, "asis-timeline__segment--extra", FormatearMinutos(extraMinutos), true);
+        AgregarSegmento(segmentos, "extra-pendiente", "Extra detectada", extraPendienteMinutos, baseVisual, "asis-timeline__segment--extra", FormatearMinutos(extraPendienteMinutos), true, true);
 
         if (segmentos.Count == 0)
         {
@@ -317,6 +320,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         int totalVisual,
         string cssClass,
         string textoCorto,
+        bool esInformativo = false,
         bool esAjuste = false)
     {
         if (minutos <= 0)
@@ -327,7 +331,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         var width = totalVisual <= 0
             ? 0m
             : Math.Max(6m, Math.Round((minutos / (decimal)totalVisual) * 100m, 2));
-        segmentos.Add(new RrhhAsistenciaCorreccionSegmento(clave, titulo, minutos, width, cssClass, textoCorto, esAjuste));
+        segmentos.Add(new RrhhAsistenciaCorreccionSegmento(clave, titulo, minutos, width, cssClass, textoCorto, esInformativo, esAjuste));
     }
 
     private static string FormatearMinutos(int minutos)
@@ -335,5 +339,11 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         var horas = minutos / 60;
         var minutosRestantes = Math.Abs(minutos % 60);
         return $"{horas}:{minutosRestantes:00} h";
+    }
+
+    private static int ObtenerMinutosCompensacionUtiles(int faltanteMinutos, int permisoMinutos, int minutosRecuperablesAprobables)
+    {
+        var baseCompensable = Math.Max(0, Math.Max(faltanteMinutos, permisoMinutos));
+        return Math.Max(0, Math.Min(baseCompensable, minutosRecuperablesAprobables));
     }
 }

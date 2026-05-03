@@ -1,0 +1,74 @@
+@using Microsoft.AspNetCore.Components
+@using MundoVs.Core.Entities
+
+<div class="row g-2 mb-3">
+    <div class="col-sm-4">
+        <div class="asis-info-card">
+            <div class="asis-info-card__icon text-primary"><i class="bi bi-person-workspace"></i></div>
+            <div>
+                <div class="asis-info-card__label">Turno</div>
+                <div class="asis-info-card__val">@(Asistencia.TurnoBase?.Nombre ?? "Sin turno")</div>
+                <div class="asis-info-card__sub">@ResumenTurnoActual</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="asis-info-card">
+            <div class="asis-info-card__icon text-success"><i class="bi bi-clock"></i></div>
+            <div>
+                <div class="asis-info-card__label">Horario</div>
+                <div class="asis-info-card__val">@HorarioTurnoSeleccionadoDia</div>
+                <div class="asis-info-card__sub">Descansos: @DescansosTurnoSeleccionadoDia</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="asis-info-card">
+            <div class="asis-info-card__icon text-warning"><i class="bi bi-check2-all"></i></div>
+            <div>
+                <div class="asis-info-card__label">Tiempo visible</div>
+                <div class="asis-info-card__val">@ResumenResolucion</div>
+                <div class="asis-info-card__sub">@BitacoraCorreccionResumen</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-2">
+    <div class="col-md-6">
+        <div class="asis-guide-block">
+            <div class="asis-guide-block__title"><i class="bi bi-signpost-2 me-1"></i>Flujo de corrección</div>
+            <ol class="asis-guide-block__list">
+                <li><strong>Marcaciones</strong> — agrega, corrige o anula checadas.</li>
+                <li><strong>Permiso</strong> — define el permiso y valida compensación.</li>
+                <li><strong>Tiempo / Banco</strong> — resuelve pago, banco o cubre faltante.</li>
+            </ol>
+            @if (!string.IsNullOrWhiteSpace(AccionSugerida))
+            {
+                <div class="asis-guide-block__suggestion"><i class="bi bi-lightning-charge me-1"></i>Sugerido: @AccionSugerida</div>
+            }
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="asis-guide-block">
+            <div class="asis-guide-block__title"><i class="bi bi-chat-left-text me-1"></i>Cómo se interpreta</div>
+            <div class="asis-guide-block__obs">@ObservacionPrincipal</div>
+            @if (!string.IsNullOrWhiteSpace(ObservacionSecundaria))
+            {
+                <div class="asis-guide-block__obs-sub mt-1">@ObservacionSecundaria</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RrhhAsistencia Asistencia { get; set; } = default!;
+    [Parameter, EditorRequired] public string ResumenTurnoActual { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string HorarioTurnoSeleccionadoDia { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string DescansosTurnoSeleccionadoDia { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ResumenResolucion { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string BitacoraCorreccionResumen { get; set; } = string.Empty;
+    [Parameter] public string? AccionSugerida { get; set; }
+    [Parameter, EditorRequired] public string ObservacionPrincipal { get; set; } = string.Empty;
+    [Parameter] public string? ObservacionSecundaria { get; set; }
+}

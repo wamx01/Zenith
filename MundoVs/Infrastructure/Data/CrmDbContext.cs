@@ -2391,6 +2391,7 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<PrenominaDetalle>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.HorasTrabajadasNetas).HasPrecision(18, 2);
             entity.Property(e => e.HorasExtraBase).HasPrecision(18, 2);
             entity.Property(e => e.HorasExtra).HasPrecision(18, 2);
             entity.Property(e => e.HorasBancoAcumuladas).HasPrecision(18, 2);
@@ -2505,6 +2506,7 @@ public class CrmDbContext : DbContext
             entity.Property(e => e.MontoFestivoTrabajado).HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.MontoPrimaDominical).HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.MontoInfonavit).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasTrabajadasNetas).HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.HorasExtraBase).HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.HorasExtraDobles).HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.HorasExtraTriples).HasPrecision(18, 2).HasDefaultValue(0m);

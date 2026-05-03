@@ -97,6 +97,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 DiasConMarcacion = resumen.DiasConMarcacion,
                 DiasDomingoTrabajado = resumen.DiasDomingoTrabajado,
                 DiasFestivoTrabajado = resumen.DiasFestivoTrabajado,
+                HorasTrabajadasNetas = resumen.HorasTrabajadasNetas,
                 HorasExtraBase = resumen.HorasExtraBase,
                 HorasExtra = resumen.HorasExtra,
                 HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
@@ -248,6 +249,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             DiasConMarcacion = asistencias.Count(a => a.TotalMarcaciones > 0),
             DiasDomingoTrabajado = trabajadas.Count(a => a.Fecha.ToDateTime(TimeOnly.MinValue).DayOfWeek == DayOfWeek.Sunday),
             DiasFestivoTrabajado = trabajadas.Count(a => festivosPeriodo.Contains(a.Fecha)),
+            HorasTrabajadasNetas = Math.Round(asistencias.Sum(a => Math.Max(0, a.MinutosTrabajadosNetos)) / 60m, 2),
             HorasExtraBase = Math.Round(minutosExtraBase / 60m, 2),
             HorasExtra = Math.Round(minutosExtraPago / 60m, 2),
             HorasBancoAcumuladas = Math.Round(minutosBancoAcumulados / 60m, 2),
@@ -288,6 +290,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         public int DiasConMarcacion { get; set; }
         public int DiasDomingoTrabajado { get; set; }
         public int DiasFestivoTrabajado { get; set; }
+        public decimal HorasTrabajadasNetas { get; set; }
         public decimal HorasExtraBase { get; set; }
         public decimal HorasExtra { get; set; }
         public decimal HorasBancoAcumuladas { get; set; }

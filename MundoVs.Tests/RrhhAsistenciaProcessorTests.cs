@@ -653,7 +653,8 @@ public sealed class RrhhAsistenciaProcessorTests
     {
         var asistencia = new RrhhAsistencia
         {
-            MinutosTrabajadosNetos = 304
+            MinutosTrabajadosNetos = 304,
+            MinutosJornadaNetaProgramada = 480
         };
 
         var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 20);
@@ -666,12 +667,64 @@ public sealed class RrhhAsistenciaProcessorTests
     {
         var asistencia = new RrhhAsistencia
         {
-            MinutosTrabajadosNetos = 304
+            MinutosTrabajadosNetos = 304,
+            MinutosJornadaNetaProgramada = 480
         };
 
         var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
 
         Assert.Equal(304, visibles);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoExisteExtraNoAprobada_NoLaSumaATiempoVisible()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosTrabajadosNetos = 510,
+            MinutosJornadaNetaProgramada = 480,
+            MinutosExtra = 30,
+            MinutosExtraAutorizadosPago = 0,
+            MinutosExtraAutorizadosBanco = 0
+        };
+
+        var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+
+        Assert.Equal(480, visibles);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoExisteExtraAprobada_SoloSumaLaAprobadaATiempoVisible()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosTrabajadosNetos = 540,
+            MinutosJornadaNetaProgramada = 480,
+            MinutosExtra = 60,
+            MinutosExtraAutorizadosPago = 20,
+            MinutosExtraAutorizadosBanco = 10
+        };
+
+        var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+
+        Assert.Equal(510, visibles);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_CuandoHayCompensacionYMismoDia_SumaBaseMasCompensacionMasExtraAprobada()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosTrabajadosNetos = 540,
+            MinutosJornadaNetaProgramada = 480,
+            MinutosExtra = 60,
+            MinutosExtraAutorizadosPago = 15,
+            MinutosExtraAutorizadosBanco = 15
+        };
+
+        var visibles = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 20);
+
+        Assert.Equal(530, visibles);
     }
 
     [Fact]

@@ -37,8 +37,14 @@ public static class RrhhTiempoExtraPolicy
         return 0;
     }
 
+    public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
+        => Math.Max(0, Math.Min(asistencia.MinutosTrabajadosNetos, asistencia.MinutosJornadaNetaProgramada > 0 ? asistencia.MinutosJornadaNetaProgramada : asistencia.MinutosTrabajadosNetos));
+
+    public static int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
+        => Math.Max(0, asistencia.MinutosExtraAutorizadosPago) + Math.Max(0, asistencia.MinutosExtraAutorizadosBanco);
+
     public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
-        => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, minutosCompensadosAprobados));
+        => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
 
     public static int ObtenerMinutosAusenciaBrutaSugerida(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);

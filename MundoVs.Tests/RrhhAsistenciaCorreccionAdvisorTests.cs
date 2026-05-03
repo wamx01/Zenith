@@ -82,9 +82,30 @@ public sealed class RrhhAsistenciaCorreccionAdvisorTests
 
         Assert.Equal("CompensacionPermisoPendiente", advice.Escenario);
         Assert.Equal(RrhhAsistenciaCorreccionTabs.Permisos, advice.TabSugerida);
-        Assert.Equal("Aprobar compensación", advice.AccionPrincipalTexto);
+        Assert.Equal("Revisar compensación", advice.AccionPrincipalTexto);
         Assert.True(advice.PriorizarPermiso);
         Assert.Contains("recuperó tiempo", advice.Descripcion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Analizar_CuandoHayTiempoRecuperablePeroNoReduceNada_NoPriorizaCompensacion()
+    {
+        var advisor = new RrhhAsistenciaCorreccionAdvisor();
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosJornadaProgramada = 540,
+            MinutosJornadaNetaProgramada = 480,
+            MinutosTrabajadosNetos = 480,
+            MinutosExtra = 0,
+            TotalMarcaciones = 2,
+            Estatus = RrhhAsistenciaEstatus.AsistenciaNormal,
+            RequiereRevision = false
+        };
+
+        var advice = advisor.Analizar(asistencia, null, 0, 20, true, true, 2m, 180);
+
+        Assert.NotEqual("CompensacionPermisoPendiente", advice.Escenario);
+        Assert.NotEqual("Revisar compensación", advice.AccionPrincipalTexto);
     }
 
     [Fact]
@@ -118,5 +139,31 @@ public sealed class RrhhAsistenciaCorreccionAdvisorTests
         Assert.DoesNotContain(adjustmentSegments, x => x.Clave == "compensado");
         Assert.Contains(baseSegments, x => x.Clave == "trabajo" && x.Minutos == 324);
         Assert.All(adjustmentSegments, x => Assert.True(x.WidthPercent > 0));
+    }
+
+    [Fact]
+    public void Analizar_CuandoHayExtraAprobada_BarraNoDuplicaExtraDetectada()
+    {
+        var advisor = new RrhhAsistenciaCorreccionAdvisor();
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosJornadaProgramada = 240,
+            MinutosJornadaNetaProgramada = 180,
+            MinutosTrabajadosNetos = 258,
+            MinutosDescansoTomado = 30,
+            MinutosExtra = 78,
+            MinutosExtraAutorizadosBanco = 90,
+            TotalMarcaciones = 2,
+            Estatus = RrhhAsistenciaEstatus.AsistenciaNormal,
+            RequiereRevision = false
+        };
+
+        var advice = advisor.Analizar(asistencia, null, 0, 5, true, true, 2m, 180);
+        var extraPendiente = advice.Segmentos.FirstOrDefault(x => x.Clave == "extra-pendiente");
+        var trabajo = advice.Segmentos.FirstOrDefault(x => x.Clave == "trabajo");
+
+        Assert.NotNull(trabajo);
+        Assert.Equal(270, trabajo!.Minutos);
+        Assert.Null(extraPendiente);
     }
 }

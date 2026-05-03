@@ -40,6 +40,8 @@
 ## Human Resources Guidelines
 - Los permisos parciales con goce deben descontarse del banco de horas del empleado.
 - Las capturas fijas de IMSS/ISR deben manejarse por empleado, no como configuración general.
+- En asistencias, la entrada anticipada debe evaluarse contra el mismo umbral del tiempo extra, tratándola como el mismo tiempo en negativo para decidir si requiere revisión.
+- En el modal de corrección de asistencias RRHH, al ajustar tiempo extra se debe permitir seleccionar explícitamente cuánto tiempo queda aprobado y mejorar la experiencia de permiso.
 
 ## Deployment Guidelines
 - Para tareas de publicación/despliegue, responder solo con los comandos exactos sin explicación adicional.

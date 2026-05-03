@@ -39,6 +39,7 @@ public class NominaDetalle
     public int DiasConMarcacion { get; set; }
     public int DiasDomingoTrabajado { get; set; }
     public int DiasFestivoTrabajado { get; set; }
+    public decimal HorasTrabajadasNetas { get; set; }
     public decimal MontoFestivoTrabajado { get; set; }
     public decimal MontoDescansoTrabajado { get; set; }
     public decimal MontoPrimaDominical { get; set; }

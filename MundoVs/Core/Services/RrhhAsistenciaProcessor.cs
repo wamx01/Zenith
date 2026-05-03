@@ -9,7 +9,6 @@ namespace MundoVs.Core.Services;
 public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 {
     private const string DefaultMexicoTimeZone = "Central Standard Time (Mexico)";
-    private const int MinutosToleranciaEntradaAnticipadaRevision = 30;
     private const int MaxLongitudResultadoMarcacion = 250;
     private static readonly Dictionary<string, string> TimeZoneAliases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -243,7 +242,14 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosTrabajadosNetos = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
         var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra);
 
-        var (estatus, requiereRevision, observaciones) = ClasificarAsistencia(detalleTurno, analisisJornada, minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra);
+        var (estatus, requiereRevision, observaciones) = ClasificarAsistencia(
+            detalleTurno,
+            analisisJornada,
+            minutosEntradaAnticipada,
+            minutosRetardo,
+            minutosSalidaAnticipada,
+            minutosExtra,
+            configuracionNomina.MinutosMinimosTiempoExtra);
         observaciones = AgregarObservacionMargenNoComputable(observaciones, detalleTurno, analisisJornada, configuracionNomina.MinutosMinimosTiempoExtra);
 
         var asistencia = await db.RrhhAsistencias
@@ -301,8 +307,11 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         int minutosEntradaAnticipada,
         int minutosRetardo,
         int minutosSalidaAnticipada,
-        int minutosExtra)
+        int minutosExtra,
+        int minutosMinimosTiempoExtra)
     {
+        minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra);
+
         if (detalleTurno == null)
         {
             return (RrhhAsistenciaEstatus.TurnoNoAsignado, true, "El empleado no tiene turno configurado para este día.");
@@ -327,20 +336,20 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         var requiereRevisionDescansos = analisisJornada.RequiereRevision;
         var observacionesDescansos = analisisJornada.ObservacionesRevision;
-        var requiereRevisionEntradaAnticipada = minutosEntradaAnticipada > MinutosToleranciaEntradaAnticipadaRevision;
+        var requiereRevisionEntradaAnticipada = minutosEntradaAnticipada >= minutosMinimosTiempoExtra;
         var requiereRevisionJornadaIrregular = requiereRevisionEntradaAnticipada && minutosExtra > 0;
 
         if (minutosRetardo > 0)
         {
-            return (RrhhAsistenciaEstatus.Retardo, minutosSalidaAnticipada > 0 || requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, "La asistencia presenta retardo.", observacionesDescansos));
+            return (RrhhAsistenciaEstatus.Retardo, minutosSalidaAnticipada > 0 || requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, "La asistencia presenta retardo.", observacionesDescansos));
         }
 
         if (minutosSalidaAnticipada > 0)
         {
-            return (RrhhAsistenciaEstatus.AsistenciaNormal, true, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, "La salida real fue antes de la programada.", observacionesDescansos));
+            return (RrhhAsistenciaEstatus.AsistenciaNormal, true, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, "La salida real fue antes de la programada.", observacionesDescansos));
         }
 
-        return (RrhhAsistenciaEstatus.AsistenciaNormal, requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, null, observacionesDescansos));
+        return (RrhhAsistenciaEstatus.AsistenciaNormal, requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, null, observacionesDescansos));
     }
 
     private static int CalcularMinutosExtra(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, RrhhAsistenciaDescansoSettings configuracionDescansos, int minutosMinimosTiempoExtra)
@@ -471,8 +480,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             ? 0
             : minutosRetardo;
 
-    private static string? ConstruirObservaciones(int minutosEntradaAnticipada, int minutosRetardo, int minutosSalidaAnticipada, int minutosExtra, string? baseObservacion, IEnumerable<string>? observacionesAdicionales = null)
+    private static string? ConstruirObservaciones(int minutosEntradaAnticipada, int minutosRetardo, int minutosSalidaAnticipada, int minutosExtra, int minutosMinimosTiempoExtra, string? baseObservacion, IEnumerable<string>? observacionesAdicionales = null)
     {
+        minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra);
+
         var partes = new List<string>();
         if (!string.IsNullOrWhiteSpace(baseObservacion))
         {
@@ -482,7 +493,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         if (minutosEntradaAnticipada > 0)
         {
             partes.Add($"Entrada anticipada de {minutosEntradaAnticipada} min.");
-            if (minutosEntradaAnticipada > MinutosToleranciaEntradaAnticipadaRevision)
+            if (minutosEntradaAnticipada >= minutosMinimosTiempoExtra)
             {
                 partes.Add("Validar si corresponde cambio de turno o autorización de jornada extraordinaria.");
             }

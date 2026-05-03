@@ -19,6 +19,7 @@ public class PrenominaDetalle : BaseEntity
     public int DiasFestivoTrabajado { get; set; }
     public bool AplicaImss { get; set; }
 
+    public decimal HorasTrabajadasNetas { get; set; }
     public decimal HorasExtraBase { get; set; }
     public decimal HorasExtra { get; set; }
     public decimal HorasBancoAcumuladas { get; set; }
