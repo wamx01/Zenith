@@ -955,6 +955,7 @@ public partial class Presupuestos
                 var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == procesoDb.TipoProcesoId);
                 var multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, proceso.Multiplicador);
                 procesoDb.Multiplicador = multiplicador;
+                proceso.Multiplicador = multiplicador;
                 procesoDb.MinutosEstandarAplicados = tipoProceso?.MinutosEstandar ?? procesoDb.MinutosEstandarAplicados;
                 procesoDb.TiempoTotal = procesoDb.MinutosEstandarAplicados * multiplicador;
                 procesoDb.UpdatedAt = DateTime.UtcNow;
@@ -973,7 +974,8 @@ public partial class Presupuestos
 
     private Task OnMultiplicadorProcesoChanged(CotizacionSerigrafiaProceso proceso, decimal value)
     {
-        proceso.Multiplicador = value;
+        var tipoProceso = catalogoProcesos.FirstOrDefault(p => p.Id == proceso.TipoProcesoId);
+        proceso.Multiplicador = tipoProceso?.PermiteMultiplicador == false ? 1m : Math.Max(1m, value);
         return ActualizarMultiplicadorProcesoAsync(proceso);
     }
 
