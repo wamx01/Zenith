@@ -140,7 +140,7 @@
                                             {
                                                 <span class="cot-proceso-chip__mult" @onclick:stopPropagation="true">
                                                     <span class="cot-proceso-chip__mult-label">×</span>
-                                                    <InputNumber class="cot-proceso-chip__mult-input" @bind-Value="ap.Multiplicador" @bind-Value:after="() => ActualizarMultiplicadorProcesoAsync(ap)" />
+                                                    <InputNumber TValue="decimal" class="cot-proceso-chip__mult-input" Value="@ap.Multiplicador" ValueChanged="@((decimal value) => OnMultiplicadorProcesoChanged(ap, value))" ValueExpression="@(() => ap.Multiplicador)" />
                                                 </span>
                                             }
                                         }

@@ -1563,6 +1563,7 @@
     private List<PedidoConcepto> conceptosEditando = new();
     private List<Empleado> empleadosActivos = new();
     private HashSet<Guid> procesosSeleccionados = new();
+    private HashSet<Guid> procesosCotizacionPermitidos = new();
     private List<PedidoSerigrafiaTalla> tallasEditando = new();
     private HashSet<string> tallasDisponiblesSeleccionadas = new(StringComparer.OrdinalIgnoreCase);
     private List<PedidoSerigrafiaTallaProceso> seguimientoTallaProcesos = new();
@@ -3504,7 +3505,8 @@
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync(c => !cotizacionSeleccionadaId.HasValue || c.Id == cotizacionSeleccionadaId.Value);
 
-        procesosSeleccionados = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+        procesosCotizacionPermitidos = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+        procesosSeleccionados = procesosCotizacionPermitidos.ToHashSet();
     }
 
     private async Task OnCotizacionChanged()
@@ -3513,6 +3515,7 @@
         if (!cotizacionSeleccionadaId.HasValue)
         {
             procesosSeleccionados = new HashSet<Guid>();
+            procesosCotizacionPermitidos = new HashSet<Guid>();
             return;
         }
 
@@ -3521,8 +3524,14 @@
             .Include(c => c.Procesos)
             .FirstOrDefaultAsync(c => c.Id == cotizacionSeleccionadaId.Value && c.IsActive);
 
-        procesosSeleccionados = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+        procesosCotizacionPermitidos = cotizacion?.Procesos.Select(p => p.TipoProcesoId).ToHashSet() ?? new HashSet<Guid>();
+        procesosSeleccionados = procesosCotizacionPermitidos.ToHashSet();
     }
+
+    private IEnumerable<TipoProceso> ObtenerProcesosDisponiblesParaPedido()
+        => cotizacionSeleccionadaId.HasValue && procesosCotizacionPermitidos.Any()
+            ? (tiposProceso ?? []).Where(tp => procesosCotizacionPermitidos.Contains(tp.Id))
+            : (tiposProceso ?? []);
 
     private async Task ActualizarProcesosAsync(Guid pedidoSerigrafiaId)
     {
@@ -3557,6 +3566,7 @@
             fraccionSeleccionadaId = null;
             cotizacionesProducto = [];
             procesosSeleccionados = new HashSet<Guid>();
+            procesosCotizacionPermitidos = new HashSet<Guid>();
             tallasEditando = new();
             tallasDisponiblesSeleccionadas.Clear();
             capturaEscalaSeleccionada = CapturaEscalaModo.Tallas;
@@ -3736,6 +3746,7 @@
         {
             cotizacionesProducto = [];
             cotizacionSeleccionadaId = null;
+            procesosCotizacionPermitidos = new HashSet<Guid>();
             return;
         }
 

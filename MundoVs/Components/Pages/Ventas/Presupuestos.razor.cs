@@ -966,8 +966,15 @@ public partial class Presupuestos
             await SincronizarConsumosDesdeProcesosAsync();
             cotizacionEditando = await RecargarCotizacion();
             procesosCotizacionAplicados = cotizacionEditando?.Procesos.OrderBy(p => p.Orden).ToList() ?? [];
+            procesosSeleccionados = procesosCotizacionAplicados.Select(p => p.TipoProcesoId).ToHashSet();
             await CargarCotizaciones();
         });
+    }
+
+    private Task OnMultiplicadorProcesoChanged(CotizacionSerigrafiaProceso proceso, decimal value)
+    {
+        proceso.Multiplicador = value;
+        return ActualizarMultiplicadorProcesoAsync(proceso);
     }
 
     private async Task SincronizarConsumosDesdeProcesosAsync()
