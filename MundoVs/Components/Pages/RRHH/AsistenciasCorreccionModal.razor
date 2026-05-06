@@ -3,7 +3,7 @@
 @if (Visible && AsistenciaActual != null)
 {
     <div class="modal fade show d-block asis-modal-backdrop" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-dialog modal-xxl modal-dialog-scrollable asis-modal-dialog-wide">
             <div class="modal-content border-0 shadow-lg asis-modal-shell">
 
                 <div class="asis-modal-header d-flex align-items-center justify-content-between px-3 py-2">
@@ -16,6 +16,10 @@
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
                         <span class="badge @ObtenerClaseEstatus(AsistenciaActual) asis-status-badge">@ObtenerTextoEstatus(AsistenciaActual.Estatus)</span>
+                        @if (_tieneCambiosPendientes)
+                        {
+                            <span class="badge text-bg-warning">Cambios pendientes</span>
+                        }
                         <button type="button" class="asis-help-button" @onclick="AbrirAyudaReglas" title="Ver reglas aplicadas">
                             <i class="bi bi-question-lg"></i>
                         </button>
@@ -24,6 +28,12 @@
                 </div>
 
                 <div class="asis-metrics-strip border-bottom px-3 py-2">
+                    @if (_tieneCambiosPendientes)
+                    {
+                        <div class="asis-local-preview-banner mb-2">
+                            <i class="bi bi-info-circle me-1"></i>Vista previa local del empleado. Los cambios se guardan al cerrar o al usar el botón Guardar cambios.
+                        </div>
+                    }
                     <div class="d-flex flex-wrap align-items-center gap-1">
                         <span class="asis-metric-block">
                             <span class="asis-metric-block__label">Prog.</span>
@@ -77,11 +87,49 @@
                             }
                         </div>
                     }
+
+                                                    <div class="asis-marcaciones-quick mt-3">
+                                                        <div class="asis-marcaciones-quick__head">
+                                                            <div>
+                                                                <div class="asis-dayline-card__title">Checadas del día</div>
+                                                                <div class="asis-dayline-card__text">Déjalas colapsadas para enfocarte en el resumen y ábrelas cuando necesites corregir marcajes.</div>
+                                                            </div>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary asis-btn-xs" @onclick="AlternarMarcacionesDia">
+                                                                <i class="bi @(_mostrarMarcacionesDia ? "bi-chevron-up" : "bi-chevron-down") me-1"></i>@(_mostrarMarcacionesDia ? "Ocultar" : "Mostrar")
+                                                            </button>
+                                                        </div>
+
+                                                        @if (_mostrarMarcacionesDia)
+                                                        {
+                                                            <AsistenciasCorreccionMarcacionesTab
+                                                                MarcacionesDia="marcacionesDia"
+                                                                ManualHoraTexto="manualHoraTexto"
+                                                                OnManualHoraTextoChanged="@(value => manualHoraTexto = value)"
+                                                                ManualClasificacion="manualClasificacion"
+                                                                OnManualClasificacionChanged="@(value => manualClasificacion = value)"
+                                                                ManualObservacion="manualObservacion"
+                                                                OnManualObservacionChanged="@(value => manualObservacion = value)"
+                                                                Cargando="cargando"
+                                                                OnGuardarMarcacionManual="GuardarMarcacionManualDiaAsync"
+                                                                ObtenerHoraMarcacion="ObtenerHoraMarcacion"
+                                                                ObtenerAuditoriaMarcacion="ObtenerAuditoriaMarcacionPresentacion"
+                                                                MarcacionManualEditandoId="marcacionManualEditandoId"
+                                                                MarcacionManualEditandoHoraTexto="marcacionManualEditandoHoraTexto"
+                                                                OnMarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
+                                                                MarcacionManualEditandoObservacion="marcacionManualEditandoObservacion"
+                                                                OnMarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
+                                                                OnIniciarEdicionMarcacionManual="IniciarEdicionMarcacionManual"
+                                                                OnGuardarEdicionMarcacionManual="GuardarEdicionMarcacionManualAsync"
+                                                                OnCancelarEdicionMarcacionManual="@(() => CancelarEdicionMarcacionManual())"
+                                                                OnAlternarAnulacionMarcacion="AlternarAnulacionMarcacionAsync"
+                                                                OnCambiarClasificacion="CambiarClasificacionMarcacionDesdeUiAsync" />
+                                                        }
+                                                    </div>
                 </div>
 
                 @if (asesorCorreccionActual != null)
                 {
-                    <div class="asis-wizard-banner px-3 py-3 border-bottom">
+                    <div class="asis-wizard-banner px-3 py-2 border-bottom">
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                             <div>
                                 <div class="asis-wizard-banner__eyebrow">Qué debes hacer ahora</div>
@@ -100,13 +148,13 @@
                                 }
                             </div>
                         </div>
-                        <div class="asis-timeline asis-timeline--compact mt-3 mb-2">
+                        <div class="asis-timeline asis-timeline--compact mt-2 mb-2">
                             @foreach (var segmento in ObtenerSegmentosBaseTimeline())
                             {
                                 <div class="asis-timeline__segment @segmento.CssClass" style="width:@($"{segmento.WidthPercent}%")" title="@($"{segmento.Titulo}: {segmento.TextoCorto}")"></div>
                             }
                         </div>
-                        <div class="asis-timeline-legend">
+                        <div class="asis-timeline-legend asis-timeline-legend--compact">
                             @foreach (var segmento in ObtenerSegmentosBaseTimeline())
                             {
                                 <span class="asis-timeline-legend__item">
@@ -126,15 +174,6 @@
                 }
 
                 <div class="modal-body p-0">
-                    <div class="asis-main-tabs px-3 py-2 border-bottom">
-                        <button type="button" class="@ObtenerClaseTabPrincipal(TabModalResumen)" @onclick="() => SeleccionarTabPrincipal(TabModalResumen)">
-                            <i class="bi bi-bar-chart-line me-1"></i>Resumen del día
-                        </button>
-                        <button type="button" class="@ObtenerClaseTabPrincipal(TabModalAjustes)" @onclick="() => SeleccionarTabPrincipal(TabModalAjustes)">
-                            <i class="bi bi-sliders me-1"></i>Ajustes
-                        </button>
-                    </div>
-
                     <div class="p-3">
                         @if (!string.IsNullOrWhiteSpace(error))
                         {
@@ -145,306 +184,308 @@
                             <div class="alert alert-success py-2 mb-2 small"><i class="bi bi-check-circle me-1"></i>@ok</div>
                         }
 
-                        <div class="asis-layout">
+                        <div class="asis-layout asis-layout--compact">
                             <div class="asis-layout__main">
                                 <div class="asis-wizard-panel">
                                     <div class="asis-wizard-panel__head">
                                         <div>
-                                            <div class="asis-wizard-panel__title">@ObtenerTituloVistaActual()</div>
-                                            <div class="asis-wizard-panel__text">@ObtenerDescripcionVistaActual()</div>
+                                            <div class="asis-wizard-panel__title">Corrección del día</div>
+                                            <div class="asis-wizard-panel__text">Timeline central con acciones rápidas de tiempo extra, permiso y turno.</div>
                                         </div>
                                         <span class="badge @ObtenerClaseEstadoPermisoSeccion()">@ObtenerEstadoCorreccionActual()</span>
                                     </div>
 
                                     <div class="asis-wizard-panel__body">
-                                        @if (_tabModalActiva == TabModalResumen)
-                                        {
-                                            <div class="asis-summary-top mb-3">
-                                                <div class="asis-summary-top__hero">
-                                                    <div class="asis-summary-top__eyebrow">Tiempo visible del día</div>
-                                                    <div class="asis-summary-top__value">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</div>
-                                                    <div class="asis-summary-top__formula">@ObtenerResumenVisibleExplicado()</div>
-                                                </div>
-                                                <div class="asis-summary-top__meta @ObtenerClaseEstadoCorreccionActual()">
-                                                    <div class="asis-summary-top__meta-label">Qué sigue</div>
-                                                    <div class="asis-summary-top__meta-title">@ObtenerSiguientePasoCorreccionActual()</div>
-                                                    <div class="asis-summary-top__meta-text">@ObtenerDecisionRapidaWizard()</div>
-                                                </div>
-                                            </div>
+                                            <div class="asis-summary-layout mb-3">
+                                                <div class="asis-summary-layout__main">
+                                                    <div class="asis-summary-top asis-summary-top--compact mb-2">
+                                                        <div class="asis-summary-top__hero">
+                                                            <div class="asis-summary-top__eyebrow">Tiempo visible del día</div>
+                                                            <div class="asis-summary-top__value">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</div>
+                                                            <div class="asis-summary-top__formula">@ObtenerResumenVisibleExplicado()</div>
+                                                            <div class="asis-quick-actions mt-2">
+                                                                @if (PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
+                                                                {
+                                                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="AlternarAccionesRapidasTiempo">
+                                                                        <i class="bi bi-lightning-charge me-1"></i>Tiempo extra
+                                                                    </button>
+                                                                }
+                                                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="AlternarAccionesRapidasPermiso">
+                                                                    <i class="bi bi-shield-check me-1"></i>Permiso
+                                                                </button>
+                                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarAccionesRapidasTurno">
+                                                                    <i class="bi bi-arrow-left-right me-1"></i>Turno
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div class="asis-summary-top__meta @ObtenerClaseEstadoCorreccionActual()">
+                                                            <div class="asis-summary-top__meta-label">Qué sigue</div>
+                                                            <div class="asis-summary-top__meta-title">@ObtenerSiguientePasoCorreccionActual()</div>
+                                                            <div class="asis-summary-top__meta-text">@ObtenerDecisionRapidaWizard()</div>
+                                                        </div>
+                                                    </div>
 
-                                            <div class="asis-summary-bars">
-                                                @foreach (var barra in ObtenerBarrasResumen())
-                                                {
-                                                    <div class="asis-time-bar-card">
-                                                        <div class="asis-time-bar-card__head">
-                                                            <div class="asis-time-bar-card__title-wrap">
-                                                                <span class="asis-time-bar-card__icon"><i class="@barra.Icono"></i></span>
-                                                                <div>
-                                                                    <div class="asis-time-bar-card__title">@barra.Titulo</div>
-                                                                    <div class="asis-time-bar-card__state">@barra.Estado</div>
+                                                    @if (_mostrarAccionesRapidasTiempo && PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
+                                                    {
+                                                        <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                                            <div class="asis-quick-card__head">
+                                                                <strong>Tiempo extra / banco</strong>
+                                                                <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasTiempo"></button>
+                                                            </div>
+                                                            <div class="asis-quick-card__body">
+                                                                <div class="asis-quick-grid asis-quick-grid--compact mb-2">
+                                                                    <div><span>Detectada</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
+                                                                    <div><span>Aprobable</span><strong>@FormatearMinutos(ObtenerMinutosResolubles(AsistenciaActual))</strong></div>
+                                                                    <div><span>Aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
+                                                                </div>
+                                                                <div class="asis-quick-hint mb-2">@ObtenerResumenAprobacionBaseTiempo()</div>
+                                                                <div class="row g-2 align-items-end">
+                                                                    <div class="col-md-4">
+                                                                        <label class="asis-field-label">Resolución</label>
+                                                                        <InputSelect class="form-select form-select-sm" @bind-Value="tipoResolucionTiempoExtra">
+                                                                            @foreach (var opcion in asesorCorreccionActual?.ResolucionesDisponibles ?? [])
+                                                                            {
+                                                                                <option value="@opcion.Value">@opcion.Label</option>
+                                                                            }
+                                                                        </InputSelect>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <label class="asis-field-label">Pago base</label>
+                                                                        <InputText class="form-control form-control-sm" Value="@minutosExtraPagoTexto" ValueChanged="@((string value) => { minutosExtraPagoTexto = value; minutosExtraPagoCaptura = ParsearMinutosCaptura(value); })" ValueExpression="@(() => minutosExtraPagoTexto)" />
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <label class="asis-field-label">Banco base</label>
+                                                                        <InputText class="form-control form-control-sm" Value="@minutosExtraBancoTexto" ValueChanged="@((string value) => { minutosExtraBancoTexto = value; minutosExtraBancoCaptura = ParsearMinutosCaptura(value); })" ValueExpression="@(() => minutosExtraBancoTexto)" />
+                                                                    </div>
+                                                                    <div class="col-md-2 d-grid">
+                                                                        <button type="button" class="btn btn-sm btn-warning" @onclick="AplicarResolucionTiempoAsync" disabled="@(minutosExtraPagoCaptura + minutosExtraBancoCaptura > ObtenerMaximoMinutosBaseDisponibles())">Aplicar</button>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="row g-2 align-items-end mt-1">
+                                                                    <div class="col-md-3">
+                                                                        <div class="form-check mt-1">
+                                                                            <InputCheckbox class="form-check-input" @bind-Value="usarFactorTiempoExtraOverride" id="chkFactorOverride" />
+                                                                            <label class="form-check-label" for="chkFactorOverride">Override factor</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <label class="asis-field-label">Factor</label>
+                                                                        <InputNumber class="form-control form-control-sm" @bind-Value="factorTiempoExtraOverrideCaptura" step="0.1" min="0.1" disabled="@(!usarFactorTiempoExtraOverride)" />
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <div class="asis-quick-hint mt-1">@ObtenerResumenFactorTiempoExtra()</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="asis-quick-hint mt-2">Captura horas base en formato <strong>HH:mm</strong>. El factor de pago se usa después para nómina, no para inflar el tiempo visible del día.</div>
+                                                            </div>
+                                                        </div>
+                                                    }
+
+                                                    @if (_mostrarAccionesRapidasPermiso)
+                                                    {
+                                                        <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                                            <div class="asis-quick-card__head">
+                                                                <strong>Permiso rápido</strong>
+                                                                <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasPermiso"></button>
+                                                            </div>
+                                                            <div class="asis-quick-card__body">
+                                                                <div class="row g-2 align-items-end">
+                                                                    <div class="col-md-3">
+                                                                        <label class="asis-field-label">Horas</label>
+                                                                        <InputNumber class="form-control form-control-sm" @bind-Value="horasPermisoDiaCaptura" min="0" step="0.25" />
+                                                                    </div>
+                                                                    <div class="col-md-2">
+                                                                        <div class="form-check mt-4">
+                                                                            <InputCheckbox class="form-check-input" @bind-Value="permisoDiaConGoceCaptura" id="chkQuickGoce" />
+                                                                            <label class="form-check-label" for="chkQuickGoce">Con goce</label>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-5">
+                                                                        <label class="asis-field-label">Motivo</label>
+                                                                        <InputText class="form-control form-control-sm" @bind-Value="permisoDiaMotivo" />
+                                                                    </div>
+                                                                    <div class="col-md-2 d-grid">
+                                                                        <button type="button" class="btn btn-sm btn-info" @onclick="GuardarPermisoDiaAsync">Aplicar</button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div class="asis-time-bar-card__value-wrap">
-                                                                <div class="asis-time-bar-card__value">@FormatearMinutos(barra.Minutos)</div>
-                                                                @if (!string.IsNullOrWhiteSpace(barra.Aprobacion))
+                                                        </div>
+                                                    }
+
+                                                    @if (_mostrarAccionesRapidasTurno)
+                                                    {
+                                                        <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                                            <div class="asis-quick-card__head">
+                                                                <strong>Cambio rápido de turno</strong>
+                                                                <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasTurno"></button>
+                                                            </div>
+                                                            <div class="asis-quick-card__body">
+                                                                <div class="row g-2 align-items-end">
+                                                                    <div class="col-md-7">
+                                                                        <label class="asis-field-label">Turno</label>
+                                                                        <InputSelect class="form-select form-select-sm" @bind-Value="turnoDiaSeleccionadoIdTexto">
+                                                                            <option value="">(sin turno)</option>
+                                                                            @foreach (var turno in Turnos)
+                                                                            {
+                                                                                <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                                                                            }
+                                                                        </InputSelect>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <label class="asis-field-label">Nota</label>
+                                                                        <InputText class="form-control form-control-sm" @bind-Value="turnoDiaObservaciones" />
+                                                                    </div>
+                                                                    <div class="col-md-2 d-grid">
+                                                                        <button type="button" class="btn btn-sm btn-secondary" @onclick="GuardarTurnoDiaAsync">Aplicar</button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    }
+
+                                                    @if (ObtenerTimelineSegmentosDia().Count > 0)
+                                                    {
+                                                    <div class="asis-dayline-card asis-dayline-card--compact">
+                                                            <div class="asis-dayline-card__head">
+                                                                <div>
+                                                                    <div class="asis-dayline-card__title">Timeline del día</div>
+                                                                    <div class="asis-dayline-card__text">Cada tramo resume cómo se leyó el día desde las marcaciones cargadas.</div>
+                                                                </div>
+                                                                <div class="asis-dayline-card__meta">Bloque principal @FormatearMinutos(ObtenerDuracionBloquePrincipal())</div>
+                                                            </div>
+                                                            <div class="asis-dayline-list mt-2">
+                                                                @foreach (var segmento in ObtenerTimelineSegmentosDia())
                                                                 {
-                                                                    <div class="asis-time-bar-card__approval">@barra.Aprobacion</div>
+                                                                    <div class="asis-dayline-list__item @(segmento.EsReferenciaTurno ? "asis-dayline-list__item--turno" : string.Empty)">
+                                                                        <div class="asis-dayline-list__meta">
+                                                                            <div class="asis-dayline-list__title">@segmento.Titulo</div>
+                                                                            <div class="asis-dayline-list__range">@segmento.Rango · @FormatearMinutos(segmento.Minutos)</div>
+                                                                        </div>
+                                                                        <div class="asis-dayline-bar">
+                                                                            <div class="asis-dayline-bar__fill @segmento.CssClass" style="width:@($"{segmento.WidthPercent}%")"></div>
+                                                                        </div>
+                                                                        <div class="asis-dayline-list__detail">@segmento.Detalle</div>
+                                                                        @if (segmento.Accion == "descanso")
+                                                                        {
+                                                                            <div class="asis-dayline-list__detail asis-dayline-list__detail--metrics">
+                                                                                @if (segmento.NumeroDescanso.HasValue)
+                                                                                {
+                                                                                    <span>D@segmento.NumeroDescanso.Value · </span>
+                                                                                }
+                                                                                Detectado: @FormatearMinutos(segmento.Minutos)
+                                                                                @if (segmento.MinutosProgramados.HasValue)
+                                                                                {
+                                                                                    <span> · Programado: @FormatearMinutos(segmento.MinutosProgramados.Value)</span>
+                                                                                }
+                                                                                @if (segmento.MinutosAplicados.HasValue)
+                                                                                {
+                                                                                    <span> · Aplicado: @FormatearMinutos(segmento.MinutosAplicados.Value)</span>
+                                                                                    @if (!string.IsNullOrWhiteSpace(segmento.OrigenAplicado))
+                                                                                    {
+                                                                                        <span> (@segmento.OrigenAplicado)</span>
+                                                                                    }
+                                                                                }
+                                                                            </div>
+                                                                            <div class="asis-dayline-list__detail">@ObtenerFormulaDescanso(segmento)</div>
+                                                                        }
+                                                                        @if (!segmento.EsReferenciaTurno)
+                                                                        {
+                                                                            <div class="asis-dayline-list__status @(segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente ? "asis-dayline-list__status--ok" : "asis-dayline-list__status--warn")">
+                                                                                @(segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente
+                                                                                    ? (segmento.FueInferidoAutomaticamente ? "Bloque reconciliado automáticamente" : "Bloque fijo vigente")
+                                                                                    : "Bloque pendiente de revisar por cambios en marcajes")
+                                                                            </div>
+                                                                        }
+                                                                        @if (PuedeEditarSegmento(segmento))
+                                                                        {
+                                                                            <div class="asis-dayline-list__actions mt-2">
+                                                                                @if (EsSegmentoEnEdicion(segmento))
+                                                                                {
+                                                                                    <select class="form-select form-select-sm asis-dayline-select" @bind="segmentoAccionSeleccionada" disabled="@(cargando || EsSegmentoGuardando(segmento))">
+                                                                                        @foreach (var opcion in ObtenerOpcionesAccionSegmento(segmento))
+                                                                                        {
+                                                                                            <option value="@opcion.Clave">@opcion.Etiqueta</option>
+                                                                                        }
+                                                                                    </select>
+                                                                                    @if (segmentoAccionSeleccionada == "descanso")
+                                                                                    {
+                                                                                        <InputNumber class="form-control form-control-sm asis-dayline-minutes-input" @bind-Value="segmentoMinutosAplicadosCaptura" min="0" />
+                                                                                    }
+                                                                                    <div class="asis-dayline-list__help">@ObtenerAyudaAccionSegmentoSeleccionada(segmento)</div>
+                                                                                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => AplicarEdicionSegmentoAsync(segmento)" disabled="@(cargando || EsSegmentoGuardando(segmento))">@(EsSegmentoGuardando(segmento) ? "Aplicando..." : "Aplicar")</button>
+                                                                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicionSegmento" disabled="@(cargando || EsSegmentoGuardando(segmento))">Cancelar</button>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarSegmento(segmento)" disabled="@cargando">Editar segmento</button>
+                                                                                }
+                                                                            </div>
+                                                                            @if (EsSegmentoGuardando(segmento))
+                                                                            {
+                                                                                <div class="asis-dayline-list__loading">Reprocesando el día y actualizando segmentos...</div>
+                                                                            }
+                                                                        }
+                                                                    </div>
                                                                 }
                                                             </div>
                                                         </div>
-                                                        <div class="asis-time-bar">
-                                                            <div class="asis-time-bar__fill @barra.CssClass" style="width:@($"{ObtenerPorcentajeBarraResumen(barra.Minutos)}%")"></div>
+                                                    }
+                                                </div>
+
+                                                <div class="asis-summary-layout__side">
+                                                    <div class="asis-summary-side">
+                                                        <div class="asis-summary-side__title">Resumen lateral</div>
+                                                        @foreach (var item in ObtenerResumenLateralTimeline())
+                                                        {
+                                                            <div class="asis-summary-side__item @item.CssClass">
+                                                                <span>@item.Etiqueta</span>
+                                                                <strong>@item.Valor</strong>
+                                                            </div>
+                                                        }
+                                                    </div>
+
+                                                    <div class="asis-calculation-grid mt-3">
+                                                        @foreach (var item in ObtenerResumenCalculoDia())
+                                                        {
+                                                            <div class="asis-calculation-grid__item @(item.CssClass ?? string.Empty)">
+                                                                <div class="asis-calculation-grid__label">@item.Etiqueta</div>
+                                                                <div class="asis-calculation-grid__value">@item.Valor</div>
+                                                                @if (!string.IsNullOrWhiteSpace(item.Nota))
+                                                                {
+                                                                    <div class="asis-calculation-grid__note">@item.Nota</div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="row g-2 mt-1">
+                                                <div class="col-12">
+                                                    <div class="asis-wizard-side__section h-100">
+                                                        <div class="d-flex align-items-center justify-content-between gap-2">
+                                                            <div class="asis-wizard-side__title mb-0">Bitácora</div>
+                                                            <button type="button" class="btn btn-sm btn-outline-secondary asis-btn-xs" @onclick="AlternarBitacora">
+                                                                <i class="bi @(_mostrarBitacora ? "bi-chevron-up" : "bi-chevron-down") me-1"></i>@(_mostrarBitacora ? "Ocultar" : "Mostrar")
+                                                            </button>
                                                         </div>
-                                                        <div class="asis-time-bar-card__actions">
-                                                            @if (barra.Clave == "extra" && PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
+                                                        @if (_mostrarBitacora)
+                                                        {
+                                                            @if (bitacoraCorreccionDia.Count == 0)
                                                             {
-                                                                <div class="asis-quick-editor">
-                                                                    <select class="form-select form-select-sm asis-inline-select" value="@tipoResolucionTiempoExtra" @onchange="OnResumenTipoResolucionChanged">
-                                                                        @foreach (var opcion in asesorCorreccionActual?.ResolucionesDisponibles ?? [])
-                                                                        {
-                                                                            <option value="@opcion.Value">@opcion.Label</option>
-                                                                        }
-                                                                    </select>
-
-                                                                    @if (tipoResolucionTiempoExtra == "PagarTodo")
-                                                                    {
-                                                                        <div class="asis-quick-editor__field">
-                                                                            <label class="asis-field-label">@ObtenerTituloCapturaTiempoResumen()</label>
-                                                                            <input type="number" class="form-control form-control-sm" min="0" max="@ObtenerMaximoMinutosResolublesResumen()" @bind="minutosExtraPagoCaptura" />
-                                                                        </div>
-                                                                    }
-                                                                    else if (tipoResolucionTiempoExtra == "BancoTodo")
-                                                                    {
-                                                                        <div class="asis-quick-editor__field">
-                                                                            <label class="asis-field-label">@ObtenerTituloCapturaTiempoResumen()</label>
-                                                                            <input type="number" class="form-control form-control-sm" min="0" max="@ObtenerMaximoMinutosResolublesResumen()" @bind="minutosExtraBancoCaptura" />
-                                                                        </div>
-                                                                    }
-                                                                    else if (tipoResolucionTiempoExtra == "MitadMitad")
-                                                                    {
-                                                                        <div class="asis-quick-editor__grid">
-                                                                            <div class="asis-quick-editor__field">
-                                                                                <label class="asis-field-label">Minutos a pagar</label>
-                                                                                <input type="number" class="form-control form-control-sm" min="0" max="@ObtenerMaximoMinutosResolublesResumen()" @bind="minutosExtraPagoCaptura" />
-                                                                            </div>
-                                                                            <div class="asis-quick-editor__field">
-                                                                                <label class="asis-field-label">Minutos a banco</label>
-                                                                                <input type="number" class="form-control form-control-sm" min="0" max="@ObtenerMaximoMinutosResolublesResumen()" @bind="minutosExtraBancoCaptura" />
-                                                                            </div>
-                                                                        </div>
-                                                                    }
-                                                                    else if (tipoResolucionTiempoExtra == "CubrirFaltanteConBanco")
-                                                                    {
-                                                                        <div class="asis-quick-editor__field">
-                                                                            <label class="asis-field-label">@ObtenerTituloCapturaTiempoResumen()</label>
-                                                                            <input type="number" class="form-control form-control-sm" min="0" max="@ObtenerMaximoMinutosCubrirBancoResumen()" @bind="minutosCubrirBancoCaptura" />
-                                                                        </div>
-                                                                    }
-
-                                                                    <div class="asis-quick-editor__hint">@ObtenerAyudaCapturaTiempoResumen()</div>
-                                                                    <div class="asis-quick-editor__actions">
-                                                                        <button type="button" class="btn btn-sm btn-primary" @onclick="AplicarResolucionTiempoAsync">Aplicar</button>
-                                                                        @if (TieneResolucionTiempoActual())
-                                                                        {
-                                                                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="QuitarResolucionTiempoAsync">Quitar</button>
-                                                                        }
-                                                                    </div>
-                                                                </div>
-                                                            }
-                                                            else if (barra.Clave == "permiso")
-                                                            {
-                                                                <div class="asis-quick-editor asis-quick-editor--permission">
-                                                                    <div class="asis-quick-editor__grid">
-                                                                        <div class="asis-quick-editor__field">
-                                                                            <label class="asis-field-label">Horas permiso</label>
-                                                                            <input type="number" class="form-control form-control-sm" min="0" step="0.25" @bind="horasPermisoDiaCaptura" />
-                                                                        </div>
-                                                                        <div class="asis-quick-editor__field">
-                                                                            <label class="asis-field-label">Pago</label>
-                                                                            <select class="form-select form-select-sm" @bind="permisoDiaConGoceCaptura">
-                                                                                <option value="true">Con goce</option>
-                                                                                <option value="false">Sin goce</option>
-                                                                            </select>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div class="asis-quick-editor__hint">@ObtenerResumenPermisoRapido()</div>
-                                                                    <div class="asis-quick-editor__actions">
-                                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="PrepararPermisoSugeridoResumen">Usar sugerido</button>
-                                                                        <button type="button" class="btn btn-sm btn-primary" @onclick="GuardarPermisoDiaAsync" disabled="@(cargando || guardandoPermisoDia)">@(permisoDiaSeleccionado == null ? "Guardar permiso" : "Actualizar permiso")</button>
-                                                                        @if (permisoDiaSeleccionado != null)
-                                                                        {
-                                                                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="QuitarPermisoDiaAsync" disabled="@guardandoPermisoDia">Quitar</button>
-                                                                        }
-                                                                    </div>
-                                                                </div>
-                                                            }
-                                                            else if (barra.Clave == "compensacion")
-                                                            {
-                                                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="AprobarCompensacionSugeridaResumenAsync" disabled="@(!PuedeAprobarCompensacionPermiso())">@(TieneCompensacionPermisoAprobada() ? "Actualizar compensación" : "Aprobar compensación")</button>
-                                                            }
-                                                            else if (barra.Clave == "faltante")
-                                                            {
-                                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AbrirTiempoDesdeResumen">Revisar resolución</button>
+                                                                <div class="asis-wizard-side__note mt-2">Sin movimientos todavía.</div>
                                                             }
                                                             else
                                                             {
-                                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AbrirMarcacionesDesdeResumen">Ver marcaciones</button>
+                                                                @foreach (var log in bitacoraCorreccionDia.Take(6))
+                                                                {
+                                                                    <div class="asis-wizard-side__text mt-2"><strong>@FormatearFechaBitacora(log)</strong> · @FormatearMensajeBitacora(log)</div>
+                                                                }
                                                             }
-                                                        </div>
-                                                    </div>
-                                                }
-                                            </div>
-
-                                            <div class="row g-3 mt-1">
-                                                <div class="col-lg-6">
-                                                    <div class="asis-wizard-side__section h-100">
-                                                        <div class="asis-wizard-side__title">Resumen rápido</div>
-                                                        <div class="asis-wizard-check"><span>Marcaciones</span><strong>@ObtenerResumenWizardMarcaciones()</strong></div>
-                                                        <div class="asis-wizard-check"><span>Permiso</span><strong>@ObtenerResumenWizardPermiso()</strong></div>
-                                                        <div class="asis-wizard-check"><span>Compensación</span><strong>@ObtenerResumenWizardCompensacion()</strong></div>
-                                                        <div class="asis-wizard-check"><span>Resolución</span><strong>@ObtenerResumenResolucion(AsistenciaActual)</strong></div>
-                                                    </div>
-                                                </div>
-                                                <div class="col-lg-6">
-                                                    <div class="asis-wizard-side__section h-100">
-                                                        <div class="asis-wizard-side__title">Turno y observaciones</div>
-                                                        <div class="asis-wizard-side__text"><strong>Turno:</strong> @ObtenerResumenTurnoActual(AsistenciaActual)</div>
-                                                        <div class="asis-wizard-side__text mt-2"><strong>Horario:</strong> @ObtenerHorarioTurnoSeleccionadoDia()</div>
-                                                        <div class="asis-wizard-side__text mt-2"><strong>Descansos:</strong> @ObtenerDescansosTurnoSeleccionadoDia()</div>
-                                                        <div class="asis-wizard-side__note mt-2">@ObtenerBitacoraCorreccionResumen()</div>
+                                                        }
                                                     </div>
                                                 </div>
                                             </div>
-                                        }
-                                        else
-                                        {
-                                            <div class="asis-detail-tabs mb-3">
-                                                <button type="button" class="@ObtenerClaseSeccionAjuste(TabModalMarcaciones)" @onclick="() => SeleccionarSeccionAjustes(TabModalMarcaciones)">Marcaciones</button>
-                                                <button type="button" class="@ObtenerClaseSeccionAjuste(TabModalPermisos)" @onclick="() => SeleccionarSeccionAjustes(TabModalPermisos)">Permiso y compensación</button>
-                                                <button type="button" class="@ObtenerClaseSeccionAjuste(TabModalTiempo)" @onclick="() => SeleccionarSeccionAjustes(TabModalTiempo)">Tiempo / banco</button>
-                                            </div>
-
-                                            @if (_seccionAjustesActiva == TabModalMarcaciones)
-                                            {
-                                                <AsistenciasCorreccionMarcacionesTab
-                                                    MarcacionesDia="marcacionesDia"
-                                                    ManualHoraTexto="manualHoraTexto"
-                                                    OnManualHoraTextoChanged="@(value => manualHoraTexto = value)"
-                                                    ManualClasificacion="manualClasificacion"
-                                                    OnManualClasificacionChanged="@(value => manualClasificacion = value)"
-                                                    ManualObservacion="manualObservacion"
-                                                    OnManualObservacionChanged="@(value => manualObservacion = value)"
-                                                    Cargando="cargando"
-                                                    OnGuardarMarcacionManual="GuardarMarcacionManualDiaAsync"
-                                                    ObtenerHoraMarcacion="ObtenerHoraMarcacion"
-                                                    ObtenerAuditoriaMarcacion="ObtenerAuditoriaMarcacionPresentacion"
-                                                    MarcacionManualEditandoId="marcacionManualEditandoId"
-                                                    MarcacionManualEditandoHoraTexto="marcacionManualEditandoHoraTexto"
-                                                    OnMarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
-                                                    MarcacionManualEditandoObservacion="marcacionManualEditandoObservacion"
-                                                    OnMarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
-                                                    OnIniciarEdicionMarcacionManual="IniciarEdicionMarcacionManual"
-                                                    OnGuardarEdicionMarcacionManual="GuardarEdicionMarcacionManualAsync"
-                                                    OnCancelarEdicionMarcacionManual="@(() => CancelarEdicionMarcacionManual())"
-                                                    OnAlternarAnulacionMarcacion="AlternarAnulacionMarcacionAsync"
-                                                    OnCambiarClasificacion="CambiarClasificacionMarcacionDesdeUiAsync" />
-                                            }
-
-                                            @if (_seccionAjustesActiva == TabModalPermisos)
-                                            {
-                                                <AsistenciasCorreccionPermisosTab
-                                                    HayPermisoRegistrado="@(permisoDiaSeleccionado != null)"
-                                                    ClaseEstadoPermisoSeccion="@ObtenerClaseEstadoPermisoSeccion()"
-                                                    EstadoPermisoSeccion="@ObtenerEstadoPermisoSeccion()"
-                                                    NotaPermiso="@asesorCorreccionActual?.NotaPermiso"
-                                                    GuiaRapidaPermiso="@ObtenerGuiaRapidaPermiso()"
-                                                    ResumenPermisoDiaCaptura="@ObtenerResumenPermisoDiaCaptura()"
-                                                    MostrarResumenOperativo="@(AsistenciaActual != null)"
-                                                    ResumenPermisoSugerido="@ObtenerResumenPermisoSugerido()"
-                                                    FaltanteNetoTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosPermisoSugeridos(AsistenciaActual)))"
-                                                    PermisoCapturadoTexto="@FormatearMinutos(ObtenerMinutosPermisoCapturados())"
-                                                    FaltanteRemanenteTexto="@FormatearMinutos(ObtenerMinutosFaltanteRemanenteActual())"
-                                                    TrabajoVisibleTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)))"
-                                                    DescansoExcluidoTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosDescansoNoPagadoExcluidosDelPermiso(AsistenciaActual)))"
-                                                    DeshabilitarGuardarPermiso="@(cargando || guardandoPermisoDia)"
-                                                    OnAplicarPermisoSugerido="AplicarPermisoDiaSugerido"
-                                                    HorasPermisoDiaCaptura="horasPermisoDiaCaptura"
-                                                    OnHorasPermisoDiaCapturaChanged="@(value => horasPermisoDiaCaptura = value)"
-                                                    PermisoDiaConGoceCaptura="permisoDiaConGoceCaptura"
-                                                    OnPermisoDiaConGoceCapturaChanged="@(value => permisoDiaConGoceCaptura = value)"
-                                                    PermisoDiaMotivo="permisoDiaMotivo"
-                                                    OnPermisoDiaMotivoChanged="@(value => permisoDiaMotivo = value)"
-                                                    PermisoDiaObservaciones="permisoDiaObservaciones"
-                                                    OnPermisoDiaObservacionesChanged="@(value => permisoDiaObservaciones = value)"
-                                                    TextoGuardarPermiso="@(guardandoPermisoDia ? "Guardando..." : (permisoDiaSeleccionado == null ? "Registrar permiso" : "Actualizar permiso"))"
-                                                    OnGuardarPermisoDia="GuardarPermisoDiaAsync"
-                                                    OnQuitarPermisoDia="QuitarPermisoDiaAsync"
-                                                    SaldoBancoHorasTexto="@($"{saldoBancoHorasSeleccionado} min.")"
-                                                    TieneCompensacionPermisoAprobada="@TieneCompensacionPermisoAprobada()"
-                                                    ClaseEstadoCompensacionSeccion="@ObtenerClaseEstadoCompensacionSeccion()"
-                                                    EstadoCompensacionSeccion="@ObtenerEstadoCompensacionSeccion()"
-                                                    GuiaCompensacionPermiso="@ObtenerGuiaCompensacionPermiso()"
-                                                    ResumenCompensacionPermiso="@ObtenerResumenCompensacionPermiso()"
-                                                    RecuperableDetectadoTexto="@FormatearMinutos(minutosRecuperablesPermisoAprobables)"
-                                                    SugeridoAprobarTexto="@FormatearMinutos(ObtenerMinutosCompensacionPermisoSugeridosAprobacion())"
-                                                    AprobadoActualTexto="@FormatearMinutos(minutosCompensadosPermisoAprobados)"
-                                                    MinutosCompensacionPermisoCaptura="minutosCompensacionPermisoCaptura"
-                                                    OnMinutosCompensacionPermisoCapturaChanged="@(value => minutosCompensacionPermisoCaptura = value)"
-                                                    MaximoMinutosCompensacionPermisoEditable="@ObtenerMaximoMinutosCompensacionPermisoEditable()"
-                                                    DeshabilitarCompensacion="@(guardandoPermisoDia || !PuedeAprobarCompensacionPermiso())"
-                                                    GuardandoPermisoDia="guardandoPermisoDia"
-                                                    OnAprobarCompensacionPermiso="AprobarCompensacionPermisoAsync"
-                                                    OnQuitarCompensacionPermiso="QuitarCompensacionPermisoAsync"
-                                                    Turnos="Turnos"
-                                                    TurnoDiaSeleccionadoIdTexto="turnoDiaSeleccionadoIdTexto"
-                                                    OnTurnoDiaSeleccionadoIdTextoChanged="@(value => turnoDiaSeleccionadoIdTexto = value)"
-                                                    TurnoDiaObservaciones="turnoDiaObservaciones"
-                                                    OnTurnoDiaObservacionesChanged="@(value => turnoDiaObservaciones = value)"
-                                                    Cargando="cargando"
-                                                    OnGuardarTurnoDia="GuardarTurnoDiaAsync"
-                                                    HorarioTurnoSeleccionadoDia="@ObtenerHorarioTurnoSeleccionadoDia()"
-                                                    DescansosTurnoSeleccionadoDia="@ObtenerDescansosTurnoSeleccionadoDia()" />
-                                            }
-
-                                            @if (_seccionAjustesActiva == TabModalTiempo)
-                                            {
-                                                <AsistenciasCorreccionTiempoTab
-                                                    PuedeMostrarResolucion="@(PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())"
-                                                    ClaseEstadoTiempoSeccion="@ObtenerClaseEstadoTiempoSeccion()"
-                                                    EstadoTiempoSeccion="@ObtenerEstadoTiempoSeccion()"
-                                                    NotaTiempo="@asesorCorreccionActual?.NotaTiempo"
-                                                    GuiaTiempoResolucion="@ObtenerGuiaTiempoResolucion()"
-                                                    ExtraDetectadaTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(AsistenciaActual.MinutosExtra))"
-                                                    ExtraResolubleTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosResolubles(AsistenciaActual)))"
-                                                    ExtraAprobadaTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual)))"
-                                                    ExplicacionAprobacionTexto="@ObtenerExplicacionTiempoExtraWizard()"
-                                                    FaltanteNetoTexto="@(AsistenciaActual == null ? "0:00 h" : FormatearMinutos(ObtenerMinutosFaltanteBanco(AsistenciaActual)))"
-                                                    SaldoBancoTexto="@FormatearMinutos(saldoBancoHorasSeleccionado)"
-                                                    ResolucionesDisponibles="@(asesorCorreccionActual?.ResolucionesDisponibles ?? [])"
-                                                    TipoResolucionTiempoExtra="tipoResolucionTiempoExtra"
-                                                    OnTipoResolucionTiempoExtraChanged="CambiarTipoResolucionTiempoExtra"
-                                                    OpcionSeleccionada="@(asesorCorreccionActual?.ResolucionesDisponibles.FirstOrDefault(o => o.Value == tipoResolucionTiempoExtra))"
-                                                    ResolucionTiempoExtraObservaciones="resolucionTiempoExtraObservaciones"
-                                                    OnResolucionTiempoExtraObservacionesChanged="@((string? value) => resolucionTiempoExtraObservaciones = value)"
-                                                    MinutosExtraPagoCaptura="minutosExtraPagoCaptura"
-                                                    OnMinutosExtraPagoCapturaChanged="@((int value) => minutosExtraPagoCaptura = value)"
-                                                    MinutosExtraBancoCaptura="minutosExtraBancoCaptura"
-                                                    OnMinutosExtraBancoCapturaChanged="@((int value) => minutosExtraBancoCaptura = value)"
-                                                    MinutosCubrirBancoCaptura="minutosCubrirBancoCaptura"
-                                                    OnMinutosCubrirBancoCapturaChanged="@((int value) => minutosCubrirBancoCaptura = value)"
-                                                    BancoHorasHabilitadoConfigurado="bancoHorasHabilitadoConfigurado"
-                                                    NetoTrabajadoTexto="@(AsistenciaActual == null ? "0 min" : $"{ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual)} min")"
-                                                    VisibleTrabajadoTexto="@(AsistenciaActual == null ? "0 min" : $"{ObtenerMinutosTrabajadosVisibles(AsistenciaActual)} min")"
-                                                    ResumenResolucionActual="@(AsistenciaActual == null ? string.Empty : ObtenerResumenResolucion(AsistenciaActual))"
-                                                    Cargando="cargando"
-                                                    OnAplicarResolucionTiempo="AplicarResolucionTiempoAsync"
-                                                    OnQuitarResolucionTiempo="QuitarResolucionTiempoAsync"
-                                                    PuedeQuitarResolucion="@TieneResolucionTiempoActual()"
-                                                    BitacoraCorreccionDia="bitacoraCorreccionDia"
-                                                    FormatearMensajeBitacora="FormatearMensajeBitacora"
-                                                    FormatearFechaBitacora="FormatearFechaBitacora" />
-                                            }
-                                        }
                                     </div>
                                 </div>
                             </div>
@@ -471,12 +512,13 @@
                 </div>
 
                 <div class="modal-footer py-2 border-top">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => SeleccionarTabPrincipal(TabModalResumen)">
-                        <i class="bi bi-bar-chart-line me-1"></i>Resumen
-                    </button>
-                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => SeleccionarTabPrincipal(TabModalAjustes)">
-                        <i class="bi bi-sliders me-1"></i>Ajustes
-                    </button>
+                    @if (_tieneCambiosPendientes)
+                    {
+                        <div class="me-auto small text-warning-emphasis fw-semibold">Hay cambios locales sin guardar.</div>
+                        <button type="button" class="btn btn-sm btn-success" @onclick="GuardarYCerrarAsync">
+                            <i class="bi bi-save me-1"></i>Guardar cambios
+                        </button>
+                    }
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CerrarAsync"><i class="bi bi-x me-1"></i>Cerrar</button>
                 </div>
             </div>
@@ -521,6 +563,28 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAyudaReglas">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_mostrarConfirmacionCierre)
+    {
+        <div class="modal fade show d-block asis-modal-backdrop asis-modal-backdrop--inner" tabindex="-1">
+            <div class="modal-dialog modal-md modal-dialog-centered">
+                <div class="modal-content shadow">
+                    <div class="modal-header">
+                        <h5 class="modal-title mb-0">Guardar cambios del día</h5>
+                        <button type="button" class="btn-close" @onclick="() => _mostrarConfirmacionCierre = false" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        Hiciste cambios en este empleado. ¿Quieres guardarlos antes de cerrar el modal?
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="() => _mostrarConfirmacionCierre = false">Cancelar</button>
+                        <button type="button" class="btn btn-outline-danger" @onclick="CerrarSinGuardarAsync">Descartar</button>
+                        <button type="button" class="btn btn-primary" @onclick="GuardarYCerrarAsync">Guardar</button>
                     </div>
                 </div>
             </div>

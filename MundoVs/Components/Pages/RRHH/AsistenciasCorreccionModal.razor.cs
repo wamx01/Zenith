@@ -25,12 +25,6 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnUpdated { get; set; }
 
-    private const string TabModalResumen = "resumen";
-    private const string TabModalAjustes = "ajustes";
-    private const string TabModalMarcaciones = "marcaciones";
-    private const string TabModalPermisos = "permisos";
-    private const string TabModalTiempo = "tiempo";
-
     private sealed record ResumenVisualBarra(
         string Clave,
         string Titulo,
@@ -40,16 +34,43 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         string Estado,
         string? Aprobacion);
 
+    private sealed record ResumenCalculoItem(string Etiqueta, string Valor, string? Nota = null, string? CssClass = null);
+
+    private sealed record TimelineSegmentoDia(
+        string Titulo,
+        string Rango,
+        int Minutos,
+        decimal WidthPercent,
+        string CssClass,
+        string Detalle,
+        int? NumeroDescanso = null,
+        int? MinutosProgramados = null,
+        int? MinutosAplicados = null,
+        string? OrigenAplicado = null,
+        bool EsReferenciaTurno = false,
+        Guid? MarcacionInicioId = null,
+        Guid? MarcacionFinId = null,
+        TipoClasificacionMarcacionRrhh? ClasificacionInicioSugerida = null,
+        TipoClasificacionMarcacionRrhh? ClasificacionFinSugerida = null,
+        string Accion = "trabajo",
+        EstadoSegmentoResolucionRrhh EstadoResolucion = EstadoSegmentoResolucionRrhh.RequiereRevision,
+        bool FueInferidoAutomaticamente = false);
+
+    private sealed record SegmentoAccionOpcion(string Clave, string Etiqueta, string Ayuda);
+
+    private sealed record ResumenLateralItem(string Etiqueta, string Valor, string CssClass);
+
+    private delegate void AplicarCambiosSegmentoDelegate(RrhhMarcacion inicio, RrhhMarcacion fin, string usuarioActual, CrmDbContext db);
+
     private Guid _empresaId;
     private Guid? _ultimaAsistenciaCargadaId;
-    private string _tabModalActiva = TabModalResumen;
-    private string _seccionAjustesActiva = TabModalMarcaciones;
     private bool cargando;
     private bool guardandoPermisoDia;
     private string? error;
     private string? ok;
     private RrhhAsistencia? AsistenciaActual;
     private List<RrhhMarcacion> marcacionesDia = [];
+    private List<RrhhSegmentoResolucion> resolucionesSegmentoDia = [];
     private string turnoDiaSeleccionadoIdTexto = string.Empty;
     private string? turnoDiaObservaciones;
     private string manualHoraTexto = string.Empty;
@@ -71,6 +92,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private int minutosExtraPagoCaptura;
     private int minutosExtraBancoCaptura;
     private int minutosCubrirBancoCaptura;
+    private string minutosExtraPagoTexto = "0:00";
+    private string minutosExtraBancoTexto = "0:00";
+    private bool usarFactorTiempoExtraOverride;
+    private decimal factorTiempoExtraOverrideCaptura;
     private int minutosCompensadosPermisoAprobados;
     private int minutosRecuperablesPermisoAprobables;
     private RrhhAusencia? permisoDiaSeleccionado;
@@ -81,11 +106,27 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string? resumenAusenciaActual;
     private RrhhAsistenciaCorreccionAdvice? asesorCorreccionActual;
     private bool mostrarAyudaReglas;
+    private Guid? segmentoEditandoInicioId;
+    private Guid? segmentoEditandoFinId;
+    private string segmentoAccionSeleccionada = "trabajo";
+    private int? segmentoMinutosAplicadosCaptura;
+    private Guid? segmentoGuardandoInicioId;
+    private Guid? segmentoGuardandoFinId;
+    private CrmDbContext? _draftDb;
+    private bool _tieneCambiosPendientes;
+    private bool _mostrarConfirmacionCierre;
+    private bool _mostrarAccionesRapidasTiempo;
+    private bool _mostrarAccionesRapidasPermiso;
+    private bool _mostrarAccionesRapidasTurno;
+    private bool _mostrarBitacora;
+    private bool _mostrarMarcacionesDia;
+    private int _toleranciaExcesoDescansoMinutos = RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoDefault;
 
     protected override async Task OnParametersSetAsync()
     {
         if (!Visible || Asistencia == null)
         {
+            await DisposeDraftContextAsync();
             _ultimaAsistenciaCargadaId = null;
             AsistenciaActual = null;
             asesorCorreccionActual = null;
@@ -104,8 +145,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     {
         error = null;
         ok = null;
-        _tabModalActiva = TabModalResumen;
-        _seccionAjustesActiva = TabModalMarcaciones;
+        _tieneCambiosPendientes = false;
+        _mostrarConfirmacionCierre = false;
         await CargarEmpresaAsync();
 
         if (Asistencia == null || _empresaId == Guid.Empty)
@@ -113,28 +154,63 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return;
         }
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-        AsistenciaActual = await db.RrhhAsistencias
-            .AsNoTracking()
+        await DisposeDraftContextAsync();
+        _draftDb = await DbFactory.CreateDbContextAsync();
+        AsistenciaActual = await _draftDb.RrhhAsistencias
             .Include(a => a.Empleado)
             .Include(a => a.TurnoBase)
             .FirstOrDefaultAsync(a => a.Id == Asistencia.Id)
             ?? Asistencia;
 
         _ultimaAsistenciaCargadaId = AsistenciaActual.Id;
-        turnoDiaSeleccionadoIdTexto = AsistenciaActual.TurnoBaseId?.ToString() ?? string.Empty;
+        ReiniciarEstadoVisual();
+        tipoResolucionTiempoExtra = "PagarTodo";
+        resolucionTiempoExtraObservaciones = null;
+        await CargarContextoTiempoExtraAsync(_draftDb);
+        _toleranciaExcesoDescansoMinutos = (await RrhhAsistenciaDescansoSettings.LoadAsync(_draftDb, _empresaId)).ToleranciaExcesoDescansoMinutos;
+        CargarCapturaResolucion(AsistenciaActual);
+        await CargarContextoDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarAsistencia: false);
+    }
+
+    private async Task DisposeDraftContextAsync()
+    {
+        if (_draftDb == null)
+        {
+            return;
+        }
+
+        await _draftDb.DisposeAsync();
+        _draftDb = null;
+    }
+
+    private void RegistrarCambioPendiente(string mensaje)
+    {
+        _tieneCambiosPendientes = true;
+        ok = mensaje;
+        ActualizarAsesorCorreccion();
+        StateHasChanged();
+    }
+
+    private void ReiniciarEstadoVisual()
+    {
+        turnoDiaSeleccionadoIdTexto = AsistenciaActual?.TurnoBaseId?.ToString() ?? string.Empty;
         turnoDiaObservaciones = null;
         manualHoraTexto = string.Empty;
         manualClasificacion = TipoClasificacionMarcacionRrhh.Entrada;
         manualObservacion = null;
+        ReiniciarEdicionManual();
+        CancelarEdicionSegmento();
+        _mostrarAccionesRapidasTiempo = false;
+        _mostrarAccionesRapidasPermiso = false;
+        _mostrarAccionesRapidasTurno = false;
+        _mostrarBitacora = false;
+    }
+
+    private void ReiniciarEdicionManual()
+    {
         marcacionManualEditandoId = null;
         marcacionManualEditandoHoraTexto = string.Empty;
         marcacionManualEditandoObservacion = null;
-        tipoResolucionTiempoExtra = "PagarTodo";
-        resolucionTiempoExtraObservaciones = null;
-        await CargarContextoTiempoExtraAsync(db);
-        CargarCapturaResolucion(AsistenciaActual);
-        await CargarMarcacionesDiaAsync();
     }
 
     private async Task CargarContextoTiempoExtraAsync(CrmDbContext db)
@@ -172,18 +248,42 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     {
         if (AsistenciaActual == null)
         {
-            marcacionesDia = [];
-            bitacoraCorreccionDia = [];
-            permisoDiaSeleccionado = null;
-            resumenAusenciaActual = null;
-            ActualizarAsesorCorreccion();
+            LimpiarContextoDia();
             return;
         }
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var fecha = AsistenciaActual.Fecha.ToDateTime(TimeOnly.MinValue);
-        var desdeUtc = DateTime.SpecifyKind(fecha.AddHours(-14), DateTimeKind.Utc);
-        var hastaUtc = DateTime.SpecifyKind(fecha.AddDays(1).AddHours(14), DateTimeKind.Utc);
+        if (_draftDb == null)
+        {
+            return;
+        }
+
+        await CargarContextoDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarAsistencia: false);
+    }
+
+    private void LimpiarContextoDia()
+    {
+        marcacionesDia = [];
+        resolucionesSegmentoDia = [];
+        bitacoraCorreccionDia = [];
+        permisoDiaSeleccionado = null;
+        resumenAusenciaActual = null;
+        ActualizarAsesorCorreccion();
+    }
+
+    private async Task CargarContextoDiaAsync(CrmDbContext db, DateOnly fecha, bool recargarAsistencia)
+    {
+        if (recargarAsistencia)
+        {
+            await RecargarAsistenciaActualAsync(db, fecha);
+        }
+
+        if (AsistenciaActual == null)
+        {
+            LimpiarContextoDia();
+            return;
+        }
+
+        var (desdeUtc, hastaUtc) = ObtenerVentanaConsultaUtc(fecha);
 
         var marcacionesCandidatas = await db.RrhhMarcaciones
             .AsNoTracking()
@@ -199,6 +299,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             .Where(m => DateOnly.FromDateTime(ObtenerFechaHoraLocalMarcacion(m)) == AsistenciaActual.Fecha)
             .OrderBy(ObtenerFechaHoraLocalMarcacion)
             .ToList();
+
+        resolucionesSegmentoDia = await db.RrhhSegmentosResoluciones
+            .AsNoTracking()
+            .Where(r => r.EmpresaId == _empresaId
+                && r.EmpleadoId == AsistenciaActual.EmpleadoId
+                && r.Fecha == AsistenciaActual.Fecha
+                && r.IsActive)
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync();
 
         bitacoraCorreccionDia = await db.RrhhLogsChecador
             .AsNoTracking()
@@ -239,13 +348,38 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         if (permisoDiaSeleccionado == null)
         {
-            horasPermisoDiaCaptura = AsistenciaActual == null
-                ? 0
-                : decimal.Round(ObtenerMinutosPermisoSugeridos(AsistenciaActual) / 60m, 2, MidpointRounding.AwayFromZero);
-            permisoDiaConGoceCaptura = true;
-            permisoDiaMotivo = null;
-            permisoDiaObservaciones = null;
-            ActualizarAsesorCorreccion();
+            AplicarCapturaPermisoSugerida();
+        }
+        else
+        {
+            AplicarCapturaPermisoExistente();
+        }
+
+        ActualizarAsesorCorreccion();
+    }
+
+    private static (DateTime DesdeUtc, DateTime HastaUtc) ObtenerVentanaConsultaUtc(DateOnly fecha)
+    {
+        DateTime fechaBase = fecha.ToDateTime(TimeOnly.MinValue);
+        var desdeUtc = DateTime.SpecifyKind(fechaBase.AddHours(-14), DateTimeKind.Utc);
+        var hastaUtc = DateTime.SpecifyKind(fechaBase.AddDays(1).AddHours(14), DateTimeKind.Utc);
+        return (desdeUtc, hastaUtc);
+    }
+
+    private void AplicarCapturaPermisoSugerida()
+    {
+        horasPermisoDiaCaptura = AsistenciaActual == null
+            ? 0
+            : decimal.Round(ObtenerMinutosPermisoSugeridos(AsistenciaActual) / 60m, 2, MidpointRounding.AwayFromZero);
+        permisoDiaConGoceCaptura = true;
+        permisoDiaMotivo = null;
+        permisoDiaObservaciones = null;
+    }
+
+    private void AplicarCapturaPermisoExistente()
+    {
+        if (permisoDiaSeleccionado == null)
+        {
             return;
         }
 
@@ -253,19 +387,58 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         permisoDiaConGoceCaptura = permisoDiaSeleccionado.ConGocePago;
         permisoDiaMotivo = permisoDiaSeleccionado.Motivo;
         permisoDiaObservaciones = permisoDiaSeleccionado.Observaciones;
-        ActualizarAsesorCorreccion();
     }
 
     private async Task CerrarAsync()
+    {
+        if (_tieneCambiosPendientes)
+        {
+            _mostrarConfirmacionCierre = true;
+            return;
+        }
+
+        await CerrarSinGuardarAsync();
+    }
+
+    private async Task CerrarSinGuardarAsync()
     {
         _ultimaAsistenciaCargadaId = null;
         AsistenciaActual = null;
         error = null;
         ok = null;
         mostrarAyudaReglas = false;
+        _mostrarConfirmacionCierre = false;
+        _tieneCambiosPendientes = false;
+        await DisposeDraftContextAsync();
         if (OnClose.HasDelegate)
         {
             await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task GuardarYCerrarAsync()
+    {
+        if (_draftDb == null || AsistenciaActual == null)
+        {
+            await CerrarSinGuardarAsync();
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        try
+        {
+            await ReprocesarYRefrescarDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarResolucion: true);
+            await _draftDb.SaveChangesAsync();
+            _tieneCambiosPendientes = false;
+            _mostrarConfirmacionCierre = false;
+            await NotificarActualizacionAsync();
+            await CerrarSinGuardarAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
         }
     }
 
@@ -284,6 +457,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         minutosExtraPagoCaptura = 0;
         minutosExtraBancoCaptura = 0;
         minutosCubrirBancoCaptura = 0;
+        minutosExtraPagoTexto = "0:00";
+        minutosExtraBancoTexto = "0:00";
+        usarFactorTiempoExtraOverride = false;
+        factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
         resolucionTiempoExtraObservaciones = "Resolución revertida desde el wizard de asistencias.";
 
         await AplicarResolucionTiempoAsync();
@@ -293,32 +470,6 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             ok = "Se quitó la resolución de tiempo extra / banco de horas del día.";
         }
     }
-
-    private void SeleccionarTabModal(string tab)
-        => _tabModalActiva = tab;
-
-    private void SeleccionarTabPrincipal(string tab)
-        => _tabModalActiva = tab;
-
-    private void SeleccionarSeccionAjustes(string seccion)
-    {
-        _tabModalActiva = TabModalAjustes;
-        _seccionAjustesActiva = seccion;
-    }
-
-    private string ObtenerClaseTabPrincipal(string tab)
-        => _tabModalActiva == tab ? "asis-main-tab active" : "asis-main-tab";
-
-    private string ObtenerClaseSeccionAjuste(string seccion)
-        => _seccionAjustesActiva == seccion ? "asis-detail-tab active" : "asis-detail-tab";
-
-    private string ObtenerTituloVistaActual()
-        => _tabModalActiva == TabModalResumen ? "Resumen del día" : "Ajustes del día";
-
-    private string ObtenerDescripcionVistaActual()
-        => _tabModalActiva == TabModalResumen
-            ? "Visualiza rápido el tiempo visible, faltantes y aprobaciones antes de mover algo."
-            : "Aquí ajustas marcaciones, permiso, compensación y la resolución de tiempo o banco.";
 
     private IReadOnlyList<ResumenVisualBarra> ObtenerBarrasResumen()
     {
@@ -414,10 +565,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     }
 
     private void PrepararPermisoSugeridoResumen()
-    {
-        AplicarPermisoDiaSugerido();
-        SeleccionarSeccionAjustes(TabModalPermisos);
-    }
+        => AplicarPermisoDiaSugerido();
 
     private async Task AprobarCompensacionSugeridaResumenAsync()
     {
@@ -429,10 +577,11 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     }
 
     private void AbrirTiempoDesdeResumen()
-        => SeleccionarSeccionAjustes(TabModalTiempo);
+        => AlternarAccionesRapidasTiempo();
 
     private void AbrirMarcacionesDesdeResumen()
-        => SeleccionarSeccionAjustes(TabModalMarcaciones);
+    {
+    }
 
     private void OnResumenTipoResolucionChanged(ChangeEventArgs args)
         => CambiarTipoResolucionTiempoExtra(args.Value?.ToString() ?? "SinAccion");
@@ -524,6 +673,56 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     {
         tipoResolucionTiempoExtra = tipo;
         AjustarResolucionTiempoSugerida();
+        minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+        minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+    }
+
+    private static string FormatearMinutosCaptura(int minutos)
+    {
+        var horas = Math.Max(0, minutos) / 60;
+        var restantes = Math.Max(0, minutos) % 60;
+        return $"{horas}:{restantes:00}";
+    }
+
+    private static int ParsearMinutosCaptura(string? texto)
+    {
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            return 0;
+        }
+
+        if (TimeSpan.TryParse(texto, out var hora))
+        {
+            return Math.Max(0, (int)Math.Round(hora.TotalMinutes, MidpointRounding.AwayFromZero));
+        }
+
+        return 0;
+    }
+
+    private int ObtenerMaximoMinutosBaseDisponibles()
+        => AsistenciaActual == null ? 0 : Math.Max(0, AsistenciaActual.MinutosExtra);
+
+    private string ObtenerResumenAprobacionBaseTiempo()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos de tiempo extra.";
+        }
+
+        var disponibles = ObtenerMaximoMinutosBaseDisponibles();
+        var capturados = Math.Max(0, minutosExtraPagoCaptura) + Math.Max(0, minutosExtraBancoCaptura);
+        return $"Disponible base: {FormatearMinutos(disponibles)} · Capturado: {FormatearMinutos(capturados)}";
+    }
+
+    private string ObtenerResumenFactorTiempoExtra()
+    {
+        var factorActivo = usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
+            ? factorTiempoExtraOverrideCaptura
+            : factorTiempoExtraConfigurado;
+
+        return usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
+            ? $"Factor manual activo: x{factorActivo:0.##}"
+            : $"Factor configurado: x{factorActivo:0.##}";
     }
 
     private static string FormatearMensajeBitacora(RrhhLogChecador log)
@@ -532,127 +731,739 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private static string FormatearFechaBitacora(RrhhLogChecador log)
         => $"{log.FechaUtc.ToLocalTime():dd/MM/yyyy HH:mm} · {ObtenerUsuarioBitacora(log)}";
 
-    private string ObtenerClaseTabModal(string tab)
-        => _tabModalActiva == tab ? "nav-link active" : "nav-link";
-
-    private static readonly string[] WizardSteps = [TabModalResumen, TabModalMarcaciones, TabModalPermisos, TabModalTiempo];
-
-    private string ObtenerClasePasoWizard(string tab)
-        => _tabModalActiva == tab ? "asis-wizard-step active" : (EsPasoWizardCompletado(tab) ? "asis-wizard-step done" : "asis-wizard-step");
-
-    private string ObtenerEstadoPasoWizard(string tab)
-        => tab switch
-        {
-            var t when t == TabModalResumen => "Diagnóstico",
-            var t when t == TabModalMarcaciones => marcacionesDia.Count == 0 ? "Sin checadas" : (asesorCorreccionActual?.PriorizarMarcaciones == true ? "Revisar" : "Listo"),
-            var t when t == TabModalPermisos => permisoDiaSeleccionado != null ? "Registrado" : (asesorCorreccionActual?.PriorizarPermiso == true ? "Pendiente" : "Opcional"),
-            var t when t == TabModalTiempo => ObtenerEstadoPasoTiempoWizard(),
-            _ => string.Empty
-        };
-
-    private bool EsPasoWizardCompletado(string tab)
-        => tab switch
-        {
-            var t when t == TabModalResumen => true,
-            var t when t == TabModalMarcaciones => asesorCorreccionActual?.PriorizarMarcaciones != true,
-            var t when t == TabModalPermisos => asesorCorreccionActual?.PriorizarPermiso != true || permisoDiaSeleccionado != null,
-            var t when t == TabModalTiempo => EsPasoTiempoWizardCompletado(),
-            _ => false
-        };
-
-    private bool PuedeIrAPasoAnterior()
-        => Array.IndexOf(WizardSteps, _tabModalActiva) > 0;
-
-    private bool PuedeIrAPasoSiguiente()
-        => Array.IndexOf(WizardSteps, _tabModalActiva) < WizardSteps.Length - 1;
-
-    private void IrAPasoAnterior()
-    {
-        var indice = Array.IndexOf(WizardSteps, _tabModalActiva);
-        if (indice > 0)
-        {
-            _tabModalActiva = WizardSteps[indice - 1];
-        }
-    }
-
-    private void IrAPasoSiguiente()
-    {
-        var indice = Array.IndexOf(WizardSteps, _tabModalActiva);
-        if (indice >= 0 && indice < WizardSteps.Length - 1)
-        {
-            _tabModalActiva = WizardSteps[indice + 1];
-        }
-    }
-
-    private string ObtenerTituloPasoActual()
-        => _tabModalActiva switch
-        {
-            var t when t == TabModalResumen => "Paso 1 · Entender el día",
-            var t when t == TabModalMarcaciones => "Paso 2 · Corregir marcaciones",
-            var t when t == TabModalPermisos => "Paso 3 · Decidir permiso y compensación",
-            var t when t == TabModalTiempo => "Paso 4 · Resolver tiempo extra o banco",
-            _ => "Revisión del día"
-        };
-
-    private string ObtenerDescripcionPasoActual()
-        => _tabModalActiva switch
-        {
-            var t when t == TabModalResumen => "Aquí entiendes qué pasó en el día y cuál es la acción recomendada antes de mover algo.",
-            var t when t == TabModalMarcaciones => "Corrige primero checadas faltantes, mal clasificadas o anuladas para no tomar una decisión equivocada.",
-            var t when t == TabModalPermisos => "Define si realmente aplica permiso y si existe compensación del mismo día que reduzca el faltante.",
-            var t when t == TabModalTiempo => "Aquí solo resuelves el tiempo extra o banco cuando lo anterior ya está claro. Te mostramos separado lo detectado, lo aprobable y lo aprobado.",
-            _ => string.Empty
-        };
-
     private string ObtenerDecisionRapidaWizard()
         => asesorCorreccionActual == null
             ? "Sin diagnóstico actual."
             : $"Ahora mismo te conviene: {ObtenerDecisionRapidaLegible()}.";
 
-    private string ObtenerResumenWizardMarcaciones()
-        => marcacionesDia.Count == 0 ? "Sin marcaciones" : $"{marcacionesDia.Count} registradas";
-
-    private string ObtenerResumenWizardPermiso()
-        => permisoDiaSeleccionado == null ? "No registrado" : $"{permisoDiaSeleccionado.Horas:0.##} h {(permisoDiaSeleccionado.ConGocePago ? "con goce" : "sin goce")}";
-
-    private string ObtenerResumenWizardCompensacion()
-        => TieneCompensacionPermisoAprobada()
-            ? FormatearMinutos(minutosCompensadosPermisoAprobados)
-            : (ObtenerMinutosCompensacionPermisoSugeridosAprobacion() > 0 ? $"Útil {FormatearMinutos(ObtenerMinutosCompensacionPermisoSugeridosAprobacion())}" : "No necesaria");
-
-    private string ObtenerResumenWizardTiempoDetectado()
-    {
-        if (AsistenciaActual == null)
-        {
-            return "—";
-        }
-
-        if (AsistenciaActual.MinutosExtra > 0)
-        {
-            return FormatearMinutos(AsistenciaActual.MinutosExtra);
-        }
-
-        return PuedeMostrarResolucionTiempo() ? "Pendiente" : "Sin acción";
-    }
-
-    private string ObtenerResumenWizardTiempoAprobado()
-    {
-        if (AsistenciaActual == null)
-        {
-            return "—";
-        }
-
-        var aprobado = ObtenerMinutosExtraAprobados(AsistenciaActual);
-        return aprobado > 0 ? FormatearMinutos(aprobado) : "0:00 h";
-    }
-
-    private string ObtenerResumenVisibleWizard()
-        => AsistenciaActual == null ? "Sin datos" : FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual));
-
     private string ObtenerResumenVisibleExplicado()
         => AsistenciaActual == null
             ? string.Empty
             : $"Base {FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}.";
+
+    private IReadOnlyList<ResumenCalculoItem> ObtenerResumenCalculoDia()
+    {
+        if (AsistenciaActual == null)
+        {
+            return [];
+        }
+
+        var items = new List<ResumenCalculoItem>
+        {
+            new(
+                "Jornada principal",
+                FormatearRangoPrincipalJornada(),
+                $"Se usa el bloque que mejor coincide con el turno del día: {ObtenerHorarioTurnoSeleccionadoDia().Replace("Día de descanso", "sin horario")}."),
+            new(
+                "Trabajo neto detectado",
+                FormatearMinutos(AsistenciaActual.MinutosTrabajadosNetos),
+                "Incluye jornada principal y tiempo adicional detectado; ya descuenta descansos no pagados aplicados."),
+            new(
+                "Descansos aplicados",
+                FormatearMinutos(AsistenciaActual.MinutosDescansoTomado),
+                string.IsNullOrWhiteSpace(AsistenciaActual.ResumenDescansos) ? "Sin detalle de descansos." : AsistenciaActual.ResumenDescansos,
+                AsistenciaActual.MinutosDescansoTomado > 0 ? "asis-calculation-grid__item--warn" : null),
+            new(
+                "Tiempo visible",
+                FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)),
+                ObtenerResumenVisibleExplicado(),
+                "asis-calculation-grid__item--info")
+        };
+
+        var bloquesAdicionales = ObtenerResumenBloquesAdicionales();
+        if (bloquesAdicionales != null)
+        {
+            items.Insert(1, bloquesAdicionales);
+        }
+
+        if (AsistenciaActual.MinutosExtra > 0 || ObtenerMinutosExtraAprobados(AsistenciaActual) > 0)
+        {
+            items.Add(new ResumenCalculoItem(
+                "Tiempo extra",
+                FormatearMinutos(AsistenciaActual.MinutosExtra),
+                ObtenerMinutosExtraAprobados(AsistenciaActual) > 0
+                    ? $"Aprobada: {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}."
+                    : "Detectada y pendiente de resolución.",
+                "asis-calculation-grid__item--accent"));
+        }
+
+        if (ObtenerMinutosCompensadosAprobadosActual() > 0)
+        {
+            items.Add(new ResumenCalculoItem(
+                "Compensación del día",
+                FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual()),
+                "Se suma al visible solo cuando la compensación ya fue aprobada.",
+                "asis-calculation-grid__item--success"));
+        }
+
+        return items;
+    }
+
+    private ResumenCalculoItem? ObtenerResumenBloquesAdicionales()
+    {
+        if (AsistenciaActual == null)
+        {
+            return null;
+        }
+
+        var observaciones = AsistenciaActual.Observaciones ?? string.Empty;
+        var bloques = new List<string>();
+
+        var indicePrevio = observaciones.IndexOf("bloque previo al turno de ", StringComparison.OrdinalIgnoreCase);
+        if (indicePrevio >= 0)
+        {
+            bloques.Add(ExtraerTextoBloque(observaciones, indicePrevio));
+        }
+
+        var indicePosterior = observaciones.IndexOf("bloque posterior al turno de ", StringComparison.OrdinalIgnoreCase);
+        if (indicePosterior >= 0)
+        {
+            bloques.Add(ExtraerTextoBloque(observaciones, indicePosterior));
+        }
+
+        if (bloques.Count == 0)
+        {
+            return null;
+        }
+
+        return new ResumenCalculoItem(
+            "Bloques adicionales",
+            string.Join(" · ", bloques),
+            "Se tomaron fuera de la jornada principal y se revisan como tiempo adicional del día.",
+            "asis-calculation-grid__item--accent");
+    }
+
+    private string FormatearRangoPrincipalJornada()
+        => AsistenciaActual == null
+            ? "—"
+            : $"{(AsistenciaActual.HoraEntradaReal?.ToString("hh\\:mm") ?? "—")} → {(AsistenciaActual.HoraSalidaReal?.ToString("hh\\:mm") ?? "—")}";
+
+    private IReadOnlyList<TimelineSegmentoDia> ObtenerTimelineSegmentosDia()
+    {
+        if (AsistenciaActual == null || marcacionesDia.Count == 0)
+        {
+            return [];
+        }
+
+        var segmentos = new List<TimelineSegmentoDia>();
+        var detalleTurno = ObtenerDetalleTurnoSeleccionadoDia();
+        var marcacionesOrdenadas = marcacionesDia
+            .OrderBy(ObtenerFechaHoraLocalMarcacion)
+            .ToList();
+
+        if (detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && detalleTurno.HoraSalida is TimeSpan salidaProgramada)
+        {
+            var minutosTurno = Math.Max(1, (int)Math.Round((salidaProgramada - entradaProgramada).TotalMinutes));
+            segmentos.Add(new TimelineSegmentoDia(
+                "Turno esperado",
+                $"{FormatearHoraTurno(detalleTurno.HoraEntrada)} → {FormatearHoraTurno(detalleTurno.HoraSalida)}",
+                minutosTurno,
+                100m,
+                "asis-dayline__segment--turno",
+                "Referencia del horario configurado para comparar bloques detectados.",
+                null,
+                null,
+                null,
+                null,
+                true));
+        }
+
+        var referencia = Math.Max(1, marcacionesOrdenadas.Zip(marcacionesOrdenadas.Skip(1), (inicio, fin) => Math.Max(0, (int)Math.Round((ObtenerFechaHoraLocalMarcacion(fin) - ObtenerFechaHoraLocalMarcacion(inicio)).TotalMinutes))).DefaultIfEmpty(1).Max());
+
+        for (var i = 0; i + 1 < marcacionesOrdenadas.Count; i++)
+        {
+            var inicioMarcacion = marcacionesOrdenadas[i];
+            var finMarcacion = marcacionesOrdenadas[i + 1];
+            var inicio = ObtenerFechaHoraLocalMarcacion(inicioMarcacion);
+            var fin = ObtenerFechaHoraLocalMarcacion(finMarcacion);
+            var minutos = Math.Max(0, (int)Math.Round((fin - inicio).TotalMinutes));
+            if (minutos <= 0)
+            {
+                continue;
+            }
+
+            var clasificacion = ClasificarSegmentoDia(inicioMarcacion, finMarcacion, detalleTurno, inicio, fin, minutos);
+            var porcentaje = Math.Clamp(decimal.Round(minutos * 100m / referencia, 2, MidpointRounding.AwayFromZero), 10m, 100m);
+            var (numeroDescanso, minutosProgramados, minutosAplicados, origenAplicado) = clasificacion.Accion == "descanso"
+                ? ObtenerPresentacionDescanso(detalleTurno, inicioMarcacion.Id, finMarcacion.Id, inicio.TimeOfDay, fin.TimeOfDay, minutos)
+                : (null, null, null, null);
+
+            segmentos.Add(new TimelineSegmentoDia(
+                clasificacion.Titulo,
+                $"{inicio:HH:mm} → {fin:HH:mm}",
+                minutos,
+                porcentaje,
+                clasificacion.CssClass,
+                clasificacion.Detalle,
+                numeroDescanso,
+                minutosProgramados,
+                minutosAplicados,
+                origenAplicado,
+                false,
+                inicioMarcacion.Id,
+                finMarcacion.Id,
+                clasificacion.ClasificacionInicio,
+                clasificacion.ClasificacionFin,
+                clasificacion.Accion,
+                clasificacion.EstadoResolucion,
+                clasificacion.FueInferidoAutomaticamente));
+        }
+
+        return segmentos;
+    }
+
+    private (string Titulo, string CssClass, string Detalle, TipoClasificacionMarcacionRrhh ClasificacionInicio, TipoClasificacionMarcacionRrhh ClasificacionFin, string Accion, EstadoSegmentoResolucionRrhh EstadoResolucion, bool FueInferidoAutomaticamente) ClasificarSegmentoDia(RrhhMarcacion inicio, RrhhMarcacion fin, TurnoBaseDetalle? detalleTurno, DateTime inicioLocal, DateTime finLocal, int minutos)
+    {
+        var resolucion = ObtenerResolucionSegmento(inicio.Id, fin.Id);
+        var accionPayload = resolucion == null
+            ? RrhhMarcacionSegmentActionHelper.ResolveAction(inicio.PayloadRaw, fin.PayloadRaw)
+            : MapearAccionSegmento(resolucion.TipoSegmento);
+        var estadoResolucion = resolucion?.Estado ?? EstadoSegmentoResolucionRrhh.RequiereRevision;
+        var fueInferidoAutomaticamente = resolucion?.FueInferidoAutomaticamente ?? false;
+
+        if (inicio.EsAnulada || fin.EsAnulada)
+        {
+            return ("Tramo no considerado", "asis-dayline__segment--ignorado", "El tramo se excluye del cálculo del día, pero se mantiene visible en el timeline para contexto.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "ignorar", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (accionPayload == "permiso")
+        {
+            return ("Permiso", "asis-dayline__segment--permiso", "Tramo marcado como permiso; no se toma como descanso ni como trabajo efectivo.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "permiso", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (accionPayload == "temporal")
+        {
+            return ("Salida temporal", "asis-dayline__segment--temporal", "Tramo marcado como salida temporal fuera del horario laboral; no se trata como descanso.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "temporal", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (inicio.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.InicioDescanso || fin.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.FinDescanso)
+        {
+            return ("Descanso detectado", "asis-dayline__segment--descanso", "Se interpreta como descanso marcado o emparejado en la jornada.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "descanso", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (DebeInferirseComoDescanso(detalleTurno, inicioLocal.TimeOfDay, finLocal.TimeOfDay, minutos))
+        {
+            return ("Descanso inferido", "asis-dayline__segment--descanso", "El tramo coincide con una ventana de descanso del turno y se presenta como descanso inferido automáticamente.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "descanso", estadoResolucion, true);
+        }
+
+        var inicioHora = inicio.FechaHoraMarcacionLocal?.TimeOfDay;
+        var finHora = fin.FechaHoraMarcacionLocal?.TimeOfDay;
+        if (detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && detalleTurno.HoraSalida is TimeSpan salidaProgramada && inicioHora.HasValue && finHora.HasValue)
+        {
+            if (finHora.Value <= entradaProgramada)
+            {
+                return ("Bloque previo", "asis-dayline__segment--extra", "Bloque detectado antes del inicio del turno; revisar si cuenta como tiempo adicional.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "extra", estadoResolucion, fueInferidoAutomaticamente);
+            }
+
+            if (inicioHora.Value >= salidaProgramada)
+            {
+                return ("Bloque posterior", "asis-dayline__segment--extra", "Bloque detectado después del final del turno; revisar si cuenta como tiempo adicional.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "extra", estadoResolucion, fueInferidoAutomaticamente);
+            }
+        }
+
+        return ("Trabajo detectado", "asis-dayline__segment--trabajo", "Segmento tomado como parte de la jornada principal o del trabajo efectivo del día.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "trabajo", estadoResolucion, fueInferidoAutomaticamente);
+    }
+
+    private static bool DebeInferirseComoDescanso(TurnoBaseDetalle? detalleTurno, TimeSpan inicio, TimeSpan fin, int minutos)
+    {
+        if (detalleTurno == null || minutos <= 0)
+        {
+            return false;
+        }
+
+        return ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin).HasValue;
+    }
+
+    private (int? NumeroDescanso, int? MinutosProgramados, int? MinutosAplicados, string? OrigenAplicado) ObtenerPresentacionDescanso(TurnoBaseDetalle? detalleTurno, Guid inicioId, Guid finId, TimeSpan inicio, TimeSpan fin, int minutosDetectados)
+    {
+        var resolucion = ObtenerResolucionSegmento(inicioId, finId);
+        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso && resolucion.MinutosAplicadosOverride.HasValue)
+        {
+            var numeroManual = ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin);
+            var programadoManual = numeroManual.HasValue ? ObtenerMinutosProgramadosDescanso(detalleTurno, numeroManual.Value) : null;
+            return (numeroManual, programadoManual, resolucion.MinutosAplicadosOverride.Value, "Manual");
+        }
+
+        var numero = ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin);
+        if (!numero.HasValue)
+        {
+            return (null, null, minutosDetectados, "Detectado");
+        }
+
+        var minutosProgramados = ObtenerMinutosProgramadosDescanso(detalleTurno, numero.Value);
+        var minutosAplicados = minutosDetectados;
+        var origenAplicado = "Detectado";
+
+        if (minutosProgramados.HasValue)
+        {
+            var umbral = Math.Max(0, _toleranciaExcesoDescansoMinutos);
+            if (minutosDetectados <= minutosProgramados.Value + umbral)
+            {
+                minutosAplicados = minutosProgramados.Value;
+                origenAplicado = "Programado";
+            }
+        }
+
+        return (numero, minutosProgramados, minutosAplicados, origenAplicado);
+    }
+
+    private string ObtenerFormulaDescanso(TimelineSegmentoDia segmento)
+    {
+        if (segmento.Accion != "descanso" || !segmento.MinutosAplicados.HasValue)
+        {
+            return string.Empty;
+        }
+
+        if (!segmento.MinutosProgramados.HasValue)
+        {
+            return $"Cálculo: sin descanso programado asociado, se aplica el real {FormatearMinutos(segmento.MinutosAplicados.Value)}.";
+        }
+
+        if (string.Equals(segmento.OrigenAplicado, "Manual", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Cálculo: override manual = {FormatearMinutos(segmento.MinutosAplicados.Value)}.";
+        }
+
+        var limite = segmento.MinutosProgramados.Value + Math.Max(0, _toleranciaExcesoDescansoMinutos);
+        return segmento.MinutosAplicados.Value == segmento.MinutosProgramados.Value
+            ? $"Cálculo: real {FormatearMinutos(segmento.Minutos)} ≤ programado {FormatearMinutos(segmento.MinutosProgramados.Value)} + umbral {FormatearMinutos(_toleranciaExcesoDescansoMinutos)} = {FormatearMinutos(limite)}; se aplica programado {FormatearMinutos(segmento.MinutosProgramados.Value)}."
+            : $"Cálculo: real {FormatearMinutos(segmento.Minutos)} > programado {FormatearMinutos(segmento.MinutosProgramados.Value)} + umbral {FormatearMinutos(_toleranciaExcesoDescansoMinutos)} = {FormatearMinutos(limite)}; se aplica real {FormatearMinutos(segmento.MinutosAplicados.Value)}.";
+    }
+
+    private static int? ObtenerNumeroDescansoMasCercano(TurnoBaseDetalle? detalleTurno, TimeSpan inicio, TimeSpan fin)
+    {
+        if (detalleTurno == null)
+        {
+            return null;
+        }
+
+        var candidatos = new List<(int Numero, TimeSpan Inicio, TimeSpan Fin)>();
+        if (detalleTurno.CantidadDescansos >= 1 && detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue)
+        {
+            candidatos.Add((1, detalleTurno.Descanso1Inicio.Value, detalleTurno.Descanso1Fin.Value));
+        }
+
+        if (detalleTurno.CantidadDescansos >= 2 && detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue)
+        {
+            candidatos.Add((2, detalleTurno.Descanso2Inicio.Value, detalleTurno.Descanso2Fin.Value));
+        }
+
+        var mejor = candidatos
+            .Select(v => new
+            {
+                v.Numero,
+                Duracion = Math.Max(0, (int)Math.Round((v.Fin - v.Inicio).TotalMinutes)),
+                Diferencia = Math.Abs((int)Math.Round((inicio - v.Inicio).TotalMinutes)) + Math.Abs((int)Math.Round((fin - v.Fin).TotalMinutes))
+            })
+            .Where(v => v.Duracion <= 0 || minutosCoinciden(v.Duracion, inicio, fin))
+            .OrderBy(v => v.Diferencia)
+            .FirstOrDefault();
+
+        return mejor?.Numero;
+
+        static bool minutosCoinciden(int duracionProgramada, TimeSpan inicioBloque, TimeSpan finBloque)
+        {
+            var duracionBloque = Math.Max(0, (int)Math.Round((finBloque - inicioBloque).TotalMinutes));
+            return duracionBloque <= duracionProgramada + 30;
+        }
+    }
+
+    private static int? ObtenerMinutosProgramadosDescanso(TurnoBaseDetalle? detalleTurno, int numeroDescanso)
+    {
+        if (detalleTurno == null)
+        {
+            return null;
+        }
+
+        return numeroDescanso switch
+        {
+            1 when detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue
+                => Math.Max(0, (int)Math.Round((detalleTurno.Descanso1Fin.Value - detalleTurno.Descanso1Inicio.Value).TotalMinutes)),
+            2 when detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue
+                => Math.Max(0, (int)Math.Round((detalleTurno.Descanso2Fin.Value - detalleTurno.Descanso2Inicio.Value).TotalMinutes)),
+            _ => null
+        };
+    }
+
+    private RrhhSegmentoResolucion? ObtenerResolucionSegmento(Guid inicioId, Guid finId)
+        => resolucionesSegmentoDia.FirstOrDefault(r => r.MarcacionInicioId == inicioId && r.MarcacionFinId == finId && r.Estado != EstadoSegmentoResolucionRrhh.Obsoleta);
+
+    private static string MapearAccionSegmento(TipoSegmentoResolucionRrhh tipoSegmento)
+        => tipoSegmento switch
+        {
+            TipoSegmentoResolucionRrhh.Extra => "extra",
+            TipoSegmentoResolucionRrhh.Descanso => "descanso",
+            TipoSegmentoResolucionRrhh.SalidaTemporal => "temporal",
+            TipoSegmentoResolucionRrhh.Permiso => "permiso",
+            TipoSegmentoResolucionRrhh.NoConsiderar => "ignorar",
+            _ => "trabajo"
+        };
+
+    private bool PuedeEditarSegmento(TimelineSegmentoDia segmento)
+        => PuedeReprocesar && !segmento.EsReferenciaTurno && segmento.MarcacionInicioId.HasValue && segmento.MarcacionFinId.HasValue;
+
+    private bool EsSegmentoEnEdicion(TimelineSegmentoDia segmento)
+        => segmentoEditandoInicioId == segmento.MarcacionInicioId && segmentoEditandoFinId == segmento.MarcacionFinId;
+
+    private bool EsSegmentoGuardando(TimelineSegmentoDia segmento)
+        => segmentoGuardandoInicioId == segmento.MarcacionInicioId && segmentoGuardandoFinId == segmento.MarcacionFinId;
+
+    private void EditarSegmento(TimelineSegmentoDia segmento)
+    {
+        if (!PuedeEditarSegmento(segmento))
+        {
+            return;
+        }
+
+        segmentoEditandoInicioId = segmento.MarcacionInicioId;
+        segmentoEditandoFinId = segmento.MarcacionFinId;
+        segmentoAccionSeleccionada = ObtenerClaveAccionSegmento(segmento);
+        segmentoMinutosAplicadosCaptura = segmento.Accion == "descanso"
+            ? segmento.MinutosAplicados ?? segmento.Minutos
+            : null;
+    }
+
+    private void CancelarEdicionSegmento()
+    {
+        segmentoEditandoInicioId = null;
+        segmentoEditandoFinId = null;
+        segmentoAccionSeleccionada = "trabajo";
+        segmentoMinutosAplicadosCaptura = null;
+    }
+
+    private static string ObtenerClaveAccionSegmento(TimelineSegmentoDia segmento)
+        => segmento.Accion;
+
+    private int ObtenerDuracionBloquePrincipal()
+    {
+        var segmentos = ObtenerTimelineSegmentosDia()
+            .Where(s => !s.EsReferenciaTurno)
+            .OrderByDescending(s => s.Minutos)
+            .ToList();
+
+        return segmentos.Count == 0 ? 0 : segmentos[0].Minutos;
+    }
+
+    private static TipoSegmentoResolucionRrhh MapearTipoSegmentoResolucion(string accion)
+        => accion switch
+        {
+            "extra" => TipoSegmentoResolucionRrhh.Extra,
+            "descanso" => TipoSegmentoResolucionRrhh.Descanso,
+            "temporal" => TipoSegmentoResolucionRrhh.SalidaTemporal,
+            "permiso" => TipoSegmentoResolucionRrhh.Permiso,
+            "ignorar" => TipoSegmentoResolucionRrhh.NoConsiderar,
+            _ => TipoSegmentoResolucionRrhh.Trabajo
+        };
+
+    private IReadOnlyList<SegmentoAccionOpcion> ObtenerOpcionesAccionSegmento(TimelineSegmentoDia segmento)
+    {
+        if (segmento.EsReferenciaTurno)
+        {
+            return [];
+        }
+
+        return
+        [
+            new("trabajo", "Trabajo principal", "Usa Entrada + Salida para que el tramo se tome como parte de la jornada efectiva."),
+            new("extra", "Bloque extra", "Se mapea igual que trabajo, pero el texto del timeline lo presenta como tramo adicional al turno."),
+            new("descanso", "Descanso", "Usa InicioDescanso + FinDescanso para descontar el tramo como descanso."),
+            new("temporal", "Salida temporal", "Se conserva fuera del tiempo laborado y no se trata como descanso; debe verse explícitamente como salida temporal."),
+            new("permiso", "Permiso", "Marca el tramo como permiso del día para diferenciarlo de una salida temporal o de un descanso."),
+            new("ignorar", "No considerar", "Saca el tramo del cálculo del día sin romper el timeline; seguirá visible como tramo no considerado.")
+        ];
+    }
+
+    private string ObtenerAyudaAccionSegmentoSeleccionada(TimelineSegmentoDia segmento)
+        => ObtenerOpcionesAccionSegmento(segmento).FirstOrDefault(o => o.Clave == segmentoAccionSeleccionada)?.Ayuda
+            ?? "Selecciona cómo debe interpretarse este tramo del día.";
+
+    private IReadOnlyList<ResumenLateralItem> ObtenerResumenLateralTimeline()
+    {
+        if (AsistenciaActual == null)
+        {
+            return [];
+        }
+
+        return
+        [
+            new("Visible", FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)), "asis-summary-side__item--primary"),
+            new("Extra", FormatearMinutos(AsistenciaActual.MinutosExtra), "asis-summary-side__item--accent"),
+            new("Permiso", permisoDiaSeleccionado == null ? FormatearMinutos(ObtenerMinutosPermisoSugeridos(AsistenciaActual)) : FormatearMinutos(ObtenerMinutosPermisoCapturados()), "asis-summary-side__item--warn"),
+            new("Compensación", FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual()), "asis-summary-side__item--info"),
+            new("Descanso", FormatearMinutos(AsistenciaActual.MinutosDescansoTomado), "asis-summary-side__item--muted")
+        ];
+    }
+
+    private async Task AplicarEdicionSegmentoAsync(TimelineSegmentoDia segmento)
+    {
+        if (!PuedeEditarSegmento(segmento) || !segmento.MarcacionInicioId.HasValue || !segmento.MarcacionFinId.HasValue)
+        {
+            return;
+        }
+
+        if (segmentoAccionSeleccionada == "ignorar")
+        {
+            await AplicarIgnorarSegmentoAsync(segmento);
+            return;
+        }
+
+        var (clasificacionInicio, clasificacionFin) = segmentoAccionSeleccionada switch
+        {
+            "descanso" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
+            "temporal" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
+            "permiso" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
+            _ => (TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida)
+        };
+
+        var mensaje = segmentoAccionSeleccionada switch
+        {
+            "descanso" => "Segmento marcado como descanso y día reprocesado.",
+            "temporal" => "Segmento marcado como salida temporal y día reprocesado.",
+            "permiso" => "Segmento marcado como permiso y día reprocesado.",
+            "extra" => "Segmento marcado como bloque extra y día reprocesado.",
+            _ => "Segmento marcado como trabajo principal y día reprocesado."
+        };
+
+        await AplicarCambioSegmentoAsync(
+            segmento,
+            (inicio, fin, usuarioActual, db) =>
+            {
+                inicio.ClasificacionOperativa = clasificacionInicio;
+                inicio.TipoMarcacionRaw = clasificacionInicio.ToString();
+                inicio.EsAnulada = false;
+                inicio.PayloadRaw = RrhhMarcacionSegmentActionHelper.SetAction(inicio.PayloadRaw, segmentoAccionSeleccionada is "temporal" or "permiso" ? segmentoAccionSeleccionada : null);
+                inicio.Procesada = false;
+                inicio.UpdatedAt = DateTime.UtcNow;
+                inicio.UpdatedBy = usuarioActual;
+
+                fin.ClasificacionOperativa = clasificacionFin;
+                fin.TipoMarcacionRaw = clasificacionFin.ToString();
+                fin.EsAnulada = false;
+                fin.PayloadRaw = RrhhMarcacionSegmentActionHelper.SetAction(fin.PayloadRaw, segmentoAccionSeleccionada is "temporal" or "permiso" ? segmentoAccionSeleccionada : null);
+                fin.Procesada = false;
+                fin.UpdatedAt = DateTime.UtcNow;
+                fin.UpdatedBy = usuarioActual;
+
+                GuardarResolucionSegmento(db, usuarioActual, segmento, MapearTipoSegmentoResolucion(segmentoAccionSeleccionada), segmentoAccionSeleccionada == "ignorar"
+                    ? "Bloque marcado para no considerar."
+                    : $"Bloque fijado como {segmentoAccionSeleccionada}.", segmentoAccionSeleccionada == "descanso" ? segmentoMinutosAplicadosCaptura : null);
+            },
+            $"empleado={AsistenciaActual!.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};inicio={segmento.MarcacionInicioId};fin={segmento.MarcacionFinId};accion={segmentoAccionSeleccionada};clasInicio={clasificacionInicio};clasFin={clasificacionFin}",
+            "Se aplicó corrección de asistencia: cambio de interpretación de segmento.",
+            mensaje);
+    }
+
+    private async Task AplicarIgnorarSegmentoAsync(TimelineSegmentoDia segmento)
+    {
+        if (AsistenciaActual == null || !segmento.MarcacionInicioId.HasValue || !segmento.MarcacionFinId.HasValue)
+        {
+            return;
+        }
+
+        await AplicarCambioSegmentoAsync(
+            segmento,
+            (inicio, fin, usuarioActual, db) =>
+            {
+                inicio.EsAnulada = true;
+                inicio.PayloadRaw = RrhhMarcacionSegmentActionHelper.SetAction(inicio.PayloadRaw, "ignorar");
+                inicio.Procesada = false;
+                inicio.UpdatedAt = DateTime.UtcNow;
+                inicio.UpdatedBy = usuarioActual;
+
+                fin.EsAnulada = true;
+                fin.PayloadRaw = RrhhMarcacionSegmentActionHelper.SetAction(fin.PayloadRaw, "ignorar");
+                fin.Procesada = false;
+                fin.UpdatedAt = DateTime.UtcNow;
+                fin.UpdatedBy = usuarioActual;
+
+                GuardarResolucionSegmento(db, usuarioActual, segmento, TipoSegmentoResolucionRrhh.NoConsiderar, "Bloque marcado para no considerar.");
+            },
+            $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};inicio={segmento.MarcacionInicioId};fin={segmento.MarcacionFinId};accion=ignorar",
+            "Se aplicó corrección de asistencia: segmento ignorado desde resumen.",
+            "Segmento ignorado y día reprocesado.");
+    }
+
+    private async Task AplicarCambioSegmentoAsync(
+        TimelineSegmentoDia segmento,
+        AplicarCambiosSegmentoDelegate aplicarCambios,
+        string detalleBitacora,
+        string mensajeBitacora,
+        string mensajeOk)
+    {
+        if (AsistenciaActual == null || !segmento.MarcacionInicioId.HasValue || !segmento.MarcacionFinId.HasValue)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+        cargando = true;
+        segmentoGuardandoInicioId = segmento.MarcacionInicioId;
+        segmentoGuardandoFinId = segmento.MarcacionFinId;
+
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var inicioId = segmento.MarcacionInicioId.Value;
+            var finId = segmento.MarcacionFinId.Value;
+            var marcaciones = await db.RrhhMarcaciones
+                .Where(m => m.Id == inicioId || m.Id == finId)
+                .ToListAsync();
+
+            var inicio = marcaciones.FirstOrDefault(m => m.Id == inicioId);
+            var fin = marcaciones.FirstOrDefault(m => m.Id == finId);
+            if (inicio == null || fin == null)
+            {
+                error = "No se encontraron las marcaciones del segmento para aplicar el cambio.";
+                return;
+            }
+
+            aplicarCambios(inicio, fin, usuarioActual, db);
+            await RegistrarBitacoraCorreccionAsync(db, mensajeBitacora, detalleBitacora);
+            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha);
+            CancelarEdicionSegmento();
+            ok = mensajeOk;
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+            segmentoGuardandoInicioId = null;
+            segmentoGuardandoFinId = null;
+        }
+    }
+
+    private void GuardarResolucionSegmento(CrmDbContext db, string usuarioActual, TimelineSegmentoDia segmento, TipoSegmentoResolucionRrhh tipoSegmento, string observaciones, int? minutosAplicadosOverride = null)
+    {
+        if (AsistenciaActual == null || !segmento.MarcacionInicioId.HasValue || !segmento.MarcacionFinId.HasValue)
+        {
+            return;
+        }
+
+        var resolucion = db.ChangeTracker.Entries<RrhhSegmentoResolucion>()
+            .Select(e => e.Entity)
+            .FirstOrDefault(r => r.EmpresaId == _empresaId
+                && r.EmpleadoId == AsistenciaActual.EmpleadoId
+                && r.Fecha == AsistenciaActual.Fecha
+                && r.MarcacionInicioId == segmento.MarcacionInicioId.Value
+                && r.MarcacionFinId == segmento.MarcacionFinId.Value)
+            ?? db.RrhhSegmentosResoluciones.FirstOrDefault(r => r.EmpresaId == _empresaId
+            && r.EmpleadoId == AsistenciaActual.EmpleadoId
+            && r.Fecha == AsistenciaActual.Fecha
+            && r.MarcacionInicioId == segmento.MarcacionInicioId.Value
+            && r.MarcacionFinId == segmento.MarcacionFinId.Value);
+
+        if (resolucion == null)
+        {
+            resolucion = new RrhhSegmentoResolucion
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                EmpleadoId = AsistenciaActual.EmpleadoId,
+                Fecha = AsistenciaActual.Fecha,
+                MarcacionInicioId = segmento.MarcacionInicioId.Value,
+                MarcacionFinId = segmento.MarcacionFinId.Value,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuarioActual,
+                IsActive = true
+            };
+
+            db.RrhhSegmentosResoluciones.Add(resolucion);
+        }
+
+        resolucion.TipoSegmento = tipoSegmento;
+        resolucion.Estado = EstadoSegmentoResolucionRrhh.Vigente;
+        resolucion.FueInferidoAutomaticamente = false;
+        resolucion.MinutosAplicadosOverride = tipoSegmento == TipoSegmentoResolucionRrhh.Descanso
+            ? minutosAplicadosOverride
+            : null;
+        resolucion.Observaciones = observaciones;
+        resolucion.UpdatedAt = DateTime.UtcNow;
+        resolucion.UpdatedBy = usuarioActual;
+    }
+
+    private async Task RefrescarDiaAsync(CrmDbContext db, DateOnly fecha, string? mensajeOk = null, bool recargarResolucion = false)
+    {
+        await CargarContextoDiaAsync(db, fecha, recargarAsistencia: true);
+        if (recargarResolucion && AsistenciaActual != null)
+        {
+            CargarCapturaResolucion(AsistenciaActual);
+        }
+
+        if (!string.IsNullOrWhiteSpace(mensajeOk))
+        {
+            ok = mensajeOk;
+        }
+    }
+
+    private async Task ReprocesarYRefrescarDiaAsync(CrmDbContext db, DateOnly fecha, string? mensajeOk = null, bool recargarResolucion = false)
+    {
+        if (AsistenciaActual == null)
+        {
+            return;
+        }
+
+        await ReconciliarResolucionesSegmentoDiaAsync(db, fecha);
+        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
+        await RefrescarDiaAsync(db, fecha, mensajeOk, recargarResolucion);
+        RegistrarCambioPendiente(string.IsNullOrWhiteSpace(mensajeOk) ? "Cambios pendientes en el día. Guarda al cerrar para aplicarlos definitivamente." : mensajeOk);
+    }
+
+    private async Task ReconciliarResolucionesSegmentoDiaAsync(CrmDbContext db, DateOnly fecha)
+    {
+        if (AsistenciaActual == null)
+        {
+            return;
+        }
+
+        var (desdeUtc, hastaUtc) = ObtenerVentanaConsultaUtc(fecha);
+        var marcacionesActivas = await db.RrhhMarcaciones
+            .AsNoTracking()
+            .Include(m => m.Checador)
+            .Where(m => m.EmpresaId == _empresaId
+                && m.EmpleadoId == AsistenciaActual.EmpleadoId
+                && !m.EsAnulada
+                && m.FechaHoraMarcacionUtc >= desdeUtc
+                && m.FechaHoraMarcacionUtc < hastaUtc)
+            .OrderBy(m => m.FechaHoraMarcacionUtc)
+            .ToListAsync();
+
+        var paresActivos = marcacionesActivas
+            .Where(m => DateOnly.FromDateTime(ObtenerFechaHoraLocalMarcacion(m)) == fecha)
+            .OrderBy(ObtenerFechaHoraLocalMarcacion)
+            .Zip(marcacionesActivas
+                .Where(m => DateOnly.FromDateTime(ObtenerFechaHoraLocalMarcacion(m)) == fecha)
+                .OrderBy(ObtenerFechaHoraLocalMarcacion)
+                .Skip(1), (inicio, fin) => (inicio.Id, fin.Id))
+            .ToHashSet();
+
+        var resoluciones = await db.RrhhSegmentosResoluciones
+            .Where(r => r.EmpresaId == _empresaId
+                && r.EmpleadoId == AsistenciaActual.EmpleadoId
+                && r.Fecha == fecha
+                && r.IsActive)
+            .ToListAsync();
+
+        foreach (var resolucion in resoluciones)
+        {
+            var sigueVigente = paresActivos.Contains((resolucion.MarcacionInicioId, resolucion.MarcacionFinId));
+            resolucion.Estado = sigueVigente
+                ? (resolucion.FueInferidoAutomaticamente ? EstadoSegmentoResolucionRrhh.RequiereRevision : EstadoSegmentoResolucionRrhh.Vigente)
+                : EstadoSegmentoResolucionRrhh.Obsoleta;
+            resolucion.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static string ExtraerTextoBloque(string observaciones, int indice)
+    {
+        var segmento = observaciones[indice..];
+        var punto = segmento.IndexOf('.');
+        return (punto >= 0 ? segmento[..punto] : segmento).Trim();
+    }
 
     private string? ObtenerExplicacionTiempoExtraWizard()
     {
@@ -730,16 +1541,21 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return;
         }
 
-        _tabModalActiva = asesorCorreccionActual.TabSugerida;
+        if (asesorCorreccionActual.PriorizarTiempo)
+        {
+            _mostrarAccionesRapidasTiempo = true;
+        }
+        else if (asesorCorreccionActual.PriorizarPermiso)
+        {
+            _mostrarAccionesRapidasPermiso = true;
+        }
+
         if (!string.IsNullOrWhiteSpace(asesorCorreccionActual.ResolucionSugerida))
         {
             tipoResolucionTiempoExtra = asesorCorreccionActual.ResolucionSugerida;
             AjustarResolucionTiempoSugerida();
         }
     }
-
-    private bool EsTabSugerida(string tab)
-        => asesorCorreccionActual?.TabSugerida == tab;
 
     private void ActualizarAsesorCorreccion()
     {
@@ -883,14 +1699,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             }
 
             await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: permiso parcial del día.", $"empleado={AsistenciaActual.EmpleadoId};fecha={fecha:yyyy-MM-dd};horas={permiso.Horas:0.##};goce={permiso.ConGocePago};ausencia={permiso.Id};motivo={permiso.Motivo};saldoBanco={saldoBancoHorasSeleccionado}");
-            await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
-
-            await RecargarAsistenciaActualAsync(db, fecha);
-            await CargarMarcacionesDiaAsync();
-            await NotificarActualizacionAsync();
-            ok = permiso.ConGocePago
+            await ReprocesarYRefrescarDiaAsync(
+                db,
+                fecha,
+                permiso.ConGocePago
                 ? "Permiso parcial guardado, banco descontado y asistencia reprocesada."
-                : "Permiso parcial guardado y asistencia reprocesada.";
+                : "Permiso parcial guardado y asistencia reprocesada.");
         }
         catch (Exception ex)
         {
@@ -939,12 +1753,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             saldoBancoHorasSeleccionado = await TiempoExtraResolutionService.RemoverPermisoBancoHorasAsync(db, _empresaId, AsistenciaActual.EmpleadoId, permiso.Id);
 
             await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: retiro de permiso parcial del día.", $"empleado={AsistenciaActual.EmpleadoId};fecha={fecha:yyyy-MM-dd};ausencia={permiso.Id};saldoBanco={saldoBancoHorasSeleccionado}");
-            await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
-
-            await RecargarAsistenciaActualAsync(db, fecha);
-            await CargarMarcacionesDiaAsync();
-            await NotificarActualizacionAsync();
-            ok = "Permiso parcial retirado, banco restaurado y asistencia reprocesada.";
+            await ReprocesarYRefrescarDiaAsync(db, fecha, "Permiso parcial retirado, banco restaurado y asistencia reprocesada.");
         }
         catch (Exception ex)
         {
@@ -990,10 +1799,16 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             minutosExtraPagoCaptura = asistencia.MinutosExtraAutorizadosPago;
             minutosExtraBancoCaptura = asistencia.MinutosExtraAutorizadosBanco;
             minutosCubrirBancoCaptura = asistencia.MinutosCubiertosBancoHoras;
+            minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+            minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+            factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
             return;
         }
 
         AjustarResolucionTiempoSugerida();
+        minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+        minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+        factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
     }
 
     private bool PuedeMostrarResolucionTiempo()
@@ -1010,6 +1825,48 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private void CerrarAyudaReglas()
         => mostrarAyudaReglas = false;
+
+    private void AlternarAccionesRapidasTiempo()
+    {
+        var nuevoEstado = !_mostrarAccionesRapidasTiempo;
+        _mostrarAccionesRapidasTiempo = nuevoEstado;
+        if (nuevoEstado)
+        {
+            error = null;
+            _mostrarAccionesRapidasPermiso = false;
+            _mostrarAccionesRapidasTurno = false;
+            minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+            minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+        }
+    }
+
+    private void AlternarAccionesRapidasPermiso()
+    {
+        var nuevoEstado = !_mostrarAccionesRapidasPermiso;
+        _mostrarAccionesRapidasPermiso = nuevoEstado;
+        if (nuevoEstado)
+        {
+            _mostrarAccionesRapidasTiempo = false;
+            _mostrarAccionesRapidasTurno = false;
+        }
+    }
+
+    private void AlternarAccionesRapidasTurno()
+    {
+        var nuevoEstado = !_mostrarAccionesRapidasTurno;
+        _mostrarAccionesRapidasTurno = nuevoEstado;
+        if (nuevoEstado)
+        {
+            _mostrarAccionesRapidasTiempo = false;
+            _mostrarAccionesRapidasPermiso = false;
+        }
+    }
+
+    private void AlternarBitacora()
+        => _mostrarBitacora = !_mostrarBitacora;
+
+    private void AlternarMarcacionesDia()
+        => _mostrarMarcacionesDia = !_mostrarMarcacionesDia;
 
     private IReadOnlyList<string> ObtenerReglasAyudaActual()
     {
@@ -1155,6 +2012,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 EmpresaId = _empresaId,
                 AsistenciaId = AsistenciaActual.Id,
                 Resolucion = tipoResolucionTiempoExtra,
+                FactorTiempoExtraOverride = usarFactorTiempoExtraOverride ? factorTiempoExtraOverrideCaptura : null,
+                MinutosBasePago = minutosExtraPagoCaptura,
+                MinutosBaseBanco = minutosExtraBancoCaptura,
                 MinutosPago = minutosExtraPagoCaptura,
                 MinutosBanco = minutosExtraBancoCaptura,
                 MinutosCubrirBanco = minutosCubrirBancoCaptura,
@@ -1171,14 +2031,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             bancoHorasHabilitadoConfigurado = resultado.BancoHorasHabilitado;
             factorAcumulacionBancoHorasConfigurado = resultado.FactorAcumulacionBancoHoras;
 
-            await RecargarAsistenciaActualAsync(db, AsistenciaActual.Fecha);
-            if (AsistenciaActual != null)
-            {
-                CargarCapturaResolucion(AsistenciaActual);
-            }
-            await CargarMarcacionesDiaAsync();
-            await NotificarActualizacionAsync();
-            ok = "Resolución de tiempo aplicada correctamente.";
+            await RefrescarDiaAsync(db, AsistenciaActual.Fecha, "Resolución de tiempo aplicada correctamente.", recargarResolucion: true);
         }
         catch (InvalidOperationException ex)
         {
@@ -1241,12 +2094,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         }
 
         await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: cambio de turno por día.", $"empleado={AsistenciaActual.EmpleadoId};fecha={fecha:yyyy-MM-dd};turno={turnoDiaSeleccionadoIdTexto};obs={turnoDiaObservaciones}");
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
-
-        await RecargarAsistenciaActualAsync(db, fecha);
-        await CargarMarcacionesDiaAsync();
-        await NotificarActualizacionAsync();
-        ok = "Turno del día actualizado y asistencia reprocesada.";
+        await ReprocesarYRefrescarDiaAsync(db, fecha, "Turno del día actualizado y asistencia reprocesada.");
     }
 
     private async Task GuardarMarcacionManualDiaAsync()
@@ -1313,14 +2161,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         });
 
         await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: alta de marcación manual.", $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};hora={manualHoraTexto};clasificacion={manualClasificacion};obs={manualObservacion}");
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, AsistenciaActual.Fecha, AsistenciaActual.Fecha, AsistenciaActual.EmpleadoId);
+        await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, "Marcación manual agregada y día reprocesado.");
 
         manualHoraTexto = string.Empty;
         manualObservacion = null;
-        await RecargarAsistenciaActualAsync(db, AsistenciaActual.Fecha);
-        await CargarMarcacionesDiaAsync();
-        await NotificarActualizacionAsync();
-        ok = "Marcación manual agregada y día reprocesado.";
     }
 
     private async Task CambiarClasificacionMarcacionAsync(Guid marcacionId, TipoClasificacionMarcacionRrhh clasificacion)
@@ -1343,10 +2187,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         marcacion.UpdatedAt = DateTime.UtcNow;
         marcacion.UpdatedBy = usuarioActual;
         await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: cambio de clasificación de marcación.", $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};marcacion={marcacionId};clasificacion={clasificacion}");
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, AsistenciaActual.Fecha, AsistenciaActual.Fecha, AsistenciaActual.EmpleadoId);
-        await RecargarAsistenciaActualAsync(db, AsistenciaActual.Fecha);
-        await CargarMarcacionesDiaAsync();
-        await NotificarActualizacionAsync();
+        await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha);
     }
 
     private async Task AlternarAnulacionMarcacionAsync(Guid marcacionId)
@@ -1369,10 +2210,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         marcacion.UpdatedAt = DateTime.UtcNow;
         marcacion.UpdatedBy = usuarioActual;
         await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: cambio de estado de marcación.", $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};marcacion={marcacionId};anulada={marcacion.EsAnulada}");
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, AsistenciaActual.Fecha, AsistenciaActual.Fecha, AsistenciaActual.EmpleadoId);
-        await RecargarAsistenciaActualAsync(db, AsistenciaActual.Fecha);
-        await CargarMarcacionesDiaAsync();
-        await NotificarActualizacionAsync();
+        await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha);
     }
 
     private void IniciarEdicionMarcacionManual(RrhhMarcacion marcacion)
@@ -1438,13 +2276,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         marcacion.UpdatedAt = DateTime.UtcNow;
         marcacion.UpdatedBy = usuarioActual;
         await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: edición de marcación manual.", $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};marcacion={marcacion.Id};hora={marcacionManualEditandoHoraTexto};obs={marcacionManualEditandoObservacion}");
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, AsistenciaActual.Fecha, AsistenciaActual.Fecha, AsistenciaActual.EmpleadoId);
+        await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, "Marcación manual actualizada y día reprocesado.");
 
         CancelarEdicionMarcacionManual();
-        await RecargarAsistenciaActualAsync(db, AsistenciaActual.Fecha);
-        await CargarMarcacionesDiaAsync();
-        await NotificarActualizacionAsync();
-        ok = "Marcación manual actualizada y día reprocesado.";
     }
 
     private async Task RegistrarBitacoraCorreccionAsync(CrmDbContext db, string mensaje, string detalle)

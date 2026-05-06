@@ -136,6 +136,7 @@ public class CrmDbContext : DbContext
     public DbSet<FestivoRrhh> FestivosRrhh => Set<FestivoRrhh>();
     public DbSet<RrhhChecador> RrhhChecadores => Set<RrhhChecador>();
     public DbSet<RrhhMarcacion> RrhhMarcaciones => Set<RrhhMarcacion>();
+    public DbSet<RrhhSegmentoResolucion> RrhhSegmentosResoluciones => Set<RrhhSegmentoResolucion>();
     public DbSet<RrhhAsistencia> RrhhAsistencias => Set<RrhhAsistencia>();
     public DbSet<RrhhEstadoAgente> RrhhEstadosAgente => Set<RrhhEstadoAgente>();
     public DbSet<RrhhLogChecador> RrhhLogsChecador => Set<RrhhLogChecador>();
@@ -309,6 +310,40 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.HashUnico).IsUnique();
             entity.HasIndex(e => new { e.EmpresaId, e.CodigoChecador, e.FechaHoraMarcacionUtc });
             entity.HasIndex(e => new { e.ChecadorId, e.FechaHoraMarcacionUtc });
+        });
+
+        modelBuilder.Entity<RrhhSegmentoResolucion>(entity =>
+        {
+            entity.ToTable("rrhh_segmento_resolucion");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Fecha).HasColumnType("date");
+            entity.Property(e => e.TipoSegmento).HasConversion<int>();
+            entity.Property(e => e.Estado).HasConversion<int>();
+            entity.Property(e => e.MinutosAplicadosOverride);
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Empleado)
+                .WithMany()
+                .HasForeignKey(e => e.EmpleadoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.MarcacionInicio)
+                .WithMany()
+                .HasForeignKey(e => e.MarcacionInicioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.MarcacionFin)
+                .WithMany()
+                .HasForeignKey(e => e.MarcacionFinId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.Fecha, e.MarcacionInicioId, e.MarcacionFinId }).IsUnique();
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.Fecha, e.Estado });
         });
 
         modelBuilder.Entity<RrhhAsistencia>(entity =>
@@ -3381,6 +3416,7 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<NominaDeduccion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhChecador>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhMarcacion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
+        modelBuilder.Entity<RrhhSegmentoResolucion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhAsistencia>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhLogChecador>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<Empleado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);

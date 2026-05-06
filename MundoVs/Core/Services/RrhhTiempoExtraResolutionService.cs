@@ -85,20 +85,24 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
         var contextoEmpleado = await ObtenerContextoEmpleadoAsync(db, empresaId, empleadoId, cancellationToken);
         var saldoBancoMinutos = contextoEmpleado.SaldoBancoHorasMinutos;
         var topeBancoMinutos = contextoEmpleado.Configuracion.TopeBancoMinutos;
-        var factorTiempoExtra = contextoEmpleado.Configuracion.FactorTiempoExtra;
+        var factorTiempoExtra = command.FactorTiempoExtraOverride.HasValue && command.FactorTiempoExtraOverride.Value > 0m
+            ? command.FactorTiempoExtraOverride.Value
+            : contextoEmpleado.Configuracion.FactorTiempoExtra;
         var bancoHorasHabilitado = contextoEmpleado.Configuracion.BancoHorasHabilitado;
         var factorAcumulacionBanco = contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
         var saldoBancoDisponible = Math.Max(0, saldoBancoMinutos - netoPrevioMinutos);
-        var extraResoluble = RrhhTiempoExtraPolicy.ObtenerMinutosExtraResolubles(asistencia, factorTiempoExtra);
+        var extraResoluble = Math.Max(0, asistencia.MinutosExtra);
         var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
-        var pago = Math.Max(0, command.MinutosPago);
+        var pagoBase = Math.Max(0, command.MinutosBasePago > 0 ? command.MinutosBasePago : command.MinutosPago);
+        var bancoBase = Math.Max(0, command.MinutosBaseBanco > 0 ? command.MinutosBaseBanco : command.MinutosBanco);
+        var pago = (int)Math.Round(pagoBase * Math.Max(1m, factorTiempoExtra), MidpointRounding.AwayFromZero);
         var banco = bancoHorasHabilitado
-            ? (int)Math.Round(Math.Max(0, command.MinutosBanco) * factorAcumulacionBanco, MidpointRounding.AwayFromZero)
+            ? (int)Math.Round(bancoBase * factorAcumulacionBanco, MidpointRounding.AwayFromZero)
             : 0;
         var cubiertoBanco = Math.Max(0, command.MinutosCubrirBanco);
 
-        if (pago + banco > extraResoluble)
-            throw new InvalidOperationException("La suma de pago y banco no puede exceder el total resoluble del tiempo extra según el factor configurado.");
+        if (pagoBase + bancoBase > extraResoluble)
+            throw new InvalidOperationException("La suma base de pago y banco no puede exceder el tiempo extra detectado del día.");
 
         if (cubiertoBanco > faltante)
             throw new InvalidOperationException("No puedes cubrir con banco más minutos que el faltante neto del día.");
@@ -118,8 +122,8 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             db.RrhhBancoHorasMovimientos.RemoveRange(movimientosPrevios);
         }
 
-        asistencia.MinutosExtraAutorizadosPago = pago;
-        asistencia.MinutosExtraAutorizadosBanco = banco;
+        asistencia.MinutosExtraAutorizadosPago = pagoBase;
+        asistencia.MinutosExtraAutorizadosBanco = bancoBase;
         asistencia.MinutosCubiertosBancoHoras = cubiertoBanco;
         asistencia.ResolucionTiempoExtra = command.Resolucion;
         asistencia.UpdatedAt = DateTime.UtcNow;
@@ -171,10 +175,12 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             FactorTiempoExtra = factorTiempoExtra,
             BancoHorasHabilitado = bancoHorasHabilitado,
             FactorAcumulacionBancoHoras = factorAcumulacionBanco,
+            MinutosBasePagoAplicados = pagoBase,
+            MinutosBaseBancoAplicados = bancoBase,
             MinutosPagoAplicados = pago,
             MinutosBancoAplicados = banco,
             MinutosCubiertosBancoAplicados = cubiertoBanco,
-            BitacoraDetalle = $"empleado={asistencia.EmpleadoId};fecha={asistencia.Fecha:yyyy-MM-dd};resolucion={command.Resolucion};pago={pago};banco={banco};coberturaBanco={cubiertoBanco};obs={command.Observaciones}"
+            BitacoraDetalle = $"empleado={asistencia.EmpleadoId};fecha={asistencia.Fecha:yyyy-MM-dd};resolucion={command.Resolucion};pagoBase={pagoBase};pagoFactorado={pago};bancoBase={bancoBase};bancoFactorado={banco};coberturaBanco={cubiertoBanco};obs={command.Observaciones}"
         };
     }
 

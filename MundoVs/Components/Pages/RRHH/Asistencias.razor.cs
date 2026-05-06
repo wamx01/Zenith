@@ -329,7 +329,14 @@ public partial class Asistencias : ComponentBase
 
         if (!asistencia.RequiereRevision)
         {
-            return new PresentacionRevision("OK", senal ?? "Procesado sin intervención manual pendiente.", "asis-chip--success", "bi-check-circle", false);
+            return new PresentacionRevision(
+                TieneResolucionTiempoAplicada(asistencia) || !string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra)
+                    ? "Verificada"
+                    : "Revisada",
+                senal ?? "El día ya fue verificado y no tiene intervención manual pendiente.",
+                "asis-chip--success",
+                "bi-check-circle-fill",
+                true);
         }
 
         if (EsRevisionOperativaLeve(asistencia))

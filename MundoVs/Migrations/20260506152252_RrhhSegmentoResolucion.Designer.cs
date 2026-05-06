@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MundoVs.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using MundoVs.Infrastructure.Data;
 namespace MundoVs.Migrations
 {
     [DbContext(typeof(CrmDbContext))]
-    partial class CrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260506152252_RrhhSegmentoResolucion")]
+    partial class RrhhSegmentoResolucion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -6409,9 +6412,6 @@ namespace MundoVs.Migrations
 
                     b.Property<Guid>("MarcacionInicioId")
                         .HasColumnType("char(36)");
-
-                    b.Property<int?>("MinutosAplicadosOverride")
-                        .HasColumnType("int");
 
                     b.Property<string>("Observaciones")
                         .HasMaxLength(500)

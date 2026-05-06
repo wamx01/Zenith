@@ -38,6 +38,9 @@ public sealed class RrhhTiempoExtraResolutionCommand
     public Guid EmpresaId { get; init; }
     public Guid AsistenciaId { get; init; }
     public string Resolucion { get; init; } = string.Empty;
+    public decimal? FactorTiempoExtraOverride { get; init; }
+    public int MinutosBasePago { get; init; }
+    public int MinutosBaseBanco { get; init; }
     public int MinutosPago { get; init; }
     public int MinutosBanco { get; init; }
     public int MinutosCubrirBanco { get; init; }
@@ -63,6 +66,8 @@ public sealed class RrhhTiempoExtraResolutionResult
     public decimal FactorTiempoExtra { get; init; }
     public bool BancoHorasHabilitado { get; init; }
     public decimal FactorAcumulacionBancoHoras { get; init; }
+    public int MinutosBasePagoAplicados { get; init; }
+    public int MinutosBaseBancoAplicados { get; init; }
     public int MinutosPagoAplicados { get; init; }
     public int MinutosBancoAplicados { get; init; }
     public int MinutosCubiertosBancoAplicados { get; init; }

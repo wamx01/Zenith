@@ -41,7 +41,16 @@ public static class RrhhTiempoExtraPolicy
         => Math.Max(0, Math.Min(asistencia.MinutosTrabajadosNetos, asistencia.MinutosJornadaNetaProgramada > 0 ? asistencia.MinutosJornadaNetaProgramada : asistencia.MinutosTrabajadosNetos));
 
     public static int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
-        => Math.Max(0, asistencia.MinutosExtraAutorizadosPago) + Math.Max(0, asistencia.MinutosExtraAutorizadosBanco);
+    {
+        var aprobados = Math.Max(0, asistencia.MinutosExtraAutorizadosPago) + Math.Max(0, asistencia.MinutosExtraAutorizadosBanco);
+        var detectados = Math.Max(0, asistencia.MinutosExtra);
+        return detectados > 0
+            ? Math.Min(aprobados, detectados)
+            : aprobados;
+    }
+
+    public static int ObtenerMinutosExtraPagoFactorados(RrhhAsistencia asistencia, decimal factorTiempoExtra)
+        => (int)Math.Round(Math.Max(0, asistencia.MinutosExtraAutorizadosPago) * Math.Max(1m, factorTiempoExtra), MidpointRounding.AwayFromZero);
 
     public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
         => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
@@ -64,7 +73,7 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosExtraResolubles(RrhhAsistencia asistencia, decimal factorTiempoExtra)
-        => (int)Math.Round(Math.Max(0, asistencia.MinutosExtra) * Math.Max(0m, factorTiempoExtra), MidpointRounding.AwayFromZero);
+        => Math.Max(0, asistencia.MinutosExtra);
 
     public static string ConstruirReferenciaResolucion(Guid asistenciaId, string sufijo)
         => $"Asistencia:{asistenciaId:N}:{sufijo}";

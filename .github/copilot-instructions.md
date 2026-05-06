@@ -43,6 +43,7 @@
 - Las capturas fijas de IMSS/ISR deben manejarse por empleado, no como configuración general.
 - En asistencias, la entrada anticipada debe evaluarse contra el mismo umbral del tiempo extra, tratándola como el mismo tiempo en negativo para decidir si requiere revisión.
 - En el modal de corrección de asistencias RRHH, al ajustar tiempo extra se debe permitir seleccionar explícitamente cuánto tiempo queda aprobado y mejorar la experiencia de permiso.
+- En asistencias, el usuario prefiere una sola barra/timeline de segmentos del día que muestre cómo se interpreta cada tramo y desde ahí permita modificar a qué corresponde cada segmento.
 
 ## Deployment Guidelines
 - Para tareas de publicación/despliegue, responder solo con los comandos exactos sin explicación adicional.

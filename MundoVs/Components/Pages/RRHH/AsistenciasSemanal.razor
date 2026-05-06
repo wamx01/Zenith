@@ -42,6 +42,70 @@
         font-variant-numeric: tabular-nums;
     }
 
+    .asis-week-cell__button {
+        width: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: .75rem;
+        background: #fff;
+        padding: .45rem .4rem;
+        display: flex;
+        flex-direction: column;
+        gap: .15rem;
+        align-items: center;
+        transition: all .15s ease;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .asis-week-cell__button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 .4rem 1rem rgba(15, 23, 42, .08);
+    }
+
+    .asis-week-cell__main {
+        font-weight: 700;
+        color: #0f172a;
+    }
+
+    .asis-week-cell__sub {
+        font-size: .68rem;
+        color: #64748b;
+    }
+
+    .asis-week-cell__delta {
+        font-size: .67rem;
+        font-weight: 700;
+    }
+
+    .asis-week-cell__button--ok {
+        background: #ecfdf5;
+        border-color: #86efac;
+    }
+
+    .asis-week-cell__button--warn {
+        background: #fefce8;
+        border-color: #fde68a;
+    }
+
+    .asis-week-cell__button--danger {
+        background: #fef2f2;
+        border-color: #fca5a5;
+    }
+
+    .asis-week-cell__button--extra-pending {
+        background: #fee2e2;
+        border-color: #ef4444;
+    }
+
+    .asis-week-cell__button--extra-reviewed {
+        background: #f3e8ff;
+        border-color: #c084fc;
+    }
+
+    .asis-week-cell__button--muted {
+        background: #f8fafc;
+        border-color: #e2e8f0;
+    }
+
     .asis-week-cell--weekend {
         background: #f8fafc;
     }
@@ -60,6 +124,37 @@
         font-variant-numeric: tabular-nums;
         background: #f8fafc;
     }
+
+    .asis-week-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .75rem;
+        padding: .85rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .asis-week-legend__item {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        font-size: .74rem;
+        color: #334155;
+    }
+
+    .asis-week-legend__dot {
+        width: .9rem;
+        height: .9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 23, 42, .08);
+    }
+
+    .asis-week-legend__dot--ok { background: #86efac; }
+    .asis-week-legend__dot--warn { background: #fde68a; }
+    .asis-week-legend__dot--danger { background: #fca5a5; }
+    .asis-week-legend__dot--muted { background: #e2e8f0; }
+    .asis-week-legend__dot--extra-pending { background: #ef4444; }
+    .asis-week-legend__dot--extra-reviewed { background: #c084fc; }
 </style>
 
 <div class="container-fluid px-4">
@@ -155,6 +250,14 @@
 
         <div class="card border-0 shadow-sm">
             <div class="card-body p-0">
+                <div class="asis-week-legend">
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--ok"></span>En objetivo o arriba del debido</span>
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--warn"></span>Faltante leve</span>
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--danger"></span>Faltante fuerte</span>
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--extra-pending"></span>Tiempo extra pendiente</span>
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--extra-reviewed"></span>Tiempo extra revisado</span>
+                    <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--muted"></span>Sin tiempo registrado</span>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-sm mb-0 align-middle asis-week-table">
                         <thead class="table-dark">
@@ -195,8 +298,14 @@
                                         <td>@(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)</td>
                                         @foreach (var dia in diasPeriodo)
                                         {
-                                            var minutos = resumen.MinutosPorDia.GetValueOrDefault(dia);
-                                            <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@(minutos > 0 ? FormatearMinutos(minutos) : "—")</td>
+                                             var presentacionDia = ObtenerPresentacionDia(resumen, dia);
+                                             <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">
+                                                 <button type="button" class="asis-week-cell__button @presentacionDia.CssClass" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(resumen.EmpleadoId, dia)">
+                                                     <span class="asis-week-cell__main">@presentacionDia.Visible</span>
+                                                     <span class="asis-week-cell__sub">Debe @presentacionDia.Debido</span>
+                                                     <span class="asis-week-cell__delta">@presentacionDia.Delta</span>
+                                                 </button>
+                                             </td>
                                         }
                                          <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtra)</td>
                                          <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</td>
@@ -230,6 +339,15 @@
     }
 </div>
 
+<AsistenciasCorreccionModal
+    Visible="@(mostrarCorreccionDia && asistenciaSeleccionada != null)"
+    Asistencia="asistenciaSeleccionada"
+    Turnos="turnos"
+    PuedeReprocesar="_puedeReprocesar"
+    PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
+    OnClose="CerrarCorreccionDia"
+    OnUpdated="RecargarResumenSemanalAsync" />
+
 @code {
     private static readonly CultureInfo CulturaEsMx = new("es-MX");
     private static readonly List<RrhhAsistenciaEstatus> estatusDisponibles = Enum.GetValues<RrhhAsistenciaEstatus>().ToList();
@@ -239,11 +357,15 @@
     private Dictionary<DateOnly, int> totalesPorDia = new();
     private Dictionary<string, int> permisosPorEmpleado = new();
     private bool _puedeVer;
+    private bool _puedeReprocesar;
+    private bool _puedeAprobarTiempoExtra;
+    private bool mostrarCorreccionDia;
     private Guid _empresaId;
     private bool cargando;
     private bool exportandoCsv;
     private string? error;
     private string? ok;
+    private RrhhAsistencia? asistenciaSeleccionada;
     private DateTime? filtroDesde = DateTime.Today.AddDays(-15);
     private DateTime? filtroHasta = DateTime.Today;
     private string filtroTurnoIdTexto = string.Empty;
@@ -253,6 +375,7 @@
     private int totalMinutosPeriodo;
     private int promedioMinutosEmpleado;
     private Dictionary<string, int> compensacionesPorDia = new();
+    private Dictionary<string, RrhhAsistencia> asistenciasPorEmpleadoDia = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -275,6 +398,8 @@
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeReprocesar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _puedeAprobarTiempoExtra = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar") || state.User.HasClaim("Capacidad", "nominas.editar");
         _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }
 
@@ -312,6 +437,8 @@
                 .ThenBy(a => a.Fecha)
                 .ToListAsync();
 
+            asistenciasPorEmpleadoDia = asistencias.ToDictionary(a => CrearClaveAsistencia(a.EmpleadoId, a.Fecha));
+
             compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
             permisosPorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta);
 
@@ -336,7 +463,10 @@
                     TotalMinutosPermiso = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
                         .GroupBy(a => a.Fecha)
-                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x)))
+                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x))),
+                    MinutosDebidosPorDia = grupo
+                        .GroupBy(a => a.Fecha)
+                        .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
                 })
                 .OrderBy(x => x.NombreCompleto)
                 .ThenBy(x => x.NumeroEmpleado)
@@ -356,6 +486,7 @@
             totalesPorDia = new();
             compensacionesPorDia = new();
             permisosPorEmpleado = new();
+            asistenciasPorEmpleadoDia = new();
             totalMinutosPeriodo = 0;
             promedioMinutosEmpleado = 0;
         }
@@ -635,6 +766,76 @@
     private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
+    private static string CrearClaveAsistencia(Guid empleadoId, DateOnly fecha)
+        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
+
+    private PresentacionCeldaSemanal ObtenerPresentacionDia(ResumenSemanalEmpleado resumen, DateOnly dia)
+    {
+        var visible = resumen.MinutosPorDia.GetValueOrDefault(dia);
+        var debido = resumen.MinutosDebidosPorDia.GetValueOrDefault(dia);
+        var delta = visible - debido;
+        asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(resumen.EmpleadoId, dia), out var asistencia);
+        var minutosExtra = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtra);
+        var minutosExtraAprobados = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtraAutorizadosPago + asistencia.MinutosExtraAutorizadosBanco);
+        var extraResuelto = asistencia != null && (minutosExtraAprobados > 0 || !string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra) || !asistencia.RequiereRevision);
+
+        var cssClass = minutosExtra > 0 && !extraResuelto
+            ? "asis-week-cell__button--extra-pending"
+            : minutosExtra > 0 && extraResuelto
+                ? "asis-week-cell__button--extra-reviewed"
+                : visible <= 0 && debido <= 0
+                    ? "asis-week-cell__button--muted"
+                    : delta >= 0
+                        ? "asis-week-cell__button--ok"
+                        : Math.Abs(delta) <= 30
+                            ? "asis-week-cell__button--warn"
+                            : "asis-week-cell__button--danger";
+
+        var deltaTexto = delta == 0
+            ? "En objetivo"
+            : delta > 0
+                ? $"+{FormatearMinutos(delta)}"
+                : $"-{FormatearMinutos(Math.Abs(delta))}";
+
+        if (minutosExtra > 0)
+        {
+            deltaTexto = extraResuelto
+                ? $"Extra rev. {FormatearMinutos(minutosExtraAprobados)}"
+                : $"Extra pend. {FormatearMinutos(minutosExtra)}";
+        }
+
+        var tooltipExtra = minutosExtra > 0
+            ? $" | Extra detectado: {FormatearMinutos(minutosExtra)} | Extra aprobado: {FormatearMinutos(minutosExtraAprobados)}"
+            : string.Empty;
+
+        return new PresentacionCeldaSemanal(
+            visible > 0 ? FormatearMinutos(visible) : "—",
+            debido > 0 ? FormatearMinutos(debido) : "—",
+            deltaTexto,
+            cssClass,
+            $"Visible: {(visible > 0 ? FormatearMinutos(visible) : "—")} | Debe: {(debido > 0 ? FormatearMinutos(debido) : "—")} | Diferencia: {(delta == 0 ? "En objetivo" : delta > 0 ? "+" + FormatearMinutos(delta) : "-" + FormatearMinutos(Math.Abs(delta)))}{tooltipExtra}");
+    }
+
+    private Task AbrirCorreccionDiaAsync(Guid empleadoId, DateOnly fecha)
+    {
+        if (asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(empleadoId, fecha), out var asistencia))
+        {
+            asistenciaSeleccionada = asistencia;
+            mostrarCorreccionDia = true;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void CerrarCorreccionDia()
+    {
+        mostrarCorreccionDia = false;
+        asistenciaSeleccionada = null;
+    }
+
+    private Task RecargarResumenSemanalAsync()
+        => CargarAsync();
+
     private async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
     {
         if (asistencias.Count == 0)
@@ -693,6 +894,9 @@
         public int TotalMinutosPermiso { get; init; }
         public int TotalMinutosCompensacion { get; init; }
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
+        public Dictionary<DateOnly, int> MinutosDebidosPorDia { get; init; } = new();
         public int TotalMinutos => MinutosPorDia.Values.Sum();
     }
+
+    private sealed record PresentacionCeldaSemanal(string Visible, string Debido, string Delta, string CssClass, string Tooltip);
 }
