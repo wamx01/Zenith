@@ -352,10 +352,10 @@
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></td>
-                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
-                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
-                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></td>
-                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipRetardo(resumen)"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipSalidaAnticipada(resumen)"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipDiasTrabajados(resumen)"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipFestivoTrabajado(resumen)"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                     </tr>
                                 }
@@ -528,6 +528,10 @@
                     TotalMinutosSalidaAnticipada = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a)),
                     TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
                     TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
+                    MinutosRetardoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(x))),
+                    MinutosSalidaAnticipadaPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(x))),
+                    DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
+                    DiasFestivoTrabajadoDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Where(EsFestivoTrabajado).Distinct().ToList(),
                     TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
                     TotalMinutosPermiso = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
@@ -972,6 +976,56 @@
     private bool EsFestivoTrabajado(DateOnly fecha)
         => festivosPeriodo.Contains(fecha);
 
+    private string ObtenerTooltipRetardo(ResumenSemanalEmpleado resumen)
+    {
+        var dias = resumen.MinutosRetardoPorDia
+            .Where(x => x.Value > 0)
+            .OrderBy(x => x.Key)
+            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
+            .ToList();
+
+        return dias.Count == 0
+            ? "Sin retardo en el período."
+            : $"Retardo calculado con: {string.Join(" | ", dias)}";
+    }
+
+    private string ObtenerTooltipSalidaAnticipada(ResumenSemanalEmpleado resumen)
+    {
+        var dias = resumen.MinutosSalidaAnticipadaPorDia
+            .Where(x => x.Value > 0)
+            .OrderBy(x => x.Key)
+            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
+            .ToList();
+
+        return dias.Count == 0
+            ? "Sin salida anticipada en el período."
+            : $"Salida anticipada calculada con: {string.Join(" | ", dias)}";
+    }
+
+    private string ObtenerTooltipDiasTrabajados(ResumenSemanalEmpleado resumen)
+    {
+        var dias = resumen.DiasTrabajadosDetalle
+            .OrderBy(x => x)
+            .Select(x => x.ToString("dd/MM"))
+            .ToList();
+
+        return dias.Count == 0
+            ? "Sin días trabajados en el período."
+            : $"Días trabajados: {string.Join(", ", dias)}";
+    }
+
+    private string ObtenerTooltipFestivoTrabajado(ResumenSemanalEmpleado resumen)
+    {
+        var dias = resumen.DiasFestivoTrabajadoDetalle
+            .OrderBy(x => x)
+            .Select(x => x.ToString("dd/MM"))
+            .ToList();
+
+        return dias.Count == 0
+            ? "Sin festivos trabajados en el período."
+            : $"Festivos trabajados: {string.Join(", ", dias)}";
+    }
+
     private sealed class ResumenSemanalEmpleado
     {
         public Guid EmpleadoId { get; init; }
@@ -987,6 +1041,10 @@
         public int TotalDiasFestivoTrabajado { get; init; }
         public int TotalMinutosPermiso { get; init; }
         public int TotalMinutosCompensacion { get; init; }
+        public Dictionary<DateOnly, int> MinutosRetardoPorDia { get; init; } = new();
+        public Dictionary<DateOnly, int> MinutosSalidaAnticipadaPorDia { get; init; } = new();
+        public List<DateOnly> DiasTrabajadosDetalle { get; init; } = [];
+        public List<DateOnly> DiasFestivoTrabajadoDetalle { get; init; } = [];
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosDebidosPorDia { get; init; } = new();
         public int TotalMinutos => MinutosPorDia.Values.Sum();
