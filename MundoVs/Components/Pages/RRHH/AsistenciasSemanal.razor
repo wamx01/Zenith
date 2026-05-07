@@ -77,8 +77,8 @@
     }
 
     .asis-week-cell__button--ok {
-        background: #ecfdf5;
-        border-color: #86efac;
+        background: #dcfce7;
+        border-color: #4ade80;
     }
 
     .asis-week-cell__button--warn {
@@ -92,13 +92,13 @@
     }
 
     .asis-week-cell__button--extra-pending {
-        background: #fee2e2;
-        border-color: #ef4444;
+        background: #f3e8ff;
+        border-color: #a855f7;
     }
 
     .asis-week-cell__button--extra-reviewed {
-        background: #f3e8ff;
-        border-color: #c084fc;
+        background: #dcfce7;
+        border-color: #166534;
     }
 
     .asis-week-cell__button--muted {
@@ -125,6 +125,32 @@
         background: #f8fafc;
     }
 
+    .asis-week-metric--primary {
+        min-width: 108px;
+        background: #eef6ff;
+        border-left: 2px solid #93c5fd;
+    }
+
+    .asis-week-metric--group-start {
+        border-left: 2px solid #dbe4f0;
+        padding-left: .8rem !important;
+    }
+
+    .asis-week-metric__label {
+        display: block;
+        font-size: .66rem;
+        color: #64748b;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .03em;
+    }
+
+    .asis-week-metric__value {
+        display: block;
+        font-size: .82rem;
+        color: #0f172a;
+    }
+
     .asis-week-legend {
         display: flex;
         flex-wrap: wrap;
@@ -149,12 +175,12 @@
         border: 1px solid rgba(15, 23, 42, .08);
     }
 
-    .asis-week-legend__dot--ok { background: #86efac; }
+    .asis-week-legend__dot--ok { background: #4ade80; }
     .asis-week-legend__dot--warn { background: #fde68a; }
     .asis-week-legend__dot--danger { background: #fca5a5; }
     .asis-week-legend__dot--muted { background: #e2e8f0; }
-    .asis-week-legend__dot--extra-pending { background: #ef4444; }
-    .asis-week-legend__dot--extra-reviewed { background: #c084fc; }
+    .asis-week-legend__dot--extra-pending { background: #a855f7; }
+    .asis-week-legend__dot--extra-reviewed { background: #166534; }
 </style>
 
 <div class="container-fluid px-4">
@@ -198,19 +224,19 @@
                 <div class="row g-3 align-items-end">
                     <div class="col-md-2">
                         <label class="form-label">Desde</label>
-                        <InputDate class="form-control" @bind-Value="filtroDesde" />
+                        <InputDate class="form-control" @bind-Value="filtroDesde" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Hasta</label>
-                        <InputDate class="form-control" @bind-Value="filtroHasta" />
+                        <InputDate class="form-control" @bind-Value="filtroHasta" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Empleado</label>
-                        <InputText class="form-control" @bind-Value="filtroEmpleado" placeholder="Nombre, número o código" />
+                        <InputText class="form-control" @bind-Value="filtroEmpleado" @bind-Value:after="GuardarFiltrosPersistidosAsync" placeholder="Nombre, número o código" />
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Turno</label>
-                        <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto">
+                        <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                             <option value="">Todos</option>
                             @foreach (var turno in turnos)
                             {
@@ -220,7 +246,7 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Estatus</label>
-                        <InputSelect class="form-select" @bind-Value="filtroEstatus">
+                        <InputSelect class="form-select" @bind-Value="filtroEstatus" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                             <option value="todos">Todos</option>
                             @foreach (var estatus in estatusDisponibles)
                             {
@@ -230,7 +256,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Revisión</label>
-                        <InputSelect class="form-select" @bind-Value="filtroRevision">
+                        <InputSelect class="form-select" @bind-Value="filtroRevision" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                             <option value="todos">Todos</option>
                             <option value="si">Con revisión</option>
                             <option value="no">Sin revisión</option>
@@ -264,6 +290,7 @@
                             <tr>
                                 <th>Empleado</th>
                                 <th>No.</th>
+                                <th class="text-end">Trabajado</th>
                                 @foreach (var dia in diasPeriodo)
                                 {
                                     <th class="asis-week-date text-center @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">
@@ -272,10 +299,14 @@
                                     </th>
                                 }
                                  <th class="text-end">Extra</th>
-                                 <th class="text-end">Extra pago</th>
-                                 <th class="text-end">Extra banco</th>
+                                 <th class="text-end">Pago</th>
+                                 <th class="text-end">Banco</th>
                                  <th class="text-end">Permisos</th>
                                  <th class="text-end">Comp.</th>
+                                 <th class="text-end">Retardo</th>
+                                 <th class="text-end">S. ant.</th>
+                                 <th class="text-end">Días trab.</th>
+                                 <th class="text-end">Festivos</th>
                                 <th class="text-end">Total</th>
                             </tr>
                         </thead>
@@ -296,6 +327,7 @@
                                             <div class="small text-muted">@(string.IsNullOrWhiteSpace(resumen.CodigoChecador) ? "Sin código" : resumen.CodigoChecador)</div>
                                         </td>
                                         <td>@(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)</td>
+                                    <td class="asis-week-metric asis-week-metric--primary"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutos)</span></td>
                                         @foreach (var dia in diasPeriodo)
                                         {
                                              var presentacionDia = ObtenerPresentacionDia(resumen, dia);
@@ -307,11 +339,15 @@
                                                  </button>
                                              </td>
                                         }
-                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtra)</td>
-                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</td>
-                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</td>
-                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosPermiso)</td>
-                                         <td class="asis-week-metric">@FormatearMinutos(resumen.TotalMinutosCompensacion)</td>
+                                     <td class="asis-week-metric asis-week-metric--group-start"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtra)</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados</span></td>
+                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado</span></td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                     </tr>
                                 }
@@ -319,15 +355,20 @@
                                 <tr class="table-light fw-semibold">
                                     <td>Totales</td>
                                     <td>—</td>
+                                <td class="asis-week-metric asis-week-metric--primary"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(totalMinutosPeriodo)</span></td>
                                     @foreach (var dia in diasPeriodo)
                                     {
                                         <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</td>
                                     }
-                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))</td>
-                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</td>
-                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</td>
-                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</td>
-                                     <td class="asis-week-metric">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</td>
+                                 <td class="asis-week-metric asis-week-metric--group-start"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo)</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada)</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados)</span></td>
+                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado)</span></td>
                                     <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
                                 </tr>
                             }
@@ -359,6 +400,7 @@
     private bool _puedeVer;
     private bool _puedeReprocesar;
     private bool _puedeAprobarTiempoExtra;
+    private bool _filtrosInicialesCargados;
     private bool mostrarCorreccionDia;
     private Guid _empresaId;
     private bool cargando;
@@ -376,6 +418,7 @@
     private int promedioMinutosEmpleado;
     private Dictionary<string, int> compensacionesPorDia = new();
     private Dictionary<string, RrhhAsistencia> asistenciasPorEmpleadoDia = new();
+    private HashSet<DateOnly> festivosPeriodo = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -384,14 +427,21 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || !_puedeVer)
+        if (!_puedeVer || _filtrosInicialesCargados)
         {
             return;
         }
 
-        await CargarFiltrosPersistidosAsync();
-        await CargarAsync();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await CargarFiltrosPersistidosAsync();
+            _filtrosInicialesCargados = true;
+            await CargarAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private async Task CargarAccesoAsync()
@@ -437,6 +487,12 @@
                 .ThenBy(a => a.Fecha)
                 .ToListAsync();
 
+            festivosPeriodo = await db.FestivosRrhh
+                .AsNoTracking()
+                .Where(f => f.IsActive && f.Fecha >= desde.ToDateTime(TimeOnly.MinValue) && f.Fecha <= hasta.ToDateTime(TimeOnly.MinValue))
+                .Select(f => DateOnly.FromDateTime(f.Fecha.Date))
+                .ToHashSetAsync();
+
             asistenciasPorEmpleadoDia = asistencias.ToDictionary(a => CrearClaveAsistencia(a.EmpleadoId, a.Fecha));
 
             compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
@@ -459,6 +515,10 @@
                     TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
                     TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
                     TotalMinutosExtraAprobadoBanco = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)),
+                    TotalMinutosRetardo = grupo.Sum(a => Math.Max(0, a.MinutosRetardo)),
+                    TotalMinutosSalidaAnticipada = grupo.Sum(a => Math.Max(0, a.MinutosSalidaAnticipada)),
+                    TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
+                    TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
                     TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
                     TotalMinutosPermiso = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
@@ -487,6 +547,7 @@
             compensacionesPorDia = new();
             permisosPorEmpleado = new();
             asistenciasPorEmpleadoDia = new();
+            festivosPeriodo = [];
             totalMinutosPeriodo = 0;
             promedioMinutosEmpleado = 0;
         }
@@ -569,9 +630,19 @@
     {
         try
         {
-            var filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.StorageKey);
+            var filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey);
             if (string.IsNullOrWhiteSpace(filtrosJson))
             {
+                filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.StorageKey);
+                if (!string.IsNullOrWhiteSpace(filtrosJson))
+                {
+                    var filtrosHeredados = JsonSerializer.Deserialize<RrhhAsistenciasFiltroState>(filtrosJson);
+                    var filtrosIniciales = filtrosHeredados ?? RrhhAsistenciasFiltroState.CreateDefault();
+                    AplicarFiltros(filtrosIniciales);
+                    await GuardarFiltrosPersistidosAsync();
+                    return;
+                }
+
                 AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
                 return;
             }
@@ -589,11 +660,11 @@
     {
         var filtros = CrearEstadoFiltros();
         var filtrosJson = JsonSerializer.Serialize(filtros);
-        await JS.InvokeVoidAsync("mundoVsAuth.setLocal", RrhhAsistenciasFiltroState.StorageKey, filtrosJson);
+        await JS.InvokeVoidAsync("mundoVsAuth.setLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey, filtrosJson);
     }
 
     private async Task LimpiarFiltrosPersistidosAsync()
-        => await JS.InvokeVoidAsync("mundoVsAuth.removeLocal", RrhhAsistenciasFiltroState.StorageKey);
+        => await JS.InvokeVoidAsync("mundoVsAuth.removeLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey);
 
     private RrhhAsistenciasFiltroState CrearEstadoFiltros()
         => new()
@@ -882,6 +953,9 @@
                 g => g.Sum(a => (int)Math.Round(Math.Max(0m, a.Horas) * 60m, MidpointRounding.AwayFromZero)));
     }
 
+    private bool EsFestivoTrabajado(DateOnly fecha)
+        => festivosPeriodo.Contains(fecha);
+
     private sealed class ResumenSemanalEmpleado
     {
         public Guid EmpleadoId { get; init; }
@@ -891,6 +965,10 @@
         public int TotalMinutosExtra { get; init; }
         public int TotalMinutosExtraAprobadoPago { get; init; }
         public int TotalMinutosExtraAprobadoBanco { get; init; }
+        public int TotalMinutosRetardo { get; init; }
+        public int TotalMinutosSalidaAnticipada { get; init; }
+        public int TotalDiasTrabajados { get; init; }
+        public int TotalDiasFestivoTrabajado { get; init; }
         public int TotalMinutosPermiso { get; init; }
         public int TotalMinutosCompensacion { get; init; }
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();

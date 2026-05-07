@@ -190,15 +190,15 @@
                     <div class="row g-3 align-items-end">
                         <div class="col-md-2">
                             <label class="form-label">Desde</label>
-                            <InputDate class="form-control" @bind-Value="filtroDesde" />
+                            <InputDate class="form-control" @bind-Value="filtroDesde" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Hasta</label>
-                            <InputDate class="form-control" @bind-Value="filtroHasta" />
+                            <InputDate class="form-control" @bind-Value="filtroHasta" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Turno</label>
-                            <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto">
+                            <InputSelect class="form-select" @bind-Value="filtroTurnoIdTexto" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                                 <option value="">Todos</option>
                                 @foreach (var turno in turnos)
                                 {
@@ -208,7 +208,7 @@
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Estatus</label>
-                            <InputSelect class="form-select" @bind-Value="filtroEstatus">
+                            <InputSelect class="form-select" @bind-Value="filtroEstatus" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                                 <option value="todos">Todos</option>
                                 @foreach (var estatus in estatusDisponibles)
                                 {
@@ -218,11 +218,11 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Empleado</label>
-                            <InputText class="form-control" @bind-Value="filtroEmpleado" placeholder="Nombre, número o código" />
+                            <InputText class="form-control" @bind-Value="filtroEmpleado" @bind-Value:after="GuardarFiltrosPersistidosAsync" placeholder="Nombre, número o código" />
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Revisión</label>
-                            <InputSelect class="form-select" @bind-Value="filtroRevision">
+                            <InputSelect class="form-select" @bind-Value="filtroRevision" @bind-Value:after="GuardarFiltrosPersistidosAsync">
                                 <option value="todos">Todos</option>
                                 <option value="si">Con revisión</option>
                                 <option value="no">Sin revisión</option>

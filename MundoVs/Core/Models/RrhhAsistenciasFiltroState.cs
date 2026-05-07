@@ -3,6 +3,7 @@ namespace MundoVs.Core.Models;
 public sealed class RrhhAsistenciasFiltroState
 {
     public const string StorageKey = "rrhh.asistencias.filtros";
+    public const string WeeklyStorageKey = "rrhh.asistencias.semanal.filtros";
 
     public DateTime? Desde { get; set; }
     public DateTime? Hasta { get; set; }

@@ -23,6 +23,7 @@ public partial class Asistencias : ComponentBase
     private bool _puedeVer;
     private bool _puedeReprocesar;
     private bool _puedeAprobarTiempoExtra;
+    private bool _filtrosInicialesCargados;
     private Guid _empresaId;
     private bool cargando;
     private bool reprocesando;
@@ -52,14 +53,21 @@ public partial class Asistencias : ComponentBase
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || !_puedeVer)
+        if (!_puedeVer || _filtrosInicialesCargados)
         {
             return;
         }
 
-        await CargarFiltrosPersistidosAsync();
-        await CargarAsync();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await CargarFiltrosPersistidosAsync();
+            _filtrosInicialesCargados = true;
+            await CargarAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private async Task CargarAccesoAsync()

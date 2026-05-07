@@ -8,10 +8,12 @@ namespace MundoVs.Core.Services;
 public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
 {
     private readonly INominaLegalPolicyService _nominaLegalPolicy;
+    private readonly IRrhhTiempoExtraResolutionService _tiempoExtraResolutionService;
 
-    public RrhhPrenominaSnapshotService(INominaLegalPolicyService nominaLegalPolicy)
+    public RrhhPrenominaSnapshotService(INominaLegalPolicyService nominaLegalPolicy, IRrhhTiempoExtraResolutionService tiempoExtraResolutionService)
     {
         _nominaLegalPolicy = nominaLegalPolicy;
+        _tiempoExtraResolutionService = tiempoExtraResolutionService;
     }
 
     public async Task<IReadOnlyList<RrhhPrenominaSnapshotItem>> ConstruirSnapshotPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, NominaConfiguracion configuracion, CancellationToken cancellationToken = default)
@@ -63,6 +65,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var resumenAsistencias = await ObtenerResumenAsistenciasPeriodoAsync(db, inicio, fin, ids, configuracion, cancellationToken);
+        var saldosBancoActuales = new Dictionary<Guid, decimal>();
         var snapshots = new List<RrhhPrenominaSnapshotItem>(empleadosPeriodo.Count);
 
         foreach (var empleado in empleadosPeriodo)
@@ -82,6 +85,10 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             var diasVacacionesDisponibles = _nominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, inicio, vacacionesUsadasCiclo, configuracion);
             var montoDestajoEmpleado = montoDestajo.GetValueOrDefault(empleado.Id);
             var asignacion = esquemasPorEmpleado.GetValueOrDefault(empleado.Id);
+            if (!saldosBancoActuales.ContainsKey(empleado.Id))
+            {
+                saldosBancoActuales[empleado.Id] = Math.Round((await _tiempoExtraResolutionService.ObtenerSaldoBancoHorasAsync(db, empleado.EmpresaId, empleado.Id, cancellationToken)) / 60m, 2);
+            }
 
             snapshots.Add(new RrhhPrenominaSnapshotItem
             {
@@ -102,6 +109,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 HorasExtra = resumen.HorasExtra,
                 HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
                 HorasBancoConsumidas = resumen.HorasBancoConsumidas,
+                HorasBancoSaldoActual = saldosBancoActuales.GetValueOrDefault(empleado.Id),
                 HorasDescansoTomado = resumen.HorasDescansoTomado,
                 HorasDescansoPagado = resumen.HorasDescansoPagado,
                 HorasDescansoNoPagado = resumen.HorasDescansoNoPagado,

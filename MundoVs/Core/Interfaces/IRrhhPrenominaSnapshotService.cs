@@ -28,6 +28,7 @@ public sealed class RrhhPrenominaSnapshotItem
     public decimal HorasExtra { get; init; }
     public decimal HorasBancoAcumuladas { get; init; }
     public decimal HorasBancoConsumidas { get; init; }
+    public decimal HorasBancoSaldoActual { get; init; }
     public decimal HorasDescansoTomado { get; init; }
     public decimal HorasDescansoPagado { get; init; }
     public decimal HorasDescansoNoPagado { get; init; }

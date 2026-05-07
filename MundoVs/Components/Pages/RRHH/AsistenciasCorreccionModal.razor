@@ -203,6 +203,19 @@
                                                             <div class="asis-summary-top__eyebrow">Tiempo visible del día</div>
                                                             <div class="asis-summary-top__value">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</div>
                                                             <div class="asis-summary-top__formula">@ObtenerResumenVisibleExplicado()</div>
+                                                            <div class="asis-summary-top__formula">@ObtenerResumenDestinoTiempoActual()</div>
+                                                            <div class="asis-summary-top__formula">@ObtenerResumenSaldoBancoHoras()</div>
+                                                            <div class="d-flex flex-wrap gap-1 mt-2">
+                                                                @if (AsistenciaActual.MinutosExtraAutorizadosPago > 0)
+                                                                {
+                                                                    <span class="asis-chip asis-chip--success asis-chip--xs"><i class="bi bi-cash-stack me-1"></i>Pago @FormatearMinutos(AsistenciaActual.MinutosExtraAutorizadosPago)</span>
+                                                                }
+                                                                @if (AsistenciaActual.MinutosExtraAutorizadosBanco > 0)
+                                                                {
+                                                                    <span class="asis-chip asis-chip--info asis-chip--xs"><i class="bi bi-bank me-1"></i>Banco @FormatearMinutos(AsistenciaActual.MinutosExtraAutorizadosBanco)</span>
+                                                                }
+                                                                <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-hourglass-split me-1"></i>Saldo banco @FormatearMinutos(Math.Max(0, saldoBancoHorasSeleccionado))</span>
+                                                            </div>
                                                             <div class="asis-quick-actions mt-2">
                                                                 @if (PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
                                                                 {
@@ -239,6 +252,8 @@
                                                                     <div><span>Aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
                                                                 </div>
                                                                 <div class="asis-quick-hint mb-2">@ObtenerResumenAprobacionBaseTiempo()</div>
+                                                                <div class="asis-quick-hint mb-1">@ObtenerResumenDestinoTiempoActual()</div>
+                                                                <div class="asis-quick-hint mb-2">@ObtenerResumenSaldoBancoHoras()</div>
                                                                 <div class="row g-2 align-items-end">
                                                                     <div class="col-md-4">
                                                                         <label class="asis-field-label">Resolución</label>
@@ -370,7 +385,7 @@
                                                                             <div class="asis-dayline-list__detail asis-dayline-list__detail--metrics">
                                                                                 @if (segmento.NumeroDescanso.HasValue)
                                                                                 {
-                                                                                    <span>D@segmento.NumeroDescanso.Value · </span>
+                                                                                    <span>D@(segmento.NumeroDescanso.Value) · </span>
                                                                                 }
                                                                                 Detectado: @FormatearMinutos(segmento.Minutos)
                                                                                 @if (segmento.MinutosProgramados.HasValue)

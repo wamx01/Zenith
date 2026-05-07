@@ -84,7 +84,12 @@ public class NominaReciboBuilder : INominaReciboBuilder
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionIsr, "ISR retenido", detalle.RetencionIsr);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionSeguridadSocial, "IMSS obrero", detalle.CuotaImssObrera);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionCreditoInfonavit, "Infonavit", detalle.MontoInfonavit);
-        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por retardos / minutos", detalle.MontoDescuentoMinutos);
+        var montoRetardo = CalcularImporteDescuentoParcial(detalle, detalle.MinutosRetardo);
+        var montoSalidaAnticipada = CalcularImporteDescuentoParcial(detalle, detalle.MinutosSalidaAnticipada);
+        var montoDescuentoManual = Math.Max(0m, detalle.MontoDescuentoMinutos - montoRetardo - montoSalidaAnticipada);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por retardos", montoRetardo);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por salida anticipada", montoSalidaAnticipada);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por minutos manuales", montoDescuentoManual);
 
         var deduccionesEstructuradas = detalle.DeduccionesEstructuradas
             .Where(d => d.IsActive)
@@ -120,36 +125,23 @@ public class NominaReciboBuilder : INominaReciboBuilder
             conceptos.Add(new NominaReciboConcepto(codigo, concepto, importe));
     }
 
+    private static decimal CalcularImporteDescuentoParcial(NominaDetalle detalle, int minutosParciales)
+    {
+        var minutosTotales = Math.Max(0, detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual);
+        if (minutosTotales <= 0 || minutosParciales <= 0 || detalle.MontoDescuentoMinutos <= 0)
+        {
+            return 0m;
+        }
+
+        return Math.Round(detalle.MontoDescuentoMinutos * minutosParciales / minutosTotales, 2);
+    }
+
     private static string ConstruirConceptoHorasExtra(NominaDetalle detalle)
     {
         var horasBase = Math.Max(0m, detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra);
-        var horasDobles = Math.Max(0m, detalle.HorasExtraDobles);
-        var horasTriples = Math.Max(0m, detalle.HorasExtraTriples);
-
-        if (horasDobles <= 0 && horasTriples <= 0)
-        {
-            return horasBase > 0
-                ? $"Horas extra ({FormatearHoras(horasBase)} base)"
-                : "Horas extra";
-        }
-
-        var partes = new List<string>();
-        if (horasBase > 0)
-        {
-            partes.Add($"{FormatearHoras(horasBase)} base");
-        }
-
-        if (horasDobles > 0)
-        {
-            partes.Add($"{FormatearHoras(horasDobles)} dobles");
-        }
-
-        if (horasTriples > 0)
-        {
-            partes.Add($"{FormatearHoras(horasTriples)} triples");
-        }
-
-        return $"Horas extra ({string.Join(" · ", partes)})";
+        return horasBase > 0
+            ? $"Horas extra ({FormatearHoras(horasBase)} base)"
+            : "Horas extra";
     }
 
     private static string FormatearHoras(decimal horas)

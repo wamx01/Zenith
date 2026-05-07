@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Models;
 using MundoVs.Core.Services;
@@ -552,6 +553,39 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_CuandoHayDescansoAdicional_NoDuplicaElNumeroEnResumen()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id, configurarDescanso: true);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 13, 0, 0), "break-out-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 13, 30, 0), "break-in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 15, 31, 0), "break-out-2"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 16, 0, 0), "break-in-2"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        var resumen = asistencia.ResumenDescansos ?? string.Empty;
+        Assert.Contains("D1:", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("D2:", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, Regex.Matches(resumen, "D2:").Count);
+    }
+
+    [Fact]
     public async Task ProcesarMarcacionesPendientesAsync_CuandoExisteBloquePrevioAlTurno_SeleccionaLaJornadaPrincipalYLoTomaComoExtra()
     {
         await using var db = CreateDbContext();
@@ -878,6 +912,208 @@ public sealed class RrhhAsistenciaProcessorTests
 
         var asistencia = await db.RrhhAsistencias.SingleAsync();
         Assert.Equal(30, asistencia.MinutosDescansoTomado);
+    }
+
+    [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_CuandoSegmentoTieneResolucionManualTrabajo_NoLoReconvierteADescanso()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id, configurarDescanso: true);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        var entrada = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1");
+        var salidaIntermedia = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 13, 0, 0), "mid-out");
+        var entradaIntermedia = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 13, 35, 0), "mid-in");
+        var salida = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(entrada, salidaIntermedia, entradaIntermedia, salida);
+        db.RrhhSegmentosResoluciones.Add(new RrhhSegmentoResolucion
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            MarcacionInicioId = salidaIntermedia.Id,
+            MarcacionFinId = entradaIntermedia.Id,
+            TipoSegmento = TipoSegmentoResolucionRrhh.Trabajo,
+            Estado = EstadoSegmentoResolucionRrhh.Vigente,
+            FueInferidoAutomaticamente = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.Equal(0, asistencia.MinutosDescansoTomado);
+        Assert.Contains("trabajo principal", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_CuandoHayOverrideManualEnUnDescanso_AplicaElDelSegmentoCorrectoEnResumen()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "Turno doble descanso",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Lunes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(8, 0, 0),
+            HoraSalida = new TimeSpan(18, 0, 0),
+            CantidadDescansos = 2,
+            Descanso1Inicio = new TimeSpan(10, 0, 0),
+            Descanso1Fin = new TimeSpan(10, 15, 0),
+            Descanso1EsPagado = false,
+            Descanso2Inicio = new TimeSpan(14, 0, 0),
+            Descanso2Fin = new TimeSpan(15, 15, 0),
+            Descanso2EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+        var entrada = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1");
+        var descansoSalida = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 14, 25, 0), "break-out");
+        var descansoRegreso = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 14, 42, 0), "break-in");
+        var salida = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 18, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(entrada, descansoSalida, descansoRegreso, salida);
+        await db.SaveChangesAsync();
+
+        db.RrhhSegmentosResoluciones.AddRange(
+            new RrhhSegmentoResolucion
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresa.Id,
+                EmpleadoId = empleado.Id,
+                Fecha = new DateOnly(2026, 1, 5),
+                MarcacionInicioId = entrada.Id,
+                MarcacionFinId = descansoSalida.Id,
+                TipoSegmento = TipoSegmentoResolucionRrhh.Descanso,
+                Estado = EstadoSegmentoResolucionRrhh.Vigente,
+                MinutosAplicadosOverride = 75,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            },
+            new RrhhSegmentoResolucion
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = empresa.Id,
+                EmpleadoId = empleado.Id,
+                Fecha = new DateOnly(2026, 1, 5),
+                MarcacionInicioId = descansoSalida.Id,
+                MarcacionFinId = descansoRegreso.Id,
+                TipoSegmento = TipoSegmentoResolucionRrhh.Descanso,
+                Estado = EstadoSegmentoResolucionRrhh.Vigente,
+                MinutosAplicadosOverride = 15,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.Contains("aplicado 15 min", asistencia.ResumenDescansos ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_CuandoDescansoTieneNumeroManual_NoLoDuplicaComoAdicional()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "Turno doble descanso",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Lunes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(8, 0, 0),
+            HoraSalida = new TimeSpan(18, 0, 0),
+            CantidadDescansos = 2,
+            Descanso1Inicio = new TimeSpan(10, 0, 0),
+            Descanso1Fin = new TimeSpan(10, 15, 0),
+            Descanso1EsPagado = false,
+            Descanso2Inicio = new TimeSpan(15, 30, 0),
+            Descanso2Fin = new TimeSpan(16, 45, 0),
+            Descanso2EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+        var entrada = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1");
+        var descansoSalida = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 15, 34, 0), "break-out");
+        var descansoRegreso = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 16, 5, 0), "break-in");
+        var salida = CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 18, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(entrada, descansoSalida, descansoRegreso, salida);
+        await db.SaveChangesAsync();
+
+        db.RrhhSegmentosResoluciones.Add(new RrhhSegmentoResolucion
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            MarcacionInicioId = descansoSalida.Id,
+            MarcacionFinId = descansoRegreso.Id,
+            TipoSegmento = TipoSegmentoResolucionRrhh.Descanso,
+            Estado = EstadoSegmentoResolucionRrhh.Vigente,
+            MinutosAplicadosOverride = 29,
+            Observaciones = "Bloque fijado como descanso (D2).",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        var resumen = asistencia.ResumenDescansos ?? string.Empty;
+        Assert.Contains("D2: 15:34-16:05", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("D3: 15:34-16:05", resumen, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

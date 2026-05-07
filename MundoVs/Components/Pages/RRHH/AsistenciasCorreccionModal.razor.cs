@@ -714,6 +714,45 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         return $"Disponible base: {FormatearMinutos(disponibles)} · Capturado: {FormatearMinutos(capturados)}";
     }
 
+    private string ObtenerResumenDestinoTiempoActual()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin resolución de tiempo.";
+        }
+
+        var pago = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosPago);
+        var banco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
+        var cubiertoBanco = Math.Max(0, AsistenciaActual.MinutosCubiertosBancoHoras);
+
+        if (cubiertoBanco > 0)
+        {
+            return $"Cubierto con banco: {FormatearMinutos(cubiertoBanco)}.";
+        }
+
+        if (pago > 0 && banco > 0)
+        {
+            return $"Resolución mixta · Pago: {FormatearMinutos(pago)} · Banco: {FormatearMinutos(banco)}.";
+        }
+
+        if (pago > 0)
+        {
+            return $"Enviado a pago: {FormatearMinutos(pago)}.";
+        }
+
+        if (banco > 0)
+        {
+            return $"Enviado a banco: {FormatearMinutos(banco)}.";
+        }
+
+        return string.IsNullOrWhiteSpace(AsistenciaActual.ResolucionTiempoExtra)
+            ? "Sin resolución aplicada todavía."
+            : $"Resolución actual: {AsistenciaActual.ResolucionTiempoExtra}.";
+    }
+
+    private string ObtenerResumenSaldoBancoHoras()
+        => $"Saldo banco de horas: {FormatearMinutos(Math.Max(0, saldoBancoHorasSeleccionado))} de {FormatearMinutos(Math.Max(0, topeBancoHorasConfigurado))}.";
+
     private string ObtenerResumenFactorTiempoExtra()
     {
         var factorActivo = usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
@@ -786,6 +825,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                     : "Detectada y pendiente de resolución.",
                 "asis-calculation-grid__item--accent"));
         }
+
+        items.Add(new ResumenCalculoItem(
+            "Destino extra / banco",
+            ObtenerResumenDestinoTiempoActual(),
+            ObtenerResumenSaldoBancoHoras(),
+            "asis-calculation-grid__item--info"));
 
         if (ObtenerMinutosCompensadosAprobadosActual() > 0)
         {
@@ -934,6 +979,16 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         if (accionPayload == "temporal")
         {
             return ("Salida temporal", "asis-dayline__segment--temporal", "Tramo marcado como salida temporal fuera del horario laboral; no se trata como descanso.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "temporal", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Extra)
+        {
+            return ("Bloque extra", "asis-dayline__segment--extra", "Tramo fijado manualmente como tiempo adicional al turno; no debe volver a interpretarse como descanso.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "extra", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
+        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
+        {
+            return ("Trabajo principal", "asis-dayline__segment--trabajo", "Tramo fijado manualmente como parte de la jornada principal; no debe volver a interpretarse como descanso.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "trabajo", estadoResolucion, fueInferidoAutomaticamente);
         }
 
         if (inicio.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.InicioDescanso || fin.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.FinDescanso)
@@ -1244,9 +1299,13 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 fin.UpdatedAt = DateTime.UtcNow;
                 fin.UpdatedBy = usuarioActual;
 
+                var numeroDescanso = segmentoAccionSeleccionada == "descanso"
+                    ? ObtenerNumeroDescansoMasCercano(ObtenerDetalleTurnoSeleccionadoDia(), ObtenerFechaHoraLocalMarcacion(inicio).TimeOfDay, ObtenerFechaHoraLocalMarcacion(fin).TimeOfDay)
+                    : null;
+
                 GuardarResolucionSegmento(db, usuarioActual, segmento, MapearTipoSegmentoResolucion(segmentoAccionSeleccionada), segmentoAccionSeleccionada == "ignorar"
                     ? "Bloque marcado para no considerar."
-                    : $"Bloque fijado como {segmentoAccionSeleccionada}.", segmentoAccionSeleccionada == "descanso" ? segmentoMinutosAplicadosCaptura : null);
+                    : $"Bloque fijado como {segmentoAccionSeleccionada}{(numeroDescanso.HasValue ? $" (D{numeroDescanso.Value})" : string.Empty)}.", segmentoAccionSeleccionada == "descanso" ? segmentoMinutosAplicadosCaptura : null);
             },
             $"empleado={AsistenciaActual!.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};inicio={segmento.MarcacionInicioId};fin={segmento.MarcacionFinId};accion={segmentoAccionSeleccionada};clasInicio={clasificacionInicio};clasFin={clasificacionFin}",
             "Se aplicó corrección de asistencia: cambio de interpretación de segmento.",
@@ -2032,6 +2091,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             factorAcumulacionBancoHorasConfigurado = resultado.FactorAcumulacionBancoHoras;
 
             await RefrescarDiaAsync(db, AsistenciaActual.Fecha, "Resolución de tiempo aplicada correctamente.", recargarResolucion: true);
+            RegistrarCambioPendiente("Resolución de tiempo aplicada localmente. Guarda cambios para reflejarla en otros reportes.");
         }
         catch (InvalidOperationException ex)
         {

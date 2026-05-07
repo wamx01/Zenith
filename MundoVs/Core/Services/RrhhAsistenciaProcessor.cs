@@ -650,6 +650,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         minutosNoConsiderados = segmentosEspeciales.MinutosNoConsiderados;
 
         marcasIntermedias = segmentosEspeciales.MarcasRestantes;
+        marcasIntermedias = ExcluirSegmentosTrabajoManual(marcasIntermedias, resolucionesSegmento, observaciones);
 
         var descansosClasificados = marcasIntermedias
             .Where(m => m.Marcacion.ClasificacionOperativa is TipoClasificacionMarcacionRrhh.InicioDescanso or TipoClasificacionMarcacionRrhh.FinDescanso)
@@ -784,6 +785,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
             switch (accion)
             {
+                case "trabajo":
+                case "extra":
+                    observaciones.Add($"Se respetó la resolución manual del tramo {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} como {(accion == "extra" ? "bloque extra" : "trabajo principal")}; no se tomó como descanso.");
+                    break;
                 case "temporal":
                     minutosSalidaTemporal += minutos;
                     observaciones.Add($"Se detectó salida temporal de {minutos} min entre {inicio.FechaLocal:HH:mm} y {fin.FechaLocal:HH:mm}; no se tomó como descanso.");
@@ -804,6 +809,40 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         }
 
         return new SegmentosEspecialesResult(restantes, minutosSalidaTemporal, minutosPermiso, minutosNoConsiderados);
+    }
+
+    private static List<MarcacionProcesada> ExcluirSegmentosTrabajoManual(IReadOnlyList<MarcacionProcesada> marcasIntermedias, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, List<string> observaciones)
+    {
+        if (marcasIntermedias.Count < 2)
+        {
+            return marcasIntermedias.ToList();
+        }
+
+        var restantes = new List<MarcacionProcesada>();
+
+        for (var i = 0; i < marcasIntermedias.Count; i += 2)
+        {
+            if (i + 1 >= marcasIntermedias.Count)
+            {
+                restantes.Add(marcasIntermedias[i]);
+                continue;
+            }
+
+            var inicio = marcasIntermedias[i];
+            var fin = marcasIntermedias[i + 1];
+            var accion = ResolverAccionSegmento(inicio.Marcacion, fin.Marcacion, resolucionesSegmento);
+
+            if (accion is "trabajo" or "extra")
+            {
+                observaciones.Add($"Se respetó la resolución manual del tramo {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} como {(accion == "extra" ? "bloque extra" : "trabajo principal")}; no se tomó como descanso.");
+                continue;
+            }
+
+            restantes.Add(inicio);
+            restantes.Add(fin);
+        }
+
+        return restantes;
     }
 
     private static string? ResolverAccionSegmento(RrhhMarcacion inicio, RrhhMarcacion fin, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento)
@@ -827,6 +866,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
     private static async Task<List<RrhhSegmentoResolucion>> ObtenerResolucionesSegmentoAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fecha, CancellationToken cancellationToken)
         => await db.RrhhSegmentosResoluciones
+            .Include(r => r.MarcacionInicio)
+            .Include(r => r.MarcacionFin)
             .Where(r => r.EmpresaId == empresaId && r.EmpleadoId == empleadoId && r.Fecha == fecha && r.IsActive)
             .ToListAsync(cancellationToken);
 
@@ -1149,7 +1190,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         }
 
         var aplicados = new List<DescansoAplicado>();
-        var (tomadosPorNumero, descansosAdicionales) = EmparejarDescansosTomados(descansosConfigurados, descansosTomados);
+        var (tomadosPorNumero, descansosAdicionales) = EmparejarDescansosTomados(descansosConfigurados, descansosTomados, resolucionesSegmento);
         var faltantesCubiertosPorSalida = new HashSet<int>();
         var minutosSalidaDisponibles = Math.Max(0, minutosSalidaAnticipada);
 
@@ -1277,11 +1318,15 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 false));
         }
 
+        var siguienteNumeroAdicional = Math.Max(
+            descansosConfigurados.Count == 0 ? 0 : descansosConfigurados.Max(d => d.Numero),
+            aplicados.Count == 0 ? 0 : aplicados.Max(d => d.Numero)) + 1;
+
         foreach (var adicional in descansosAdicionales)
         {
             observaciones.Add($"Se detectó un descanso adicional no programado de {adicional.Minutos} min.");
             aplicados.Add(new DescansoAplicado(
-                adicional.Numero,
+                siguienteNumeroAdicional,
                 adicional.Salida.TimeOfDay,
                 adicional.Regreso.TimeOfDay,
                 adicional.EsPagado,
@@ -1293,6 +1338,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 false,
                 false,
                 false));
+            siguienteNumeroAdicional++;
         }
 
         return aplicados;
@@ -1300,26 +1346,74 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
     private static int? ResolverMinutosAplicadosOverride(IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, DateTime salida, DateTime regreso)
     {
-        var resolucion = resolucionesSegmento.FirstOrDefault(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente
-            && r.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso
-            && r.MinutosAplicadosOverride.HasValue);
+        const int toleranciaMinutos = 2;
+
+        var resolucion = resolucionesSegmento
+            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente
+                && r.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso
+                && r.MinutosAplicadosOverride.HasValue)
+            .Select(r => new
+            {
+                Resolucion = r,
+                Diferencia = ResolverDiferenciaSegmento(r, salida, regreso)
+            })
+            .Where(x => x.Diferencia.HasValue && x.Diferencia.Value <= toleranciaMinutos)
+            .OrderBy(x => x.Diferencia)
+            .Select(x => x.Resolucion)
+            .FirstOrDefault();
 
         return resolucion?.MinutosAplicadosOverride;
     }
 
+    private static int? ResolverDiferenciaSegmento(RrhhSegmentoResolucion resolucion, DateTime salida, DateTime regreso)
+    {
+        if (resolucion.MarcacionInicio == null || resolucion.MarcacionFin == null)
+        {
+            return null;
+        }
+
+        var salidaResolucion = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionInicio);
+        var regresoResolucion = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionFin);
+        return Math.Abs((int)Math.Round((salidaResolucion - salida).TotalMinutes))
+            + Math.Abs((int)Math.Round((regresoResolucion - regreso).TotalMinutes));
+    }
+
     private static (Dictionary<int, DescansoTomado> TomadosPorNumero, List<DescansoTomado> DescansosAdicionales) EmparejarDescansosTomados(
         IReadOnlyList<DescansoConfigurado> descansosConfigurados,
-        IReadOnlyList<DescansoTomado> descansosTomados)
+        IReadOnlyList<DescansoTomado> descansosTomados,
+        IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento)
     {
         if (descansosConfigurados.Count == 0 || descansosTomados.Count == 0)
         {
             return ([], descansosTomados.ToList());
         }
 
+        var tomadosPorNumeroManual = new Dictionary<int, DescansoTomado>();
+        var descansosTomadosRestantes = descansosTomados.ToList();
+
+        foreach (var resolucion in resolucionesSegmento.Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente && r.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso && !string.IsNullOrWhiteSpace(r.Observaciones)))
+        {
+            var numeroManual = ExtraerNumeroDescansoManual(resolucion.Observaciones!);
+            if (!numeroManual.HasValue || tomadosPorNumeroManual.ContainsKey(numeroManual.Value))
+            {
+                continue;
+            }
+
+            var tomado = descansosTomadosRestantes.FirstOrDefault(d => ResolverDiferenciaSegmento(resolucion, d.Salida, d.Regreso) is int diferencia && diferencia <= 2);
+            if (tomado == null)
+            {
+                continue;
+            }
+
+            tomadosPorNumeroManual[numeroManual.Value] = tomado;
+            descansosTomadosRestantes.Remove(tomado);
+        }
+
         const int costoDescansoNoEmparejado = 240;
-        var asignacionActual = new int?[descansosConfigurados.Count];
-        var mejorAsignacion = new int?[descansosConfigurados.Count];
-        var usados = new bool[descansosTomados.Count];
+        var configuradosPendientes = descansosConfigurados.Where(d => !tomadosPorNumeroManual.ContainsKey(d.Numero)).ToList();
+        var asignacionActual = new int?[configuradosPendientes.Count];
+        var mejorAsignacion = new int?[configuradosPendientes.Count];
+        var usados = new bool[descansosTomadosRestantes.Count];
         var mejorCosto = int.MaxValue;
 
         void Buscar(int indiceConfigurado, int costoAcumulado)
@@ -1329,7 +1423,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 return;
             }
 
-            if (indiceConfigurado >= descansosConfigurados.Count)
+            if (indiceConfigurado >= configuradosPendientes.Count)
             {
                 mejorCosto = costoAcumulado;
                 Array.Copy(asignacionActual, mejorAsignacion, asignacionActual.Length);
@@ -1339,7 +1433,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             asignacionActual[indiceConfigurado] = null;
             Buscar(indiceConfigurado + 1, costoAcumulado + costoDescansoNoEmparejado);
 
-            for (var i = 0; i < descansosTomados.Count; i++)
+            for (var i = 0; i < descansosTomadosRestantes.Count; i++)
             {
                 if (usados[i])
                 {
@@ -1348,7 +1442,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
                 usados[i] = true;
                 asignacionActual[indiceConfigurado] = i;
-                Buscar(indiceConfigurado + 1, costoAcumulado + CalcularPuntajeEmparejamientoDescanso(descansosConfigurados[indiceConfigurado], descansosTomados[i]));
+                Buscar(indiceConfigurado + 1, costoAcumulado + CalcularPuntajeEmparejamientoDescanso(configuradosPendientes[indiceConfigurado], descansosTomadosRestantes[i]));
                 usados[i] = false;
                 asignacionActual[indiceConfigurado] = null;
             }
@@ -1356,7 +1450,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         Buscar(0, 0);
 
-        var tomadosPorNumero = new Dictionary<int, DescansoTomado>();
+        var tomadosPorNumero = tomadosPorNumeroManual.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
         var descansosAsignados = new HashSet<int>();
         for (var i = 0; i < mejorAsignacion.Length; i++)
         {
@@ -1365,16 +1459,24 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 continue;
             }
 
-            var descansoTomado = descansosTomados[indiceTomado];
-            tomadosPorNumero[descansosConfigurados[i].Numero] = descansoTomado;
+            var descansoTomado = descansosTomadosRestantes[indiceTomado];
+            tomadosPorNumero[configuradosPendientes[i].Numero] = descansoTomado;
             descansosAsignados.Add(indiceTomado);
         }
 
-        var descansosAdicionales = descansosTomados
+        var descansosAdicionales = descansosTomadosRestantes
             .Where((_, indice) => !descansosAsignados.Contains(indice))
             .ToList();
 
         return (tomadosPorNumero, descansosAdicionales);
+    }
+
+    private static int? ExtraerNumeroDescansoManual(string observaciones)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(observaciones, @"\(D(?<numero>\d+)\)");
+        return match.Success && int.TryParse(match.Groups["numero"].Value, out var numero)
+            ? numero
+            : null;
     }
 
     private static int CalcularPuntajeEmparejamientoDescanso(DescansoConfigurado configurado, DescansoTomado tomado)
