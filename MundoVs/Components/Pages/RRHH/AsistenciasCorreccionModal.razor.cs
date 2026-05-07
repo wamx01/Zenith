@@ -89,6 +89,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private decimal factorAcumulacionBancoHorasConfigurado = 1m;
     private int minutosMinimosTiempoExtraConfigurado = 30;
     private int minutosCompensacionPermisoCaptura;
+    private int minutosPerdonManualCaptura;
     private int minutosExtraPagoCaptura;
     private int minutosExtraBancoCaptura;
     private int minutosCubrirBancoCaptura;
@@ -139,6 +140,50 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         }
 
         await InicializarAsync();
+    }
+
+    private async Task GuardarPerdonManualAsync()
+    {
+        if (AsistenciaActual == null)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        if (!PuedeReprocesar)
+        {
+            error = "No tienes permisos para perdonar minutos del día.";
+            return;
+        }
+
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var asistencia = await db.RrhhAsistencias.FirstOrDefaultAsync(a => a.Id == AsistenciaActual.Id);
+            if (asistencia == null)
+            {
+                error = "No se encontró la asistencia actual.";
+                return;
+            }
+
+            asistencia.MinutosPerdonadosManual = Math.Max(0, minutosPerdonManualCaptura);
+            asistencia.ObservacionPerdonManual = asistencia.MinutosPerdonadosManual > 0
+                ? $"Perdón manual aplicado por {usuarioActual}."
+                : null;
+            asistencia.UpdatedAt = DateTime.UtcNow;
+            asistencia.UpdatedBy = usuarioActual;
+
+            await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: perdón manual de minutos.", $"empleado={AsistenciaActual.EmpleadoId};fecha={AsistenciaActual.Fecha:yyyy-MM-dd};minutosPerdonados={asistencia.MinutosPerdonadosManual}");
+            await db.SaveChangesAsync();
+            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, "Perdón manual aplicado al día.", recargarResolucion: true);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
     }
 
     private async Task InicializarAsync()
@@ -198,6 +243,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         manualHoraTexto = string.Empty;
         manualClasificacion = TipoClasificacionMarcacionRrhh.Entrada;
         manualObservacion = null;
+        minutosPerdonManualCaptura = AsistenciaActual?.MinutosPerdonadosManual ?? 0;
         ReiniciarEdicionManual();
         CancelarEdicionSegmento();
         _mostrarAccionesRapidasTiempo = false;
@@ -778,7 +824,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string ObtenerResumenVisibleExplicado()
         => AsistenciaActual == null
             ? string.Empty
-            : $"Base {FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}.";
+            : $"Base {FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}{(AsistenciaActual.MinutosPerdonadosManual > 0 ? $" · perdón manual {FormatearMinutos(AsistenciaActual.MinutosPerdonadosManual)}" : string.Empty)}.";
 
     private IReadOnlyList<ResumenCalculoItem> ObtenerResumenCalculoDia()
     {

@@ -4,6 +4,28 @@ namespace MundoVs.Core.Services;
 
 public static class RrhhTiempoExtraPolicy
 {
+    public static int ObtenerMinutosTrabajadosNetosEfectivos(RrhhAsistencia asistencia)
+        => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, asistencia.MinutosPerdonadosManual));
+
+    public static int ObtenerMinutosRetardoEfectivos(RrhhAsistencia asistencia)
+    {
+        var perdonRestante = Math.Max(0, asistencia.MinutosPerdonadosManual);
+        var retardo = Math.Max(0, asistencia.MinutosRetardo);
+        return Math.Max(0, retardo - Math.Min(retardo, perdonRestante));
+    }
+
+    public static int ObtenerMinutosSalidaAnticipadaEfectivos(RrhhAsistencia asistencia)
+    {
+        var perdonRestante = Math.Max(0, asistencia.MinutosPerdonadosManual);
+        var retardo = Math.Max(0, asistencia.MinutosRetardo);
+        perdonRestante = Math.Max(0, perdonRestante - Math.Min(retardo, perdonRestante));
+        var salidaAnticipada = Math.Max(0, asistencia.MinutosSalidaAnticipada);
+        return Math.Max(0, salidaAnticipada - Math.Min(salidaAnticipada, perdonRestante));
+    }
+
+    public static int ObtenerMinutosDescuentoEfectivos(RrhhAsistencia asistencia, int minutosDescuentoManual = 0)
+        => Math.Max(0, ObtenerMinutosRetardoEfectivos(asistencia) + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia) + Math.Max(0, minutosDescuentoManual));
+
     public static int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosJornadaNetaProgramada);
 
@@ -38,7 +60,7 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
-        => Math.Max(0, Math.Min(asistencia.MinutosTrabajadosNetos, asistencia.MinutosJornadaNetaProgramada > 0 ? asistencia.MinutosJornadaNetaProgramada : asistencia.MinutosTrabajadosNetos));
+        => Math.Max(0, Math.Min(ObtenerMinutosTrabajadosNetosEfectivos(asistencia), asistencia.MinutosJornadaNetaProgramada > 0 ? asistencia.MinutosJornadaNetaProgramada : ObtenerMinutosTrabajadosNetosEfectivos(asistencia)));
 
     public static int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
     {
@@ -59,7 +81,7 @@ public static class RrhhTiempoExtraPolicy
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);
 
     public static int ObtenerMinutosFaltanteBanco(RrhhAsistencia asistencia)
-        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - asistencia.MinutosTrabajadosNetos);
+        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - ObtenerMinutosTrabajadosNetosEfectivos(asistencia));
 
     public static int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia, int minutosCompensadosAprobados = 0)
         => Math.Max(0, ObtenerMinutosFaltanteBanco(asistencia) - Math.Max(0, minutosCompensadosAprobados));

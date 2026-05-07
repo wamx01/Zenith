@@ -148,7 +148,12 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator, INominaLeg
             DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
             DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
             DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
-            MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual,
+            MinutosDescuento = RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoEfectivos(new RrhhAsistencia
+            {
+                MinutosRetardo = detalle.MinutosRetardo,
+                MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada,
+                MinutosPerdonadosManual = 0
+            }, detalle.MinutosDescuentoManual),
             HorasExtraBase = detalle.HorasExtraBase,
             HorasExtraDobles = detalle.HorasExtraDobles,
             HorasExtraTriples = detalle.HorasExtraTriples,

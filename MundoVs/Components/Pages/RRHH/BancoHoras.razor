@@ -1,10 +1,12 @@
 @page "/rrhh/banco-horas"
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using MundoVs.Core.Entities
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Banco de Horas</PageTitle>
@@ -42,7 +44,13 @@
         @if (_puedeEditar)
         {
             <div class="card mb-4 border-primary">
-                <div class="card-header bg-primary text-white"><strong>Registrar movimiento manual</strong></div>
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center gap-2">
+                    <strong>@(movimientoEditandoId.HasValue ? "Editar movimiento manual" : "Registrar movimiento manual")</strong>
+                    @if (movimientoEditandoId.HasValue)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-light" @onclick="CancelarEdicion" disabled="@guardando">Cancelar edición</button>
+                    }
+                </div>
                 <div class="card-body">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-4">
@@ -72,7 +80,7 @@
                         </div>
                         <div class="col-md-2">
                             <button class="btn btn-success w-100" @onclick="GuardarMovimientoManual" disabled="@guardando">
-                                <i class="bi bi-save me-1"></i>Guardar
+                                <i class="bi @(movimientoEditandoId.HasValue ? "bi-check2-square" : "bi-save") me-1"></i>@(movimientoEditandoId.HasValue ? "Actualizar" : "Guardar")
                             </button>
                         </div>
                         <div class="col-12">
@@ -128,35 +136,67 @@
 
         @if (empleadoHistorialId.HasValue)
         {
-            <div class="card">
+            <div class="card shadow-sm border-0">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <strong>Historial de movimientos</strong>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => empleadoHistorialId = null">Cerrar</button>
                 </div>
                 <div class="card-body p-0">
-                    <table class="table table-sm table-striped mb-0 align-middle">
+                    <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th>Fecha</th>
+                                <th class="ps-3">Fecha</th>
                                 <th>Tipo</th>
                                 <th class="text-end">Horas</th>
                                 <th>Referencia</th>
                                 <th>Notas</th>
+                                @if (_puedeEditar)
+                                {
+                                    <th class="text-end pe-3">Acciones</th>
+                                }
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var movimiento in MovimientosHistorial)
                             {
                                 <tr>
-                                    <td>@movimiento.Fecha.ToString("dd/MM/yyyy")</td>
-                                    <td>@movimiento.TipoMovimiento</td>
-                                    <td class="text-end @(movimiento.Horas < 0 ? "text-danger" : "text-success")">@FormatearHoras(movimiento.Horas)</td>
-                                    <td>@(string.IsNullOrWhiteSpace(movimiento.ReferenciaTipo) ? "—" : movimiento.ReferenciaTipo)</td>
-                                    <td>@(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? "—" : movimiento.Observaciones)</td>
+                                    <td class="ps-3 text-nowrap">@movimiento.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td>
+                                        <span class="badge @ObtenerClaseTipoMovimiento(movimiento.TipoMovimiento)">@ObtenerEtiquetaTipoMovimiento(movimiento.TipoMovimiento)</span>
+                                    </td>
+                                    <td class="text-end fw-semibold @(movimiento.Horas < 0 ? "text-danger" : "text-success") text-nowrap">@FormatearHoras(movimiento.Horas)</td>
+                                    <td>
+                                        <div class="small text-truncate" style="max-width: 320px;" title="@movimiento.ReferenciaTipo">@ObtenerReferenciaCorta(movimiento.ReferenciaTipo)</div>
+                                    </td>
+                                    <td>
+                                        <div class="small">@(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? "—" : movimiento.Observaciones)</div>
+                                    </td>
+                                    @if (_puedeEditar)
+                                    {
+                                        <td class="text-end pe-3 text-nowrap">
+                                            @if (PuedeModificarMovimiento(movimiento))
+                                            {
+                                                <div class="btn-group btn-group-sm">
+                                                    <button type="button" class="btn btn-outline-primary" @onclick="() => IniciarEdicionMovimiento(movimiento)" title="Editar movimiento">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-danger" @onclick="() => EliminarMovimientoAsync(movimiento.Id)" title="Eliminar movimiento">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge text-bg-light border text-secondary">Automático</span>
+                                            }
+                                        </td>
+                                    }
                                 </tr>
                             }
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
         }
@@ -169,6 +209,7 @@
     private List<BancoHorasResumenVm> resumenes = [];
     private Guid? empleadoCapturaId;
     private Guid? empleadoHistorialId;
+    private Guid? movimientoEditandoId;
     private TipoMovimientoBancoHorasRrhh tipoMovimientoCaptura = TipoMovimientoBancoHorasRrhh.AjusteManual;
     private DateTime fechaCaptura = DateTime.Today;
     private decimal horasCaptura;
@@ -266,27 +307,58 @@
                 : horasCaptura;
 
             await using var db = await DbFactory.CreateDbContextAsync();
-            db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+            var referenciaTipo = tipoMovimientoCaptura == TipoMovimientoBancoHorasRrhh.Consumo ? "Consumo manual" : "Ajuste manual";
+            var observaciones = string.IsNullOrWhiteSpace(observacionesCaptura) ? null : observacionesCaptura.Trim();
+
+            if (movimientoEditandoId.HasValue)
             {
-                Id = Guid.NewGuid(),
-                EmpresaId = _empresaId,
-                EmpleadoId = empleadoCapturaId.Value,
-                Fecha = DateOnly.FromDateTime(fechaCaptura.Date),
-                TipoMovimiento = tipoMovimientoCaptura,
-                Horas = horasMovimiento,
-                ReferenciaTipo = tipoMovimientoCaptura == TipoMovimientoBancoHorasRrhh.Consumo ? "Consumo manual" : "Ajuste manual",
-                Observaciones = string.IsNullOrWhiteSpace(observacionesCaptura) ? null : observacionesCaptura.Trim(),
-                EsAutomatico = false,
-                CreatedAt = DateTime.UtcNow,
-                IsActive = true
-            });
+                var movimiento = await db.RrhhBancoHorasMovimientos
+                    .FirstOrDefaultAsync(m => m.Id == movimientoEditandoId.Value && m.EmpresaId == _empresaId && m.IsActive);
+
+                if (movimiento is null)
+                {
+                    error = "No se encontró el movimiento a editar.";
+                    return;
+                }
+
+                if (!PuedeModificarMovimiento(movimiento))
+                {
+                    error = "Solo se pueden editar movimientos manuales.";
+                    return;
+                }
+
+                movimiento.EmpleadoId = empleadoCapturaId.Value;
+                movimiento.Fecha = DateOnly.FromDateTime(fechaCaptura.Date);
+                movimiento.TipoMovimiento = tipoMovimientoCaptura;
+                movimiento.Horas = horasMovimiento;
+                movimiento.ReferenciaTipo = referenciaTipo;
+                movimiento.Observaciones = observaciones;
+                movimiento.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+                {
+                    Id = Guid.NewGuid(),
+                    EmpresaId = _empresaId,
+                    EmpleadoId = empleadoCapturaId.Value,
+                    Fecha = DateOnly.FromDateTime(fechaCaptura.Date),
+                    TipoMovimiento = tipoMovimientoCaptura,
+                    Horas = horasMovimiento,
+                    ReferenciaTipo = referenciaTipo,
+                    Observaciones = observaciones,
+                    EsAutomatico = false,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
+            }
 
             await db.SaveChangesAsync();
-            horasCaptura = 0;
-            observacionesCaptura = null;
-            ok = "Movimiento de banco de horas guardado.";
+            var empleadoHistorial = empleadoCapturaId;
+            LimpiarCaptura();
+            ok = movimientoEditandoId.HasValue ? "Movimiento de banco de horas actualizado." : "Movimiento de banco de horas guardado.";
             await CargarAsync();
-            empleadoHistorialId = empleadoCapturaId;
+            empleadoHistorialId = empleadoHistorial;
         }
         catch (Exception ex)
         {
@@ -301,6 +373,138 @@
     private void SeleccionarHistorial(Guid empleadoId)
     {
         empleadoHistorialId = empleadoId;
+    }
+
+    private void IniciarEdicionMovimiento(RrhhBancoHorasMovimiento movimiento)
+    {
+        if (!PuedeModificarMovimiento(movimiento))
+        {
+            error = "Solo se pueden editar movimientos manuales.";
+            ok = null;
+            return;
+        }
+
+        error = null;
+        ok = null;
+        movimientoEditandoId = movimiento.Id;
+        empleadoCapturaId = movimiento.EmpleadoId;
+        tipoMovimientoCaptura = movimiento.TipoMovimiento;
+        fechaCaptura = movimiento.Fecha.ToDateTime(TimeOnly.MinValue);
+        horasCaptura = movimiento.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+            ? Math.Abs(movimiento.Horas)
+            : movimiento.Horas;
+        observacionesCaptura = movimiento.Observaciones;
+        empleadoHistorialId = movimiento.EmpleadoId;
+    }
+
+    private async Task EliminarMovimientoAsync(Guid movimientoId)
+    {
+        error = ok = null;
+
+        if (!_puedeEditar)
+        {
+            error = "No tienes permisos para editar banco de horas.";
+            return;
+        }
+
+        var confirmar = await JS.InvokeAsync<bool>("confirm", "¿Deseas eliminar este movimiento manual de banco de horas?");
+        if (!confirmar)
+        {
+            return;
+        }
+
+        guardando = true;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var movimiento = await db.RrhhBancoHorasMovimientos
+                .FirstOrDefaultAsync(m => m.Id == movimientoId && m.EmpresaId == _empresaId && m.IsActive);
+
+            if (movimiento is null)
+            {
+                error = "No se encontró el movimiento a eliminar.";
+                return;
+            }
+
+            if (!PuedeModificarMovimiento(movimiento))
+            {
+                error = "Solo se pueden eliminar movimientos manuales.";
+                return;
+            }
+
+            movimiento.IsActive = false;
+            movimiento.UpdatedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+
+            if (movimientoEditandoId == movimientoId)
+            {
+                LimpiarCaptura();
+            }
+
+            ok = "Movimiento de banco de horas eliminado.";
+            await CargarAsync();
+            empleadoHistorialId = movimiento.EmpleadoId;
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private void CancelarEdicion()
+    {
+        error = null;
+        ok = null;
+        LimpiarCaptura();
+    }
+
+    private void LimpiarCaptura()
+    {
+        movimientoEditandoId = null;
+        empleadoCapturaId = null;
+        tipoMovimientoCaptura = TipoMovimientoBancoHorasRrhh.AjusteManual;
+        fechaCaptura = DateTime.Today;
+        horasCaptura = 0;
+        observacionesCaptura = null;
+    }
+
+    private static bool PuedeModificarMovimiento(RrhhBancoHorasMovimiento movimiento)
+        => !movimiento.EsAutomatico && movimiento.TipoMovimiento != TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra;
+
+    private static string ObtenerEtiquetaTipoMovimiento(TipoMovimientoBancoHorasRrhh tipoMovimiento)
+        => tipoMovimiento switch
+        {
+            TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra => "Generado por horas extra",
+            TipoMovimientoBancoHorasRrhh.AjusteManual => "Ajuste manual",
+            TipoMovimientoBancoHorasRrhh.Consumo => "Consumo",
+            _ => tipoMovimiento.ToString()
+        };
+
+    private static string ObtenerClaseTipoMovimiento(TipoMovimientoBancoHorasRrhh tipoMovimiento)
+        => tipoMovimiento switch
+        {
+            TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra => "text-bg-info",
+            TipoMovimientoBancoHorasRrhh.AjusteManual => "text-bg-primary",
+            TipoMovimientoBancoHorasRrhh.Consumo => "text-bg-warning",
+            _ => "text-bg-secondary"
+        };
+
+    private static string ObtenerReferenciaCorta(string? referencia)
+    {
+        if (string.IsNullOrWhiteSpace(referencia))
+        {
+            return "—";
+        }
+
+        const int maximo = 44;
+        var valor = referencia.Trim();
+        return valor.Length <= maximo ? valor : $"{valor[..maximo]}…";
     }
 
     private static string FormatearHoras(decimal horas)

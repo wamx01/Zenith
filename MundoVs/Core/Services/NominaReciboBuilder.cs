@@ -86,7 +86,7 @@ public class NominaReciboBuilder : INominaReciboBuilder
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionCreditoInfonavit, "Infonavit", detalle.MontoInfonavit);
         var montoRetardo = CalcularImporteDescuentoParcial(detalle, detalle.MinutosRetardo);
         var montoSalidaAnticipada = CalcularImporteDescuentoParcial(detalle, detalle.MinutosSalidaAnticipada);
-        var montoDescuentoManual = Math.Max(0m, detalle.MontoDescuentoMinutos - montoRetardo - montoSalidaAnticipada);
+        var montoDescuentoManual = Math.Max(0m, detalle.MontoDescuentoMinutos - detalle.MinutosRetardo - detalle.MinutosSalidaAnticipada);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por retardos", montoRetardo);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por salida anticipada", montoSalidaAnticipada);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por minutos manuales", montoDescuentoManual);

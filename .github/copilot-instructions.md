@@ -45,6 +45,7 @@
 - En el modal de corrección de asistencias RRHH, al ajustar tiempo extra se debe permitir seleccionar explícitamente cuánto tiempo queda aprobado y mejorar la experiencia de permiso.
 - En asistencias, el usuario prefiere una sola barra/timeline de segmentos del día que muestre cómo se interpreta cada tramo y desde ahí permita modificar a qué corresponde cada segmento.
 - En el resumen semanal RRHH, los días con tiempo extra pendiente se verán en rojo antes de revisión y en morado después de revisar, mostrando además el tiempo para reflejar que no siempre se aprobó todo el extra.
+- En nómina/prenómina RRHH, el usuario prefiere mostrar solo horas extra base en la nómina, separar retardos y salidas anticipadas como descuentos distintos, y mostrar saldo de banco de horas y movimiento semanal del banco.
 
 ## Deployment Guidelines
 - Para tareas de publicación/despliegue, responder solo con los comandos exactos sin explicación adicional.

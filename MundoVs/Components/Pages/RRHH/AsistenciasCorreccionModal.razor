@@ -203,6 +203,7 @@
                                                             <div class="asis-summary-top__eyebrow">Tiempo visible del día</div>
                                                             <div class="asis-summary-top__value">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</div>
                                                             <div class="asis-summary-top__formula">@ObtenerResumenVisibleExplicado()</div>
+                                                            <div class="asis-summary-top__formula">@ObtenerResumenCompensacionPermiso()</div>
                                                             <div class="asis-summary-top__formula">@ObtenerResumenDestinoTiempoActual()</div>
                                                             <div class="asis-summary-top__formula">@ObtenerResumenSaldoBancoHoras()</div>
                                                             <div class="d-flex flex-wrap gap-1 mt-2">
@@ -213,6 +214,10 @@
                                                                 @if (AsistenciaActual.MinutosExtraAutorizadosBanco > 0)
                                                                 {
                                                                     <span class="asis-chip asis-chip--info asis-chip--xs"><i class="bi bi-bank me-1"></i>Banco @FormatearMinutos(AsistenciaActual.MinutosExtraAutorizadosBanco)</span>
+                                                                }
+                                                                @if (ObtenerMinutosCompensadosAprobadosActual() > 0)
+                                                                {
+                                                                    <span class="asis-chip asis-chip--resolved asis-chip--xs"><i class="bi bi-arrow-left-right me-1"></i>Compensación @FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</span>
                                                                 }
                                                                 <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-hourglass-split me-1"></i>Saldo banco @FormatearMinutos(Math.Max(0, saldoBancoHorasSeleccionado))</span>
                                                             </div>
@@ -326,6 +331,26 @@
                                                             </div>
                                                         </div>
                                                     }
+
+                                                    <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                                        <div class="asis-quick-card__head">
+                                                            <strong>Perdón manual de minutos</strong>
+                                                        </div>
+                                                        <div class="asis-quick-card__body">
+                                                            <div class="row g-2 align-items-end">
+                                                                <div class="col-md-4">
+                                                                    <label class="asis-field-label">Minutos perdonados</label>
+                                                                    <InputNumber class="form-control form-control-sm" @bind-Value="minutosPerdonManualCaptura" min="0" />
+                                                                </div>
+                                                                <div class="col-md-6">
+                                                                    <div class="asis-quick-hint">Úsalo cuando quieras perdonar minutos pequeños del día, por ejemplo 7:58 contra 8:00.</div>
+                                                                </div>
+                                                                <div class="col-md-2 d-grid">
+                                                                    <button type="button" class="btn btn-sm btn-outline-success" @onclick="GuardarPerdonManualAsync">Aplicar</button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
 
                                                     @if (_mostrarAccionesRapidasTurno)
                                                     {

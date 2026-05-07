@@ -21,6 +21,7 @@ public class RrhhAsistencia : BaseEntity
     public int MinutosJornadaNetaProgramada { get; set; }
     public int MinutosTrabajadosBrutos { get; set; }
     public int MinutosTrabajadosNetos { get; set; }
+    public int MinutosPerdonadosManual { get; set; }
     public int MinutosDescansoProgramado { get; set; }
     public int MinutosDescansoTomado { get; set; }
     public int MinutosDescansoPagado { get; set; }
@@ -36,6 +37,7 @@ public class RrhhAsistencia : BaseEntity
     public bool RequiereRevision { get; set; }
     public string? Observaciones { get; set; }
     public string? ResumenDescansos { get; set; }
+    public string? ObservacionPerdonManual { get; set; }
 }
 
 public enum RrhhAsistenciaEstatus

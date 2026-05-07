@@ -34,6 +34,8 @@ public sealed class RrhhPrenominaSnapshotItem
     public decimal HorasDescansoNoPagado { get; init; }
     public int MinutosRetardo { get; init; }
     public int MinutosSalidaAnticipada { get; init; }
+    public int MinutosRetardoOriginales { get; init; }
+    public int MinutosSalidaAnticipadaOriginales { get; init; }
     public int MinutosDescuentoManual { get; init; }
     public decimal FactorPagoTiempoExtra { get; init; }
     public decimal MontoDestajoInformativo { get; init; }

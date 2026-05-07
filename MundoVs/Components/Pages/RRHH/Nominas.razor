@@ -866,7 +866,7 @@
                 g => g.Key,
                 g => new ResumenAsistenciaNominaVm
                 {
-                    HorasTrabajadasNetas = Math.Round(g.Sum(a => Math.Max(0, a.MinutosTrabajadosNetos)) / 60m, 2),
+                    HorasTrabajadasNetas = Math.Round(g.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosNetosEfectivos(a)) / 60m, 2),
                     HorasExtraDetectadas = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtra)) / 60m, 2),
                     HorasExtraAprobadasPago = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)) / 60m, 2),
                     HorasExtraAprobadasBanco = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)) / 60m, 2),

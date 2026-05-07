@@ -229,8 +229,10 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var minutosDescansoTomado = asistencias.Sum(a => a.MinutosDescansoTomado);
         var minutosDescansoPagado = asistencias.Sum(a => a.MinutosDescansoPagado);
         var minutosDescansoNoPagado = asistencias.Sum(a => a.MinutosDescansoNoPagado);
-        var minutosRetardo = asistencias.Sum(a => a.MinutosRetardo);
-        var minutosSalidaAnticipada = asistencias.Sum(a => a.MinutosSalidaAnticipada);
+        var minutosRetardoOriginales = asistencias.Sum(a => Math.Max(0, a.MinutosRetardo));
+        var minutosSalidaAnticipadaOriginales = asistencias.Sum(a => Math.Max(0, a.MinutosSalidaAnticipada));
+        var minutosRetardo = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a));
+        var minutosSalidaAnticipada = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a));
         var diasCubiertosBanco = asistencias.Count(a => a.MinutosCubiertosBancoHoras > 0);
         if (diasCubiertosBanco > 0)
         {
@@ -257,7 +259,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             DiasConMarcacion = asistencias.Count(a => a.TotalMarcaciones > 0),
             DiasDomingoTrabajado = trabajadas.Count(a => a.Fecha.ToDateTime(TimeOnly.MinValue).DayOfWeek == DayOfWeek.Sunday),
             DiasFestivoTrabajado = trabajadas.Count(a => festivosPeriodo.Contains(a.Fecha)),
-            HorasTrabajadasNetas = Math.Round(asistencias.Sum(a => Math.Max(0, a.MinutosTrabajadosNetos)) / 60m, 2),
+            HorasTrabajadasNetas = Math.Round(asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosNetosEfectivos(a)) / 60m, 2),
             HorasExtraBase = Math.Round(minutosExtraBase / 60m, 2),
             HorasExtra = Math.Round(minutosExtraPago / 60m, 2),
             HorasBancoAcumuladas = Math.Round(minutosBancoAcumulados / 60m, 2),
@@ -267,6 +269,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             HorasDescansoNoPagado = Math.Round(minutosDescansoNoPagado / 60m, 2),
             MinutosRetardo = minutosRetardo,
             MinutosSalidaAnticipada = minutosSalidaAnticipada,
+            MinutosRetardoOriginales = minutosRetardoOriginales,
+            MinutosSalidaAnticipadaOriginales = minutosSalidaAnticipadaOriginales,
             NotasRevision = notas.Count == 0 ? null : string.Join(" | ", notas)
         };
     }
@@ -308,6 +312,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         public decimal HorasDescansoNoPagado { get; set; }
         public int MinutosRetardo { get; set; }
         public int MinutosSalidaAnticipada { get; set; }
+        public int MinutosRetardoOriginales { get; set; }
+        public int MinutosSalidaAnticipadaOriginales { get; set; }
         public string? NotasRevision { get; set; }
     }
 }

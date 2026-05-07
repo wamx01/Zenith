@@ -10,6 +10,7 @@ public sealed class RrhhAsistenciasFiltroState
     public string TurnoIdTexto { get; set; } = string.Empty;
     public string Estatus { get; set; } = "todos";
     public string Revision { get; set; } = "todos";
+    public string Orden { get; set; } = "nombre";
     public string? Empleado { get; set; }
 
     public static RrhhAsistenciasFiltroState CreateDefault()
@@ -20,6 +21,7 @@ public sealed class RrhhAsistenciasFiltroState
             TurnoIdTexto = string.Empty,
             Estatus = "todos",
             Revision = "todos",
+            Orden = "nombre",
             Empleado = null
         };
 }

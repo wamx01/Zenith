@@ -262,6 +262,14 @@
                             <option value="no">Sin revisión</option>
                         </InputSelect>
                     </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Ordenar por</label>
+                        <InputSelect class="form-select" @bind-Value="filtroOrden" @bind-Value:after="GuardarFiltrosPersistidosAsync">
+                            <option value="nombre">Nombre</option>
+                            <option value="numero">No.</option>
+                            <option value="checador">Checador</option>
+                        </InputSelect>
+                    </div>
                     <div class="col-12 d-flex gap-2 flex-wrap">
                         <button class="btn btn-primary" @onclick="CargarAsync" disabled="@cargando"><i class="bi bi-search me-1"></i>Aplicar filtros</button>
                         <button class="btn btn-outline-secondary" @onclick="LimpiarFiltrosAsync" disabled="@cargando">Limpiar</button>
@@ -303,10 +311,10 @@
                                  <th class="text-end">Banco</th>
                                  <th class="text-end">Permisos</th>
                                  <th class="text-end">Comp.</th>
-                                 <th class="text-end">Retardo</th>
-                                 <th class="text-end">S. ant.</th>
+                                 <th class="text-end">Retardo min</th>
+                                 <th class="text-end">Salida ant. min</th>
                                  <th class="text-end">Días trab.</th>
-                                 <th class="text-end">Festivos</th>
+                                 <th class="text-end">Festivo trab.</th>
                                 <th class="text-end">Total</th>
                             </tr>
                         </thead>
@@ -344,10 +352,10 @@
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado</span></td>
+                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
+                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
+                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></td>
+                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                     </tr>
                                 }
@@ -365,10 +373,10 @@
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></td>
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></td>
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo)</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Min</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada)</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados)</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Días</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado)</span></td>
+                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo) min</span></td>
+                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada) min</span></td>
+                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados) día(s)</span></td>
+                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado) día(s)</span></td>
                                     <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
                                 </tr>
                             }
@@ -413,6 +421,7 @@
     private string filtroTurnoIdTexto = string.Empty;
     private string filtroEstatus = "todos";
     private string filtroRevision = "todos";
+    private string filtroOrden = "nombre";
     private string? filtroEmpleado;
     private int totalMinutosPeriodo;
     private int promedioMinutosEmpleado;
@@ -515,8 +524,8 @@
                     TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
                     TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
                     TotalMinutosExtraAprobadoBanco = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)),
-                    TotalMinutosRetardo = grupo.Sum(a => Math.Max(0, a.MinutosRetardo)),
-                    TotalMinutosSalidaAnticipada = grupo.Sum(a => Math.Max(0, a.MinutosSalidaAnticipada)),
+                    TotalMinutosRetardo = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a)),
+                    TotalMinutosSalidaAnticipada = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a)),
                     TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
                     TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
                     TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
@@ -528,9 +537,14 @@
                         .GroupBy(a => a.Fecha)
                         .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
                 })
-                .OrderBy(x => x.NombreCompleto)
-                .ThenBy(x => x.NumeroEmpleado)
                 .ToList();
+
+            resumenes = filtroOrden switch
+            {
+                "numero" => resumenes.OrderBy(x => x.NumeroEmpleado).ThenBy(x => x.NombreCompleto).ToList(),
+                "checador" => resumenes.OrderBy(x => x.CodigoChecador).ThenBy(x => x.NombreCompleto).ToList(),
+                _ => resumenes.OrderBy(x => x.NombreCompleto).ThenBy(x => x.NumeroEmpleado).ToList()
+            };
 
             totalMinutosPeriodo = resumenes.Sum(x => x.TotalMinutos);
             promedioMinutosEmpleado = resumenes.Count == 0 ? 0 : totalMinutosPeriodo / resumenes.Count;
@@ -674,6 +688,7 @@
             TurnoIdTexto = filtroTurnoIdTexto,
             Estatus = filtroEstatus,
             Revision = filtroRevision,
+            Orden = filtroOrden,
             Empleado = string.IsNullOrWhiteSpace(filtroEmpleado) ? null : filtroEmpleado.Trim()
         };
 
@@ -684,6 +699,7 @@
         filtroTurnoIdTexto = filtros.TurnoIdTexto ?? string.Empty;
         filtroEstatus = string.IsNullOrWhiteSpace(filtros.Estatus) ? "todos" : filtros.Estatus;
         filtroRevision = string.IsNullOrWhiteSpace(filtros.Revision) ? "todos" : filtros.Revision;
+        filtroOrden = string.IsNullOrWhiteSpace(filtros.Orden) ? "nombre" : filtros.Orden;
         filtroEmpleado = string.IsNullOrWhiteSpace(filtros.Empleado) ? null : filtros.Empleado.Trim();
     }
 
