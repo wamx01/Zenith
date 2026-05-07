@@ -136,6 +136,16 @@
         padding-left: .8rem !important;
     }
 
+    .asis-week-metric--retardo {
+        background: #fef3c7;
+        border-left: 2px solid #f59e0b;
+    }
+
+    .asis-week-metric--salida {
+        background: #fee2e2;
+        border-left: 2px solid #ef4444;
+    }
+
     .asis-week-metric__label {
         display: block;
         font-size: .66rem;
@@ -352,8 +362,8 @@
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></td>
                                      <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipRetardo(resumen)"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipSalidaAnticipada(resumen)"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
+                                      <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumen.TotalMinutosRetardo)" title="@ObtenerTooltipRetardo(resumen)"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
+                                      <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumen.TotalMinutosSalidaAnticipada)" title="@ObtenerTooltipSalidaAnticipada(resumen)"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
                                       <td class="asis-week-metric" title="@ObtenerTooltipDiasTrabajados(resumen)"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></td>
                                       <td class="asis-week-metric" title="@ObtenerTooltipFestivoTrabajado(resumen)"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
@@ -373,8 +383,8 @@
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></td>
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></td>
                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></td>
-                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo) min</span></td>
-                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada) min</span></td>
+                                  <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumenes.Sum(x => x.TotalMinutosRetardo))"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo) min</span></td>
+                                  <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada) min</span></td>
                                   <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados) día(s)</span></td>
                                   <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado) día(s)</span></td>
                                     <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
@@ -1025,6 +1035,12 @@
             ? "Sin festivos trabajados en el período."
             : $"Festivos trabajados: {string.Join(", ", dias)}";
     }
+
+    private static string ObtenerClaseMetricaRetardo(int minutos)
+        => minutos > 0 ? "asis-week-metric--retardo" : string.Empty;
+
+    private static string ObtenerClaseMetricaSalidaAnticipada(int minutos)
+        => minutos > 0 ? "asis-week-metric--salida" : string.Empty;
 
     private sealed class ResumenSemanalEmpleado
     {
