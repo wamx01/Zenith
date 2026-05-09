@@ -152,6 +152,8 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator, INominaLeg
             {
                 MinutosRetardo = detalle.MinutosRetardo,
                 MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada,
+                MinutosJornadaNetaProgramada = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosFaltanteDescontable,
+                MinutosTrabajadosNetos = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada,
                 MinutosPerdonadosManual = 0
             }, detalle.MinutosDescuentoManual),
             HorasExtraBase = detalle.HorasExtraBase,

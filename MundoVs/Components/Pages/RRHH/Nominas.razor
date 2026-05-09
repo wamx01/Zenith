@@ -314,6 +314,7 @@
                                     <span class="badge text-bg-light">Vac @detalleModalSeleccionado.DiasVacaciones</span>
                                     <span class="badge text-bg-light">Netas asistencia @ObtenerHorasTrabajadasNetasAsistencia(detalleModalSeleccionado.EmpleadoId).ToString("0.##") h</span>
                                     <span class="badge text-bg-light">Extra @detalleModalSeleccionado.HorasExtra.ToString("0.##") h</span>
+                                    <span class="badge text-bg-light">Falt. desc. @detalleModalSeleccionado.MinutosFaltanteDescontable min</span>
                                     @if (TieneFestivosAplicados(detalleModalSeleccionado.EmpleadoId))
                                     {
                                         <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(detalleModalSeleccionado.EmpleadoId)">
@@ -397,16 +398,12 @@
                                                         </div>
                                                     }
                                                     <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Retardo</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosRetardo" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                        <label class="form-label small mb-1">Tiempo descontado total (min)</label>
+                                                        <input class="form-control form-control-sm text-end" value="@ObtenerMinutosDescuentoPreview(detalleModalSeleccionado)" readonly />
                                                     </div>
                                                     <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Salida ant.</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosSalidaAnticipada" disabled="@(!PuedeModificarNominaSeleccionada)" />
-                                                    </div>
-                                                    <div class="col-md-4">
-                                                        <label class="form-label small mb-1">Desc. manual</label>
-                                                        <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosDescuentoManual" disabled="@(!PuedeModificarNominaSeleccionada)" />
+                                                        <label class="form-label small mb-1">Minutos perdonados</label>
+                                                        <input class="form-control form-control-sm text-end" value="@detalleModalSeleccionado.MinutosPerdonadosManual" readonly />
                                                     </div>
                                                 </div>
                                             </div>
@@ -2007,6 +2004,8 @@
             detalle.HorasExtraBanco = incidencia?.HorasBancoAcumuladas ?? detalle.HorasExtraBanco;
             detalle.MinutosRetardo = incidencia?.MinutosRetardo ?? 0;
             detalle.MinutosSalidaAnticipada = incidencia?.MinutosSalidaAnticipada ?? 0;
+            detalle.MinutosPerdonadosManual = incidencia?.MinutosPerdonadosManual ?? 0;
+            detalle.MinutosFaltanteDescontable = incidencia?.MinutosFaltanteDescontable ?? 0;
             detalle.MinutosDescuentoManual = incidencia?.MinutosDescuentoManual ?? 0;
             detalle.AplicaImss = empleado.AplicaImss && (incidencia?.AplicaImss ?? true);
             detalle.HorasExtra = horasExtra;
@@ -2085,7 +2084,7 @@
                 DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
                 DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
                 DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
-                MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual,
+                MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosFaltanteDescontable + detalle.MinutosDescuentoManual,
                 AplicaImss = detalle.AplicaImss,
                 AplicaIsr = empleado.AplicaIsr,
                 HorasExtraBase = detalle.HorasExtraBase,
@@ -2186,6 +2185,7 @@
 
             existente.MinutosRetardo = detalle.MinutosRetardo;
             existente.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
+            existente.MinutosFaltanteDescontable = detalle.MinutosFaltanteDescontable;
             existente.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
             existente.Bonos = detalle.Bonos;
             existente.Deducciones = detalle.Deducciones;
@@ -2510,7 +2510,10 @@
     }
 
     private int ObtenerMinutosDescuentoPreview(NominaDetalle detalle)
-        => detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual;
+        => Math.Max(0, detalle.MinutosRetardo)
+            + Math.Max(0, detalle.MinutosSalidaAnticipada)
+            + Math.Max(0, detalle.MinutosFaltanteDescontable)
+            + Math.Max(0, detalle.MinutosDescuentoManual);
 
     private ResumenAsistenciaNominaVm ObtenerResumenAsistenciaNomina(Guid empleadoId)
         => resumenAsistenciaPorEmpleado.TryGetValue(empleadoId, out var resumen)

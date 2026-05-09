@@ -194,6 +194,39 @@
     color: #1e293b;
 }
 
+.asis-progress {
+    padding: .85rem 1rem;
+    border: 1px solid #dbeafe;
+    border-radius: .9rem;
+    background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.asis-progress__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .75rem;
+    font-size: .82rem;
+    color: #1e3a8a;
+    margin-bottom: .45rem;
+}
+
+.asis-progress__bar-wrap {
+    height: .8rem;
+    border-radius: 999px;
+    background: #dbeafe;
+}
+
+.asis-progress__bar {
+    background: linear-gradient(90deg, #2563eb 0%, #0ea5e9 100%);
+}
+
+.asis-progress__text {
+    margin-top: .45rem;
+    font-size: .76rem;
+    color: #475569;
+}
+
 .asis-help-button {
     width: 2rem;
     height: 2rem;

@@ -8,6 +8,7 @@
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject INominaPdfService NominaPdfService
 @inject INominaReciboBuilder NominaReciboBuilder
+@inject ITenantFileStorageService TenantFileStorage
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ILogger<ReciboNomina> Logger
 @rendermode InteractiveServer
@@ -57,7 +58,7 @@
             </div>
         </div>
 
-        <NominaReciboCard Detalle="detalle" Recibo="recibo" />
+        <NominaReciboCard Detalle="detalle" Recibo="recibo" LogoEmpresaUrl="logoEmpresaUrl" />
     }
 </div>
 
@@ -69,6 +70,7 @@
     private bool _puedeVer;
     private Guid _empresaId;
     private string? error;
+    private string? logoEmpresaUrl;
     protected override async Task OnInitializedAsync()
     {
         await CargarAccesoAsync();
@@ -111,7 +113,30 @@
                 return;
             }
 
-            recibo = NominaReciboBuilder.Build(detalle);
+            var fechaInicioPeriodo = DateOnly.FromDateTime(detalle.Nomina.FechaInicio);
+            var fechaFinPeriodo = DateOnly.FromDateTime(detalle.Nomina.FechaFin);
+
+            var movimientosBanco = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.IsActive
+                    && m.EmpleadoId == detalle.EmpleadoId
+                    && m.Fecha >= fechaInicioPeriodo
+                    && m.Fecha <= fechaFinPeriodo)
+                .OrderBy(m => m.Fecha)
+                .ThenBy(m => m.CreatedAt)
+                .ToListAsync();
+
+            var saldoActualBanco = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.IsActive && m.EmpleadoId == detalle.EmpleadoId)
+                .SumAsync(m => m.Horas);
+
+            var logoConfig = await db.AppConfigs
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.EmpresaId == detalle.Nomina.EmpresaId && c.Clave == "CompanyLogo");
+            logoEmpresaUrl = logoConfig?.Valor;
+
+            recibo = NominaReciboBuilder.Build(detalle, movimientosBanco, saldoActualBanco);
         }
         catch (Exception ex)
         {

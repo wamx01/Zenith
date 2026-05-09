@@ -12,11 +12,13 @@ public sealed class NominaPdfService : INominaPdfService
 {
     private readonly IDbContextFactory<CrmDbContext> _dbFactory;
     private readonly INominaReciboBuilder _nominaReciboBuilder;
+    private readonly ITenantFileStorageService _tenantFileStorage;
 
-    public NominaPdfService(IDbContextFactory<CrmDbContext> dbFactory, INominaReciboBuilder nominaReciboBuilder)
+    public NominaPdfService(IDbContextFactory<CrmDbContext> dbFactory, INominaReciboBuilder nominaReciboBuilder, ITenantFileStorageService tenantFileStorage)
     {
         _dbFactory = dbFactory;
         _nominaReciboBuilder = nominaReciboBuilder;
+        _tenantFileStorage = tenantFileStorage;
     }
 
     public async Task<byte[]> GenerateReciboPdfAsync(Guid nominaDetalleId, CancellationToken cancellationToken = default)
@@ -26,7 +28,7 @@ public sealed class NominaPdfService : INominaPdfService
         if (detalle == null)
             throw new InvalidOperationException("No se encontró el recibo de nómina.");
 
-        return GeneratePdf([detalle]);
+        return await GeneratePdfAsync(db, [detalle], cancellationToken);
     }
 
     public async Task<byte[]> GenerateRecibosPdfAsync(Guid nominaId, CancellationToken cancellationToken = default)
@@ -36,7 +38,7 @@ public sealed class NominaPdfService : INominaPdfService
         if (detalles.Count == 0)
             throw new InvalidOperationException("No hay recibos de nómina para generar PDF.");
 
-        return GeneratePdf(detalles);
+        return await GeneratePdfAsync(db, detalles, cancellationToken);
     }
 
     public Task<byte[]> GenerateDashboardCostosPdfAsync(NominaDashboardCostosReport report, CancellationToken cancellationToken = default)
@@ -55,25 +57,109 @@ public sealed class NominaPdfService : INominaPdfService
         return Task.FromResult(pdf);
     }
 
-    private byte[] GeneratePdf(IReadOnlyList<NominaDetalle> detalles)
+    private async Task<byte[]> GeneratePdfAsync(CrmDbContext db, IReadOnlyList<NominaDetalle> detalles, CancellationToken cancellationToken)
     {
-        var recibos = detalles.ToDictionary(d => d.Id, _nominaReciboBuilder.Build);
+        var recibos = await ConstruirRecibosAsync(db, detalles, cancellationToken);
 
         return Document.Create(container =>
         {
             foreach (var detalle in detalles)
             {
-                var recibo = recibos[detalle.Id];
+                var reciboData = recibos[detalle.Id];
                 container.Page(page =>
                 {
                     page.Size(PageSizes.Letter);
                     page.Margin(20);
                     page.DefaultTextStyle(x => x.FontFamily(Fonts.Arial).FontSize(9));
-                    page.Content().Element(content => ComposeRecibo(content, detalle, recibo));
+                    page.Content().Element(content => ComposeRecibo(content, detalle, reciboData.Recibo, reciboData.LogoEmpresa));
                 });
             }
         }).GeneratePdf();
     }
+
+    private async Task<Dictionary<Guid, NominaReciboPdfData>> ConstruirRecibosAsync(CrmDbContext db, IReadOnlyList<NominaDetalle> detalles, CancellationToken cancellationToken)
+    {
+        var empleadoIds = detalles.Select(d => d.EmpleadoId).Distinct().ToList();
+        var empresaIds = detalles.Select(d => d.Nomina.EmpresaId).Distinct().ToList();
+
+        var movimientosBanco = await db.RrhhBancoHorasMovimientos
+            .AsNoTracking()
+            .Where(m => m.IsActive && empleadoIds.Contains(m.EmpleadoId))
+            .OrderBy(m => m.Fecha)
+            .ThenBy(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var saldosBanco = await db.RrhhBancoHorasMovimientos
+            .AsNoTracking()
+            .Where(m => m.IsActive && empleadoIds.Contains(m.EmpleadoId))
+            .GroupBy(m => m.EmpleadoId)
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.Sum(m => m.Horas),
+                cancellationToken);
+
+        var logosConfigurados = await db.AppConfigs
+            .AsNoTracking()
+            .Where(c => empresaIds.Contains(c.EmpresaId) && c.Clave == "CompanyLogo")
+            .ToDictionaryAsync(c => c.EmpresaId, c => c.Valor, cancellationToken);
+
+        var logosPorEmpresa = new Dictionary<Guid, byte[]>();
+        foreach (var empresaId in empresaIds)
+        {
+            if (!logosConfigurados.TryGetValue(empresaId, out var logoPath) || string.IsNullOrWhiteSpace(logoPath))
+            {
+                continue;
+            }
+
+            var logo = await LeerLogoEmpresaAsync(empresaId, logoPath, cancellationToken);
+            if (logo != null)
+            {
+                logosPorEmpresa[empresaId] = logo;
+            }
+        }
+
+        var recibos = new Dictionary<Guid, NominaReciboPdfData>();
+        foreach (var detalle in detalles)
+        {
+            var fechaInicioPeriodo = DateOnly.FromDateTime(detalle.Nomina.FechaInicio);
+            var fechaFinPeriodo = DateOnly.FromDateTime(detalle.Nomina.FechaFin);
+            var movimientosPeriodo = movimientosBanco
+                .Where(m => m.EmpleadoId == detalle.EmpleadoId
+                    && m.Fecha >= fechaInicioPeriodo
+                    && m.Fecha <= fechaFinPeriodo)
+                .ToList();
+
+            var saldoActual = saldosBanco.GetValueOrDefault(detalle.EmpleadoId);
+            var recibo = _nominaReciboBuilder.Build(detalle, movimientosPeriodo, saldoActual);
+            logosPorEmpresa.TryGetValue(detalle.Nomina.EmpresaId, out var logoEmpresa);
+            recibos[detalle.Id] = new NominaReciboPdfData(recibo, logoEmpresa);
+        }
+
+        return recibos;
+    }
+
+    private async Task<byte[]?> LeerLogoEmpresaAsync(Guid empresaId, string logoPath, CancellationToken cancellationToken)
+    {
+        if (!TenantFileStorageService.TryParseTenantFilePath(logoPath, out var empresaLogoId, out var storagePath))
+        {
+            return null;
+        }
+
+        var archivo = await _tenantFileStorage.OpenReadAsync(empresaLogoId == Guid.Empty ? empresaId : empresaLogoId, storagePath, cancellationToken);
+        if (archivo == null)
+        {
+            return null;
+        }
+
+        await using (archivo.Content)
+        await using (var ms = new MemoryStream())
+        {
+            await archivo.Content.CopyToAsync(ms, cancellationToken);
+            return ms.ToArray();
+        }
+    }
+
+    private sealed record NominaReciboPdfData(NominaReciboResult Recibo, byte[]? LogoEmpresa);
 
     private static void ComposeDashboardCostos(IContainer container, NominaDashboardCostosReport report)
     {
@@ -247,13 +333,11 @@ public sealed class NominaPdfService : INominaPdfService
         });
     }
 
-    private static void ComposeRecibo(IContainer container, NominaDetalle detalle, NominaReciboResult recibo)
+    private static void ComposeRecibo(IContainer container, NominaDetalle detalle, NominaReciboResult recibo, byte[]? logoEmpresa)
     {
         var nombreEmpresa = string.IsNullOrWhiteSpace(detalle.Nomina.Empresa.NombreComercial)
             ? detalle.Nomina.Empresa.RazonSocial
             : detalle.Nomina.Empresa.NombreComercial!;
-        var iniciales = string.Join(string.Empty,
-            nombreEmpresa.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
         var puesto = !string.IsNullOrWhiteSpace(detalle.Empleado.Puesto)
             ? detalle.Empleado.Puesto
             : detalle.Empleado.Posicion?.Nombre ?? "—";
@@ -275,7 +359,14 @@ public sealed class NominaPdfService : INominaPdfService
 
                 row.RelativeItem(.95f).AlignCenter().Column(col =>
                 {
-                    col.Item().Width(92).Height(92).Border(3).BorderColor("#0b2a68").AlignCenter().AlignMiddle().Text(iniciales).FontSize(26).SemiBold().FontColor("#0b2a68");
+                    if (logoEmpresa != null)
+                    {
+                        col.Item().Width(92).Height(92).Border(3).BorderColor("#0b2a68").Padding(4).AlignCenter().AlignMiddle().Image(logoEmpresa, ImageScaling.FitArea);
+                    }
+                    else
+                    {
+                        col.Item().Width(92).Height(92).Border(1).BorderColor(Colors.Grey.Lighten1).Padding(4);
+                    }
                     col.Item().PaddingTop(4).AlignCenter().Text(nombreEmpresa.ToUpperInvariant()).Bold().FontSize(15);
                     if (!string.IsNullOrWhiteSpace(detalle.Nomina.Empresa.Slogan))
                         col.Item().AlignCenter().Text(detalle.Nomina.Empresa.Slogan).FontSize(8).FontColor(Colors.Grey.Darken1);
@@ -299,9 +390,10 @@ public sealed class NominaPdfService : INominaPdfService
                 {
                     col.Item().Text($"Depto.: {departamento}").FontSize(8.8f);
                     col.Item().Text($"Puesto: {puesto}").FontSize(8.8f);
-                    col.Item().Text($"No. Nómina: {(string.IsNullOrWhiteSpace(detalle.Nomina.Folio) ? "—" : detalle.Nomina.Folio)}").FontSize(8.8f);
+                    col.Item().Text($"No. Nómina: {(string.IsNullOrWhiteSpace(detalle.Nomina.NumeroNomina) ? "—" : detalle.Nomina.NumeroNomina)}").FontSize(8.8f);
                     col.Item().Text($"Período: {detalle.Nomina.FechaInicio:dd/MM/yyyy} al {detalle.Nomina.FechaFin:dd/MM/yyyy}").FontSize(8.8f);
-                    col.Item().Text($"Días trabajados: {detalle.DiasTrabajados}").FontSize(8.8f);
+                    col.Item().Text($"Días del período: {detalle.DiasPagados}").FontSize(8.8f);
+                    col.Item().Text($"Horas trabajadas netas: {detalle.HorasTrabajadasNetas:0.##} h").FontSize(8.8f);
                     col.Item().Text($"Faltas: {detalle.DiasFaltaInjustificada}").FontSize(8.8f);
                 });
             });
@@ -365,6 +457,31 @@ public sealed class NominaPdfService : INominaPdfService
                     col.Item().Row(r => { r.RelativeItem().Text("Total Deducciones"); r.ConstantItem(120).AlignRight().Text(recibo.TotalDeducciones.ToString("C2")).SemiBold(); });
                     col.Item().Row(r => { r.RelativeItem().Text("Neto Pagado"); r.ConstantItem(120).AlignRight().Text(recibo.NetoPagar.ToString("C2")).SemiBold(); });
                     col.Item().Row(r => { r.RelativeItem().Text("Total en Efectivo"); r.ConstantItem(120).AlignRight().Text(recibo.NetoPagar.ToString("C2")).SemiBold(); });
+                    col.Item().PaddingTop(8).Row(r => { r.RelativeItem().Text("Saldo actual banco de horas"); r.ConstantItem(120).AlignRight().Text($"{recibo.SaldoActualBancoHoras:0.##} h").SemiBold(); });
+                    col.Item().PaddingTop(8).Background("#0b2a68").PaddingVertical(4).PaddingHorizontal(8).Text("MOVIMIENTOS BANCO DE HORAS").Bold().FontSize(9).FontColor(Colors.White);
+                    if (recibo.MovimientosBancoHoras.Count > 0)
+                    {
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(46);
+                                columns.RelativeColumn();
+                                columns.ConstantColumn(90);
+                            });
+
+                            foreach (var movimiento in recibo.MovimientosBancoHoras)
+                            {
+                                table.Cell().PaddingVertical(2).Text(movimiento.Fecha.ToString("dd/MM")).SemiBold().FontColor("#0b2a68");
+                                table.Cell().PaddingVertical(2).Text(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? movimiento.Tipo : $"{movimiento.Tipo} - {movimiento.Observaciones}");
+                                table.Cell().PaddingVertical(2).AlignRight().Text($"{movimiento.Horas:0.##} h").SemiBold();
+                            }
+                        });
+                    }
+                    else
+                    {
+                        col.Item().PaddingTop(4).Text("Sin movimientos de banco de horas en el período.").FontSize(8.4f).FontColor(Colors.Grey.Darken1);
+                    }
                 });
 
                 row.RelativeItem(.85f).PaddingLeft(20).PaddingTop(28).Column(col =>

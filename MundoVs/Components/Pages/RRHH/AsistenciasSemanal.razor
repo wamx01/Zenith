@@ -23,6 +23,84 @@
         vertical-align: middle;
     }
 
+    .asis-week-table-wrap {
+        max-height: calc(100vh - 260px);
+        overflow: auto;
+        position: relative;
+        isolation: isolate;
+        border-radius: .5rem;
+    }
+
+    .asis-week-table {
+        min-width: max-content;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+    }
+
+    .asis-week-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 6;
+    }
+
+    .asis-week-table thead tr {
+        position: sticky;
+        top: 0;
+        z-index: 6;
+    }
+
+    .asis-week-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 7;
+        background: #212529;
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .08);
+    }
+
+    .asis-week-sticky-col {
+        position: sticky;
+        z-index: 2;
+        background-clip: padding-box;
+    }
+
+    .asis-week-sticky-col--employee {
+        left: 0;
+        min-width: 210px;
+        width: 210px;
+    }
+
+    .asis-week-sticky-col--number {
+        left: 210px;
+        min-width: 72px;
+        width: 72px;
+    }
+
+    .asis-week-sticky-col--worked {
+        left: 282px;
+        min-width: 110px;
+        width: 110px;
+    }
+
+    .asis-week-table thead .asis-week-sticky-col {
+        z-index: 9;
+        background: #212529;
+        box-shadow: inset -1px 0 0 rgba(255, 255, 255, .08), inset 0 -1px 0 rgba(255, 255, 255, .08);
+    }
+
+    .asis-week-table tbody .asis-week-sticky-col {
+        background: #fff;
+        box-shadow: inset -1px 0 0 #e2e8f0;
+    }
+
+    .asis-week-table tbody tr.table-light .asis-week-sticky-col {
+        background: #f8f9fa;
+    }
+
+    .asis-week-table .asis-week-sticky-col--worked {
+        box-shadow: inset -2px 0 0 #cbd5e1, inset -1px 0 0 #e2e8f0;
+    }
+
     .asis-week-table td {
         font-size: .82rem;
         vertical-align: middle;
@@ -119,31 +197,66 @@
 
     .asis-week-metric {
         min-width: 92px;
-        text-align: right;
-        font-weight: 600;
+        padding: .4rem !important;
+        vertical-align: middle;
         font-variant-numeric: tabular-nums;
-        background: #f8fafc;
+        background: #fff;
     }
 
     .asis-week-metric--primary {
         min-width: 108px;
-        background: #eef6ff;
-        border-left: 2px solid #93c5fd;
+        background: #fff;
     }
 
     .asis-week-metric--group-start {
         border-left: 2px solid #dbe4f0;
-        padding-left: .8rem !important;
     }
 
     .asis-week-metric--retardo {
-        background: #fef3c7;
-        border-left: 2px solid #f59e0b;
+        background: #fff8e1;
     }
 
     .asis-week-metric--salida {
         background: #fee2e2;
-        border-left: 2px solid #ef4444;
+    }
+
+    .asis-week-metric--descuento {
+        background: #fff7ed;
+    }
+
+    .asis-week-metric__card {
+        width: 100%;
+        min-height: 4.5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: .85rem;
+        background: #f8fafc;
+        padding: .45rem .5rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: .15rem;
+        text-align: center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
+    }
+
+    .asis-week-metric--primary .asis-week-metric__card {
+        background: #eef6ff;
+        border-color: #93c5fd;
+    }
+
+    .asis-week-metric--retardo .asis-week-metric__card {
+        background: #fef3c7;
+        border-color: #f59e0b;
+    }
+
+    .asis-week-metric--salida .asis-week-metric__card {
+        background: #fee2e2;
+        border-color: #ef4444;
+    }
+
+    .asis-week-metric--descuento .asis-week-metric__card {
+        background: #ffedd5;
+        border-color: #fb923c;
     }
 
     .asis-week-metric__label {
@@ -157,7 +270,8 @@
 
     .asis-week-metric__value {
         display: block;
-        font-size: .82rem;
+        font-size: .88rem;
+        font-weight: 700;
         color: #0f172a;
     }
 
@@ -302,13 +416,13 @@
                     <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--extra-reviewed"></span>Tiempo extra revisado</span>
                     <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--muted"></span>Sin tiempo registrado</span>
                 </div>
-                <div class="table-responsive">
+                <div class="asis-week-table-wrap">
                     <table class="table table-hover table-sm mb-0 align-middle asis-week-table">
                         <thead class="table-dark">
                             <tr>
-                                <th>Empleado</th>
-                                <th>No.</th>
-                                <th class="text-end">Trabajado</th>
+                                <th class="asis-week-sticky-col asis-week-sticky-col--employee">Empleado</th>
+                                <th class="asis-week-sticky-col asis-week-sticky-col--number">No.</th>
+                                <th class="text-end asis-week-sticky-col asis-week-sticky-col--worked">Trabajado</th>
                                 @foreach (var dia in diasPeriodo)
                                 {
                                     <th class="asis-week-date text-center @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">
@@ -321,7 +435,8 @@
                                  <th class="text-end">Banco</th>
                                  <th class="text-end">Permisos</th>
                                  <th class="text-end">Comp.</th>
-                                 <th class="text-end">Retardo min</th>
+                                  <th class="text-end">Descuento min</th>
+                                  <th class="text-end">Retardo min</th>
                                  <th class="text-end">Salida ant. min</th>
                                  <th class="text-end">Días trab.</th>
                                  <th class="text-end">Festivo trab.</th>
@@ -340,12 +455,12 @@
                                 @foreach (var resumen in resumenes)
                                 {
                                     <tr>
-                                        <td>
+                                        <td class="asis-week-sticky-col asis-week-sticky-col--employee">
                                             <div class="fw-semibold">@resumen.NombreCompleto</div>
                                             <div class="small text-muted">@(string.IsNullOrWhiteSpace(resumen.CodigoChecador) ? "Sin código" : resumen.CodigoChecador)</div>
                                         </td>
-                                        <td>@(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)</td>
-                                    <td class="asis-week-metric asis-week-metric--primary"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutos)</span></td>
+                                        <td class="asis-week-sticky-col asis-week-sticky-col--number">@(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)</td>
+                                    <td class="asis-week-metric asis-week-metric--primary asis-week-sticky-col asis-week-sticky-col--worked"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutos)</span></td>
                                         @foreach (var dia in diasPeriodo)
                                         {
                                              var presentacionDia = ObtenerPresentacionDia(resumen, dia);
@@ -357,34 +472,36 @@
                                                  </button>
                                              </td>
                                         }
-                                     <td class="asis-week-metric asis-week-metric--group-start"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtra)</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></td>
-                                     <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></td>
-                                      <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumen.TotalMinutosRetardo)" title="@ObtenerTooltipRetardo(resumen)"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></td>
-                                      <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumen.TotalMinutosSalidaAnticipada)" title="@ObtenerTooltipSalidaAnticipada(resumen)"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipDiasTrabajados(resumen)"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipFestivoTrabajado(resumen)"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></td>
+                                     <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtra)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></div></td>
+                                       <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumen.TotalMinutosDescuento)" title="@ObtenerTooltipDescuento(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@resumen.TotalMinutosDescuento min</span></div></td>
+                                       <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumen.TotalMinutosRetardo)" title="@ObtenerTooltipRetardo(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumen.TotalMinutosRetardo min</span></div></td>
+                                      <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumen.TotalMinutosSalidaAnticipada)" title="@ObtenerTooltipSalidaAnticipada(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumen.TotalMinutosSalidaAnticipada min</span></div></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipDiasTrabajados(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></div></td>
+                                      <td class="asis-week-metric" title="@ObtenerTooltipFestivoTrabajado(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></div></td>
                                         <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                     </tr>
                                 }
 
                                 <tr class="table-light fw-semibold">
-                                    <td>Totales</td>
-                                    <td>—</td>
-                                <td class="asis-week-metric asis-week-metric--primary"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(totalMinutosPeriodo)</span></td>
+                                    <td class="asis-week-sticky-col asis-week-sticky-col--employee">Totales</td>
+                                    <td class="asis-week-sticky-col asis-week-sticky-col--number">—</td>
+                                <td class="asis-week-metric asis-week-metric--primary asis-week-sticky-col asis-week-sticky-col--worked"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Visible</span><span class="asis-week-metric__value">@FormatearMinutos(totalMinutosPeriodo)</span></div></td>
                                     @foreach (var dia in diasPeriodo)
                                     {
                                         <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</td>
                                     }
-                                 <td class="asis-week-metric asis-week-metric--group-start"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></td>
-                                 <td class="asis-week-metric"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></td>
-                                  <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumenes.Sum(x => x.TotalMinutosRetardo))"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo) min</span></td>
-                                  <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada) min</span></td>
+                                 <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Detectado</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Pago</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></div></td>
+                                   <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumenes.Sum(x => x.TotalMinutosDescuento))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosDescuento) min</span></div></td>
+                                   <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumenes.Sum(x => x.TotalMinutosRetardo))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosRetardo) min</span></div></td>
+                                  <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalMinutosSalidaAnticipada) min</span></div></td>
                                   <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados) día(s)</span></td>
                                   <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado) día(s)</span></td>
                                     <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
@@ -436,6 +553,7 @@
     private int totalMinutosPeriodo;
     private int promedioMinutosEmpleado;
     private Dictionary<string, int> compensacionesPorDia = new();
+    private Dictionary<string, int> permisosPorDia = new();
     private Dictionary<string, RrhhAsistencia> asistenciasPorEmpleadoDia = new();
     private HashSet<DateOnly> festivosPeriodo = [];
 
@@ -516,6 +634,7 @@
 
             compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
             permisosPorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta);
+            permisosPorDia = await ConstruirPermisosPorDiaAsync(db, asistencias, desde, hasta);
 
             resumenes = asistencias
                 .GroupBy(a => new
@@ -534,8 +653,10 @@
                     TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
                     TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
                     TotalMinutosExtraAprobadoBanco = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)),
+                     TotalMinutosDescuento = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal(a, 0, ObtenerMinutosPermisoAplicados(a))),
                     TotalMinutosRetardo = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a)),
                     TotalMinutosSalidaAnticipada = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a)),
+                     MinutosDescuentoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal(x, 0, ObtenerMinutosPermisoAplicados(x)))),
                     TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
                     TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
                     MinutosRetardoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(x))),
@@ -574,6 +695,7 @@
             totalesPorDia = new();
             compensacionesPorDia = new();
             permisosPorEmpleado = new();
+            permisosPorDia = new();
             asistenciasPorEmpleadoDia = new();
             festivosPeriodo = [];
             totalMinutosPeriodo = 0;
@@ -864,6 +986,11 @@
             ? Math.Max(0, minutos)
             : 0;
 
+    private int ObtenerMinutosPermisoAplicados(RrhhAsistencia asistencia)
+        => permisosPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
+            ? Math.Max(0, minutos)
+            : Math.Max(0, asistencia.MinutosCubiertosBancoHoras);
+
     private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
@@ -983,6 +1110,40 @@
                 g => g.Sum(a => (int)Math.Round(Math.Max(0m, a.Horas) * 60m, MidpointRounding.AwayFromZero)));
     }
 
+    private async Task<Dictionary<string, int>> ConstruirPermisosPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta)
+    {
+        if (asistencias.Count == 0)
+        {
+            return new Dictionary<string, int>();
+        }
+
+        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
+        var permisos = await db.RrhhAusencias
+            .AsNoTracking()
+            .Where(a => a.EmpresaId == _empresaId
+                && empleadoIds.Contains(a.EmpleadoId)
+                && a.IsActive
+                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
+                && a.FechaInicio <= hasta
+                && a.FechaFin >= desde)
+            .ToListAsync();
+
+        var resultado = new Dictionary<string, int>();
+        foreach (var permiso in permisos)
+        {
+            var inicio = permiso.FechaInicio < desde ? desde : permiso.FechaInicio;
+            var fin = permiso.FechaFin > hasta ? hasta : permiso.FechaFin;
+            var minutosPorDia = (int)Math.Round(Math.Max(0m, permiso.Horas) * 60m, MidpointRounding.AwayFromZero);
+            for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(1))
+            {
+                resultado[CrearClaveCompensacion(permiso.EmpleadoId, fecha)] = minutosPorDia;
+            }
+        }
+
+        return resultado;
+    }
+
     private bool EsFestivoTrabajado(DateOnly fecha)
         => festivosPeriodo.Contains(fecha);
 
@@ -997,6 +1158,19 @@
         return dias.Count == 0
             ? "Sin retardo en el período."
             : $"Retardo calculado con: {string.Join(" | ", dias)}";
+    }
+
+    private string ObtenerTooltipDescuento(ResumenSemanalEmpleado resumen)
+    {
+        var dias = resumen.MinutosDescuentoPorDia
+            .Where(x => x.Value > 0)
+            .OrderBy(x => x.Key)
+            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
+            .ToList();
+
+        return dias.Count == 0
+            ? "Sin descuento efectivo en el período."
+            : $"Descuento efectivo calculado con: {string.Join(" | ", dias)}";
     }
 
     private string ObtenerTooltipSalidaAnticipada(ResumenSemanalEmpleado resumen)
@@ -1039,6 +1213,9 @@
     private static string ObtenerClaseMetricaRetardo(int minutos)
         => minutos > 0 ? "asis-week-metric--retardo" : string.Empty;
 
+    private static string ObtenerClaseMetricaDescuento(int minutos)
+        => minutos > 0 ? "asis-week-metric--retardo" : string.Empty;
+
     private static string ObtenerClaseMetricaSalidaAnticipada(int minutos)
         => minutos > 0 ? "asis-week-metric--salida" : string.Empty;
 
@@ -1051,12 +1228,14 @@
         public int TotalMinutosExtra { get; init; }
         public int TotalMinutosExtraAprobadoPago { get; init; }
         public int TotalMinutosExtraAprobadoBanco { get; init; }
+        public int TotalMinutosDescuento { get; init; }
         public int TotalMinutosRetardo { get; init; }
         public int TotalMinutosSalidaAnticipada { get; init; }
         public int TotalDiasTrabajados { get; init; }
         public int TotalDiasFestivoTrabajado { get; init; }
         public int TotalMinutosPermiso { get; init; }
         public int TotalMinutosCompensacion { get; init; }
+        public Dictionary<DateOnly, int> MinutosDescuentoPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosRetardoPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosSalidaAnticipadaPorDia { get; init; } = new();
         public List<DateOnly> DiasTrabajadosDetalle { get; init; } = [];

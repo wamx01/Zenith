@@ -327,6 +327,12 @@
                                                                     <div class="col-md-2 d-grid">
                                                                         <button type="button" class="btn btn-sm btn-info" @onclick="GuardarPermisoDiaAsync">Aplicar</button>
                                                                     </div>
+                                                                    @if (permisoDiaSeleccionado != null)
+                                                                    {
+                                                                        <div class="col-md-12 d-flex justify-content-end mt-1">
+                                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="QuitarPermisoDiaAsync">Quitar permiso</button>
+                                                                        </div>
+                                                                    }
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -394,23 +400,35 @@
                                                                 <div class="asis-dayline-card__meta">Bloque principal @FormatearMinutos(ObtenerDuracionBloquePrincipal())</div>
                                                             </div>
                                                             <div class="asis-dayline-list mt-2">
+                                                                @{ var indiceVisualSegmento = 0; }
                                                                 @foreach (var segmento in ObtenerTimelineSegmentosDia())
                                                                 {
+                                                                    if (!segmento.EsReferenciaTurno)
+                                                                    {
+                                                                        indiceVisualSegmento++;
+                                                                    }
                                                                     <div class="asis-dayline-list__item @(segmento.EsReferenciaTurno ? "asis-dayline-list__item--turno" : string.Empty)">
                                                                         <div class="asis-dayline-list__meta">
-                                                                            <div class="asis-dayline-list__title">@segmento.Titulo</div>
+                                                                            <div class="asis-dayline-list__title">@ObtenerTituloVisualSegmento(segmento, indiceVisualSegmento)</div>
                                                                             <div class="asis-dayline-list__range">@segmento.Rango · @FormatearMinutos(segmento.Minutos)</div>
                                                                         </div>
                                                                         <div class="asis-dayline-bar">
                                                                             <div class="asis-dayline-bar__fill @segmento.CssClass" style="width:@($"{segmento.WidthPercent}%")"></div>
                                                                         </div>
-                                                                        <div class="asis-dayline-list__detail">@segmento.Detalle</div>
+                                                                        @if (MostrarDetalleLargoSegmento(segmento))
+                                                                        {
+                                                                            <div class="asis-dayline-list__detail">@segmento.Detalle</div>
+                                                                        }
                                                                         @if (segmento.Accion == "descanso")
                                                                         {
                                                                             <div class="asis-dayline-list__detail asis-dayline-list__detail--metrics">
                                                                                 @if (segmento.NumeroDescanso.HasValue)
                                                                                 {
                                                                                     <span>D@(segmento.NumeroDescanso.Value) · </span>
+                                                                                }
+                                                                                else if (segmento.Titulo == "Pausa sugerida")
+                                                                                {
+                                                                                    <span>Pausa base · </span>
                                                                                 }
                                                                                 Detectado: @FormatearMinutos(segmento.Minutos)
                                                                                 @if (segmento.MinutosProgramados.HasValue)
@@ -430,11 +448,13 @@
                                                                         }
                                                                         @if (!segmento.EsReferenciaTurno)
                                                                         {
-                                                                            <div class="asis-dayline-list__status @(segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente ? "asis-dayline-list__status--ok" : "asis-dayline-list__status--warn")">
-                                                                                @(segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente
-                                                                                    ? (segmento.FueInferidoAutomaticamente ? "Bloque reconciliado automáticamente" : "Bloque fijo vigente")
-                                                                                    : "Bloque pendiente de revisar por cambios en marcajes")
+                                                                            <div class="asis-dayline-list__status @ObtenerClaseEstadoVisualSegmento(segmento)">
+                                                                                @ObtenerEstadoVisualSegmento(segmento)
                                                                             </div>
+                                                                            @if (MostrarSugerenciaAlternada(segmento))
+                                                                            {
+                                                                                <div class="asis-dayline-list__detail">@ObtenerEtiquetaSugerenciaAlternada(segmento)</div>
+                                                                            }
                                                                         }
                                                                         @if (PuedeEditarSegmento(segmento))
                                                                         {

@@ -43,6 +43,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         decimal WidthPercent,
         string CssClass,
         string Detalle,
+        string? SugerenciaAlternada = null,
         int? NumeroDescanso = null,
         int? MinutosProgramados = null,
         int? MinutosAplicados = null,
@@ -956,6 +957,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 null,
                 null,
                 null,
+                null,
                 true));
         }
 
@@ -973,7 +975,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 continue;
             }
 
-            var clasificacion = ClasificarSegmentoDia(inicioMarcacion, finMarcacion, detalleTurno, inicio, fin, minutos);
+            var clasificacion = ClasificarSegmentoDia(inicioMarcacion, finMarcacion, detalleTurno, inicio, fin, minutos, i);
+            var sugerenciaAlternada = ObtenerSugerenciaAlternadaSegmento(i, clasificacion.Accion, clasificacion.EstadoResolucion, clasificacion.FueInferidoAutomaticamente);
             var porcentaje = Math.Clamp(decimal.Round(minutos * 100m / referencia, 2, MidpointRounding.AwayFromZero), 10m, 100m);
             var (numeroDescanso, minutosProgramados, minutosAplicados, origenAplicado) = clasificacion.Accion == "descanso"
                 ? ObtenerPresentacionDescanso(detalleTurno, inicioMarcacion.Id, finMarcacion.Id, inicio.TimeOfDay, fin.TimeOfDay, minutos)
@@ -986,6 +989,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 porcentaje,
                 clasificacion.CssClass,
                 clasificacion.Detalle,
+                sugerenciaAlternada,
                 numeroDescanso,
                 minutosProgramados,
                 minutosAplicados,
@@ -1003,7 +1007,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         return segmentos;
     }
 
-    private (string Titulo, string CssClass, string Detalle, TipoClasificacionMarcacionRrhh ClasificacionInicio, TipoClasificacionMarcacionRrhh ClasificacionFin, string Accion, EstadoSegmentoResolucionRrhh EstadoResolucion, bool FueInferidoAutomaticamente) ClasificarSegmentoDia(RrhhMarcacion inicio, RrhhMarcacion fin, TurnoBaseDetalle? detalleTurno, DateTime inicioLocal, DateTime finLocal, int minutos)
+    private (string Titulo, string CssClass, string Detalle, TipoClasificacionMarcacionRrhh ClasificacionInicio, TipoClasificacionMarcacionRrhh ClasificacionFin, string Accion, EstadoSegmentoResolucionRrhh EstadoResolucion, bool FueInferidoAutomaticamente) ClasificarSegmentoDia(RrhhMarcacion inicio, RrhhMarcacion fin, TurnoBaseDetalle? detalleTurno, DateTime inicioLocal, DateTime finLocal, int minutos, int indiceSegmento)
     {
         var resolucion = ObtenerResolucionSegmento(inicio.Id, fin.Id);
         var accionPayload = resolucion == null
@@ -1011,6 +1015,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             : MapearAccionSegmento(resolucion.TipoSegmento);
         var estadoResolucion = resolucion?.Estado ?? EstadoSegmentoResolucionRrhh.RequiereRevision;
         var fueInferidoAutomaticamente = resolucion?.FueInferidoAutomaticamente ?? false;
+        var resolucionManualVigente = resolucion is { Estado: EstadoSegmentoResolucionRrhh.Vigente, FueInferidoAutomaticamente: false };
 
         if (inicio.EsAnulada || fin.EsAnulada)
         {
@@ -1027,12 +1032,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return ("Salida temporal", "asis-dayline__segment--temporal", "Tramo marcado como salida temporal fuera del horario laboral; no se trata como descanso.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "temporal", estadoResolucion, fueInferidoAutomaticamente);
         }
 
-        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Extra)
+        if (resolucionManualVigente && resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Extra)
         {
             return ("Bloque extra", "asis-dayline__segment--extra", "Tramo fijado manualmente como tiempo adicional al turno; no debe volver a interpretarse como descanso.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "extra", estadoResolucion, fueInferidoAutomaticamente);
         }
 
-        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
+        if (resolucionManualVigente && resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
         {
             return ("Trabajo principal", "asis-dayline__segment--trabajo", "Tramo fijado manualmente como parte de la jornada principal; no debe volver a interpretarse como descanso.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "trabajo", estadoResolucion, fueInferidoAutomaticamente);
         }
@@ -1062,6 +1067,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             }
         }
 
+        if (resolucion == null)
+        {
+            var esPausaAlternada = ((indiceSegmento / 2) % 2) == 1;
+            if (esPausaAlternada)
+            {
+                return ("Pausa sugerida", "asis-dayline__segment--descanso", "Tramo mostrado como pausa por alternancia base; confirma si corresponde descanso, permiso o salida temporal.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "descanso", estadoResolucion, true);
+            }
+        }
+
         return ("Trabajo detectado", "asis-dayline__segment--trabajo", "Segmento tomado como parte de la jornada principal o del trabajo efectivo del día.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "trabajo", estadoResolucion, fueInferidoAutomaticamente);
     }
 
@@ -1074,6 +1088,53 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         return ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin).HasValue;
     }
+
+    private static string? ObtenerSugerenciaAlternadaSegmento(int indiceSegmento, string accionActual, EstadoSegmentoResolucionRrhh estadoResolucion, bool fueInferidoAutomaticamente)
+    {
+        if (estadoResolucion == EstadoSegmentoResolucionRrhh.Vigente && !fueInferidoAutomaticamente)
+        {
+            return null;
+        }
+
+        var sugiereTrabajo = indiceSegmento % 2 == 0;
+        if (sugiereTrabajo)
+        {
+            return accionActual is "trabajo" or "extra"
+                ? "Alternancia base: trabajo"
+                : "Alternancia base sugiere trabajo; revisa si este tramo realmente es descanso, permiso o salida temporal.";
+        }
+
+        return accionActual is "descanso" or "permiso" or "temporal"
+            ? "Alternancia base: pausa"
+            : "Alternancia base sugiere pausa; revisa si este tramo debería clasificarse como descanso, permiso o salida temporal.";
+    }
+
+    private static bool MostrarSugerenciaAlternada(TimelineSegmentoDia segmento)
+        => !string.IsNullOrWhiteSpace(segmento.SugerenciaAlternada)
+            && segmento.SugerenciaAlternada.Contains("sugiere", StringComparison.OrdinalIgnoreCase);
+
+    private static string ObtenerTituloVisualSegmento(TimelineSegmentoDia segmento, int indiceVisual)
+        => segmento.EsReferenciaTurno
+            ? "Turno esperado"
+            : $"{indiceVisual}. {segmento.Titulo}";
+
+    private static string ObtenerEstadoVisualSegmento(TimelineSegmentoDia segmento)
+    {
+        if (segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente)
+        {
+            return segmento.FueInferidoAutomaticamente ? "Inferido" : "Fijo";
+        }
+
+        return "Revisar";
+    }
+
+    private static string ObtenerClaseEstadoVisualSegmento(TimelineSegmentoDia segmento)
+        => segmento.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente
+            ? "asis-dayline-list__status--ok"
+            : "asis-dayline-list__status--warn";
+
+    private static bool MostrarDetalleLargoSegmento(TimelineSegmentoDia segmento)
+        => segmento.EsReferenciaTurno || segmento.Accion == "descanso" || segmento.EstadoResolucion != EstadoSegmentoResolucionRrhh.Vigente || segmento.FueInferidoAutomaticamente;
 
     private (int? NumeroDescanso, int? MinutosProgramados, int? MinutosAplicados, string? OrigenAplicado) ObtenerPresentacionDescanso(TurnoBaseDetalle? detalleTurno, Guid inicioId, Guid finId, TimeSpan inicio, TimeSpan fin, int minutosDetectados)
     {
@@ -1277,6 +1338,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string ObtenerAyudaAccionSegmentoSeleccionada(TimelineSegmentoDia segmento)
         => ObtenerOpcionesAccionSegmento(segmento).FirstOrDefault(o => o.Clave == segmentoAccionSeleccionada)?.Ayuda
             ?? "Selecciona cómo debe interpretarse este tramo del día.";
+
+    private static string ObtenerEtiquetaSugerenciaAlternada(TimelineSegmentoDia segmento)
+        => string.IsNullOrWhiteSpace(segmento.SugerenciaAlternada) ? string.Empty : segmento.SugerenciaAlternada!;
 
     private IReadOnlyList<ResumenLateralItem> ObtenerResumenLateralTimeline()
     {

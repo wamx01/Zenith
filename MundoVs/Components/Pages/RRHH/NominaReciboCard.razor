@@ -66,6 +66,19 @@
         font-weight: 800;
     }
 
+    .nomina-recibo-brand--empty {
+        border-style: dashed;
+        color: transparent;
+    }
+
+    .nomina-recibo-brand img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        border-radius: 14px;
+        background: #fff;
+    }
+
     .nomina-recibo-label {
         font-size: .72rem;
         color: #475569;
@@ -210,7 +223,16 @@
             <div>Régimen trabajador: @Detalle.TipoPago</div>
         </div>
         <div class="text-center">
-            <div class="nomina-recibo-brand">@InicialesEmpresa</div>
+            <div class="nomina-recibo-brand">
+                @if (!string.IsNullOrWhiteSpace(LogoEmpresaUrl))
+                {
+                    <img src="@LogoEmpresaUrl" alt="Logo de @NombreEmpresa" />
+                }
+                else
+                {
+                    <span class="nomina-recibo-brand--empty">&nbsp;</span>
+                }
+            </div>
             <div class="nomina-recibo-company-name">@NombreEmpresa.ToUpperInvariant()</div>
             @if (!string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.Slogan))
             {
@@ -239,7 +261,7 @@
                 <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">No. Nómina</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Nomina.NumeroNomina) ? "—" : Detalle.Nomina.NumeroNomina)</div></div>
                 <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Folio</div><div class="nomina-recibo-value">@(string.IsNullOrWhiteSpace(Detalle.Nomina.Folio) ? "—" : Detalle.Nomina.Folio)</div></div>
                 <div class="nomina-recibo-span-4"><div class="nomina-recibo-label">Período</div><div class="nomina-recibo-value">@Detalle.Nomina.FechaInicio.ToString("dd/MM/yyyy") al @Detalle.Nomina.FechaFin.ToString("dd/MM/yyyy")</div></div>
-                <div class="nomina-recibo-span-3"><div class="nomina-recibo-label">Días trab.</div><div class="nomina-recibo-value">@Detalle.DiasTrabajados</div></div>
+                <div class="nomina-recibo-span-3"><div class="nomina-recibo-label">Días del período</div><div class="nomina-recibo-value">@Detalle.DiasPagados</div></div>
                 <div class="nomina-recibo-span-3"><div class="nomina-recibo-label">Faltas</div><div class="nomina-recibo-value">@Detalle.DiasFaltaInjustificada</div></div>
             </div>
         </div>
@@ -288,6 +310,29 @@
                 <div class="nomina-recibo-summary-row"><span>Neto pagado</span><strong>@Recibo.NetoPagar.ToString("C2")</strong></div>
                 <div class="nomina-recibo-summary-row"><span>Total en efectivo</span><strong>@Recibo.NetoPagar.ToString("C2")</strong></div>
             </div>
+            <div class="nomina-recibo-summary mt-3">
+                <div class="nomina-recibo-summary-row"><span>Saldo actual banco de horas</span><strong>@FormatearHoras(Recibo.SaldoActualBancoHoras)</strong></div>
+                <div class="nomina-recibo-bar mt-3">Movimientos banco de horas</div>
+                @if (Recibo.MovimientosBancoHoras.Count > 0)
+                {
+                    <table class="nomina-recibo-table">
+                        <tbody>
+                            @foreach (var movimiento in Recibo.MovimientosBancoHoras)
+                            {
+                                <tr>
+                                    <td class="nomina-recibo-code">@movimiento.Fecha.ToString("dd/MM")</td>
+                                    <td>@movimiento.Tipo@(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? string.Empty : $" - {movimiento.Observaciones}")</td>
+                                    <td class="nomina-recibo-amount">@FormatearHoras(movimiento.Horas)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="small text-muted mt-2">Sin movimientos de banco de horas en el período.</div>
+                }
+            </div>
         </div>
         <div>
             <div class="nomina-recibo-signature">Firma</div>
@@ -304,6 +349,7 @@
     [Parameter, EditorRequired] public required NominaDetalle Detalle { get; set; }
     [Parameter, EditorRequired] public required NominaReciboResult Recibo { get; set; }
     [Parameter] public string CssClass { get; set; } = string.Empty;
+    [Parameter] public string? LogoEmpresaUrl { get; set; }
 
     private string NombreEmpresa => string.IsNullOrWhiteSpace(Detalle.Nomina.Empresa.NombreComercial)
         ? Detalle.Nomina.Empresa.RazonSocial
@@ -322,4 +368,7 @@
     private string DepartamentoEmpleado => string.IsNullOrWhiteSpace(Detalle.Empleado.Departamento)
         ? "—"
         : Detalle.Empleado.Departamento;
+
+    private static string FormatearHoras(decimal horas)
+        => $"{horas:0.##} h";
 }

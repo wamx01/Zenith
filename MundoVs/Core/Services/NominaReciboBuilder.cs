@@ -5,18 +5,24 @@ namespace MundoVs.Core.Services;
 
 public class NominaReciboBuilder : INominaReciboBuilder
 {
-    public NominaReciboResult Build(NominaDetalle detalle)
+    public NominaReciboResult Build(NominaDetalle detalle, IReadOnlyList<RrhhBancoHorasMovimiento>? movimientosBancoHoras = null, decimal saldoActualBancoHoras = 0m)
     {
         var percepciones = BuildPercepciones(detalle);
         var deducciones = BuildDeducciones(detalle);
+        var movimientos = (movimientosBancoHoras ?? [])
+            .OrderBy(m => m.Fecha)
+            .Select(m => new NominaReciboBancoHorasMovimiento(m.Fecha, ObtenerTextoMovimientoBanco(m.TipoMovimiento), m.Horas, m.Observaciones))
+            .ToList();
 
         return new NominaReciboResult
         {
             Percepciones = percepciones,
             Deducciones = deducciones,
+            MovimientosBancoHoras = movimientos,
             TotalPercepciones = percepciones.Sum(x => x.Importe),
             TotalDeducciones = deducciones.Sum(x => x.Importe),
-            NetoPagar = detalle.TotalPagar
+            NetoPagar = detalle.TotalPagar,
+            SaldoActualBancoHoras = saldoActualBancoHoras
         };
     }
 
@@ -86,10 +92,12 @@ public class NominaReciboBuilder : INominaReciboBuilder
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionCreditoInfonavit, "Infonavit", detalle.MontoInfonavit);
         var montoRetardo = CalcularImporteDescuentoParcial(detalle, detalle.MinutosRetardo);
         var montoSalidaAnticipada = CalcularImporteDescuentoParcial(detalle, detalle.MinutosSalidaAnticipada);
-        var montoDescuentoManual = Math.Max(0m, detalle.MontoDescuentoMinutos - detalle.MinutosRetardo - detalle.MinutosSalidaAnticipada);
-        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por retardos", montoRetardo);
-        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por salida anticipada", montoSalidaAnticipada);
-        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Descuento por minutos manuales", montoDescuentoManual);
+        var montoFaltante = CalcularImporteDescuentoParcial(detalle, detalle.MinutosFaltanteDescontable);
+        var montoDescuentoManual = CalcularImporteDescuentoParcial(detalle, detalle.MinutosDescuentoManual);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Retardo", detalle.MinutosRetardo, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoRetardo);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Salida anticipada", detalle.MinutosSalidaAnticipada, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoSalidaAnticipada);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Tiempo no laborado", detalle.MinutosFaltanteDescontable, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoFaltante);
+        AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Ajuste manual de tiempo", detalle.MinutosDescuentoManual, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoDescuentoManual);
 
         var deduccionesEstructuradas = detalle.DeduccionesEstructuradas
             .Where(d => d.IsActive)
@@ -127,7 +135,7 @@ public class NominaReciboBuilder : INominaReciboBuilder
 
     private static decimal CalcularImporteDescuentoParcial(NominaDetalle detalle, int minutosParciales)
     {
-        var minutosTotales = Math.Max(0, detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual);
+        var minutosTotales = Math.Max(0, detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosFaltanteDescontable + detalle.MinutosDescuentoManual);
         if (minutosTotales <= 0 || minutosParciales <= 0 || detalle.MontoDescuentoMinutos <= 0)
         {
             return 0m;
@@ -149,4 +157,18 @@ public class NominaReciboBuilder : INominaReciboBuilder
 
     private static string ResolverClavePercepcionBono(string? claveConfigurada)
         => string.IsNullOrWhiteSpace(claveConfigurada) ? NominaSatCatalogos.Sistema.PercepcionOtrosIngresosSalarios : claveConfigurada;
+
+    private static string ConstruirConceptoMinutos(string etiquetaBase, int minutos, DateTime fechaInicio, DateTime fechaFin)
+        => minutos > 0
+            ? $"{etiquetaBase} ({minutos} min · {fechaInicio:dd/MM} al {fechaFin:dd/MM})"
+            : etiquetaBase;
+
+    private static string ObtenerTextoMovimientoBanco(TipoMovimientoBancoHorasRrhh tipo)
+        => tipo switch
+        {
+            TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra => "Tiempo extra enviado a banco",
+            TipoMovimientoBancoHorasRrhh.Consumo => "Consumo",
+            TipoMovimientoBancoHorasRrhh.AjusteManual => "Ajuste manual",
+            _ => tipo.ToString()
+        };
 }

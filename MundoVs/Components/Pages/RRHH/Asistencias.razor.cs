@@ -27,6 +27,9 @@ public partial class Asistencias : ComponentBase
     private Guid _empresaId;
     private bool cargando;
     private bool reprocesando;
+    private int reprocesoProgresoProcesados;
+    private int reprocesoProgresoTotal;
+    private string? reprocesoProgresoTexto;
     private bool mostrarReproceso;
     private bool mostrarCorreccionDia;
     private bool exportandoCsv;
@@ -178,6 +181,9 @@ public partial class Asistencias : ComponentBase
             reprocesoEmpleadoIdTexto = string.Empty;
             reprocesoDesde = DateTime.Today.AddDays(-7);
             reprocesoHasta = DateTime.Today;
+            reprocesoProgresoProcesados = 0;
+            reprocesoProgresoTotal = 0;
+            reprocesoProgresoTexto = null;
         }
     }
 
@@ -225,10 +231,20 @@ public partial class Asistencias : ComponentBase
             : (Guid?)null;
 
         reprocesando = true;
+        reprocesoProgresoProcesados = 0;
+        reprocesoProgresoTotal = 0;
+        reprocesoProgresoTexto = "Preparando grupos a recalcular...";
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            var grupos = await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fechaDesde, fechaHasta, empleadoId);
+            var progress = new Progress<RrhhAsistenciaReprocesoProgreso>(avance =>
+            {
+                reprocesoProgresoProcesados = avance.Procesados;
+                reprocesoProgresoTotal = avance.Total;
+                reprocesoProgresoTexto = $"Procesando {avance.Procesados} de {avance.Total} grupos... {avance.Fecha:dd/MM}";
+                InvokeAsync(StateHasChanged);
+            });
+            var grupos = await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fechaDesde, fechaHasta, empleadoId, progress);
 
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
             db.RrhhLogsChecador.Add(new RrhhLogChecador
@@ -257,6 +273,9 @@ public partial class Asistencias : ComponentBase
             reprocesando = false;
         }
     }
+
+    private int ObtenerPorcentajeReproceso()
+        => reprocesoProgresoTotal <= 0 ? 0 : (int)Math.Round((decimal)reprocesoProgresoProcesados * 100m / reprocesoProgresoTotal, MidpointRounding.AwayFromZero);
 
     private Task AbrirCorreccionDiaAsync(RrhhAsistencia asistencia)
     {

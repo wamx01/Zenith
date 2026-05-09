@@ -160,9 +160,7 @@
                         <span class="badge text-bg-light">Horas extra pagables: @detallesEditando.Sum(d => d.HorasExtra).ToString("0.##")</span>
                         <span class="badge text-bg-light">Extra base: @detallesEditando.Sum(d => d.HorasExtraBase).ToString("0.##")</span>
                         <span class="badge text-bg-light">Netas asistencia: @detallesEditando.Sum(d => d.HorasTrabajadasNetas).ToString("0.##")</span>
-                        <span class="badge text-bg-light">Min. retardo: @detallesEditando.Sum(d => d.MinutosRetardo)</span>
-                        <span class="badge text-bg-light">Min. salida ant.: @detallesEditando.Sum(d => d.MinutosSalidaAnticipada)</span>
-                        <span class="badge text-bg-light">Min. desc. manual: @detallesEditando.Sum(d => d.MinutosDescuentoManual)</span>
+                        <span class="badge text-bg-light">Tiempo descontado total: @detallesEditando.Sum(d => ObtenerMinutosDescuentoTotal(d)) min</span>
                         <span class="badge text-bg-light">Banco +: @detallesEditando.Sum(d => d.HorasBancoAcumuladas).ToString("0.##")</span>
                         <span class="badge text-bg-light">Banco -: @detallesEditando.Sum(d => d.HorasBancoConsumidas).ToString("0.##")</span>
                         <span class="badge text-bg-light">Saldo banco: @detallesEditando.Sum(d => d.HorasBancoSaldoActual).ToString("0.##")</span>
@@ -231,6 +229,7 @@
                                                 <span class="badge rounded-pill text-bg-light border">Fest @detalle.DiasFestivoTrabajado</span>
                                                 <span class="badge rounded-pill text-bg-light border">Ret @detalle.MinutosRetardo min</span>
                                                 <span class="badge rounded-pill text-bg-light border">S.Ant @detalle.MinutosSalidaAnticipada min</span>
+                                                <span class="badge rounded-pill text-bg-light border">Falt. desc. @detalle.MinutosFaltanteDescontable min</span>
                                             </div>
                                         </td>
                                         <td class="small">
@@ -282,6 +281,10 @@
                                             <span class="badge text-bg-light">Banco + @FormatearHorasResumen(detalleModalSeleccionado.HorasBancoAcumuladas)</span>
                                             <span class="badge text-bg-light">Banco - @FormatearHorasResumen(detalleModalSeleccionado.HorasBancoConsumidas)</span>
                                             <span class="badge text-bg-light">Saldo banco @FormatearHorasResumen(detalleModalSeleccionado.HorasBancoSaldoActual)</span>
+                                            @if (detalleModalSeleccionado.MinutosPerdonadosManual > 0)
+                                            {
+                                                <span class="badge text-bg-light">Perdón @detalleModalSeleccionado.MinutosPerdonadosManual min</span>
+                                            }
                                             <span class="badge text-bg-light">Destajo @detalleModalSeleccionado.MontoDestajoInformativo.ToString("C2")</span>
                                             <span class="badge text-bg-light">Comp. mín. @detalleModalSeleccionado.ComplementoSalarioMinimoSugerido.ToString("C2")</span>
                                             @if (TieneFestivosAplicados(detalleModalSeleccionado.EmpleadoId))
@@ -364,16 +367,8 @@
                                                                 <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.HorasBancoConsumidas" disabled="true" />
                                                             </div>
                                                             <div class="col-md-4">
-                                                                <label class="form-label small mb-1">Retardo (min)</label>
-                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosRetardo" disabled="@(!PuedeModificarPrenominaActual)" />
-                                                            </div>
-                                                            <div class="col-md-4">
-                                                                <label class="form-label small mb-1">Salida ant. (min)</label>
-                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosSalidaAnticipada" disabled="@(!PuedeModificarPrenominaActual)" />
-                                                            </div>
-                                                            <div class="col-md-4">
-                                                                <label class="form-label small mb-1">Desc. manual (min)</label>
-                                                                <InputNumber class="form-control form-control-sm text-end" @bind-Value="detalleModalSeleccionado.MinutosDescuentoManual" disabled="@(!PuedeModificarPrenominaActual)" />
+                                                                <label class="form-label small mb-1">Tiempo descontado total (min)</label>
+                                                                <input class="form-control form-control-sm text-end" value="@ObtenerMinutosDescuentoTotal(detalleModalSeleccionado)" readonly />
                                                             </div>
                                                             <div class="col-md-4">
                                                                 <label class="form-label small mb-1">Descanso tomado</label>
@@ -814,6 +809,8 @@
             HorasDescansoNoPagado = d.HorasDescansoNoPagado,
             MinutosRetardo = d.MinutosRetardo,
             MinutosSalidaAnticipada = d.MinutosSalidaAnticipada,
+            MinutosPerdonadosManual = d.MinutosPerdonadosManual,
+            MinutosFaltanteDescontable = d.MinutosFaltanteDescontable,
             MinutosDescuentoManual = d.MinutosDescuentoManual,
             FactorPagoTiempoExtra = d.FactorPagoTiempoExtra,
             MontoDestajoInformativo = d.MontoDestajoInformativo,
@@ -1008,6 +1005,8 @@
             detalle.HorasDescansoNoPagado = snapshot.HorasDescansoNoPagado;
             detalle.MinutosRetardo = snapshot.MinutosRetardo;
             detalle.MinutosSalidaAnticipada = snapshot.MinutosSalidaAnticipada;
+            detalle.MinutosPerdonadosManual = snapshot.MinutosPerdonadosManual;
+            detalle.MinutosFaltanteDescontable = snapshot.MinutosFaltanteDescontable;
             detalle.DiasVacacionesDisponibles = snapshot.DiasVacacionesDisponibles;
             detalle.DiasVacacionesRestantes = Math.Max(0, detalle.DiasVacacionesDisponibles - detalle.DiasVacaciones);
             detalle.ComplementoSalarioMinimoSugerido = snapshot.ComplementoSalarioMinimoSugerido;
@@ -1054,6 +1053,8 @@
             HorasDescansoNoPagado = snapshot.HorasDescansoNoPagado,
             MinutosRetardo = snapshot.MinutosRetardo,
             MinutosSalidaAnticipada = snapshot.MinutosSalidaAnticipada,
+            MinutosPerdonadosManual = snapshot.MinutosPerdonadosManual,
+            MinutosFaltanteDescontable = snapshot.MinutosFaltanteDescontable,
             MinutosDescuentoManual = snapshot.MinutosDescuentoManual,
             FactorPagoTiempoExtra = snapshot.FactorPagoTiempoExtra,
             MontoDestajoInformativo = snapshot.MontoDestajoInformativo,
@@ -1117,7 +1118,10 @@
             : string.Join(", ", festivos.Select(f => $"{f.Fecha:dd/MM} {f.Nombre} x{f.Factor:0.##}{(f.UsaFallback ? " (global)" : string.Empty)}"));
 
     private static int ObtenerMinutosDescuentoTotal(PrenominaDetalleEditable detalle)
-        => Math.Max(0, detalle.MinutosRetardo) + Math.Max(0, detalle.MinutosSalidaAnticipada) + Math.Max(0, detalle.MinutosDescuentoManual);
+        => Math.Max(0, detalle.MinutosRetardo)
+            + Math.Max(0, detalle.MinutosSalidaAnticipada)
+            + Math.Max(0, detalle.MinutosFaltanteDescontable)
+            + Math.Max(0, detalle.MinutosDescuentoManual);
 
 
     private async Task GuardarPrenomina()
@@ -1288,6 +1292,7 @@
                 entity.HorasDescansoNoPagado = detalle.HorasDescansoNoPagado;
                 entity.MinutosRetardo = detalle.MinutosRetardo;
                 entity.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
+                entity.MinutosFaltanteDescontable = detalle.MinutosFaltanteDescontable;
                 entity.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
                 entity.FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra;
                 entity.MontoDestajoInformativo = detalle.MontoDestajoInformativo;
@@ -1935,6 +1940,8 @@
         public int MinutosSalidaAnticipada { get; set; }
         public int MinutosRetardoOriginales { get; set; }
         public int MinutosSalidaAnticipadaOriginales { get; set; }
+        public int MinutosPerdonadosManual { get; set; }
+        public int MinutosFaltanteDescontable { get; set; }
         public int MinutosDescuentoManual { get; set; }
         public decimal FactorPagoTiempoExtra { get; set; }
         public decimal MontoDestajoInformativo { get; set; }

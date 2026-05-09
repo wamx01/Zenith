@@ -134,7 +134,7 @@
                 .ThenBy(d => d.Empleado.ApellidoPaterno)
                 .ToListAsync();
 
-            recibos = detalles.ToDictionary(d => d.Id, NominaReciboBuilder.Build);
+            recibos = detalles.ToDictionary(d => d.Id, d => NominaReciboBuilder.Build(d));
         }
         catch (Exception ex)
         {

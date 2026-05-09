@@ -30,6 +30,8 @@ public class PrenominaDetalle : BaseEntity
     public int DiasConMarcacion { get; set; }
     public int MinutosRetardo { get; set; }
     public int MinutosSalidaAnticipada { get; set; }
+    public int MinutosPerdonadosManual { get; set; }
+    public int MinutosFaltanteDescontable { get; set; }
     public int MinutosDescuentoManual { get; set; }
     public decimal FactorPagoTiempoExtra { get; set; }
     public decimal MontoDestajoInformativo { get; set; }

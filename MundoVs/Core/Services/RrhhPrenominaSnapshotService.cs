@@ -115,6 +115,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 HorasDescansoNoPagado = resumen.HorasDescansoNoPagado,
                 MinutosRetardo = resumen.MinutosRetardo,
                 MinutosSalidaAnticipada = resumen.MinutosSalidaAnticipada,
+                MinutosFaltanteDescontable = resumen.MinutosFaltanteDescontable,
                 MinutosDescuentoManual = 0,
                 FactorPagoTiempoExtra = configuracion.FactorHoraExtra,
                 MontoDestajoInformativo = montoDestajoEmpleado,
@@ -176,12 +177,24 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 && a.Fecha <= DateOnly.FromDateTime(fin))
             .ToListAsync(cancellationToken);
 
+        var permisosPeriodo = await db.RrhhAusencias
+            .AsNoTracking()
+            .Where(a => empleadoIds.Contains(a.EmpleadoId)
+                && a.IsActive
+                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
+                && a.FechaInicio <= DateOnly.FromDateTime(fin)
+                && a.FechaFin >= DateOnly.FromDateTime(inicio))
+            .ToListAsync(cancellationToken);
+
+        var permisosPorDia = ConstruirPermisosPorDia(permisosPeriodo, DateOnly.FromDateTime(inicio), DateOnly.FromDateTime(fin));
+
         return asistenciasPeriodo
             .GroupBy(a => a.EmpleadoId)
-            .ToDictionary(g => g.Key, g => ConstruirResumenAsistencia(g.ToList(), festivosPeriodoSet, configuracion));
+            .ToDictionary(g => g.Key, g => ConstruirResumenAsistencia(g.ToList(), festivosPeriodoSet, configuracion, permisosPorDia));
     }
 
-    private static ResumenAsistenciaPrenominaSnapshot ConstruirResumenAsistencia(IReadOnlyCollection<RrhhAsistencia> asistencias, IReadOnlySet<DateOnly> festivosPeriodo, NominaConfiguracion configuracion)
+    private static ResumenAsistenciaPrenominaSnapshot ConstruirResumenAsistencia(IReadOnlyCollection<RrhhAsistencia> asistencias, IReadOnlySet<DateOnly> festivosPeriodo, NominaConfiguracion configuracion, IReadOnlyDictionary<string, int> permisosPorDia)
     {
         if (asistencias.Count == 0)
         {
@@ -231,8 +244,10 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var minutosDescansoNoPagado = asistencias.Sum(a => a.MinutosDescansoNoPagado);
         var minutosRetardoOriginales = asistencias.Sum(a => Math.Max(0, a.MinutosRetardo));
         var minutosSalidaAnticipadaOriginales = asistencias.Sum(a => Math.Max(0, a.MinutosSalidaAnticipada));
+        var minutosPerdonadosManual = asistencias.Sum(a => Math.Max(0, a.MinutosPerdonadosManual));
         var minutosRetardo = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a));
         var minutosSalidaAnticipada = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a));
+        var minutosFaltanteDescontable = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a)));
         var diasCubiertosBanco = asistencias.Count(a => a.MinutosCubiertosBancoHoras > 0);
         if (diasCubiertosBanco > 0)
         {
@@ -271,9 +286,36 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             MinutosSalidaAnticipada = minutosSalidaAnticipada,
             MinutosRetardoOriginales = minutosRetardoOriginales,
             MinutosSalidaAnticipadaOriginales = minutosSalidaAnticipadaOriginales,
+            MinutosPerdonadosManual = minutosPerdonadosManual,
+            MinutosFaltanteDescontable = minutosFaltanteDescontable,
             NotasRevision = notas.Count == 0 ? null : string.Join(" | ", notas)
         };
     }
+
+    private static Dictionary<string, int> ConstruirPermisosPorDia(IReadOnlyCollection<RrhhAusencia> permisos, DateOnly desde, DateOnly hasta)
+    {
+        var resultado = new Dictionary<string, int>();
+        foreach (var permiso in permisos)
+        {
+            var inicio = permiso.FechaInicio < desde ? desde : permiso.FechaInicio;
+            var fin = permiso.FechaFin > hasta ? hasta : permiso.FechaFin;
+            var minutosPorDia = (int)Math.Round(Math.Max(0m, permiso.Horas) * 60m, MidpointRounding.AwayFromZero);
+            for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(1))
+            {
+                resultado[CrearClavePermiso(permiso.EmpleadoId, fecha)] = minutosPorDia;
+            }
+        }
+
+        return resultado;
+    }
+
+    private static int ObtenerMinutosPermisoAplicados(IReadOnlyDictionary<string, int> permisosPorDia, RrhhAsistencia asistencia)
+        => permisosPorDia.TryGetValue(CrearClavePermiso(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
+            ? Math.Max(0, minutos)
+            : Math.Max(0, asistencia.MinutosCubiertosBancoHoras);
+
+    private static string CrearClavePermiso(Guid empleadoId, DateOnly fecha)
+        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string? ConstruirNotaAusencias(IEnumerable<RrhhAusencia> ausencias)
     {
@@ -314,6 +356,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         public int MinutosSalidaAnticipada { get; set; }
         public int MinutosRetardoOriginales { get; set; }
         public int MinutosSalidaAnticipadaOriginales { get; set; }
+        public int MinutosPerdonadosManual { get; set; }
+        public int MinutosFaltanteDescontable { get; set; }
         public string? NotasRevision { get; set; }
     }
 }

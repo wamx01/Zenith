@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MundoVs.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using MundoVs.Infrastructure.Data;
 namespace MundoVs.Migrations
 {
     [DbContext(typeof(CrmDbContext))]
-    partial class CrmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260508193302_PrenominaDetalleMinutosFaltanteDescontable")]
+    partial class PrenominaDetalleMinutosFaltanteDescontable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3854,9 +3857,6 @@ namespace MundoVs.Migrations
                     b.Property<int>("MinutosFaltanteDescontable")
                         .HasColumnType("int");
 
-                    b.Property<int>("MinutosPerdonadosManual")
-                        .HasColumnType("int");
-
                     b.Property<int>("MinutosRetardo")
                         .HasColumnType("int");
 
@@ -5371,9 +5371,6 @@ namespace MundoVs.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosFaltanteDescontable")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosPerdonadosManual")
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosRetardo")

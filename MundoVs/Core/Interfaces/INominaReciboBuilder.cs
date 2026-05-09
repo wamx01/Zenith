@@ -5,5 +5,5 @@ namespace MundoVs.Core.Interfaces;
 
 public interface INominaReciboBuilder
 {
-    NominaReciboResult Build(NominaDetalle detalle);
+    NominaReciboResult Build(NominaDetalle detalle, IReadOnlyList<RrhhBancoHorasMovimiento>? movimientosBancoHoras = null, decimal saldoActualBancoHoras = 0m);
 }

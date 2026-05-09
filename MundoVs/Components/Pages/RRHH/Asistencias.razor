@@ -110,6 +110,21 @@
                                 </button>
                                 <button class="btn btn-outline-secondary" @onclick="AlternarReproceso" disabled="@reprocesando">Cancelar</button>
                             </div>
+                            @if (reprocesando)
+                            {
+                                <div class="col-12">
+                                    <div class="asis-progress">
+                                        <div class="asis-progress__head">
+                                            <strong>Recalculando asistencias</strong>
+                                            <span>@ObtenerPorcentajeReproceso()%</span>
+                                        </div>
+                                        <div class="progress asis-progress__bar-wrap" role="progressbar" aria-valuenow="@ObtenerPorcentajeReproceso()" aria-valuemin="0" aria-valuemax="100">
+                                            <div class="progress-bar progress-bar-striped progress-bar-animated asis-progress__bar" style="width:@($"{ObtenerPorcentajeReproceso()}%")"></div>
+                                        </div>
+                                        <div class="asis-progress__text">@(string.IsNullOrWhiteSpace(reprocesoProgresoTexto) ? "Preparando reproceso..." : reprocesoProgresoTexto)</div>
+                                    </div>
+                                </div>
+                            }
                             <div class="col-12">
                                 <small class="text-muted">El reproceso vuelve a intentar ligar marcaciones sin empleado usando `CodigoChecador` y luego recalcula la asistencia del rango seleccionado.</small>
                             </div>

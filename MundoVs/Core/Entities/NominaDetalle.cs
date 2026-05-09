@@ -69,6 +69,8 @@ public class NominaDetalle
     public decimal Deducciones { get; set; }
     public int MinutosRetardo { get; set; }
     public int MinutosSalidaAnticipada { get; set; }
+    public int MinutosPerdonadosManual { get; set; }
+    public int MinutosFaltanteDescontable { get; set; }
     public int MinutosDescuentoManual { get; set; }
     public decimal MontoDescuentoMinutos { get; set; }
     public string? ConceptoDeducciones { get; set; }
