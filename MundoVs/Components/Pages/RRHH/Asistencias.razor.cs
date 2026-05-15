@@ -76,8 +76,12 @@ public partial class Asistencias : ComponentBase
     private async Task CargarAccesoAsync()
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
-        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
-        _puedeReprocesar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _puedeVer = state.User.HasClaim("Capacidad", "rrhh.asistencias.ver")
+            || state.User.HasClaim("Capacidad", "empleados.ver")
+            || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeReprocesar = state.User.HasClaim("Capacidad", "rrhh.asistencias.editar")
+            || state.User.HasClaim("Capacidad", "empleados.editar")
+            || state.User.HasClaim("Capacidad", "nominas.editar");
         _puedeAprobarTiempoExtra = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar") || state.User.HasClaim("Capacidad", "nominas.editar");
         _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }

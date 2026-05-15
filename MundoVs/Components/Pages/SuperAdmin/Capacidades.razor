@@ -3,6 +3,7 @@
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities.Auth
 @using MundoVs.Core.Interfaces
+@using MundoVs.Core.Security
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject IAuditService AuditService
@@ -55,7 +56,14 @@
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Módulo</label>
-                                        <InputText class="form-control" @bind-Value="editando.Modulo" />
+                                        <InputSelect class="form-select" @bind-Value="editando.ModuloAccesoIdTexto">
+                                            <option value="">Selecciona un módulo...</option>
+                                            @foreach (var modulo in modulosDisponibles)
+                                            {
+                                                <option value="@modulo.Id.ToString()">@modulo.Nombre (@modulo.Clave)</option>
+                                            }
+                                        </InputSelect>
+                                        <small class="text-muted">El módulo define la relación válida con <code>auth_modulo</code>.</small>
                                     </div>
                                     <div class="col-12">
                                         <label class="form-label">Descripción</label>
@@ -133,7 +141,8 @@
 
 @code {
     private List<Capacidad> capacidades = [];
-    private Capacidad editando = new();
+    private List<ModuloAccesoOpcionVm> modulosDisponibles = [];
+    private CapacidadEditVm editando = new();
     private bool mostrarFormulario;
     private bool cargando = true;
     private bool guardando;
@@ -153,6 +162,18 @@
     {
         mensajeError = null;
         await using var db = await DbFactory.CreateDbContextAsync();
+        modulosDisponibles = await db.ModulosAcceso.AsNoTracking()
+            .Where(m => m.IsActive)
+            .OrderBy(m => m.Orden)
+            .ThenBy(m => m.Nombre)
+            .Select(m => new ModuloAccesoOpcionVm
+            {
+                Id = m.Id,
+                Clave = m.Clave,
+                Nombre = m.Nombre
+            })
+            .ToListAsync();
+
         capacidades = await db.Capacidades.AsNoTracking()
             .OrderBy(c => c.Modulo)
             .ThenBy(c => c.Clave)
@@ -176,6 +197,7 @@
         mensajeError = null;
         mensajeOk = null;
         editando = new() { Id = Guid.Empty };
+        editando.ModuloAccesoIdTexto = string.Empty;
         mostrarFormulario = true;
     }
 
@@ -195,6 +217,8 @@
             Clave = c.Clave,
             Nombre = c.Nombre,
             Modulo = c.Modulo,
+            ModuloAccesoId = c.ModuloAccesoId,
+            ModuloAccesoIdTexto = c.ModuloAccesoId == Guid.Empty ? string.Empty : c.ModuloAccesoId.ToString(),
             Descripcion = c.Descripcion
         };
         mostrarFormulario = true;
@@ -224,12 +248,17 @@
             var nombre = (editando.Nombre ?? "").Trim();
             var modulo = (editando.Modulo ?? "").Trim();
             var descripcion = string.IsNullOrWhiteSpace(editando.Descripcion) ? null : editando.Descripcion.Trim();
+            var moduloAccesoSeleccionado = Guid.TryParse(editando.ModuloAccesoIdTexto, out var moduloAccesoId)
+                ? modulosDisponibles.FirstOrDefault(m => m.Id == moduloAccesoId)
+                : null;
 
-            if (string.IsNullOrWhiteSpace(clave) || string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(modulo))
+            if (string.IsNullOrWhiteSpace(clave) || string.IsNullOrWhiteSpace(nombre) || moduloAccesoSeleccionado == null)
             {
                 mensajeError = "Clave, nombre y módulo son requeridos.";
                 return;
             }
+
+            modulo = moduloAccesoSeleccionado.Nombre;
 
             await using var db = await DbFactory.CreateDbContextAsync();
 
@@ -247,6 +276,7 @@
                     Clave = clave,
                     Nombre = nombre,
                     Modulo = modulo,
+                    ModuloAccesoId = moduloAccesoSeleccionado.Id,
                     Descripcion = descripcion
                 };
                 db.Capacidades.Add(nueva);
@@ -265,6 +295,7 @@
                 existing.Clave = clave;
                 existing.Nombre = nombre;
                 existing.Modulo = modulo;
+                existing.ModuloAccesoId = moduloAccesoSeleccionado.Id;
                 existing.Descripcion = descripcion;
                 await db.SaveChangesAsync();
                 await AuditService.LogAsync("Editar capacidad", nameof(Capacidad), existing.Id, $"Capacidad {existing.Clave} actualizada.");
@@ -339,5 +370,17 @@
         {
             guardando = false;
         }
+    }
+
+    private sealed class ModuloAccesoOpcionVm
+    {
+        public Guid Id { get; set; }
+        public string Clave { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+    }
+
+    private sealed class CapacidadEditVm : Capacidad
+    {
+        public string ModuloAccesoIdTexto { get; set; } = string.Empty;
     }
 }

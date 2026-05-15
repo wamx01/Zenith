@@ -11,6 +11,162 @@
 <PageTitle>Turnos</PageTitle>
 
 <style>
+    .turnos-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .turnos-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: .9rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        box-shadow: 0 10px 25px rgba(15, 23, 42, .05);
+    }
+
+    .turnos-toolbar-copy {
+        display: flex;
+        flex-direction: column;
+        gap: .3rem;
+        min-width: 18rem;
+    }
+
+    .turnos-eyebrow {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .turnos-title {
+        font-size: 1.5rem;
+        line-height: 1.1;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0;
+    }
+
+    .turnos-subtitle {
+        margin: 0;
+        color: #64748b;
+        font-size: .9rem;
+        max-width: 45rem;
+    }
+
+    .turnos-toolbar-actions {
+        display: flex;
+        align-items: flex-start;
+        gap: .6rem;
+    }
+
+    .turnos-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+        gap: .75rem;
+    }
+
+    .turnos-kpi {
+        padding: .75rem .85rem;
+        border: 1px solid #e2e8f0;
+        border-radius: .8rem;
+        background: #fff;
+    }
+
+    .turnos-kpi-label {
+        display: block;
+        font-size: .7rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #64748b;
+        font-weight: 700;
+        margin-bottom: .2rem;
+    }
+
+    .turnos-kpi-value {
+        display: block;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.1;
+    }
+
+    .turnos-kpi-note {
+        display: block;
+        font-size: .74rem;
+        color: #64748b;
+        margin-top: .15rem;
+    }
+
+    .turnos-form-card .card-header,
+    .turnos-list-card .card-header {
+        padding: .8rem 1rem;
+    }
+
+    .turnos-form-card .card-body {
+        padding: 1rem;
+    }
+
+    .turnos-section-note {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem 1rem;
+        margin-bottom: .75rem;
+    }
+
+    .turnos-section-note p {
+        margin: 0;
+    }
+
+    .turnos-mini-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+    }
+
+    .turnos-mini-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .25rem .55rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: .72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .turnos-editor-table {
+        min-width: 980px;
+    }
+
+    .turnos-editor-table thead th {
+        vertical-align: middle;
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        white-space: nowrap;
+    }
+
+    .turnos-editor-table tbody td {
+        padding-top: .45rem;
+        padding-bottom: .45rem;
+        vertical-align: top;
+    }
+
+    .turnos-editor-table tbody tr + tr td {
+        border-top: 1px solid #e2e8f0;
+    }
+
     .turno-dia-row--descanso {
         background: #f8fafc;
         color: #94a3b8;
@@ -26,6 +182,29 @@
         font-weight: 700;
     }
 
+    .turno-dia-detalle {
+        margin-top: .3rem;
+        font-size: .68rem;
+        line-height: 1.25;
+        color: #64748b;
+        max-width: 13rem;
+    }
+
+    .turno-hora-stack {
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+        align-items: center;
+    }
+
+    .turno-hora-label {
+        font-size: .64rem;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
     .turno-hora-input {
         width: 5.5rem !important;
         font-size: .8rem !important;
@@ -36,10 +215,11 @@
         display: flex;
         flex-direction: column;
         gap: .25rem;
-        padding: .35rem .45rem;
+        padding: .3rem .4rem;
         border: 1px solid #e2e8f0;
         border-radius: .5rem;
         background: #fff;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
     }
 
     .turno-descanso-row {
@@ -52,7 +232,7 @@
         display: flex;
         flex-direction: column;
         gap: .4rem;
-        min-width: 16rem;
+        min-width: 14rem;
     }
 
     .turno-descanso-head {
@@ -62,10 +242,35 @@
         gap: .5rem;
     }
 
+    .turno-descanso-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .45rem;
+        flex-wrap: wrap;
+    }
+
+    .turno-descanso-toolbar .badge {
+        font-size: .68rem;
+    }
+
     .turno-descanso-label {
         font-size: .72rem;
         font-weight: 700;
         color: #334155;
+    }
+
+    .turno-descanso-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.6rem;
+        padding: .35rem .5rem;
+        border: 1px dashed #cbd5e1;
+        border-radius: .5rem;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: .72rem;
     }
 
     .turno-pagado-check {
@@ -81,6 +286,41 @@
         font-size: .74rem;
         font-weight: 700;
         white-space: nowrap;
+    }
+
+    .turno-planeado-meta {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: .2rem;
+    }
+
+    .turno-planeado-meta small {
+        font-size: .68rem;
+        color: #64748b;
+    }
+
+    .turno-copy-box {
+        display: flex;
+        flex-direction: column;
+        gap: .35rem;
+        min-width: 8.6rem;
+    }
+
+    .turno-copy-row {
+        display: flex;
+        align-items: center;
+        gap: .3rem;
+    }
+
+    .turno-copy-row .form-select {
+        min-width: 5.2rem;
+    }
+
+    .turno-copy-hint {
+        font-size: .66rem;
+        color: #64748b;
+        line-height: 1.2;
     }
 
     .turno-pill {
@@ -117,6 +357,40 @@
         gap: .35rem;
         margin-top: .4rem;
     }
+
+    .turnos-list-card .card-body {
+        padding: .9rem 1rem .7rem;
+    }
+
+    .turnos-card-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        margin-top: .7rem;
+    }
+
+    .turnos-card-metric {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .25rem .55rem;
+        border-radius: 999px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        font-size: .72rem;
+        color: #475569;
+        font-weight: 700;
+    }
+
+    .turnos-empty {
+        padding: 3rem 1rem;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .turnos-empty i {
+        color: #94a3b8;
+    }
 </style>
 
 <div class="container-fluid px-4">
@@ -126,30 +400,57 @@
     }
     else
     {
-        <div class="d-flex align-items-center justify-content-between mb-3">
-            <div>
-                <h1 class="display-6 fw-bold"><i class="bi bi-clock-history me-2"></i>Turnos</h1>
-                <p class="text-muted mb-0">Configura horarios base por día y úsalos después en la asignación de empleados.</p>
+        <div class="turnos-shell">
+            <div class="turnos-toolbar">
+                <div class="turnos-toolbar-copy">
+                    <span class="turnos-eyebrow">RRHH · Configuración base</span>
+                    <h1 class="turnos-title"><i class="bi bi-clock-history me-2"></i>Turnos</h1>
+                    <p class="turnos-subtitle">Define jornadas semanales, descansos y horas planeadas con una vista compacta para escritorio.</p>
+                </div>
+                <div class="turnos-toolbar-actions">
+                    @if (_puedeEditar)
+                    {
+                        <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo turno</button>
+                    }
+                </div>
             </div>
-            @if (_puedeEditar)
+
+            <div class="turnos-kpi-grid">
+                <div class="turnos-kpi">
+                    <span class="turnos-kpi-label">Turnos configurados</span>
+                    <span class="turnos-kpi-value">@lista.Count</span>
+                    <span class="turnos-kpi-note">@ContarTurnosActivos() activos</span>
+                </div>
+                <div class="turnos-kpi">
+                    <span class="turnos-kpi-label">Plantilla asignada</span>
+                    <span class="turnos-kpi-value">@TotalEmpleadosAsignados()</span>
+                    <span class="turnos-kpi-note">empleado(s) en turnos base</span>
+                </div>
+                <div class="turnos-kpi">
+                    <span class="turnos-kpi-label">Horas semanales</span>
+                    <span class="turnos-kpi-value">@FormatearMinutos(TotalMinutosSemanales())</span>
+                    <span class="turnos-kpi-note">suma planeada visible</span>
+                </div>
+                <div class="turnos-kpi">
+                    <span class="turnos-kpi-label">Editor</span>
+                    <span class="turnos-kpi-value">@(mostrarForm ? "Abierto" : "Listo")</span>
+                    <span class="turnos-kpi-note">@(mostrarForm ? editando.Nombre ?? string.Empty : "Selecciona o crea un turno")</span>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(error))
             {
-                <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-circle me-1"></i>Nuevo turno</button>
+                <div class="alert alert-danger py-2 small">@error</div>
             }
-        </div>
 
-        @if (!string.IsNullOrWhiteSpace(error))
-        {
-            <div class="alert alert-danger py-2 small">@error</div>
-        }
+            @if (!string.IsNullOrWhiteSpace(ok))
+            {
+                <div class="alert alert-success py-2 small">@ok</div>
+            }
 
-        @if (!string.IsNullOrWhiteSpace(ok))
-        {
-            <div class="alert alert-success py-2 small">@ok</div>
-        }
-
-        @if (mostrarForm)
-        {
-            <div class="card mb-4 border-0 shadow-sm">
+            @if (mostrarForm)
+            {
+                <div class="card mb-4 border-0 shadow-sm turnos-form-card">
                 <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                     <span class="fw-semibold"><i class="bi bi-pencil-square me-2"></i>@(editando.Id == Guid.Empty ? "Nuevo turno" : $"Editando: {editando.Nombre}")</span>
                     <span class="badge @(editando.IsActive ? "bg-success" : "bg-secondary")">@(editando.IsActive ? "Activo" : "Inactivo")</span>
@@ -172,10 +473,17 @@
                         </div>
                     </div>
 
-                    <p class="small text-muted mb-2"><i class="bi bi-lightbulb me-1"></i>Configura un día y usa <strong>Copiar &rarr;</strong> para replicarlo a otro día o a toda la semana.</p>
+                    <div class="turnos-section-note">
+                        <p class="small text-muted"><i class="bi bi-lightbulb me-1"></i>Configura un día y usa <strong>Copiar &rarr;</strong> para replicarlo a otro día o a toda la semana.</p>
+                        <div class="turnos-mini-summary">
+                            <span class="turnos-mini-pill"><i class="bi bi-calendar-week"></i>@editando.Dias.Count(d => d.Labora) laborable(s)</span>
+                            <span class="turnos-mini-pill"><i class="bi bi-pause-circle"></i>@editando.Dias.Sum(d => d.Descansos.Count) descanso(s)</span>
+                            <span class="turnos-mini-pill"><i class="bi bi-clock"></i>@FormatearMinutos(CalcularTotalesSemanales(editando.Dias).MinutosPlaneadosTrabajados)</span>
+                        </div>
+                    </div>
 
                     <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0 border">
+                        <table class="table table-sm align-middle mb-0 border turnos-editor-table">
                             <thead class="table-dark">
                                 <tr>
                                     <th style="min-width:7rem">Día</th>
@@ -199,29 +507,36 @@
                                         <td class="turno-dia-nombre">
                                             <div>@dia.NombreDia</div>
                                             <span class="turno-pill @pillClass">@pillLabel</span>
+                                            <div class="turno-dia-detalle">@ObtenerResumenDia(dia)</div>
                                         </td>
                                         <td class="text-center">
                                             <input type="checkbox" class="form-check-input" @bind="dia.Labora" />
                                         </td>
                                         <td>
-                                            <input type="text"
-                                                   class="form-control form-control-sm turno-hora-input"
-                                                   placeholder="08:00"
-                                                   value="@dia.HoraEntradaTexto"
-                                                   @onchange="e => dia.HoraEntradaTexto = e.Value?.ToString() ?? string.Empty"
-                                                   disabled="@(!dia.Labora)" />
+                                            <div class="turno-hora-stack">
+                                                <span class="turno-hora-label">Entrada</span>
+                                                <input type="text"
+                                                       class="form-control form-control-sm turno-hora-input"
+                                                       placeholder="08:00"
+                                                       value="@dia.HoraEntradaTexto"
+                                                       @onchange="e => dia.HoraEntradaTexto = e.Value?.ToString() ?? string.Empty"
+                                                       disabled="@(!dia.Labora)" />
+                                            </div>
                                         </td>
                                         <td>
-                                            <input type="text"
-                                                   class="form-control form-control-sm turno-hora-input"
-                                                   placeholder="17:00"
-                                                   value="@dia.HoraSalidaTexto"
-                                                   @onchange="e => dia.HoraSalidaTexto = e.Value?.ToString() ?? string.Empty"
-                                                   disabled="@(!dia.Labora)" />
+                                            <div class="turno-hora-stack">
+                                                <span class="turno-hora-label">Salida</span>
+                                                <input type="text"
+                                                       class="form-control form-control-sm turno-hora-input"
+                                                       placeholder="17:00"
+                                                       value="@dia.HoraSalidaTexto"
+                                                       @onchange="e => dia.HoraSalidaTexto = e.Value?.ToString() ?? string.Empty"
+                                                       disabled="@(!dia.Labora)" />
+                                            </div>
                                         </td>
                                         <td>
                                             <div class="turno-descansos-stack">
-                                                <div class="turno-descanso-head">
+                                                <div class="turno-descanso-toolbar">
                                                     <span class="badge text-bg-light border">@dia.Descansos.Count descanso(s)</span>
                                                     <button class="btn btn-outline-primary btn-sm" type="button"
                                                             @onclick="() => AgregarDescanso(dia.DiaSemana)"
@@ -232,7 +547,7 @@
 
                                                 @if (dia.Descansos.Count == 0)
                                                 {
-                                                    <span class="text-muted small">Sin descansos configurados.</span>
+                                                    <div class="turno-descanso-empty">Sin descansos configurados.</div>
                                                 }
                                                 else
                                                 {
@@ -269,32 +584,38 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <div class="d-flex gap-1 align-items-center">
-                                                <InputSelect class="form-select form-select-sm" style="width:7rem" @bind-Value="dia.DiaDestinoDuplicadoTexto" disabled="@guardando">
-                                                    <option value="">Día...</option>
-                                                    @foreach (var destino in ObtenerDestinosDuplicado(dia.DiaSemana))
-                                                    {
-                                                        <option value="@((int)destino).ToString()">@ObtenerNombreDia(destino)</option>
-                                                    }
-                                                </InputSelect>
-                                                <button class="btn btn-outline-primary btn-sm px-2" type="button"
-                                                        title="Copiar al día seleccionado"
-                                                        @onclick="() => CopiarDiaADestino(dia.DiaSemana)"
-                                                        disabled="@(guardando || string.IsNullOrWhiteSpace(dia.DiaDestinoDuplicadoTexto))">
-                                                    <i class="bi bi-arrow-right"></i>
-                                                </button>
-                                                <button class="btn btn-outline-secondary btn-sm px-2" type="button"
-                                                        title="Copiar a todos los días"
-                                                        @onclick="() => CopiarDiaATodos(dia.DiaSemana)"
-                                                        disabled="@guardando">
-                                                    <i class="bi bi-copy"></i>
-                                                </button>
+                                            <div class="turno-copy-box">
+                                                <div class="turno-copy-row">
+                                                    <InputSelect class="form-select form-select-sm" @bind-Value="dia.DiaDestinoDuplicadoTexto" disabled="@guardando">
+                                                        <option value="">Día...</option>
+                                                        @foreach (var destino in ObtenerDestinosDuplicado(dia.DiaSemana))
+                                                        {
+                                                            <option value="@((int)destino).ToString()">@ObtenerNombreDia(destino)</option>
+                                                        }
+                                                    </InputSelect>
+                                                    <button class="btn btn-outline-primary btn-sm px-2" type="button"
+                                                            title="Copiar al día seleccionado"
+                                                            @onclick="() => CopiarDiaADestino(dia.DiaSemana)"
+                                                            disabled="@(guardando || string.IsNullOrWhiteSpace(dia.DiaDestinoDuplicadoTexto))">
+                                                        <i class="bi bi-arrow-right"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-secondary btn-sm px-2" type="button"
+                                                            title="Copiar a todos los días"
+                                                            @onclick="() => CopiarDiaATodos(dia.DiaSemana)"
+                                                            disabled="@guardando">
+                                                        <i class="bi bi-copy"></i>
+                                                    </button>
+                                                </div>
+                                                <div class="turno-copy-hint">Copia este día a otro o replícalo en toda la semana.</div>
                                             </div>
                                         </td>
                                         <td class="text-end">
-                                            <span class="turno-planeado-badge @(durDia.MinutosPlaneadosTrabajados > 0 ? "text-success" : "text-muted")">
-                                                @(durDia.MinutosPlaneadosTrabajados > 0 ? FormatearMinutos(durDia.MinutosPlaneadosTrabajados) : "—")
-                                            </span>
+                                            <div class="turno-planeado-meta">
+                                                <span class="turno-planeado-badge @(durDia.MinutosPlaneadosTrabajados > 0 ? "text-success" : "text-muted")">
+                                                    @(durDia.MinutosPlaneadosTrabajados > 0 ? FormatearMinutos(durDia.MinutosPlaneadosTrabajados) : "—")
+                                                </span>
+                                                <small>Bruta @FormatearMinutos(durDia.MinutosJornadaBruta)</small>
+                                            </div>
                                         </td>
                                     </tr>
                                 }
@@ -326,78 +647,81 @@
                         <button class="btn btn-outline-secondary" @onclick="CerrarFormulario" disabled="@guardando">Cancelar</button>
                     </div>
                 </div>
-            </div>
-        }
+                </div>
+            }
 
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span class="fw-semibold"><i class="bi bi-list-ul me-2"></i>Turnos configurados</span>
-                <span class="badge bg-secondary">@lista.Count</span>
-            </div>
-            <div class="card-body p-0">
-                @if (lista.Count == 0)
-                {
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-clock display-6 d-block mb-2"></i>
-                        No hay turnos configurados. Crea el primero con el botón de arriba.
-                    </div>
-                }
-                else
-                {
-                    <div class="row g-3 p-3">
-                        @foreach (var item in lista)
-                        {
-                            <div class="col-md-6 col-xl-4">
-                                <div class="card h-100 border-0 shadow-sm">
-                                    <div class="card-body pb-2">
-                                        <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
-                                            <div>
-                                                <div class="fw-bold">@item.Nombre</div>
-                                                @if (!string.IsNullOrWhiteSpace(item.Descripcion))
+            <div class="card border-0 shadow-sm turnos-list-card">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold"><i class="bi bi-list-ul me-2"></i>Turnos configurados</span>
+                    <span class="badge bg-secondary">@lista.Count</span>
+                </div>
+                <div class="card-body p-0">
+                    @if (lista.Count == 0)
+                    {
+                        <div class="turnos-empty">
+                            <i class="bi bi-clock display-6 d-block mb-2"></i>
+                            No hay turnos configurados. Crea el primero con el botón de arriba.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row g-3 p-3">
+                            @foreach (var item in lista)
+                            {
+                                <div class="col-md-6 col-xl-4">
+                                    <div class="card h-100 border-0 shadow-sm">
+                                        <div class="card-body pb-2">
+                                            <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                                                <div>
+                                                    <div class="fw-bold">@item.Nombre</div>
+                                                    @if (!string.IsNullOrWhiteSpace(item.Descripcion))
+                                                    {
+                                                        <div class="small text-muted">@item.Descripcion</div>
+                                                    }
+                                                </div>
+                                                <span class="badge @(item.IsActive ? "bg-success" : "bg-secondary") flex-shrink-0">@(item.IsActive ? "Activo" : "Inactivo")</span>
+                                            </div>
+                                            <div class="small text-muted">@item.Resumen</div>
+                                            <div class="turno-summary-row">
+                                                @foreach (var chip in item.DiasChips)
                                                 {
-                                                    <div class="small text-muted">@item.Descripcion</div>
+                                                    <span class="turno-card-dia" title="@chip.Tooltip">
+                                                        <i class="bi @(chip.Labora ? "bi-check-circle-fill text-success" : "bi-moon-fill text-secondary")"></i>
+                                                        @chip.Abrev
+                                                        @if (chip.Labora)
+                                                        {
+                                                            <span class="text-muted fw-normal">@chip.Horario</span>
+                                                        }
+                                                    </span>
                                                 }
                                             </div>
-                                            <span class="badge @(item.IsActive ? "bg-success" : "bg-secondary") flex-shrink-0">@(item.IsActive ? "Activo" : "Inactivo")</span>
+                                            <div class="turnos-card-metrics">
+                                                <span class="turnos-card-metric"><i class="bi bi-people"></i>@item.EmpleadosAsignados empleado(s)</span>
+                                                @if (item.MinutosSemanales > 0)
+                                                {
+                                                    <span class="turnos-card-metric"><i class="bi bi-clock"></i>@FormatearMinutos(item.MinutosSemanales)/sem</span>
+                                                }
+                                            </div>
                                         </div>
-                                        <div class="turno-summary-row">
-                                            @foreach (var chip in item.DiasChips)
+                                        <div class="card-footer bg-transparent border-top-0 d-flex justify-content-between align-items-center pt-1">
+                                            <div class="small text-muted">Semana @FormatearMinutos(item.MinutosSemanales)</div>
+                                            @if (_puedeEditar)
                                             {
-                                                <span class="turno-card-dia" title="@chip.Tooltip">
-                                                    <i class="bi @(chip.Labora ? "bi-check-circle-fill text-success" : "bi-moon-fill text-secondary")"></i>
-                                                    @chip.Abrev
-                                                    @if (chip.Labora)
-                                                    {
-                                                        <span class="text-muted fw-normal">@chip.Horario</span>
-                                                    }
-                                                </span>
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)">
+                                                    <i class="bi bi-pencil me-1"></i>Editar
+                                                </button>
                                             }
                                         </div>
-                                    </div>
-                                    <div class="card-footer bg-transparent border-top-0 d-flex justify-content-between align-items-center pt-1">
-                                        <div class="d-flex gap-2 small text-muted">
-                                            <span><i class="bi bi-people me-1"></i>@item.EmpleadosAsignados empleado(s)</span>
-                                            @if (item.MinutosSemanales > 0)
-                                            {
-                                                <span><i class="bi bi-clock me-1"></i>@FormatearMinutos(item.MinutosSemanales)/sem</span>
-                                            }
-                                        </div>
-                                        @if (_puedeEditar)
-                                        {
-                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(item.Id)">
-                                                <i class="bi bi-pencil me-1"></i>Editar
-                                            </button>
-                                        }
                                     </div>
                                 </div>
-                            </div>
-                        }
-                    </div>
-                }
+                            }
+                        </div>
+                    }
+                </div>
             </div>
         </div>
     }
-                            </div>
+</div>
 
 @code {
     private List<TurnoResumenVm> lista = [];
@@ -995,6 +1319,12 @@
         var restantes = minutos % 60;
         return $"{horas}:{restantes:00} h";
     }
+
+    private int ContarTurnosActivos() => lista.Count(t => t.IsActive);
+
+    private int TotalEmpleadosAsignados() => lista.Sum(t => t.EmpleadosAsignados);
+
+    private int TotalMinutosSemanales() => lista.Sum(t => t.MinutosSemanales);
 
     private sealed class TurnoResumenVm
     {

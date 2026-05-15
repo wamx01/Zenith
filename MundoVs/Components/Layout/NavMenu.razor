@@ -241,7 +241,7 @@
             }
             else if (activeModuleId == 4)
             {
-                @if (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
+                @if (HasCapacidad("rrhh.dashboard.ver") || HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("rrhh.asistencias.ver"))
                 {
                     <NavLink class="nav-link nav-link-sub" href="rrhh/dashboard" @onclick="CloseMobileMenu" title="Dashboard RH">
                         <span class="bi bi-speedometer2"></span>
@@ -254,13 +254,23 @@
                         <span class="bi bi-person-vcard"></span>
                         <span>Empleados</span>
                     </NavLink>
+                }
+                @if (HasCapacidad("rrhh.ausencias.ver") || HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
+                {
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/ausencias" @onclick="CloseMobileMenu" title="Ausencias">
+                        <span class="bi bi-calendar-x"></span>
+                        <span>Ausencias</span>
+                    </NavLink>
+                }
+                @if (HasCapacidad("rrhh.asistencias.ver") || HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
+                {
                     <NavLink class="nav-link nav-link-sub" href="rrhh/asistencias" @onclick="CloseMobileMenu" title="Asistencias">
                         <span class="bi bi-calendar-check"></span>
                         <span>Asistencias</span>
                     </NavLink>
-                    <NavLink class="nav-link nav-link-sub" href="rrhh/ausencias" @onclick="CloseMobileMenu" title="Ausencias">
-                        <span class="bi bi-calendar-x"></span>
-                        <span>Ausencias</span>
+                    <NavLink class="nav-link nav-link-sub" href="rrhh/asistencias-semanal" @onclick="CloseMobileMenu" title="Asistencias semanal">
+                        <span class="bi bi-calendar-week"></span>
+                        <span>Asistencia semanal</span>
                     </NavLink>
                 }
                 @if (HasCapacidad("nominas.ver"))
@@ -364,7 +374,7 @@
                     }
                 }
 
-                @if (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar")))
+                @if (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar") || HasCapacidad("rrhh.checadores.ver") || HasCapacidad("rrhh.checadores.editar")))
                 {
                     <NavLink class="nav-link nav-link-sub" href="rrhh/turnos" @onclick="CloseMobileMenu" title="Turnos">
                         <span class="bi bi-clock-history"></span>
@@ -481,10 +491,10 @@
         2 => HasModulo(ModuloAccesoCatalog.Manufactura) && ((moduloCalzado && HasCapacidad("productos.ver")) || (moduloSerigrafia && (HasCapacidad("pedidos.ver") || HasCapacidad("cotizaciones.ver") || HasCapacidad("serigrafia.editar")))),
         7 => HasModulo(ModuloAccesoCatalog.Logistica) && moduloSerigrafia && (HasCapacidad("inventario.ver") || HasCapacidad("inventario.movimientos") || HasCapacidad("inventario.reportes") || HasCapacidad("inventario.fg.ver") || HasCapacidad("inventario.fg.ajustar") || HasCapacidad("inventario.fg.ingresar") || HasCapacidad("serigrafia.editar")),
         3 => HasModulo(ModuloAccesoCatalog.Contabilidad) && (HasCapacidad("contabilidad.dashboard") || HasCapacidad("contabilidad.estado_resultados") || HasCapacidad("contabilidad.cuentas_cobrar") || HasCapacidad("facturas.ver") || HasCapacidad("cxp.ver")),
-        4 => HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar")),
+        4 => HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar") || HasCapacidad("rrhh.dashboard.ver") || HasCapacidad("rrhh.asistencias.ver") || HasCapacidad("rrhh.asistencias.editar") || HasCapacidad("rrhh.ausencias.ver") || HasCapacidad("rrhh.ausencias.editar") || HasCapacidad("rrhh.checadores.ver") || HasCapacidad("rrhh.checadores.editar")),
         5 => (HasModulo(ModuloAccesoCatalog.Administracion) && HasCapacidad("usuarios.ver")) || (HasModulo(ModuloAccesoCatalog.Plataforma) && HasCapacidad("empresas.editar")),
         6 => (HasModulo(ModuloAccesoCatalog.Configuracion) && HasCapacidad("configuracion.ver"))
-            || (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar"))),
+            || (HasModulo(ModuloAccesoCatalog.Rrhh) && (HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver") || HasCapacidad("nominas.editar") || HasCapacidad("rrhh.checadores.ver") || HasCapacidad("rrhh.checadores.editar"))),
         _ => false
     };
 

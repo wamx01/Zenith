@@ -854,7 +854,7 @@
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         _puedeVerEmpleados = state.User.HasClaim("Capacidad", "empleados.ver");
         _puedeVerNominas = state.User.HasClaim("Capacidad", "nominas.ver");
-        _puedeVer = _puedeVerEmpleados || _puedeVerNominas;
+        _puedeVer = state.User.HasClaim("Capacidad", "rrhh.dashboard.ver") || _puedeVerEmpleados || _puedeVerNominas;
         _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
         empresaEtiqueta = state.User.FindFirst("Empresa")?.Value ?? state.User.FindFirst("EmpresaNombre")?.Value ?? "Empresa actual";
     }
