@@ -1118,9 +1118,7 @@
             : string.Join(", ", festivos.Select(f => $"{f.Fecha:dd/MM} {f.Nombre} x{f.Factor:0.##}{(f.UsaFallback ? " (global)" : string.Empty)}"));
 
     private static int ObtenerMinutosDescuentoTotal(PrenominaDetalleEditable detalle)
-        => Math.Max(0, detalle.MinutosRetardo)
-            + Math.Max(0, detalle.MinutosSalidaAnticipada)
-            + Math.Max(0, detalle.MinutosFaltanteDescontable)
+        => Math.Max(0, detalle.MinutosFaltanteDescontable)
             + Math.Max(0, detalle.MinutosDescuentoManual);
 
 

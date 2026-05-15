@@ -141,6 +141,23 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
     }
 
     [Fact]
+    public void ObtenerMinutosFaltanteDescontable_CuandoPermisoCubreElDia_RegresaCero()
+    {
+        var asistencia = new RrhhAsistencia
+        {
+            MinutosJornadaNetaProgramada = 540,
+            MinutosTrabajadosNetos = 389,
+            MinutosRetardo = 193,
+            MinutosSalidaAnticipada = 0,
+            MinutosPerdonadosManual = 10
+        };
+
+        var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(asistencia, 151, 0);
+
+        Assert.Equal(0, faltante);
+    }
+
+    [Fact]
     public void ObtenerResumenResolucionOperativa_CuandoNoHayIncidencias_MuestraSinAjustePendiente()
     {
         var asistencia = new RrhhAsistencia

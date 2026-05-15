@@ -676,7 +676,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return "Sin datos para permiso.";
         }
 
-        var sugerido = ObtenerMinutosPermisoSugeridos(AsistenciaActual);
+        var permisoAplicadoActual = permisoDiaSeleccionado == null
+            ? ObtenerMinutosPermisoCapturados()
+            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+        var sugerido = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosPermisoSugeridos(AsistenciaActual, minutosCompensadosPermisoAprobados) - permisoAplicadoActual);
         var capturado = ObtenerMinutosPermisoCapturados();
         var remanente = ObtenerMinutosFaltanteRemanenteActual();
 
@@ -700,6 +703,22 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(asistencia);
+
+    private int ObtenerMinutosRetardoVisible(RrhhAsistencia asistencia)
+    {
+        var permisoAplicadoActual = permisoDiaSeleccionado == null
+            ? 0
+            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+        return RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(asistencia, permisoAplicadoActual);
+    }
+
+    private int ObtenerMinutosSalidaAnticipadaVisible(RrhhAsistencia asistencia)
+    {
+        var permisoAplicadoActual = permisoDiaSeleccionado == null
+            ? 0
+            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+        return RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, permisoAplicadoActual);
+    }
 
     private int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
@@ -2791,10 +2810,20 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
 
     private int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosPermisoSugeridos(asistencia, minutosCompensadosPermisoAprobados);
+    {
+        var permisoAplicadoActual = permisoDiaSeleccionado == null
+            ? 0
+            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+        return Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosPermisoSugeridos(asistencia, minutosCompensadosPermisoAprobados) - permisoAplicadoActual);
+    }
 
     private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, minutosCompensadosPermisoAprobados);
+    {
+        var permisoAplicadoActual = permisoDiaSeleccionado == null
+            ? 0
+            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+        return RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, permisoAplicadoActual, minutosCompensadosPermisoAprobados);
+    }
 
     private int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosDescansoNoPagadoProgramado(asistencia);

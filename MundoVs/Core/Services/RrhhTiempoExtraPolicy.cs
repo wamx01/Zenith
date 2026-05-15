@@ -8,17 +8,31 @@ public static class RrhhTiempoExtraPolicy
         => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, asistencia.MinutosPerdonadosManual));
 
     public static int ObtenerMinutosRetardoEfectivos(RrhhAsistencia asistencia)
+        => ObtenerMinutosRetardoEfectivos(asistencia, 0);
+
+    public static int ObtenerMinutosRetardoEfectivos(RrhhAsistencia asistencia, int minutosPermisoAplicados)
     {
         var perdonRestante = Math.Max(0, asistencia.MinutosPerdonadosManual);
         var retardo = Math.Max(0, asistencia.MinutosRetardo);
-        return Math.Max(0, retardo - Math.Min(retardo, perdonRestante));
+        var retardoDespuesPerdon = Math.Max(0, retardo - Math.Min(retardo, perdonRestante));
+        return Math.Max(0, retardoDespuesPerdon - Math.Min(retardoDespuesPerdon, Math.Max(0, minutosPermisoAplicados)));
     }
 
     public static int ObtenerMinutosSalidaAnticipadaEfectivos(RrhhAsistencia asistencia)
+        => ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, 0);
+
+    public static int ObtenerMinutosSalidaAnticipadaEfectivos(RrhhAsistencia asistencia, int minutosPermisoAplicados)
     {
         var perdonRestante = Math.Max(0, asistencia.MinutosPerdonadosManual);
         var retardo = Math.Max(0, asistencia.MinutosRetardo);
-        perdonRestante = Math.Max(0, perdonRestante - Math.Min(retardo, perdonRestante));
+        var permisoRestante = Math.Max(0, minutosPermisoAplicados);
+
+        var retardoCubiertoPorPerdon = Math.Min(retardo, perdonRestante);
+        perdonRestante = Math.Max(0, perdonRestante - retardoCubiertoPorPerdon);
+
+        var retardoDespuesPerdon = Math.Max(0, retardo - retardoCubiertoPorPerdon);
+        permisoRestante = Math.Max(0, permisoRestante - Math.Min(retardoDespuesPerdon, permisoRestante));
+
         var salidaAnticipada = Math.Max(0, asistencia.MinutosSalidaAnticipada);
         var salidaDespuesPerdon = Math.Max(0, salidaAnticipada - Math.Min(salidaAnticipada, perdonRestante));
         var minutosDescansoNoPagadoProgramado = ObtenerMinutosDescansoNoPagadoProgramado(asistencia);
@@ -38,7 +52,8 @@ public static class RrhhTiempoExtraPolicy
             return salidaDespuesPerdon;
         }
 
-        return Math.Max(0, salidaDespuesPerdon - Math.Min(salidaDespuesPerdon, descansoNoMarcadoPendiente));
+        var salidaDespuesDescanso = Math.Max(0, salidaDespuesPerdon - Math.Min(salidaDespuesPerdon, descansoNoMarcadoPendiente));
+        return Math.Max(0, salidaDespuesDescanso - Math.Min(salidaDespuesDescanso, permisoRestante));
     }
 
     public static int ObtenerMinutosDescuentoEfectivos(RrhhAsistencia asistencia, int minutosDescuentoManual = 0)
@@ -52,6 +67,13 @@ public static class RrhhTiempoExtraPolicy
             ObtenerMinutosRetardoEfectivos(asistencia)
             + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia)
             + ObtenerMinutosFaltanteDescontable(asistencia, minutosCompensadosAprobados)
+            + Math.Max(0, minutosDescuentoManual));
+
+    public static int ObtenerMinutosDescuentoTotal(RrhhAsistencia asistencia, int minutosDescuentoManual, int minutosPermisoAplicados, int minutosCompensadosAprobados)
+        => Math.Max(0,
+            ObtenerMinutosRetardoEfectivos(asistencia, minutosPermisoAplicados)
+            + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, minutosPermisoAplicados)
+            + ObtenerMinutosFaltanteDescontable(asistencia, minutosPermisoAplicados, minutosCompensadosAprobados)
             + Math.Max(0, minutosDescuentoManual));
 
     public static int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
@@ -105,6 +127,9 @@ public static class RrhhTiempoExtraPolicy
     public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
         => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
 
+    public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosPermisoAplicados, int minutosCompensadosAprobados)
+        => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosPermisoAplicados) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
+
     public static int ObtenerMinutosAusenciaBrutaSugerida(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);
 
@@ -112,13 +137,15 @@ public static class RrhhTiempoExtraPolicy
         => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - ObtenerMinutosTrabajadosNetosEfectivos(asistencia));
 
     public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia)
-        => ObtenerMinutosFaltanteDescontable(asistencia, 0);
+        => ObtenerMinutosFaltanteDescontable(asistencia, 0, 0);
 
     public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
+        => ObtenerMinutosFaltanteDescontable(asistencia, 0, minutosCompensadosAprobados);
+
+    public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia, int minutosPermisoAplicados, int minutosCompensadosAprobados)
     {
         var faltante = ObtenerMinutosFaltanteBanco(asistencia);
-        var yaCubiertoPorRetardoSalida = ObtenerMinutosRetardoEfectivos(asistencia) + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia);
-        return Math.Max(0, faltante - yaCubiertoPorRetardoSalida - Math.Max(0, minutosCompensadosAprobados));
+        return Math.Max(0, faltante - Math.Max(0, minutosPermisoAplicados) - Math.Max(0, minutosCompensadosAprobados));
     }
 
     public static int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia, int minutosCompensadosAprobados = 0)
