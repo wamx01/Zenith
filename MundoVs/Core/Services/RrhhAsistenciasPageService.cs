@@ -12,6 +12,7 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
     {
         var turnos = await db.TurnosBase
             .Include(t => t.Detalles)
+                .ThenInclude(d => d.Descansos)
             .AsNoTracking()
             .Where(t => t.EmpresaId == empresaId && t.IsActive)
             .OrderBy(t => t.Nombre)

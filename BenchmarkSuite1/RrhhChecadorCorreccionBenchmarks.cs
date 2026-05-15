@@ -88,7 +88,30 @@ public class RrhhChecadorCorreccionBenchmarks
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
-        turno.Detalles.Add(new TurnoBaseDetalle { Id = Guid.NewGuid(), TurnoBaseId = turno.Id, DiaSemana = DiaSemanaTurno.Lunes, Labora = true, HoraEntrada = new TimeSpan(8, 0, 0), HoraSalida = new TimeSpan(17, 0, 0), CantidadDescansos = 1, Descanso1Inicio = new TimeSpan(12, 0, 0), Descanso1Fin = new TimeSpan(12, 30, 0), Descanso1EsPagado = false, CreatedAt = DateTime.UtcNow, IsActive = true });
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Lunes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(8, 0, 0),
+            HoraSalida = new TimeSpan(17, 0, 0),
+            Descansos =
+            [
+                new TurnoBaseDetalleDescanso
+                {
+                    Id = Guid.NewGuid(),
+                    Orden = 1,
+                    HoraInicio = new TimeSpan(12, 0, 0),
+                    HoraFin = new TimeSpan(12, 30, 0),
+                    EsPagado = false,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                }
+            ],
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
         return turno;
     }
 

@@ -199,6 +199,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var empleado = await db.Empleados
             .Include(e => e.TurnoBase)!
                 .ThenInclude(t => t!.Detalles)
+                    .ThenInclude(d => d.Descansos)
             .FirstOrDefaultAsync(e => e.Id == grupo.EmpleadoId && e.EmpresaId == empresaId, cancellationToken);
 
         if (empleado == null)
@@ -700,12 +701,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                     : $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; quedó como referencia operativa y no como extra automática.");
         }
 
-        var conflictosAlternancia = DetectarConflictosAlternancia(marcasIntermedias, resolucionesSegmento, detalleTurno);
-        foreach (var conflicto in conflictosAlternancia.Observaciones)
-        {
-            observaciones.Add(conflicto);
-        }
-
         var segmentosEspeciales = ExtraerSegmentosEspeciales(marcasIntermedias, resolucionesSegmento, observaciones);
         minutosSalidaTemporal = segmentosEspeciales.MinutosSalidaTemporal;
         minutosPermisoSegmento = segmentosEspeciales.MinutosPermiso;
@@ -760,6 +755,14 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             }
         }
 
+        descansosConfigurados = ObtenerDescansosConfiguradosOInferidos(detalleTurno, descansosTomados, resolucionesSegmento);
+
+        var conflictosAlternancia = DetectarConflictosAlternancia(marcasIntermedias, resolucionesSegmento, descansosConfigurados);
+        foreach (var conflicto in conflictosAlternancia.Observaciones)
+        {
+            observaciones.Add(conflicto);
+        }
+
         if (descansosTomados.Count > descansosConfigurados.Count)
         {
             observaciones.Add($"Se detectaron {descansosTomados.Count} descanso(s) y el turno solo contempla {descansosConfigurados.Count}.");
@@ -781,8 +784,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             || cantidadMarcasAntesEntradaProgramada > 2
             || cantidadMarcasDespuesSalidaProgramada > 2
             || conflictosAlternancia.BloquearTiempoExtraAutomatico;
+        var cantidadDescansosRealesAplicados = descansosAplicados.Count(d => d.FueMarcado && d.MinutosAplicados > 0);
         var requiereRevisionDescansos = descansosAplicados.Any(d => d.RequiereConfirmacion)
-            || descansosTomados.Count > descansosConfigurados.Count
+            || cantidadDescansosRealesAplicados > descansosConfigurados.Count
             || minutosTrabajoAdicionalAntes > 0
             || minutosTrabajoAdicionalDespues > 0
             || minutosSalidaTemporal > 0
@@ -825,7 +829,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return marcaciones.All(m => m.Marcacion.ClasificacionOperativa is TipoClasificacionMarcacionRrhh.Entrada or TipoClasificacionMarcacionRrhh.Salida);
     }
 
-    private static AlternanciaSegmentosResult DetectarConflictosAlternancia(IReadOnlyList<MarcacionProcesada> marcasIntermedias, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, TurnoBaseDetalle? detalleTurno)
+    private static AlternanciaSegmentosResult DetectarConflictosAlternancia(IReadOnlyList<MarcacionProcesada> marcasIntermedias, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, IReadOnlyList<DescansoConfigurado> descansosConfigurados)
     {
         if (marcasIntermedias.Count < 2)
         {
@@ -850,7 +854,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             var indiceSegmento = (i / 2) + 1;
             var esperaPausa = indiceSegmento % 2 != 0;
             var minutos = Math.Max(0, (int)Math.Round((fin.FechaLocal - inicio.FechaLocal).TotalMinutes));
-            var esPausa = accion is "descanso" or "permiso" or "temporal" || DebeInferirseComoDescansoEnMotor(detalleTurno, inicio.FechaLocal.TimeOfDay, fin.FechaLocal.TimeOfDay, minutos);
+            var esPausa = accion is "descanso" or "permiso" or "temporal" || DebeInferirseComoDescansoEnMotor(descansosConfigurados, inicio.FechaLocal.TimeOfDay, fin.FechaLocal.TimeOfDay, minutos);
 
             if (esperaPausa && !esPausa)
             {
@@ -863,52 +867,14 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return new AlternanciaSegmentosResult(observaciones, requiereRevision, bloquearTiempoExtraAutomatico);
     }
 
-    private static bool DebeInferirseComoDescansoEnMotor(TurnoBaseDetalle? detalleTurno, TimeSpan inicio, TimeSpan fin, int minutos)
+    private static bool DebeInferirseComoDescansoEnMotor(IReadOnlyList<DescansoConfigurado> descansosConfigurados, TimeSpan inicio, TimeSpan fin, int minutos)
     {
-        if (detalleTurno == null || minutos <= 0)
+        if (descansosConfigurados.Count == 0 || minutos <= 0)
         {
             return false;
         }
 
-        return ObtenerNumeroDescansoMasCercanoEnMotor(detalleTurno, inicio, fin).HasValue;
-    }
-
-    private static int? ObtenerNumeroDescansoMasCercanoEnMotor(TurnoBaseDetalle? detalleTurno, TimeSpan inicio, TimeSpan fin)
-    {
-        if (detalleTurno == null)
-        {
-            return null;
-        }
-
-        var candidatos = new List<(int Numero, TimeSpan Inicio, TimeSpan Fin)>();
-        if (detalleTurno.CantidadDescansos >= 1 && detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue)
-        {
-            candidatos.Add((1, detalleTurno.Descanso1Inicio.Value, detalleTurno.Descanso1Fin.Value));
-        }
-
-        if (detalleTurno.CantidadDescansos >= 2 && detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue)
-        {
-            candidatos.Add((2, detalleTurno.Descanso2Inicio.Value, detalleTurno.Descanso2Fin.Value));
-        }
-
-        var mejor = candidatos
-            .Select(v => new
-            {
-                v.Numero,
-                Duracion = Math.Max(0, (int)Math.Round((v.Fin - v.Inicio).TotalMinutes)),
-                Diferencia = Math.Abs((int)Math.Round((inicio - v.Inicio).TotalMinutes)) + Math.Abs((int)Math.Round((fin - v.Fin).TotalMinutes))
-            })
-            .Where(v => v.Duracion <= 0 || MinutosCoinciden(v.Duracion, inicio, fin))
-            .OrderBy(v => v.Diferencia)
-            .FirstOrDefault();
-
-        return mejor?.Numero;
-
-        static bool MinutosCoinciden(int duracionProgramada, TimeSpan inicioBloque, TimeSpan finBloque)
-        {
-            var duracionBloque = Math.Max(0, (int)Math.Round((finBloque - inicioBloque).TotalMinutes));
-            return duracionBloque <= duracionProgramada + 30;
-        }
+        return ObtenerNumeroDescansoMasCercano(descansosConfigurados, inicio, fin).HasValue;
     }
 
     private static SegmentosEspecialesResult ExtraerSegmentosEspeciales(IReadOnlyList<MarcacionProcesada> marcasIntermedias, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, List<string> observaciones)
@@ -1018,11 +984,43 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     }
 
     private static async Task<List<RrhhSegmentoResolucion>> ObtenerResolucionesSegmentoAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fecha, CancellationToken cancellationToken)
-        => await db.RrhhSegmentosResoluciones
+    {
+        var resoluciones = await db.RrhhSegmentosResoluciones
             .Include(r => r.MarcacionInicio)
             .Include(r => r.MarcacionFin)
             .Where(r => r.EmpresaId == empresaId && r.EmpleadoId == empleadoId && r.Fecha == fecha && r.IsActive)
             .ToListAsync(cancellationToken);
+
+        var marcacionIds = resoluciones
+            .SelectMany(r => new[] { r.MarcacionInicioId, r.MarcacionFinId })
+            .Distinct()
+            .ToList();
+
+        if (marcacionIds.Count == 0)
+        {
+            return resoluciones;
+        }
+
+        var marcacionesPorId = await db.RrhhMarcaciones
+            .Include(m => m.Checador)
+            .Where(m => marcacionIds.Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, cancellationToken);
+
+        foreach (var resolucion in resoluciones)
+        {
+            if (resolucion.MarcacionInicio == null && marcacionesPorId.TryGetValue(resolucion.MarcacionInicioId, out var inicio))
+            {
+                resolucion.MarcacionInicio = inicio;
+            }
+
+            if (resolucion.MarcacionFin == null && marcacionesPorId.TryGetValue(resolucion.MarcacionFinId, out var fin))
+            {
+                resolucion.MarcacionFin = fin;
+            }
+        }
+
+        return resoluciones;
+    }
 
     private static async Task ConciliarResolucionesSegmentoAsync(
         CrmDbContext db,
@@ -1314,18 +1312,59 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return [];
         }
 
-        var descansos = new List<DescansoConfigurado>();
-        if (detalleTurno.CantidadDescansos >= 1 && detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue)
+        return detalleTurno.Descansos
+            .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
+            .OrderBy(d => d.Orden)
+            .Select(d => new DescansoConfigurado(d.Orden, d.HoraInicio!.Value, d.HoraFin!.Value, d.EsPagado))
+            .ToList();
+    }
+
+    private static List<DescansoConfigurado> ObtenerDescansosConfiguradosOInferidos(TurnoBaseDetalle? detalleTurno, IReadOnlyList<DescansoTomado> descansosTomados, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento)
+    {
+        var configurados = ObtenerDescansosConfigurados(detalleTurno);
+        if (configurados.Count > 0 || detalleTurno == null || !detalleTurno.Labora)
         {
-            descansos.Add(new DescansoConfigurado(1, detalleTurno.Descanso1Inicio.Value, detalleTurno.Descanso1Fin.Value, detalleTurno.Descanso1EsPagado));
+            return configurados;
         }
 
-        if (detalleTurno.CantidadDescansos >= 2 && detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue)
+        var descansosBase = descansosTomados
+            .Where(d => d.Minutos >= 25 || resolucionesSegmento.Any(r => r.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso && SegmentoCoincideConResolucion(r, d.Salida, d.Regreso)))
+            .OrderBy(d => d.Salida)
+            .Select((d, index) => new DescansoConfigurado(
+                index + 1,
+                d.Salida.TimeOfDay,
+                d.Regreso.TimeOfDay,
+                d.EsPagado))
+            .ToList();
+
+        if (descansosBase.Count > 0)
         {
-            descansos.Add(new DescansoConfigurado(2, detalleTurno.Descanso2Inicio.Value, detalleTurno.Descanso2Fin.Value, detalleTurno.Descanso2EsPagado));
+            return descansosBase;
         }
 
-        return descansos;
+        return resolucionesSegmento
+            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente && r.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
+            .Select(r => CrearDescansoConfiguradoDesdeResolucion(r))
+            .Where(d => d != null)
+            .Select((d, index) => d! with { Numero = index + 1 })
+            .ToList();
+    }
+
+    private static DescansoConfigurado? CrearDescansoConfiguradoDesdeResolucion(RrhhSegmentoResolucion resolucion)
+    {
+        if (resolucion.MarcacionInicio == null || resolucion.MarcacionFin == null)
+        {
+            return null;
+        }
+
+        var inicio = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionInicio);
+        var fin = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionFin);
+        if (fin <= inicio)
+        {
+            return null;
+        }
+
+        return new DescansoConfigurado(1, inicio.TimeOfDay, fin.TimeOfDay, false);
     }
 
     private static List<DescansoAplicado> CalcularDescansosAplicados(
@@ -1343,8 +1382,19 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         }
 
         var aplicados = new List<DescansoAplicado>();
-        var (tomadosPorNumero, descansosAdicionales) = EmparejarDescansosTomados(descansosConfigurados, descansosTomados, resolucionesSegmento);
+        var resolucionesTrabajo = resolucionesSegmento
+            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente && r.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
+            .ToList();
+        var descansosTomadosFiltrados = descansosTomados
+            .Where(tomado => !resolucionesTrabajo.Any(r => SegmentoCoincideConResolucion(r, tomado.Salida, tomado.Regreso)))
+            .ToList();
+        var (tomadosPorNumero, descansosAdicionales) = EmparejarDescansosTomados(descansosConfigurados, descansosTomadosFiltrados, resolucionesSegmento);
         var faltantesCubiertosPorSalida = new HashSet<int>();
+        var descansosResueltosComoTrabajo = resolucionesTrabajo
+            .Select(resolucion => ObtenerNumeroDescansoResueltoComoTrabajo(descansosConfigurados, resolucion))
+            .Where(numero => numero.HasValue)
+            .Select(numero => numero!.Value)
+            .ToHashSet();
         var minutosSalidaDisponibles = Math.Max(0, minutosSalidaAnticipada);
 
         foreach (var configurado in descansosConfigurados
@@ -1426,6 +1476,25 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                     false,
                     false,
                     true));
+
+                continue;
+            }
+
+            if (descansosResueltosComoTrabajo.Contains(configurado.Numero))
+            {
+                aplicados.Add(new DescansoAplicado(
+                    configurado.Numero,
+                    configurado.Inicio,
+                    configurado.Fin,
+                    configurado.EsPagado,
+                    null,
+                    null,
+                    0,
+                    0,
+                    false,
+                    false,
+                    false,
+                    false));
 
                 continue;
             }
@@ -1518,6 +1587,40 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return resolucion?.MinutosAplicadosOverride;
     }
 
+    private static int? ObtenerNumeroDescansoMasCercano(IReadOnlyList<DescansoConfigurado> descansosConfigurados, TimeSpan inicio, TimeSpan fin)
+    {
+        var mejor = descansosConfigurados
+            .Select(d => new
+            {
+                d.Numero,
+                Duracion = d.Minutos,
+                Diferencia = Math.Abs((int)Math.Round((inicio - d.Inicio).TotalMinutes)) + Math.Abs((int)Math.Round((fin - d.Fin).TotalMinutes))
+            })
+            .Where(d => d.Duracion <= 0 || MinutosCoinciden(d.Duracion, inicio, fin))
+            .OrderBy(d => d.Diferencia)
+            .FirstOrDefault();
+
+        return mejor?.Numero;
+
+        static bool MinutosCoinciden(int duracionProgramada, TimeSpan inicioBloque, TimeSpan finBloque)
+        {
+            var duracionBloque = Math.Max(0, (int)Math.Round((finBloque - inicioBloque).TotalMinutes));
+            return duracionBloque <= duracionProgramada + 30;
+        }
+    }
+
+    private static int? ObtenerNumeroDescansoResueltoComoTrabajo(IReadOnlyList<DescansoConfigurado> descansosConfigurados, RrhhSegmentoResolucion resolucion)
+    {
+        if (resolucion.MarcacionInicio == null || resolucion.MarcacionFin == null)
+        {
+            return null;
+        }
+
+        var inicio = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionInicio);
+        var fin = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionFin);
+        return ObtenerNumeroDescansoMasCercano(descansosConfigurados, inicio.TimeOfDay, fin.TimeOfDay);
+    }
+
     private static int? ResolverDiferenciaSegmento(RrhhSegmentoResolucion resolucion, DateTime salida, DateTime regreso)
     {
         if (resolucion.MarcacionInicio == null || resolucion.MarcacionFin == null)
@@ -1529,6 +1632,24 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var regresoResolucion = ObtenerFechaHoraLocalMarcacion(resolucion.MarcacionFin);
         return Math.Abs((int)Math.Round((salidaResolucion - salida).TotalMinutes))
             + Math.Abs((int)Math.Round((regresoResolucion - regreso).TotalMinutes));
+    }
+
+    private static bool SegmentoCoincideConResolucion(RrhhSegmentoResolucion resolucion, DateTime salida, DateTime regreso)
+    {
+        if (ResolverDiferenciaSegmento(resolucion, salida, regreso) is int diferencia)
+        {
+            return diferencia <= 2;
+        }
+
+        var inicio = resolucion.MarcacionInicio?.FechaHoraMarcacionLocal;
+        var fin = resolucion.MarcacionFin?.FechaHoraMarcacionLocal;
+        if (inicio.HasValue && fin.HasValue)
+        {
+            return Math.Abs((int)Math.Round((inicio.Value - salida).TotalMinutes))
+                + Math.Abs((int)Math.Round((fin.Value - regreso).TotalMinutes)) <= 2;
+        }
+
+        return false;
     }
 
     private static (Dictionary<int, DescansoTomado> TomadosPorNumero, List<DescansoTomado> DescansosAdicionales) EmparejarDescansosTomados(
@@ -1700,6 +1821,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             .AsNoTracking()
             .Include(v => v.TurnoBase)
                 .ThenInclude(t => t.Detalles)
+                    .ThenInclude(d => d.Descansos)
             .Where(v => v.EmpresaId == empresaId
                 && v.EmpleadoId == empleado.Id
                 && v.IsActive

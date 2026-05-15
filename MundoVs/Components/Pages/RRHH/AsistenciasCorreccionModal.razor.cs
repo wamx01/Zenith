@@ -1199,16 +1199,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return null;
         }
 
-        var candidatos = new List<(int Numero, TimeSpan Inicio, TimeSpan Fin)>();
-        if (detalleTurno.CantidadDescansos >= 1 && detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue)
-        {
-            candidatos.Add((1, detalleTurno.Descanso1Inicio.Value, detalleTurno.Descanso1Fin.Value));
-        }
-
-        if (detalleTurno.CantidadDescansos >= 2 && detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue)
-        {
-            candidatos.Add((2, detalleTurno.Descanso2Inicio.Value, detalleTurno.Descanso2Fin.Value));
-        }
+        var candidatos = detalleTurno.Descansos
+            .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
+            .Select(d => new { Numero = (int)d.Orden, Inicio = d.HoraInicio!.Value, Fin = d.HoraFin!.Value })
+            .ToList();
 
         var mejor = candidatos
             .Select(v => new
@@ -1237,14 +1231,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return null;
         }
 
-        return numeroDescanso switch
-        {
-            1 when detalleTurno.Descanso1Inicio.HasValue && detalleTurno.Descanso1Fin.HasValue
-                => Math.Max(0, (int)Math.Round((detalleTurno.Descanso1Fin.Value - detalleTurno.Descanso1Inicio.Value).TotalMinutes)),
-            2 when detalleTurno.Descanso2Inicio.HasValue && detalleTurno.Descanso2Fin.HasValue
-                => Math.Max(0, (int)Math.Round((detalleTurno.Descanso2Fin.Value - detalleTurno.Descanso2Inicio.Value).TotalMinutes)),
-            _ => null
-        };
+        var descanso = detalleTurno.Descansos
+            .FirstOrDefault(d => d.Orden == numeroDescanso && d.HoraInicio.HasValue && d.HoraFin.HasValue);
+
+        return descanso == null
+            ? null
+            : Math.Max(0, (int)Math.Round((descanso.HoraFin!.Value - descanso.HoraInicio!.Value).TotalMinutes));
     }
 
     private RrhhSegmentoResolucion? ObtenerResolucionSegmento(Guid inicioId, Guid finId)
@@ -2545,21 +2537,16 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string ObtenerDescansosTurnoSeleccionadoDia()
     {
         var detalle = ObtenerDetalleTurnoSeleccionadoDia();
-        if (detalle == null || !detalle.Labora || detalle.CantidadDescansos == 0)
+        if (detalle == null || !detalle.Labora || detalle.Descansos.Count == 0)
         {
             return "Sin descansos configurados.";
         }
 
-        var descansos = new List<string>();
-        if (detalle.CantidadDescansos >= 1 && detalle.Descanso1Inicio.HasValue && detalle.Descanso1Fin.HasValue)
-        {
-            descansos.Add($"D1 {FormatearHoraTurno(detalle.Descanso1Inicio)}-{FormatearHoraTurno(detalle.Descanso1Fin)}{(detalle.Descanso1EsPagado ? " pagado" : string.Empty)}");
-        }
-
-        if (detalle.CantidadDescansos >= 2 && detalle.Descanso2Inicio.HasValue && detalle.Descanso2Fin.HasValue)
-        {
-            descansos.Add($"D2 {FormatearHoraTurno(detalle.Descanso2Inicio)}-{FormatearHoraTurno(detalle.Descanso2Fin)}{(detalle.Descanso2EsPagado ? " pagado" : string.Empty)}");
-        }
+        var descansos = detalle.Descansos
+            .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
+            .OrderBy(d => d.Orden)
+            .Select(d => $"D{d.Orden} {FormatearHoraTurno(d.HoraInicio)}-{FormatearHoraTurno(d.HoraFin)}{(d.EsPagado ? " pagado" : string.Empty)}")
+            .ToList();
 
         return descansos.Count == 0 ? "Sin descansos configurados." : string.Join(" · ", descansos);
     }

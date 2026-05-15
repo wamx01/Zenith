@@ -130,6 +130,7 @@ public class CrmDbContext : DbContext
     public DbSet<Empleado> Empleados => Set<Empleado>();
     public DbSet<TurnoBase> TurnosBase => Set<TurnoBase>();
     public DbSet<TurnoBaseDetalle> TurnosBaseDetalle => Set<TurnoBaseDetalle>();
+    public DbSet<TurnoBaseDetalleDescanso> TurnosBaseDetalleDescansos => Set<TurnoBaseDetalleDescanso>();
     public DbSet<RrhhEmpleadoTurno> RrhhEmpleadosTurno => Set<RrhhEmpleadoTurno>();
     public DbSet<DepartamentoRrhh> DepartamentosRrhh => Set<DepartamentoRrhh>();
     public DbSet<NominaCorteRrhh> NominaCortesRrhh => Set<NominaCorteRrhh>();
@@ -446,10 +447,6 @@ public class CrmDbContext : DbContext
             entity.Property(e => e.DiaSemana).HasConversion<int>();
             entity.Property(e => e.HoraEntrada).HasColumnType("time(6)");
             entity.Property(e => e.HoraSalida).HasColumnType("time(6)");
-            entity.Property(e => e.Descanso1Inicio).HasColumnType("time(6)");
-            entity.Property(e => e.Descanso1Fin).HasColumnType("time(6)");
-            entity.Property(e => e.Descanso2Inicio).HasColumnType("time(6)");
-            entity.Property(e => e.Descanso2Fin).HasColumnType("time(6)");
 
             entity.HasOne(e => e.TurnoBase)
                 .WithMany(t => t.Detalles)
@@ -457,6 +454,21 @@ public class CrmDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => new { e.TurnoBaseId, e.DiaSemana }).IsUnique();
+        });
+
+        modelBuilder.Entity<TurnoBaseDetalleDescanso>(entity =>
+        {
+            entity.ToTable("rrhh_turno_detalle_descanso");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.HoraInicio).HasColumnType("time(6)");
+            entity.Property(e => e.HoraFin).HasColumnType("time(6)");
+
+            entity.HasOne(e => e.TurnoBaseDetalle)
+                .WithMany(d => d.Descansos)
+                .HasForeignKey(e => e.TurnoBaseDetalleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.TurnoBaseDetalleId, e.Orden }).IsUnique();
         });
 
         modelBuilder.Entity<RrhhEmpleadoTurno>(entity =>
