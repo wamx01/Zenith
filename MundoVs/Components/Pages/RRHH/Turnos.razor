@@ -906,17 +906,12 @@
                 var descansos = dia.Labora
                     ? dia.Descansos
                         .OrderBy(d => d.Orden)
-                        .Select((d, index) => new TurnoBaseDetalleDescanso
+                        .Select((d, index) => new DescansoPersistenciaVm
                         {
-                            Id = Guid.NewGuid(),
-                            TurnoBaseDetalleId = Guid.Empty,
                             Orden = (byte)(index + 1),
                             HoraInicio = ConvertirHora(d.HoraInicioTexto),
                             HoraFin = ConvertirHora(d.HoraFinTexto),
-                            EsPagado = d.EsPagado,
-                            CreatedAt = DateTime.UtcNow,
-                            CreatedBy = usuario,
-                            IsActive = true
+                            EsPagado = d.EsPagado
                         })
                         .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
                         .ToList()
@@ -927,15 +922,10 @@
                     detalleExistente.Labora = dia.Labora;
                     detalleExistente.HoraEntrada = entrada;
                     detalleExistente.HoraSalida = salida;
-                    detalleExistente.Descansos.Clear();
-                    foreach (var descanso in descansos)
-                    {
-                        descanso.TurnoBaseDetalleId = detalleExistente.Id;
-                        detalleExistente.Descansos.Add(descanso);
-                    }
-                    detalleExistente.IsActive = true;
                     detalleExistente.UpdatedAt = DateTime.UtcNow;
                     detalleExistente.UpdatedBy = usuario;
+                    detalleExistente.IsActive = true;
+                    SincronizarDescansos(db, detalleExistente, descansos, usuario);
                     continue;
                 }
 
@@ -947,7 +937,7 @@
                     Labora = dia.Labora,
                     HoraEntrada = entrada,
                     HoraSalida = salida,
-                    Descansos = descansos,
+                    Descansos = CrearDescansosNuevos(descansos, usuario),
                     CreatedAt = DateTime.UtcNow,
                     CreatedBy = usuario,
                     IsActive = true
@@ -1320,6 +1310,69 @@
         return $"{horas}:{restantes:00} h";
     }
 
+    private static List<TurnoBaseDetalleDescanso> CrearDescansosNuevos(IEnumerable<DescansoPersistenciaVm> descansos, string? usuario)
+        => descansos
+            .Select(d => new TurnoBaseDetalleDescanso
+            {
+                Id = Guid.NewGuid(),
+                Orden = d.Orden,
+                HoraInicio = d.HoraInicio,
+                HoraFin = d.HoraFin,
+                EsPagado = d.EsPagado,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            })
+            .ToList();
+
+    private static void SincronizarDescansos(CrmDbContext db, TurnoBaseDetalle detalle, IReadOnlyList<DescansoPersistenciaVm> descansosEditados, string? usuario)
+    {
+        var existentesPorOrden = detalle.Descansos.ToDictionary(d => d.Orden);
+
+        foreach (var descansoEditado in descansosEditados)
+        {
+            if (existentesPorOrden.TryGetValue(descansoEditado.Orden, out var descansoExistente))
+            {
+                descansoExistente.HoraInicio = descansoEditado.HoraInicio;
+                descansoExistente.HoraFin = descansoEditado.HoraFin;
+                descansoExistente.EsPagado = descansoEditado.EsPagado;
+                descansoExistente.IsActive = true;
+                descansoExistente.UpdatedAt = DateTime.UtcNow;
+                descansoExistente.UpdatedBy = usuario;
+                continue;
+            }
+
+            detalle.Descansos.Add(new TurnoBaseDetalleDescanso
+            {
+                Id = Guid.NewGuid(),
+                TurnoBaseDetalleId = detalle.Id,
+                Orden = descansoEditado.Orden,
+                HoraInicio = descansoEditado.HoraInicio,
+                HoraFin = descansoEditado.HoraFin,
+                EsPagado = descansoEditado.EsPagado,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = usuario,
+                IsActive = true
+            });
+        }
+
+        var descansosObsoletos = detalle.Descansos
+            .Where(d => descansosEditados.All(editado => editado.Orden != d.Orden))
+            .ToList();
+
+        if (descansosObsoletos.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var descansoObsoleto in descansosObsoletos)
+        {
+            detalle.Descansos.Remove(descansoObsoleto);
+        }
+
+        db.RemoveRange(descansosObsoletos);
+    }
+
     private int ContarTurnosActivos() => lista.Count(t => t.IsActive);
 
     private int TotalEmpleadosAsignados() => lista.Sum(t => t.EmpleadosAsignados);
@@ -1371,6 +1424,14 @@
         public byte Orden { get; set; }
         public string HoraInicioTexto { get; set; } = string.Empty;
         public string HoraFinTexto { get; set; } = string.Empty;
+        public bool EsPagado { get; set; }
+    }
+
+    private sealed class DescansoPersistenciaVm
+    {
+        public byte Orden { get; set; }
+        public TimeSpan? HoraInicio { get; set; }
+        public TimeSpan? HoraFin { get; set; }
         public bool EsPagado { get; set; }
     }
 
