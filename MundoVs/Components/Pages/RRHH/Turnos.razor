@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -853,6 +854,12 @@
             return;
         }
 
+        error = ValidarTurno(editando);
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            return;
+        }
+
         guardando = true;
 
         try
@@ -886,8 +893,6 @@
             else
             {
                 turno = await db.TurnosBase
-                    .Include(t => t.Detalles)
-                        .ThenInclude(d => d.Descansos)
                     .FirstOrDefaultAsync(t => t.Id == editando.Id)
                     ?? throw new InvalidOperationException("No se encontró el turno a guardar.");
 
@@ -898,69 +903,33 @@
                 turno.UpdatedBy = usuario;
             }
 
-            var detallesExistentes = turno.Detalles.ToDictionary(d => d.DiaSemana);
-            foreach (var dia in editando.Dias.OrderBy(d => d.DiaSemana))
+            var detallesNuevos = ConstruirDetallesTurno(turno.Id, editando.Dias, usuario);
+
+            if (editando.Id != Guid.Empty)
             {
-                var entrada = dia.Labora ? ConvertirHora(dia.HoraEntradaTexto) : null;
-                var salida = dia.Labora ? ConvertirHora(dia.HoraSalidaTexto) : null;
-                var descansos = dia.Labora
-                    ? dia.Descansos
-                        .OrderBy(d => d.Orden)
-                        .Select((d, index) => new DescansoPersistenciaVm
-                        {
-                            Orden = (byte)(index + 1),
-                            HoraInicio = ConvertirHora(d.HoraInicioTexto),
-                            HoraFin = ConvertirHora(d.HoraFinTexto),
-                            EsPagado = d.EsPagado
-                        })
-                        .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
-                        .ToList()
-                    : [];
+                await db.TurnosBaseDetalle
+                    .Where(d => d.TurnoBaseId == turno.Id)
+                    .ExecuteDeleteAsync();
 
-                if (detallesExistentes.TryGetValue(dia.DiaSemana, out var detalleExistente))
-                {
-                    detalleExistente.Labora = dia.Labora;
-                    detalleExistente.HoraEntrada = entrada;
-                    detalleExistente.HoraSalida = salida;
-                    detalleExistente.UpdatedAt = DateTime.UtcNow;
-                    detalleExistente.UpdatedBy = usuario;
-                    detalleExistente.IsActive = true;
-                    SincronizarDescansos(db, detalleExistente, descansos, usuario);
-                    continue;
-                }
-
-                turno.Detalles.Add(new TurnoBaseDetalle
-                {
-                    Id = Guid.NewGuid(),
-                    TurnoBaseId = turno.Id,
-                    DiaSemana = dia.DiaSemana,
-                    Labora = dia.Labora,
-                    HoraEntrada = entrada,
-                    HoraSalida = salida,
-                    Descansos = CrearDescansosNuevos(descansos, usuario),
-                    CreatedAt = DateTime.UtcNow,
-                    CreatedBy = usuario,
-                    IsActive = true
-                });
+                await db.TurnosBaseDetalle.AddRangeAsync(detallesNuevos);
             }
-
-            var diasEditados = editando.Dias.Select(d => d.DiaSemana).ToHashSet();
-            var detallesObsoletos = turno.Detalles.Where(d => !diasEditados.Contains(d.DiaSemana)).ToList();
-            if (detallesObsoletos.Count > 0)
-                db.TurnosBaseDetalle.RemoveRange(detallesObsoletos);
+            else
+            {
+                turno.Detalles = detallesNuevos;
+            }
 
             await db.SaveChangesAsync();
             ok = "Turno guardado.";
             mostrarForm = false;
             await CargarAsync();
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException ex)
         {
-            error = "El turno cambió en la base de datos mientras lo editabas. Vuelve a abrirlo e intenta guardar de nuevo.";
+            error = $"Conflicto al guardar turno: {ObtenerDetalleError(ex)}";
         }
         catch (Exception ex)
         {
-            error = ex.InnerException?.Message ?? ex.Message;
+            error = ObtenerDetalleError(ex);
         }
         finally
         {
@@ -1171,6 +1140,24 @@
                 ? hora
                 : null;
 
+    private static string? ValidarTurno(TurnoEditVm turno)
+        => RrhhTurnoValidator.Validate(turno.Dias
+            .Select(dia => new RrhhTurnoValidator.TurnoDiaValidacionInput(
+                (int)dia.DiaSemana,
+                dia.NombreDia,
+                dia.Labora,
+                dia.HoraEntradaTexto,
+                dia.HoraSalidaTexto,
+                dia.Descansos
+                    .OrderBy(d => d.Orden)
+                    .Select(descanso => new RrhhTurnoValidator.TurnoDescansoValidacionInput(
+                        descanso.Orden,
+                        descanso.HoraInicioTexto,
+                        descanso.HoraFinTexto,
+                        descanso.EsPagado))
+                    .ToList()))
+            .ToList());
+
     private static string ObtenerResumenDia(TurnoDiaEditVm dia)
     {
         if (!dia.Labora)
@@ -1325,52 +1312,60 @@
             })
             .ToList();
 
-    private static void SincronizarDescansos(CrmDbContext db, TurnoBaseDetalle detalle, IReadOnlyList<DescansoPersistenciaVm> descansosEditados, string? usuario)
-    {
-        var existentesPorOrden = detalle.Descansos.ToDictionary(d => d.Orden);
-
-        foreach (var descansoEditado in descansosEditados)
-        {
-            if (existentesPorOrden.TryGetValue(descansoEditado.Orden, out var descansoExistente))
+    private static List<TurnoBaseDetalle> ConstruirDetallesTurno(Guid turnoId, IEnumerable<TurnoDiaEditVm> dias, string? usuario)
+        => dias
+            .OrderBy(d => d.DiaSemana)
+            .Select(dia =>
             {
-                descansoExistente.HoraInicio = descansoEditado.HoraInicio;
-                descansoExistente.HoraFin = descansoEditado.HoraFin;
-                descansoExistente.EsPagado = descansoEditado.EsPagado;
-                descansoExistente.IsActive = true;
-                descansoExistente.UpdatedAt = DateTime.UtcNow;
-                descansoExistente.UpdatedBy = usuario;
-                continue;
-            }
+                var entrada = dia.Labora ? ConvertirHora(dia.HoraEntradaTexto) : null;
+                var salida = dia.Labora ? ConvertirHora(dia.HoraSalidaTexto) : null;
+                var descansos = dia.Labora
+                    ? dia.Descansos
+                        .OrderBy(d => d.Orden)
+                        .Select((d, index) => new DescansoPersistenciaVm
+                        {
+                            Orden = (byte)(index + 1),
+                            HoraInicio = ConvertirHora(d.HoraInicioTexto),
+                            HoraFin = ConvertirHora(d.HoraFinTexto),
+                            EsPagado = d.EsPagado
+                        })
+                        .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
+                        .ToList()
+                    : [];
 
-            detalle.Descansos.Add(new TurnoBaseDetalleDescanso
-            {
-                Id = Guid.NewGuid(),
-                TurnoBaseDetalleId = detalle.Id,
-                Orden = descansoEditado.Orden,
-                HoraInicio = descansoEditado.HoraInicio,
-                HoraFin = descansoEditado.HoraFin,
-                EsPagado = descansoEditado.EsPagado,
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = usuario,
-                IsActive = true
-            });
-        }
-
-        var descansosObsoletos = detalle.Descansos
-            .Where(d => descansosEditados.All(editado => editado.Orden != d.Orden))
+                return new TurnoBaseDetalle
+                {
+                    Id = Guid.NewGuid(),
+                    TurnoBaseId = turnoId,
+                    DiaSemana = dia.DiaSemana,
+                    Labora = dia.Labora,
+                    HoraEntrada = entrada,
+                    HoraSalida = salida,
+                    Descansos = CrearDescansosNuevos(descansos, usuario),
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedBy = usuario,
+                    IsActive = true
+                };
+            })
             .ToList();
 
-        if (descansosObsoletos.Count == 0)
+    private static string ObtenerDetalleError(Exception ex)
+    {
+        var mensajes = new List<string>();
+        var actual = ex;
+        while (actual != null)
         {
-            return;
+            if (!string.IsNullOrWhiteSpace(actual.Message))
+            {
+                mensajes.Add($"{actual.GetType().Name}: {actual.Message.Trim()}");
+            }
+
+            actual = actual.InnerException;
         }
 
-        foreach (var descansoObsoleto in descansosObsoletos)
-        {
-            detalle.Descansos.Remove(descansoObsoleto);
-        }
-
-        db.RemoveRange(descansosObsoletos);
+        return mensajes.Count == 0
+            ? "Error desconocido al guardar el turno."
+            : string.Join(" | ", mensajes.Distinct());
     }
 
     private int ContarTurnosActivos() => lista.Count(t => t.IsActive);
