@@ -746,8 +746,10 @@
     private async Task CargarAccesoAsync()
     {
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
-        _puedeVer = state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
-        _puedeEditar = state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
+        _puedeVer = state.User.HasClaim("Capacidad", "turnos.ver") || state.User.HasClaim("Capacidad", "turnos.editar")
+                 || state.User.HasClaim("Capacidad", "empleados.ver") || state.User.HasClaim("Capacidad", "nominas.ver");
+        _puedeEditar = state.User.HasClaim("Capacidad", "turnos.editar")
+                    || state.User.HasClaim("Capacidad", "empleados.editar") || state.User.HasClaim("Capacidad", "nominas.editar");
     }
 
     private async Task CargarAsync()

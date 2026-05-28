@@ -663,6 +663,9 @@
                      MinutosDescuentoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(x, ObtenerMinutosPermisoAplicados(x), ObtenerMinutosCompensados(x)))),
                     TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
                     TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
+                    TotalDiasAusentismo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Falta),
+                    TotalDiasRetardo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Retardo),
+                    TotalDiasIncompleto = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Incompleta),
                     MinutosRetardoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(x, ObtenerMinutosPermisoAplicados(x)))),
                     MinutosSalidaAnticipadaPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(x, ObtenerMinutosPermisoAplicados(x)))),
                     DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
@@ -677,6 +680,21 @@
                         .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
                 })
                 .ToList();
+
+            // Saldo banco de horas por empleado (acumulado histórico hasta fecha de corte)
+            var empIds = resumenes.Select(r => r.EmpleadoId).ToHashSet();
+            var bancoMovs = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.EmpresaId == _empresaId && empIds.Contains(m.EmpleadoId))
+                .GroupBy(m => m.EmpleadoId)
+                .Select(g => new
+                {
+                    EmpleadoId = g.Key,
+                    SaldoHoras = g.Sum(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo ? -m.Horas : m.Horas)
+                })
+                .ToDictionaryAsync(x => x.EmpleadoId, x => (int)(x.SaldoHoras * 60));
+
+            resumenes = resumenes.Select(r => r with { SaldoBancoHoras = bancoMovs.GetValueOrDefault(r.EmpleadoId) }).ToList();
 
             resumenes = filtroOrden switch
             {
@@ -884,6 +902,14 @@
             encabezados.Add("PermisosSemanalMin");
             encabezados.Add("CompensacionesSemanal");
             encabezados.Add("CompensacionesSemanalMin");
+            encabezados.Add("RetardoSemanal");
+            encabezados.Add("RetardoSemanalMin");
+            encabezados.Add("DiasAusentismo");
+            encabezados.Add("DiasRetardo");
+            encabezados.Add("DiasIncompleto");
+            encabezados.Add("TotalIncidencias");
+            encabezados.Add("SaldoBancoHoras");
+            encabezados.Add("SaldoBancoHorasMin");
             encabezados.Add("TotalHoras");
             encabezados.Add("TotalMinutos");
             builder.AppendLine(string.Join(",", encabezados.Select(EscapeCsv)));
@@ -908,6 +934,14 @@
                 columnas.Add(resumen.TotalMinutosPermiso.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosCompensacion)));
                 columnas.Add(resumen.TotalMinutosCompensacion.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosRetardo)));
+                columnas.Add(resumen.TotalMinutosRetardo.ToString());
+                columnas.Add(resumen.TotalDiasAusentismo.ToString());
+                columnas.Add(resumen.TotalDiasRetardo.ToString());
+                columnas.Add(resumen.TotalDiasIncompleto.ToString());
+                columnas.Add(resumen.TotalIncidencias.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.SaldoBancoHoras)));
+                columnas.Add(resumen.SaldoBancoHoras.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutos)));
                 columnas.Add(resumen.TotalMinutos.ToString());
                 builder.AppendLine(string.Join(",", columnas));
@@ -931,6 +965,14 @@
             totales.Add(resumenes.Sum(x => x.TotalMinutosPermiso).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))));
             totales.Add(resumenes.Sum(x => x.TotalMinutosCompensacion).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosRetardo))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosRetardo).ToString());
+            totales.Add(resumenes.Sum(x => x.TotalDiasAusentismo).ToString());
+            totales.Add(resumenes.Sum(x => x.TotalDiasRetardo).ToString());
+            totales.Add(resumenes.Sum(x => x.TotalDiasIncompleto).ToString());
+            totales.Add(resumenes.Sum(x => x.TotalIncidencias).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.SaldoBancoHoras))));
+            totales.Add(resumenes.Sum(x => x.SaldoBancoHoras).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(totalMinutosPeriodo)));
             totales.Add(totalMinutosPeriodo.ToString());
             builder.AppendLine(string.Join(",", totales));
@@ -1223,7 +1265,7 @@
     private static string ObtenerClaseMetricaSalidaAnticipada(int minutos)
         => minutos > 0 ? "asis-week-metric--salida" : string.Empty;
 
-    private sealed class ResumenSemanalEmpleado
+    private sealed record ResumenSemanalEmpleado
     {
         public Guid EmpleadoId { get; init; }
         public string NombreCompleto { get; init; } = string.Empty;
@@ -1239,6 +1281,11 @@
         public int TotalDiasFestivoTrabajado { get; init; }
         public int TotalMinutosPermiso { get; init; }
         public int TotalMinutosCompensacion { get; init; }
+        public int TotalDiasAusentismo { get; init; }
+        public int TotalDiasRetardo { get; init; }
+        public int TotalDiasIncompleto { get; init; }
+        public int TotalIncidencias => TotalDiasAusentismo + TotalDiasRetardo + TotalDiasIncompleto;
+        public int SaldoBancoHoras { get; init; }
         public Dictionary<DateOnly, int> MinutosDescuentoPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosRetardoPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosSalidaAnticipadaPorDia { get; init; } = new();
