@@ -959,6 +959,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         var segmentos = new List<TimelineSegmentoDia>();
         var detalleTurno = ObtenerDetalleTurnoSeleccionadoDia();
         var marcacionesOrdenadas = marcacionesDia
+            .Where(m => !m.EsAnulada)
             .OrderBy(ObtenerFechaHoraLocalMarcacion)
             .ToList();
 
