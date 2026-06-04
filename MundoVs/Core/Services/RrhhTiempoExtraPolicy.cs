@@ -110,7 +110,9 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
-        => Math.Max(0, Math.Min(ObtenerMinutosTrabajadosNetosEfectivos(asistencia), asistencia.MinutosJornadaNetaProgramada > 0 ? asistencia.MinutosJornadaNetaProgramada : ObtenerMinutosTrabajadosNetosEfectivos(asistencia)));
+        => asistencia.MinutosJornadaNetaProgramada > 0
+            ? Math.Max(0, Math.Min(ObtenerMinutosTrabajadosNetosEfectivos(asistencia), asistencia.MinutosJornadaNetaProgramada))
+            : 0;
 
     public static int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
     {
