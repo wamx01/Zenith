@@ -180,6 +180,14 @@ Función general: administración de empleados, esquemas de pago, vales de desta
   - Captura datos personales, laborales y salariales.
   - Asigna posición, periodicidad de pago y esquema de pago vigente.
   - Muestra historial de esquemas asignados por empleado.
+  - Incluye botón por fila para navegar al perfil del empleado.
+
+- `RRHH/EmpleadoPerfil.razor` — ruta `/rrhh/empleados/{id}/perfil`
+  - Perfil detallado por empleado con pestañas: Resumen, Personal, Horario, Laboral, Nómina, Asistencias, Ausencias, Saldos, Conceptos y Notas.
+  - KPIs rápidos en encabezado: vacaciones, banco de horas, esquema, turno y estatus.
+  - Edición por secciones según capability (`empleados.editar`).
+  - Lógica de consulta separada en `IRrhhEmpleadoPerfilPageService`.
+  - Sección "Horario" con vista de calendario semanal mostrando horario laboral y descansos por día.
 
 - `RRHH/EsquemasPago.razor` — ruta `/rrhh/esquemas-pago`
   - Define esquemas de pago.

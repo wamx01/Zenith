@@ -1,0 +1,254 @@
+.ep-perfil .ep-profile-header {
+    background: linear-gradient(135deg, var(--bs-light) 0%, var(--bs-body-bg) 100%);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+
+.ep-perfil .ep-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-indigo, #6610f2) 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(var(--bs-primary-rgb, 13, 110, 253), 0.25);
+}
+
+.ep-perfil .ep-header-meta {
+    font-size: 0.78rem;
+    color: var(--bs-secondary);
+    white-space: nowrap;
+}
+
+.ep-perfil .ep-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--bs-body-bg);
+    margin-bottom: 0 !important;
+}
+
+.ep-perfil .ep-tabs .nav-link {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: 0.375rem 0.375rem 0 0;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+}
+
+.ep-perfil .ep-tabs .nav-link:hover:not(.active) {
+    background-color: var(--bs-light);
+    border-color: var(--bs-border-color);
+}
+
+.ep-perfil .ep-tabs .nav-link.active {
+    font-weight: 600;
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color) var(--bs-border-color) var(--bs-body-bg);
+}
+
+.ep-perfil .ep-tab-panel {
+    animation: ep-fade-in 0.2s ease;
+}
+
+@@keyframes ep-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.ep-perfil .ep-kpi-card {
+    border-left: 3px solid var(--bs-border-color) !important;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.ep-perfil .ep-kpi-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.08) !important;
+}
+
+.ep-perfil .ep-kpi-card--vacaciones { border-left-color: var(--bs-teal, #20c997) !important; }
+.ep-perfil .ep-kpi-card--banco { border-left-color: var(--bs-indigo, #6610f2) !important; }
+.ep-perfil .ep-kpi-card--esquema { border-left-color: var(--bs-purple, #6f42c1) !important; }
+.ep-perfil .ep-kpi-card--turno { border-left-color: var(--bs-orange, #fd7e14) !important; }
+.ep-perfil .ep-kpi-card--asistencias { border-left-color: var(--bs-cyan, #0dcaf0) !important; }
+.ep-perfil .ep-kpi-card--estatus { border-left-color: var(--bs-info, #0dcaf0) !important; }
+
+.ep-perfil .ep-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    color: var(--bs-secondary);
+    text-align: center;
+}
+
+.ep-perfil .ep-empty-state i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+}
+
+.ep-perfil .ep-empty-state p {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.ep-perfil .ep-note-card {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background-color: var(--bs-light);
+}
+
+.ep-perfil .ep-note-card__body {
+    padding: 1.25rem 1.25rem 0.75rem;
+    position: relative;
+}
+
+.ep-perfil .ep-note-card__quote-icon {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.75rem;
+    font-size: 2rem;
+    color: var(--bs-primary);
+    opacity: 0.15;
+}
+
+.ep-perfil .ep-note-card__text {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    position: relative;
+    z-index: 1;
+}
+
+.ep-perfil .ep-note-card__footer {
+    border-top: 1px solid var(--bs-border-color);
+    padding: 0.5rem 1.25rem;
+    font-size: 0.72rem;
+    color: var(--bs-secondary);
+    background-color: var(--bs-tertiary-bg, var(--bs-light));
+}
+
+.ep-perfil .ep-seccion-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--bs-secondary);
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.03em;
+}
+
+.ep-perfil .ep-field-label {
+    font-size: 0.75rem;
+    color: var(--bs-secondary);
+    margin-bottom: 0.1rem;
+}
+
+.ep-perfil .ep-field-value {
+    font-size: 0.88rem;
+    font-weight: 500;
+}
+
+.ep-perfil table.table-sm th,
+.ep-perfil table.table-sm td {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.82rem;
+}
+
+.ep-perfil .ep-horario-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.ep-perfil .ep-horario-dia {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background-color: var(--bs-light);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ep-perfil .ep-horario-dia:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.08);
+}
+
+.ep-perfil .ep-horario-dia--hoy {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb, 13, 110, 253), 0.2);
+}
+
+.ep-perfil .ep-horario-dia__header {
+    background-color: var(--bs-secondary-bg);
+    padding: 0.35rem 0.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--bs-border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+}
+
+.ep-perfil .ep-horario-dia__label {
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ep-perfil .ep-horario-dia__nombre {
+    font-size: 0.6rem;
+    color: var(--bs-secondary);
+    font-weight: 400;
+}
+
+.ep-perfil .ep-horario-dia__header--hoy {
+    background-color: var(--bs-primary);
+    color: white;
+}
+
+.ep-perfil .ep-horario-dia__header--hoy .ep-horario-dia__nombre {
+    color: rgba(255,255,255,0.7);
+}
+
+.ep-perfil .ep-horario-dia__body {
+    padding: 0.25rem;
+    font-size: 0.65rem;
+}
+
+.ep-perfil .ep-horario-dia__body--descanso {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.25rem;
+    color: var(--bs-secondary);
+    text-align: center;
+}
+
+.ep-perfil .ep-horario-segment {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-bottom: 0.1rem;
+}
+
+.ep-perfil .ep-horario-segment i {
+    font-size: 0.6rem;
+}
+
+.ep-perfil .ep-horario-segment span {
+    font-size: 0.6rem;
+}

@@ -5,6 +5,7 @@ Este módulo administra empleados, esquemas de pago, destajo, prenómina e integ
 
 ## Páginas incluidas
 - `MundoVs/Components/Pages/RRHH/Empleados.razor`
+- `MundoVs/Components/Pages/RRHH/EmpleadoPerfil.razor`
 - `MundoVs/Components/Pages/RRHH/Turnos.razor`
 - `MundoVs/Components/Pages/RRHH/Marcaciones.razor`
 - `MundoVs/Components/Pages/RRHH/Asistencias.razor`
@@ -33,10 +34,16 @@ Este módulo administra empleados, esquemas de pago, destajo, prenómina e integ
 - bonos, horas extra, deducciones y total a pagar.
 
 ## Fuentes técnicas principales
-### `Empleados.razor`
+### `Empleados.razor` / `Empleados.razor.cs`
+Lista de empleados con CRUD, asignación de turnos y esquemas de pago.
+El code-behind (`Empleados.razor.cs`) contiene la lógica de carga, validación y persistencia.
+Cada fila incluye un botón de perfil que navega a `/rrhh/empleados/{id}/perfil`.
+
 Usa:
 - `IDbContextFactory<CrmDbContext>`
 - `AuthenticationStateProvider`
+- `CodigoNegocioService`
+- `INominaLegalPolicyService`
 
 Consulta directamente:
 - `Empleados`
@@ -45,6 +52,40 @@ Consulta directamente:
 - `RrhhEmpleadosTurno`
 - `EsquemasPago`
 - `EmpleadosEsquemaPago`
+
+### `EmpleadoPerfil.razor` / `EmpleadoPerfil.razor.cs`
+Página de perfil detallado por empleado con pestañas: Resumen, Personal, Horario, Laboral, Nómina, Asistencias, Ausencias, Saldos, Conceptos y Notas.
+Ruta: `/rrhh/empleados/{id:guid}/perfil`.
+Edición por capability (`empleados.editar`).
+
+Usa:
+- `IDbContextFactory<CrmDbContext>`
+- `AuthenticationStateProvider`
+- `IRrhhEmpleadoPerfilPageService` (inyectado, separa lógica de consulta)
+- `INominaLegalPolicyService`
+- `CodigoNegocioService`
+
+Contenido por pestaña:
+- **Resumen**: KPIs, datos identitarios y resumen reciente
+- **Personal**: Datos personales con edición CRUD (capability protegida)
+- **Horario**: Vista de calendario semanal con horario laboral y descansos por día, incluyendo el turno vigente
+- **Laboral**: Cargo, departamento, fecha contratación, etc.
+- **Nómina**: Conceptos aplicables, salarios base, periodicidad
+- **Asistencias**: Últimos 30 días de control de tiempo con estatus y horas extra
+- **Ausencias**: Vacaciones, permisos y días solicitados/aprobados
+- **Saldos**: Días vacacionales disponibles y movimientos de banco de horas
+- **Conceptos**: Conceptos nómina recurrentes por empleado (ISR, IMSS, etc.)
+- **Notas**: Campo libre de notas del empleado
+
+### `IRrhhEmpleadoPerfilPageService` / `RrhhEmpleadoPerfilPageService`
+Servicio dedicado que carga toda la información agregada del perfil:
+- datos personales, laborales y salariales del empleado
+- esquema y turno vigentes con historial
+- vacaciones disponibles y banco de horas
+- conceptos de nómina recurrentes
+- asistencias recientes (30 días)
+- ausencias recientes
+- movimientos del banco de horas
 
 ### `Turnos.razor`
 Usa:
