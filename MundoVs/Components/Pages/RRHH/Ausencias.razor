@@ -19,7 +19,7 @@
         <div class="d-flex align-items-center justify-content-between mb-3">
             <div>
                 <h1 class="display-6 fw-bold"><i class="bi bi-calendar-x me-2"></i>Ausencias</h1>
-                <p class="text-muted mb-0">Gestiona vacaciones y permisos con historial por empleado.</p>
+                <p class="text-muted mb-0">Gestiona vacaciones, permisos, capacitaciones e incapacidades con historial por empleado.</p>
             </div>
             @if (_puedeEditar)
             {
@@ -38,9 +38,9 @@
 
         <div class="row g-3 mb-3">
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Vacaciones</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Vacaciones)</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Permisos</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Permiso)</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Aprobadas</div><div class="fs-4 fw-bold">@lista.Count(a => a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Días vacaciones aprobados</div><div class="fs-4 fw-bold">@lista.Where(a => a.Tipo == TipoAusenciaRrhh.Vacaciones && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)).Sum(a => a.Dias)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Permisos</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Permiso || a.Tipo == TipoAusenciaRrhh.PermisoConGoce || a.Tipo == TipoAusenciaRrhh.PermisoSinGoce)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Incapacidades</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Incapacidad)</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Capacitaciones</div><div class="fs-4 fw-bold">@lista.Count(a => a.Tipo == TipoAusenciaRrhh.Capacitacion)</div></div></div></div>
         </div>
 
         @if (mostrarForm)
@@ -60,11 +60,13 @@
                                     }
                                 </InputSelect>
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-3">
                                 <label class="form-label">Tipo</label>
                                 <InputSelect class="form-select" @bind-Value="editando.Tipo" @bind-Value:after="OnTipoChangedAsync">
-                                    <option value="@TipoAusenciaRrhh.Vacaciones">Vacaciones</option>
-                                    <option value="@TipoAusenciaRrhh.Permiso">Permiso</option>
+                                    @foreach (var tipo in Enum.GetValues<TipoAusenciaRrhh>())
+                                    {
+                                        <option value="@tipo">@ObtenerNombreTipo(tipo)</option>
+                                    }
                                 </InputSelect>
                             </div>
                             <div class="col-md-2">
@@ -75,6 +77,18 @@
                                         <option value="@estatus">@estatus</option>
                                     }
                                 </InputSelect>
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end">
+                                <div class="form-check mb-2">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.ConGocePago" disabled="@(!PuedeEditarGocePago())" />
+                                    <label class="form-check-label">
+                                        Con goce de sueldo
+                                        @if (!PuedeEditarGocePago())
+                                        {
+                                            <small class="text-muted d-block">@ObtenerMensajeGocePago()</small>
+                                        }
+                                    </label>
+                                </div>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Inicio</label>
@@ -91,12 +105,6 @@
                             <div class="col-md-2">
                                 <label class="form-label">Horas</label>
                                 <InputNumber class="form-control" @bind-Value="editando.Horas" />
-                            </div>
-                            <div class="col-md-2 d-flex align-items-end">
-                                <div class="form-check mb-2">
-                                    <InputCheckbox class="form-check-input" @bind-Value="editando.ConGocePago" disabled="@(editando.Tipo == TipoAusenciaRrhh.Vacaciones)" />
-                                    <label class="form-check-label">Con goce</label>
-                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Motivo</label>
@@ -146,12 +154,23 @@
                                         <div class="fw-semibold">@item.NombreEmpleado</div>
                                         <div class="small text-muted">@(string.IsNullOrWhiteSpace(item.AprobadoPor) ? "—" : $"Aprobó: {item.AprobadoPor}")</div>
                                     </td>
-                                    <td>@item.Tipo</td>
+                                    <td>
+                                        <span class="badge @ObtenerClaseTipo(item.Tipo)">@ObtenerNombreTipo(item.Tipo)</span>
+                                    </td>
                                     <td><span class="badge @ObtenerClaseEstatus(item.Estatus)">@item.Estatus</span></td>
                                     <td>@item.FechaInicio.ToString("dd/MM/yyyy") - @item.FechaFin.ToString("dd/MM/yyyy")</td>
                                     <td class="text-center">@item.Dias</td>
                                     <td class="text-center">@item.Horas.ToString("0.##")</td>
-                                    <td>@(item.ConGocePago ? "Sí" : "No")</td>
+                                    <td>
+                                        @if (item.ConGocePago)
+                                        {
+                                            <i class="bi bi-check-circle-fill text-success" title="Con goce"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-x-circle-fill text-danger" title="Sin goce"></i>
+                                        }
+                                    </td>
                                     <td>
                                         <div>@(string.IsNullOrWhiteSpace(item.Motivo) ? "—" : item.Motivo)</div>
                                         @if (!string.IsNullOrWhiteSpace(item.Observaciones))
@@ -251,9 +270,9 @@
         error = ok = null;
         editando = new RrhhAusencia
         {
-            Tipo = TipoAusenciaRrhh.Vacaciones,
+            Tipo = TipoAusenciaRrhh.Permiso,
             Estatus = EstatusAusenciaRrhh.Solicitada,
-            ConGocePago = true,
+            ConGocePago = false,
             Dias = 1
         };
         fechaInicioCaptura = DateTime.Today;
@@ -287,13 +306,25 @@
 
     private Task OnTipoChangedAsync()
     {
-        if (editando.Tipo == TipoAusenciaRrhh.Vacaciones)
+        // Aplicar reglas de negocio según el tipo
+        editando.ConGocePago = editando.Tipo switch
         {
-            editando.ConGocePago = true;
-            if (editando.Dias <= 0)
-            {
-                editando.Dias = Math.Max(1, (fechaFinCaptura.Date - fechaInicioCaptura.Date).Days + 1);
-            }
+            TipoAusenciaRrhh.Vacaciones => true,
+            TipoAusenciaRrhh.Capacitacion => true,
+            TipoAusenciaRrhh.Incapacidad => true,
+            TipoAusenciaRrhh.PermisoConGoce => true,
+            TipoAusenciaRrhh.PermisoSinGoce => false,
+            TipoAusenciaRrhh.FaltaInjustificada => false,
+            TipoAusenciaRrhh.Suspension => false,
+            TipoAusenciaRrhh.DiasEconomicos => true,
+            TipoAusenciaRrhh.PermisoMaternidad => true,
+            TipoAusenciaRrhh.PermisoPaternidad => true,
+            _ => editando.ConGocePago
+        };
+
+        if (editando.Dias <= 0)
+        {
+            editando.Dias = Math.Max(1, (fechaFinCaptura.Date - fechaInicioCaptura.Date).Days + 1);
         }
 
         return Task.CompletedTask;
@@ -306,12 +337,35 @@
             fechaFinCaptura = fechaInicioCaptura.Date;
         }
 
-        if (editando.Dias <= 1 || editando.Tipo == TipoAusenciaRrhh.Vacaciones)
+        if (editando.Dias <= 1)
         {
             editando.Dias = Math.Max(1, (fechaFinCaptura.Date - fechaInicioCaptura.Date).Days + 1);
         }
 
         return Task.CompletedTask;
+    }
+
+    private bool PuedeEditarGocePago()
+    {
+        return editando.Tipo == TipoAusenciaRrhh.Permiso;
+    }
+
+    private string ObtenerMensajeGocePago()
+    {
+        return editando.Tipo switch
+        {
+            TipoAusenciaRrhh.Vacaciones => "(Siempre con goce)",
+            TipoAusenciaRrhh.Capacitacion => "(Siempre con goce)",
+            TipoAusenciaRrhh.Incapacidad => "(Siempre con goce)",
+            TipoAusenciaRrhh.PermisoConGoce => "(Siempre con goce)",
+            TipoAusenciaRrhh.PermisoSinGoce => "(Siempre sin goce)",
+            TipoAusenciaRrhh.FaltaInjustificada => "(Sin goce)",
+            TipoAusenciaRrhh.Suspension => "(Sin goce)",
+            TipoAusenciaRrhh.DiasEconomicos => "(Con goce)",
+            TipoAusenciaRrhh.PermisoMaternidad => "(Con goce)",
+            TipoAusenciaRrhh.PermisoPaternidad => "(Con goce)",
+            _ => string.Empty
+        };
     }
 
     private async Task GuardarAsync()
@@ -375,7 +429,22 @@
             entity.FechaFin = DateOnly.FromDateTime(fechaFinCaptura.Date);
             entity.Dias = editando.Dias;
             entity.Horas = editando.Horas;
-            entity.ConGocePago = editando.Tipo == TipoAusenciaRrhh.Vacaciones || editando.ConGocePago;
+            // Aplicar reglas de goce de pago según el tipo
+            entity.ConGocePago = editando.Tipo switch
+            {
+                TipoAusenciaRrhh.Vacaciones => true,
+                TipoAusenciaRrhh.Capacitacion => true,
+                TipoAusenciaRrhh.Incapacidad => true,
+                TipoAusenciaRrhh.PermisoConGoce => true,
+                TipoAusenciaRrhh.PermisoSinGoce => false,
+                TipoAusenciaRrhh.FaltaInjustificada => false,
+                TipoAusenciaRrhh.Suspension => false,
+                TipoAusenciaRrhh.DiasEconomicos => true,
+                TipoAusenciaRrhh.PermisoMaternidad => true,
+                TipoAusenciaRrhh.PermisoPaternidad => true,
+                TipoAusenciaRrhh.Permiso => editando.ConGocePago, // Solo Permiso genérico permite elegir
+                _ => editando.ConGocePago
+            };
             entity.Motivo = string.IsNullOrWhiteSpace(editando.Motivo) ? null : editando.Motivo.Trim();
             entity.Observaciones = string.IsNullOrWhiteSpace(editando.Observaciones) ? null : editando.Observaciones.Trim();
             entity.UpdatedAt = DateTime.UtcNow;
@@ -417,6 +486,38 @@
         mostrarForm = false;
         error = ok = null;
     }
+
+    private static string ObtenerNombreTipo(TipoAusenciaRrhh tipo) => tipo switch
+    {
+        TipoAusenciaRrhh.Vacaciones => "Vacaciones",
+        TipoAusenciaRrhh.Permiso => "Permiso",
+        TipoAusenciaRrhh.PermisoConGoce => "Permiso con goce",
+        TipoAusenciaRrhh.PermisoSinGoce => "Permiso sin goce",
+        TipoAusenciaRrhh.Capacitacion => "Capacitación",
+        TipoAusenciaRrhh.Incapacidad => "Incapacidad",
+        TipoAusenciaRrhh.FaltaInjustificada => "Falta injustificada",
+        TipoAusenciaRrhh.Suspension => "Suspensión",
+        TipoAusenciaRrhh.DiasEconomicos => "Días económicos",
+        TipoAusenciaRrhh.PermisoPaternidad => "Permiso paternidad",
+        TipoAusenciaRrhh.PermisoMaternidad => "Permiso maternidad",
+        _ => tipo.ToString()
+    };
+
+    private static string ObtenerClaseTipo(TipoAusenciaRrhh tipo) => tipo switch
+    {
+        TipoAusenciaRrhh.Vacaciones => "bg-info",
+        TipoAusenciaRrhh.Permiso => "bg-secondary",
+        TipoAusenciaRrhh.PermisoConGoce => "bg-success",
+        TipoAusenciaRrhh.PermisoSinGoce => "bg-warning text-dark",
+        TipoAusenciaRrhh.Capacitacion => "bg-primary",
+        TipoAusenciaRrhh.Incapacidad => "bg-danger",
+        TipoAusenciaRrhh.FaltaInjustificada => "bg-dark",
+        TipoAusenciaRrhh.Suspension => "bg-dark",
+        TipoAusenciaRrhh.DiasEconomicos => "bg-info",
+        TipoAusenciaRrhh.PermisoPaternidad => "bg-primary",
+        TipoAusenciaRrhh.PermisoMaternidad => "bg-primary",
+        _ => "bg-secondary"
+    };
 
     private static string ObtenerClaseEstatus(EstatusAusenciaRrhh estatus) => estatus switch
     {

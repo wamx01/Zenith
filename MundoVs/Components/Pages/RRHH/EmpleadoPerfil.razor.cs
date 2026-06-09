@@ -430,6 +430,15 @@ public partial class EmpleadoPerfil
     {
         TipoAusenciaRrhh.Vacaciones => "Vacaciones",
         TipoAusenciaRrhh.Permiso => "Permiso",
+        TipoAusenciaRrhh.PermisoConGoce => "Permiso con goce",
+        TipoAusenciaRrhh.PermisoSinGoce => "Permiso sin goce",
+        TipoAusenciaRrhh.Capacitacion => "Capacitaci\u00f3n",
+        TipoAusenciaRrhh.Incapacidad => "Incapacidad",
+        TipoAusenciaRrhh.FaltaInjustificada => "Falta injustificada",
+        TipoAusenciaRrhh.Suspension => "Suspensi\u00f3n",
+        TipoAusenciaRrhh.DiasEconomicos => "D\u00edas econ\u00f3micos",
+        TipoAusenciaRrhh.PermisoPaternidad => "Permiso paternidad",
+        TipoAusenciaRrhh.PermisoMaternidad => "Permiso maternidad",
         _ => tipo.ToString()
     };
 

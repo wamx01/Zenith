@@ -1869,7 +1869,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             .Where(a => a.EmpresaId == empresaId
                 && a.EmpleadoId == empleadoId
                 && a.IsActive
-                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && a.ConGocePago // cualquier tipo con goce y horas puede cubrir tiempo esperado
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.Horas > 0
                 && a.FechaInicio <= fecha

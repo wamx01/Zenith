@@ -482,15 +482,35 @@ public partial class Asistencias : ComponentBase
             return new PresentacionDato("—", "Sin ausencia registrada.", "asis-chip--muted", "bi-calendar2-check");
         }
 
-        if (resumen.Contains("Vacaciones", StringComparison.OrdinalIgnoreCase))
+        if (resumen.StartsWith("Vacaciones", StringComparison.OrdinalIgnoreCase))
         {
             return new PresentacionDato("Vac.", resumen, "asis-chip--info", "bi-umbrella");
         }
 
+        if (resumen.StartsWith("Incapacidad", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PresentacionDato("Incap.", resumen, "asis-chip--danger", "bi-hospital");
+        }
+
+        if (resumen.StartsWith("Capacitaci", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PresentacionDato("Cap.", resumen, "asis-chip--primary", "bi-mortarboard");
+        }
+
+        if (resumen.StartsWith("Falta", StringComparison.OrdinalIgnoreCase) || resumen.StartsWith("Suspensi", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PresentacionDato("Falta", resumen, "asis-chip--dark", "bi-x-circle");
+        }
+
+        var conGoce = resumen.Contains("con goce", StringComparison.OrdinalIgnoreCase)
+            || resumen.StartsWith("Paternidad", StringComparison.OrdinalIgnoreCase)
+            || resumen.StartsWith("Maternidad", StringComparison.OrdinalIgnoreCase)
+            || resumen.StartsWith("Días econ", StringComparison.OrdinalIgnoreCase);
+
         return new PresentacionDato(
-            resumen.Contains("con goce", StringComparison.OrdinalIgnoreCase) ? "Perm. +" : "Perm. -",
+            conGoce ? "Perm. +" : "Perm. -",
             resumen,
-            resumen.Contains("con goce", StringComparison.OrdinalIgnoreCase) ? "asis-chip--warn" : "asis-chip--dark",
+            conGoce ? "asis-chip--warn" : "asis-chip--dark",
             "bi-door-open");
     }
 
@@ -756,9 +776,24 @@ public partial class Asistencias : ComponentBase
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string FormatearAusencia(RrhhAusencia ausencia)
-        => ausencia.Tipo == TipoAusenciaRrhh.Vacaciones
-            ? "Vacaciones"
-            : $"Permiso {(ausencia.ConGocePago ? "con goce" : "sin goce")}{(ausencia.Horas > 0 ? $" ({ausencia.Horas:0.##} h)" : string.Empty)}";
+    {
+        var nombre = ausencia.Tipo switch
+        {
+            TipoAusenciaRrhh.Vacaciones => "Vacaciones",
+            TipoAusenciaRrhh.Permiso => $"Permiso {(ausencia.ConGocePago ? "con goce" : "sin goce")}",
+            TipoAusenciaRrhh.PermisoConGoce => "Permiso con goce",
+            TipoAusenciaRrhh.PermisoSinGoce => "Permiso sin goce",
+            TipoAusenciaRrhh.Capacitacion => "Capacitaci\u00f3n",
+            TipoAusenciaRrhh.Incapacidad => "Incapacidad",
+            TipoAusenciaRrhh.FaltaInjustificada => "Falta injustificada",
+            TipoAusenciaRrhh.Suspension => "Suspensi\u00f3n",
+            TipoAusenciaRrhh.DiasEconomicos => "D\u00edas econ\u00f3micos",
+            TipoAusenciaRrhh.PermisoPaternidad => "Paternidad",
+            TipoAusenciaRrhh.PermisoMaternidad => "Maternidad",
+            _ => ausencia.Tipo.ToString()
+        };
+        return ausencia.Horas > 0 ? $"{nombre} ({ausencia.Horas:0.##} h)" : nombre;
+    }
 
     private string ObtenerResumenAusencia(RrhhAsistencia asistencia)
         => ausenciasPorDia.TryGetValue(CrearClaveAusencia(asistencia.EmpleadoId, asistencia.Fecha), out var resumen)

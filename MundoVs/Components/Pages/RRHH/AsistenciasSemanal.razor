@@ -1169,7 +1169,8 @@
             .Where(a => a.EmpresaId == _empresaId
                 && empleadoIds.Contains(a.EmpleadoId)
                 && a.IsActive
-                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && a.ConGocePago // cualquier ausencia con goce y horas compensa tiempo esperado
+                && a.Horas > 0
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.FechaInicio <= hasta
                 && a.FechaFin >= desde)

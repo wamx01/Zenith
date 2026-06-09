@@ -71,14 +71,34 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         foreach (var empleado in empleadosPeriodo)
         {
             var ausenciasEmpleado = ausenciasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
+
+            // Clasificar ausencias por tipo y goce de pago
             var vacacionesPeriodo = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Vacaciones).Sum(a => a.Dias);
-            var permisosConGoce = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Permiso && a.ConGocePago).Sum(a => a.Dias);
-            var permisosSinGoce = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Permiso && !a.ConGocePago).Sum(a => a.Dias);
+            var diasIncapacidad = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Incapacidad).Sum(a => a.Dias);
+
+            // Ausencias CON goce de pago (no se descuentan del pago)
+            var diasConGoce = ausenciasEmpleado
+                .Where(a => a.ConGocePago && a.Tipo != TipoAusenciaRrhh.Vacaciones) // Vacaciones se maneja por separado
+                .Sum(a => a.Dias);
+
+            // Ausencias SIN goce de pago (sí se descuentan del pago)
+            var diasSinGoce = ausenciasEmpleado
+                .Where(a => !a.ConGocePago)
+                .Sum(a => a.Dias);
+
             var notaAusencias = ConstruirNotaAusencias(ausenciasEmpleado);
             var resumen = resumenAsistencias.GetValueOrDefault(empleado.Id) ?? new ResumenAsistenciaPrenominaSnapshot();
-            var diasTrabajados = resumen.TieneAsistencias ? resumen.DiasTrabajados : Math.Max(0, diasPeriodo - vacacionesPeriodo - permisosConGoce - permisosSinGoce);
+
+            // Días trabajados: total del período menos vacaciones y ausencias con/sin goce
+            var diasTrabajados = resumen.TieneAsistencias 
+                ? resumen.DiasTrabajados 
+                : Math.Max(0, diasPeriodo - vacacionesPeriodo - diasConGoce - diasSinGoce);
+
             var faltasInjustificadas = resumen.TieneAsistencias ? resumen.DiasFaltaInjustificada : 0;
-            var diasPagados = Math.Max(0, diasPeriodo - permisosSinGoce - faltasInjustificadas);
+
+            // Días PAGADOS: solo se descuentan ausencias sin goce y faltas injustificadas
+            // Las ausencias con goce (permisos con goce, capacitaciones, etc.) NO se descuentan
+            var diasPagados = Math.Max(0, diasPeriodo - diasSinGoce - faltasInjustificadas);
             var cicloVacacional = _nominaLegalPolicy.ObtenerCicloVacacional(empleado, inicio, configuracion);
             var vacacionesUsadasCiclo = (vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [])
                 .Sum(a => CalcularDiasAusenciaEnRango(a, DateOnly.FromDateTime(cicloVacacional.InicioCiclo), DateOnly.FromDateTime(cicloVacacional.FinCiclo)));
@@ -97,9 +117,9 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 DiasTrabajados = diasTrabajados,
                 DiasPagados = diasPagados,
                 DiasVacaciones = vacacionesPeriodo,
-                DiasFaltaJustificada = permisosSinGoce,
+                DiasFaltaJustificada = diasSinGoce, // Ausencias sin goce (permisos sin goce, suspensiones, etc.)
                 DiasFaltaInjustificada = faltasInjustificadas,
-                DiasIncapacidad = 0,
+                DiasIncapacidad = diasIncapacidad,
                 DiasDescansoTrabajado = resumen.DiasDescansoTrabajado,
                 DiasConMarcacion = resumen.DiasConMarcacion,
                 DiasDomingoTrabajado = resumen.DiasDomingoTrabajado,
@@ -181,7 +201,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             .AsNoTracking()
             .Where(a => empleadoIds.Contains(a.EmpleadoId)
                 && a.IsActive
-                && a.Tipo == TipoAusenciaRrhh.Permiso
+                && a.ConGocePago // Solo permisos CON goce reducen tiempo esperado
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.FechaInicio <= DateOnly.FromDateTime(fin)
                 && a.FechaFin >= DateOnly.FromDateTime(inicio))
@@ -321,12 +341,45 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
     {
         var resumen = ausencias
             .OrderBy(a => a.FechaInicio)
-            .Select(a => a.Tipo == TipoAusenciaRrhh.Vacaciones
-                ? $"Vacaciones {a.FechaInicio:dd/MM}-{a.FechaFin:dd/MM} ({a.Dias} d)"
-                : $"Permiso {(a.ConGocePago ? "con goce" : "sin goce")} {a.FechaInicio:dd/MM}-{a.FechaFin:dd/MM} ({a.Dias} d{(a.Horas > 0 ? $", {a.Horas:0.##} h" : string.Empty)})")
+            .Select(a => ObtenerDescripcionAusencia(a))
             .ToList();
 
         return resumen.Count == 0 ? null : string.Join(" | ", resumen);
+    }
+
+    private static string ObtenerDescripcionAusencia(RrhhAusencia ausencia)
+    {
+        var tipoNombre = ausencia.Tipo switch
+        {
+            TipoAusenciaRrhh.Vacaciones => "Vacaciones",
+            TipoAusenciaRrhh.Permiso => "Permiso",
+            TipoAusenciaRrhh.PermisoConGoce => "Permiso c/goce",
+            TipoAusenciaRrhh.PermisoSinGoce => "Permiso s/goce",
+            TipoAusenciaRrhh.Capacitacion => "Capacitación",
+            TipoAusenciaRrhh.Incapacidad => "Incapacidad",
+            TipoAusenciaRrhh.FaltaInjustificada => "Falta injustificada",
+            TipoAusenciaRrhh.Suspension => "Suspensión",
+            TipoAusenciaRrhh.DiasEconomicos => "Día económico",
+            TipoAusenciaRrhh.PermisoPaternidad => "Paternidad",
+            TipoAusenciaRrhh.PermisoMaternidad => "Maternidad",
+            _ => ausencia.Tipo.ToString()
+        };
+
+        var rango = ausencia.FechaInicio == ausencia.FechaFin 
+            ? ausencia.FechaInicio.ToString("dd/MM")
+            : $"{ausencia.FechaInicio:dd/MM}-{ausencia.FechaFin:dd/MM}";
+
+        var detalle = ausencia.Dias > 0 
+            ? $"({ausencia.Dias} d{(ausencia.Horas > 0 ? $", {ausencia.Horas:0.##} h" : string.Empty)})"
+            : ausencia.Horas > 0 
+                ? $"({ausencia.Horas:0.##} h)" 
+                : string.Empty;
+
+        var goceInfo = ausencia.Tipo == TipoAusenciaRrhh.Permiso 
+            ? $" {(ausencia.ConGocePago ? "c/goce" : "s/goce")}"
+            : string.Empty;
+
+        return $"{tipoNombre}{goceInfo} {rango} {detalle}".Trim();
     }
 
     private static string? CombinarNotas(params string?[] notas)
