@@ -29,6 +29,11 @@ public partial class Empleados
     private ConceptoEmpleadoEditor conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
     private string conceptoEmpleadoTipoSeleccionadoId = string.Empty;
     private HashSet<Guid> empleadosSeleccionados = [];
+    private string filtroTexto = string.Empty;
+    private Guid? filtroTurnoId;
+    private string? filtroDepartamento;
+    private string ordenColumna = "Nombre";
+    private bool ordenAscendente = true;
     private Empleado editando = new();
     private Guid? esquemaSeleccionadoId;
     private Guid? turnoSeleccionadoId;
@@ -45,7 +50,114 @@ public partial class Empleados
     private bool _puedeVer;
     private bool _puedeEditar;
     private Guid _empresaId;
-    private bool EstanTodosSeleccionados => lista.Count > 0 && empleadosSeleccionados.Count == lista.Count;
+    private void OrdenarNoEmpleado() => AlternarOrden("NoEmpleado");
+    private void OrdenarCodigoChecador() => AlternarOrden("CodigoChecador");
+    private void OrdenarNombre() => AlternarOrden("Nombre");
+    private void OrdenarPosicion() => AlternarOrden("Posicion");
+    private void OrdenarDepartamento() => AlternarOrden("Departamento");
+    private void OrdenarSueldo() => AlternarOrden("Sueldo");
+    private void OrdenarPeriodicidad() => AlternarOrden("Periodicidad");
+    private void OrdenarFechaContratacion() => AlternarOrden("FechaContratacion");
+    private void OrdenarActivo() => AlternarOrden("Activo");
+
+    private string IconoNoEmpleado => IconoOrden("NoEmpleado");
+    private string IconoCodigoChecador => IconoOrden("CodigoChecador");
+    private string IconoNombre => IconoOrden("Nombre");
+    private string IconoPosicion => IconoOrden("Posicion");
+    private string IconoDepartamento => IconoOrden("Departamento");
+    private string IconoSueldo => IconoOrden("Sueldo");
+    private string IconoPeriodicidad => IconoOrden("Periodicidad");
+    private string IconoFechaContratacion => IconoOrden("FechaContratacion");
+    private string IconoActivo => IconoOrden("Activo");
+
+    private bool EstanTodosSeleccionados => ListaFiltrada.Any() && empleadosSeleccionados.Count == ListaFiltrada.Count();
+
+    private IEnumerable<Empleado> ListaFiltrada
+    {
+        get
+        {
+            var query = lista.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(filtroTexto))
+            {
+                var termino = filtroTexto.Trim().ToLowerInvariant();
+                query = query.Where(e =>
+                    (e.Nombre ?? "").ToLowerInvariant().Contains(termino) ||
+                    (e.ApellidoPaterno ?? "").ToLowerInvariant().Contains(termino) ||
+                    (e.ApellidoMaterno ?? "").ToLowerInvariant().Contains(termino) ||
+                    (e.NumeroEmpleado ?? "").ToLowerInvariant().Contains(termino) ||
+                    (e.CodigoChecador ?? "").ToLowerInvariant().Contains(termino));
+            }
+
+            if (filtroTurnoId.HasValue && filtroTurnoId.Value != Guid.Empty)
+            {
+                query = query.Where(e => e.TurnoBaseId == filtroTurnoId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtroDepartamento))
+            {
+                var depto = filtroDepartamento.Trim();
+                query = query.Where(e => string.Equals(e.Departamento, depto, StringComparison.OrdinalIgnoreCase));
+            }
+
+            query = ordenColumna switch
+            {
+                "NoEmpleado" => ordenAscendente
+                    ? query.OrderBy(e => e.NumeroEmpleado, StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(e => e.NumeroEmpleado, StringComparer.OrdinalIgnoreCase),
+                "CodigoChecador" => ordenAscendente
+                    ? query.OrderBy(e => e.CodigoChecador, StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(e => e.CodigoChecador, StringComparer.OrdinalIgnoreCase),
+                "Nombre" => ordenAscendente
+                    ? query.OrderBy(e => e.Nombre).ThenBy(e => e.ApellidoPaterno).ThenBy(e => e.ApellidoMaterno)
+                    : query.OrderByDescending(e => e.Nombre).ThenByDescending(e => e.ApellidoPaterno).ThenByDescending(e => e.ApellidoMaterno),
+                "Posicion" => ordenAscendente
+                    ? query.OrderBy(e => ObtenerNombreActividad(e), StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(e => ObtenerNombreActividad(e), StringComparer.OrdinalIgnoreCase),
+                "Departamento" => ordenAscendente
+                    ? query.OrderBy(e => e.Departamento, StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(e => e.Departamento, StringComparer.OrdinalIgnoreCase),
+                "Sueldo" => ordenAscendente
+                    ? query.OrderBy(e => e.SueldoSemanal)
+                    : query.OrderByDescending(e => e.SueldoSemanal),
+                "Periodicidad" => ordenAscendente
+                    ? query.OrderBy(e => e.PeriodicidadPago)
+                    : query.OrderByDescending(e => e.PeriodicidadPago),
+                "FechaContratacion" => ordenAscendente
+                    ? query.OrderBy(e => e.FechaContratacion)
+                    : query.OrderByDescending(e => e.FechaContratacion),
+                "Activo" => ordenAscendente
+                    ? query.OrderBy(e => e.IsActive)
+                    : query.OrderByDescending(e => e.IsActive),
+                _ => query.OrderBy(e => e.Nombre).ThenBy(e => e.ApellidoPaterno)
+            };
+
+            return query;
+        }
+    }
+
+    private void AlternarOrden(string columna)
+    {
+        if (ordenColumna == columna)
+        {
+            ordenAscendente = !ordenAscendente;
+        }
+        else
+        {
+            ordenColumna = columna;
+            ordenAscendente = true;
+        }
+    }
+
+    private string IconoOrden(string columna) => ordenColumna == columna
+        ? (ordenAscendente ? "bi bi-sort-up" : "bi bi-sort-down")
+        : "bi bi-sort-down opacity-25";
+
+    private string FiltroTurnoSeleccionado
+    {
+        get => filtroTurnoId?.ToString() ?? string.Empty;
+        set => filtroTurnoId = Guid.TryParse(value, out var id) && id != Guid.Empty ? id : null;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -848,7 +960,7 @@ public partial class Empleados
             return;
         }
 
-        empleadosSeleccionados = lista.Select(e => e.Id).ToHashSet();
+        empleadosSeleccionados = ListaFiltrada.Select(e => e.Id).ToHashSet();
     }
 
     private void AlternarSeleccionEmpleado(Guid empleadoId, object? value)

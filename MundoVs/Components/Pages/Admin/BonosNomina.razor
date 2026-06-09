@@ -81,7 +81,7 @@
                                     {
                                         @foreach (var rubro in rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre))
                                         {
-                                            <tr @key="@(rubro.Id == Guid.Empty ? $"nuevo-rubro-{rubro.Clave}-{rubro.Nombre}" : rubro.Id.ToString())">
+                                            <tr @key="@rubro.Id">
                                                 <td>@rubro.Clave</td>
                                                 <td class="fw-semibold">@rubro.Nombre</td>
                                                 <td class="text-end">@rubro.Orden</td>
@@ -132,7 +132,7 @@
                                     <div class="border rounded p-2 small d-flex flex-column gap-2">
                                         @foreach (var rubro in rubrosBono.OrderBy(r => r.Orden).ThenBy(r => r.Nombre))
                                         {
-                                            <div class="d-flex flex-wrap align-items-center gap-2" @key="@(rubro.Id == Guid.Empty ? $"selector-rubro-{rubro.Clave}-{rubro.Nombre}" : rubro.Id.ToString())">
+                                            <div class="d-flex flex-wrap align-items-center gap-2" @key="@rubro.Id">
                                                 <label class="form-check-label d-flex align-items-center gap-2 mb-0">
                                                     <input type="checkbox" class="form-check-input" checked="@rubrosEsquemaSeleccionados.Contains(rubro.Id)" @onchange="@(args => AlternarRubroEsquema(rubro.Id, args.Value is bool value && value))" />
                                                     <span>@rubro.Nombre</span>
@@ -173,7 +173,7 @@
                                     {
                                         @foreach (var esquema in esquemasBono.OrderBy(e => e.Nombre))
                                         {
-                                            <tr @key="@(esquema.Id == Guid.Empty ? $"nuevo-esquema-{esquema.Nombre}" : esquema.Id.ToString())">
+                                            <tr @key="@esquema.Id">
                                                 <td class="fw-semibold">@esquema.Nombre</td>
                                                 <td>@esquema.TipoCaptura</td>
                                                 <td class="small text-muted">@string.Join(", ", esquema.Detalles.OrderBy(d => d.Orden).Select(d => esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? $"{d.BonoRubroRrhh.Nombre} {d.Porcentaje:0.##}%" : d.BonoRubroRrhh.Nombre))</td>
@@ -346,8 +346,10 @@
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            await GuardarRubrosBonoAsync(db);
-            await GuardarEsquemasBonoAsync(db);
+            var mapaRubros = await GuardarRubrosBonoAsync(db);
+            await db.SaveChangesAsync();
+
+            await GuardarEsquemasBonoAsync(db, mapaRubros);
             await GuardarAsignacionesPorPosicionAsync(db);
             await db.SaveChangesAsync();
 
@@ -367,8 +369,10 @@
         }
     }
 
-    private async Task GuardarRubrosBonoAsync(CrmDbContext db)
+    private async Task<Dictionary<Guid, Guid>> GuardarRubrosBonoAsync(CrmDbContext db)
     {
+        var mapaIds = new Dictionary<Guid, Guid>();
+
         if (rubrosBonoEliminados.Count > 0)
         {
             var eliminados = await db.BonosRubrosRrhh.Where(r => rubrosBonoEliminados.Contains(r.Id)).ToListAsync();
@@ -376,13 +380,20 @@
                 db.BonosRubrosRrhh.RemoveRange(eliminados);
         }
 
+        var idsExistentes = await db.BonosRubrosRrhh
+            .Where(r => r.EmpresaId == _empresaId && r.IsActive)
+            .Select(r => r.Id)
+            .ToListAsync();
+
         foreach (var rubro in rubrosBono)
         {
-            if (rubro.Id == Guid.Empty)
+            if (!idsExistentes.Contains(rubro.Id))
             {
-                db.BonosRubrosRrhh.Add(new BonoRubroRrhh
+                var idTemporal = rubro.Id;
+                var nuevoId = Guid.NewGuid();
+                var nuevoRubro = new BonoRubroRrhh
                 {
-                    Id = Guid.NewGuid(),
+                    Id = nuevoId,
                     EmpresaId = _empresaId,
                     Clave = rubro.Clave.Trim().ToUpperInvariant(),
                     Nombre = rubro.Nombre.Trim(),
@@ -390,7 +401,10 @@
                     Orden = rubro.Orden,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
-                });
+                };
+                db.BonosRubrosRrhh.Add(nuevoRubro);
+                mapaIds[idTemporal] = nuevoId;
+                rubro.Id = nuevoId;
                 continue;
             }
 
@@ -405,9 +419,11 @@
             actual.IsActive = true;
             actual.UpdatedAt = DateTime.UtcNow;
         }
+
+        return mapaIds;
     }
 
-    private async Task GuardarEsquemasBonoAsync(CrmDbContext db)
+    private async Task GuardarEsquemasBonoAsync(CrmDbContext db, Dictionary<Guid, Guid> mapaRubros)
     {
         if (esquemasBonoEliminados.Count > 0)
         {
@@ -416,9 +432,14 @@
                 db.BonosEstructurasRrhh.RemoveRange(eliminados);
         }
 
+        var idsExistentes = await db.BonosEstructurasRrhh
+            .Where(e => e.EmpresaId == _empresaId && e.IsActive)
+            .Select(e => e.Id)
+            .ToListAsync();
+
         foreach (var esquema in esquemasBono)
         {
-            if (esquema.Id == Guid.Empty)
+            if (!idsExistentes.Contains(esquema.Id))
             {
                 var nueva = new BonoEstructuraRrhh
                 {
@@ -435,11 +456,15 @@
                 var detalleOrden = 1;
                 foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
                 {
+                    var rubroId = mapaRubros.TryGetValue(detalle.BonoRubroRrhhId, out var idMapeado)
+                        ? idMapeado
+                        : detalle.BonoRubroRrhhId;
+
                     db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
                     {
                         Id = Guid.NewGuid(),
                         BonoEstructuraRrhh = nueva,
-                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        BonoRubroRrhhId = rubroId,
                         Orden = detalleOrden++,
                         Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
                         IsActive = true,
@@ -471,13 +496,17 @@
             var orden = 1;
             foreach (var detalle in esquema.Detalles.OrderBy(d => d.Orden))
             {
-                if (!existentes.TryGetValue(detalle.BonoRubroRrhhId, out var actualDetalle))
+                var rubroId = mapaRubros.TryGetValue(detalle.BonoRubroRrhhId, out var idMapeado)
+                    ? idMapeado
+                    : detalle.BonoRubroRrhhId;
+
+                if (!existentes.TryGetValue(rubroId, out var actualDetalle))
                 {
                     db.BonosEstructurasDetalleRrhh.Add(new BonoEstructuraDetalleRrhh
                     {
                         Id = Guid.NewGuid(),
                         BonoEstructuraRrhhId = actual.Id,
-                        BonoRubroRrhhId = detalle.BonoRubroRrhhId,
+                        BonoRubroRrhhId = rubroId,
                         Orden = orden++,
                         Porcentaje = esquema.TipoCaptura == TipoCapturaBonoNomina.TotalDistribuido ? detalle.Porcentaje : 0m,
                         IsActive = true,
@@ -532,7 +561,7 @@
 
         if (rubroBonoEnCaptura.Id == Guid.Empty)
         {
-            rubrosBono.Add(new BonoRubroRrhh { Id = Guid.Empty, Clave = clave, Nombre = rubroBonoEnCaptura.Nombre.Trim(), Descripcion = rubroBonoEnCaptura.Descripcion?.Trim(), Orden = rubroBonoEnCaptura.Orden, IsActive = true });
+            rubrosBono.Add(new BonoRubroRrhh { Id = Guid.NewGuid(), Clave = clave, Nombre = rubroBonoEnCaptura.Nombre.Trim(), Descripcion = rubroBonoEnCaptura.Descripcion?.Trim(), Orden = rubroBonoEnCaptura.Orden, IsActive = true });
         }
         else
         {
@@ -652,7 +681,7 @@
         {
             esquemasBono.Add(new BonoEstructuraRrhh
             {
-                Id = Guid.Empty,
+                Id = Guid.NewGuid(),
                 Nombre = nombre,
                 Descripcion = string.IsNullOrWhiteSpace(esquemaBonoEnCaptura.Descripcion) ? null : esquemaBonoEnCaptura.Descripcion.Trim(),
                 TipoCaptura = esquemaBonoEnCaptura.TipoCaptura,

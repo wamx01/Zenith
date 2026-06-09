@@ -93,28 +93,74 @@
             </div>
         }
 
+        <div class="card mb-3">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label mb-0 small">Buscar empleado</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" placeholder="Nombre del empleado..." @bind="filtroTexto" @bind:event="oninput" />
+                            @if (!string.IsNullOrWhiteSpace(filtroTexto))
+                            {
+                                <button class="btn btn-outline-secondary" type="button" @onclick="() => filtroTexto = string.Empty"><i class="bi bi-x"></i></button>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label mb-0 small">Saldo</label>
+                        <select class="form-select form-select-sm" value="@filtroSaldoSigno" @onchange="e => filtroSaldoSigno = (string?)e.Value">
+                            <option value="">(todos)</option>
+                            <option value="positivo">Con saldo positivo</option>
+                            <option value="negativo">Con saldo negativo</option>
+                            <option value="cero">Saldo cero</option>
+                        </select>
+                    </div>
+                    @if (empleadoHistorialId.HasValue)
+                    {
+                        <div class="col-6 col-md-2">
+                            <label class="form-label mb-0 small">Tipo mov.</label>
+                            <select class="form-select form-select-sm" value="@filtroTipoHistorial" @onchange="e => filtroTipoHistorial = (string?)e.Value">
+                                <option value="">(todos)</option>
+                                <option value="auto">Automático</option>
+                                <option value="manual">Manuales</option>
+                            </select>
+                        </div>
+                        <div class="col-4 col-md-2">
+                            <label class="form-label mb-0 small">Desde</label>
+                            <InputDate class="form-control form-control-sm" @bind-Value="filtroFechaDesde" />
+                        </div>
+                        <div class="col-4 col-md-2">
+                            <label class="form-label mb-0 small">Hasta</label>
+                            <InputDate class="form-control form-control-sm" @bind-Value="filtroFechaHasta" />
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
         <div class="card mb-4">
             <div class="card-body p-0">
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-dark">
                         <tr>
-                            <th>Empleado</th>
-                            <th class="text-end">Saldo</th>
-                            <th class="text-end">Automático</th>
-                            <th class="text-end">Manual</th>
-                            <th class="text-end">Consumido</th>
-                            <th class="text-center">Movs.</th>
+                            <th style="cursor:pointer" @onclick="OrdenarResumenEmpleado">Empleado <i class="@IconoResumenEmpleado"></i></th>
+                            <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenSaldo">Saldo <i class="@IconoResumenSaldo"></i></th>
+                            <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenAutomatico">Automático <i class="@IconoResumenAutomatico"></i></th>
+                            <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenManual">Manual <i class="@IconoResumenManual"></i></th>
+                            <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenConsumido">Consumido <i class="@IconoResumenConsumido"></i></th>
+                            <th style="cursor:pointer" class="text-center" @onclick="OrdenarResumenMovs">Movs. <i class="@IconoResumenMovs"></i></th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @if (resumenes.Count == 0)
+                        @if (!ResumenesFiltrados.Any())
                         {
-                            <tr><td colspan="7" class="text-center text-muted py-4">No hay movimientos de banco de horas todavía.</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted py-4">@(!string.IsNullOrWhiteSpace(filtroTexto) ? "No se encontraron empleados con ese filtro." : "No hay movimientos de banco de horas todavía.")</td></tr>
                         }
                         else
                         {
-                            @foreach (var item in resumenes)
+                            @foreach (var item in ResumenesFiltrados)
                             {
                                 <tr class="@(empleadoHistorialId == item.EmpleadoId ? "table-active" : string.Empty)">
                                     <td class="fw-semibold">@item.NombreEmpleado</td>
@@ -146,10 +192,10 @@
                     <table class="table table-sm table-hover mb-0 align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th class="ps-3">Fecha</th>
-                                <th>Tipo</th>
-                                <th class="text-end">Horas</th>
-                                <th>Referencia</th>
+                                <th class="ps-3" style="cursor:pointer" @onclick="OrdenarHistorialFecha">Fecha <i class="@IconoHistorialFecha"></i></th>
+                                <th style="cursor:pointer" @onclick="OrdenarHistorialTipo">Tipo <i class="@IconoHistorialTipo"></i></th>
+                                <th style="cursor:pointer" class="text-end" @onclick="OrdenarHistorialHoras">Horas <i class="@IconoHistorialHoras"></i></th>
+                                <th style="cursor:pointer" @onclick="OrdenarHistorialReferencia">Referencia <i class="@IconoHistorialReferencia"></i></th>
                                 <th>Notas</th>
                                 @if (_puedeEditar)
                                 {
@@ -158,7 +204,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var movimiento in MovimientosHistorial)
+                            @foreach (var movimiento in HistorialOrdenado)
                             {
                                 <tr>
                                     <td class="ps-3 text-nowrap">@movimiento.Fecha.ToString("dd/MM/yyyy")</td>
@@ -220,6 +266,169 @@
     private Guid _empresaId;
     private string? error;
     private string? ok;
+    private string filtroTexto = string.Empty;
+    private string? filtroTipoHistorial;
+    private DateTime? filtroFechaDesde;
+    private DateTime? filtroFechaHasta;
+    private string? filtroSaldoSigno;
+    private string resumenOrdenColumna = "Saldo";
+    private bool resumenOrdenAscendente = false;
+    private string historialOrdenColumna = "Fecha";
+    private bool historialOrdenAscendente = false;
+
+    private IEnumerable<BancoHorasResumenVm> ResumenesFiltrados
+    {
+        get
+        {
+            var query = resumenes.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(filtroTexto))
+            {
+                var termino = filtroTexto.Trim().ToLowerInvariant();
+                query = query.Where(r => r.NombreEmpleado.ToLowerInvariant().Contains(termino));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtroSaldoSigno))
+            {
+                query = filtroSaldoSigno switch
+                {
+                    "positivo" => query.Where(r => r.SaldoActual > 0),
+                    "negativo" => query.Where(r => r.SaldoActual < 0),
+                    "cero" => query.Where(r => r.SaldoActual == 0),
+                    _ => query
+                };
+            }
+
+            query = resumenOrdenColumna switch
+            {
+                "Empleado" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.NombreEmpleado, StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(r => r.NombreEmpleado, StringComparer.OrdinalIgnoreCase),
+                "Saldo" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.SaldoActual)
+                    : query.OrderByDescending(r => r.SaldoActual),
+                "Automatico" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.AcumuladoAutomatico)
+                    : query.OrderByDescending(r => r.AcumuladoAutomatico),
+                "Manual" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.AjustesManuales)
+                    : query.OrderByDescending(r => r.AjustesManuales),
+                "Consumido" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.Consumido)
+                    : query.OrderByDescending(r => r.Consumido),
+                "Movs" => resumenOrdenAscendente
+                    ? query.OrderBy(r => r.TotalMovimientos)
+                    : query.OrderByDescending(r => r.TotalMovimientos),
+                _ => query.OrderByDescending(r => r.SaldoActual).ThenBy(r => r.NombreEmpleado)
+            };
+
+            return query;
+        }
+    }
+
+    private IEnumerable<RrhhBancoHorasMovimiento> HistorialOrdenado
+    {
+        get
+        {
+            var query = MovimientosHistorial;
+
+            if (!string.IsNullOrWhiteSpace(filtroTipoHistorial))
+            {
+                query = filtroTipoHistorial switch
+                {
+                    "auto" => query.Where(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra),
+                    "manual" => query.Where(m => m.EsAutomatico == false && m.TipoMovimiento != TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra),
+                    _ => query
+                };
+            }
+
+            if (filtroFechaDesde.HasValue)
+            {
+                var desde = DateOnly.FromDateTime(filtroFechaDesde.Value.Date);
+                query = query.Where(m => m.Fecha >= desde);
+            }
+
+            if (filtroFechaHasta.HasValue)
+            {
+                var hasta = DateOnly.FromDateTime(filtroFechaHasta.Value.Date);
+                query = query.Where(m => m.Fecha <= hasta);
+            }
+            return historialOrdenColumna switch
+            {
+                "Fecha" => historialOrdenAscendente
+                    ? query.OrderBy(m => m.Fecha).ThenBy(m => m.CreatedAt)
+                    : query.OrderByDescending(m => m.Fecha).ThenByDescending(m => m.CreatedAt),
+                "Tipo" => historialOrdenAscendente
+                    ? query.OrderBy(m => m.TipoMovimiento.ToString())
+                    : query.OrderByDescending(m => m.TipoMovimiento.ToString()),
+                "Horas" => historialOrdenAscendente
+                    ? query.OrderBy(m => m.Horas)
+                    : query.OrderByDescending(m => m.Horas),
+                "Referencia" => historialOrdenAscendente
+                    ? query.OrderBy(m => m.ReferenciaTipo, StringComparer.OrdinalIgnoreCase)
+                    : query.OrderByDescending(m => m.ReferenciaTipo, StringComparer.OrdinalIgnoreCase),
+                _ => query
+            };
+        }
+    }
+
+    private void AlternarOrdenResumen(string columna)
+    {
+        if (resumenOrdenColumna == columna)
+        {
+            resumenOrdenAscendente = !resumenOrdenAscendente;
+        }
+        else
+        {
+            resumenOrdenColumna = columna;
+            resumenOrdenAscendente = columna == "Empleado";
+        }
+    }
+
+    private void AlternarOrdenHistorial(string columna)
+    {
+        if (historialOrdenColumna == columna)
+        {
+            historialOrdenAscendente = !historialOrdenAscendente;
+        }
+        else
+        {
+            historialOrdenColumna = columna;
+            historialOrdenAscendente = false;
+        }
+    }
+
+    private string ClaseOrdenResumen(string columna) => resumenOrdenColumna == columna
+        ? (resumenOrdenAscendente ? "bi bi-sort-up" : "bi bi-sort-down")
+        : "bi bi-sort-down opacity-25";
+
+    private string ClaseOrdenHistorial(string columna) => historialOrdenColumna == columna
+        ? (historialOrdenAscendente ? "bi bi-sort-up" : "bi bi-sort-down")
+        : "bi bi-sort-down opacity-25";
+
+    private void OrdenarResumenEmpleado() => AlternarOrdenResumen("Empleado");
+    private void OrdenarResumenSaldo() => AlternarOrdenResumen("Saldo");
+    private void OrdenarResumenAutomatico() => AlternarOrdenResumen("Automatico");
+    private void OrdenarResumenManual() => AlternarOrdenResumen("Manual");
+    private void OrdenarResumenConsumido() => AlternarOrdenResumen("Consumido");
+    private void OrdenarResumenMovs() => AlternarOrdenResumen("Movs");
+
+    private string IconoResumenEmpleado => ClaseOrdenResumen("Empleado");
+    private string IconoResumenSaldo => ClaseOrdenResumen("Saldo");
+    private string IconoResumenAutomatico => ClaseOrdenResumen("Automatico");
+    private string IconoResumenManual => ClaseOrdenResumen("Manual");
+    private string IconoResumenConsumido => ClaseOrdenResumen("Consumido");
+    private string IconoResumenMovs => ClaseOrdenResumen("Movs");
+
+    private void OrdenarHistorialFecha() => AlternarOrdenHistorial("Fecha");
+    private void OrdenarHistorialTipo() => AlternarOrdenHistorial("Tipo");
+    private void OrdenarHistorialHoras() => AlternarOrdenHistorial("Horas");
+    private void OrdenarHistorialReferencia() => AlternarOrdenHistorial("Referencia");
+
+    private string IconoHistorialFecha => ClaseOrdenHistorial("Fecha");
+    private string IconoHistorialTipo => ClaseOrdenHistorial("Tipo");
+    private string IconoHistorialHoras => ClaseOrdenHistorial("Horas");
+    private string IconoHistorialReferencia => ClaseOrdenHistorial("Referencia");
 
     private IEnumerable<RrhhBancoHorasMovimiento> MovimientosHistorial => empleadoHistorialId.HasValue
         ? movimientos.Where(m => m.EmpleadoId == empleadoHistorialId.Value).OrderByDescending(m => m.Fecha).ThenByDescending(m => m.CreatedAt)

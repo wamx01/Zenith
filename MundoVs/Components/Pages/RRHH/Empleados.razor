@@ -380,6 +380,44 @@
         </div>
     }
 
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-md-4">
+                    <label class="form-label mb-0 small">Buscar</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" placeholder="Nombre, apellido, número o código..." @bind="filtroTexto" @bind:event="oninput" />
+                        @if (!string.IsNullOrWhiteSpace(filtroTexto))
+                        {
+                            <button class="btn btn-outline-secondary" type="button" @onclick="() => filtroTexto = string.Empty"><i class="bi bi-x"></i></button>
+                        }
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label mb-0 small">Turno</label>
+                    <select class="form-select form-select-sm" value="@filtroTurnoId" @onchange="e => filtroTurnoId = (e.Value?.ToString() is string s && Guid.TryParse(s, out var id) && id != Guid.Empty) ? id : null">
+                        <option value="">(todos)</option>
+                        @foreach (var turno in turnosBase)
+                        {
+                            <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label mb-0 small">Departamento</label>
+                    <select class="form-select form-select-sm" value="@filtroDepartamento" @onchange="e => filtroDepartamento = (string?)e.Value">
+                        <option value="">(todos)</option>
+                        @foreach (var depto in DepartamentosDisponibles)
+                        {
+                            <option value="@depto">@depto</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-body p-0">
             @if (_puedeEditar)
@@ -393,7 +431,7 @@
                             @foreach (var turno in turnosBase)
                             {
                                 <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
-                            }
+                        }
                         </InputSelect>
                     </div>
                     <button class="btn btn-outline-primary" @onclick="AplicarTurnoBulk" disabled="@(guardando || empleadosSeleccionados.Count == 0)">
@@ -414,13 +452,22 @@
                         {
                             <th class="text-center" style="width:52px">Sel.</th>
                         }
-                        <th>No. Empleado</th><th>Cód. checador</th><th>Nombre</th><th>Posición</th><th>Depto</th>
-                        <th class="text-end">Vacaciones</th><th class="text-end">Banco horas</th><th class="text-end">Sueldo Base</th><th>Periodicidad</th><th>IMSS</th><th>ISR</th><th>Infonavit</th><th>Esquema</th><th>Turno</th>
-                        <th>F. Contratación</th><th class="text-center">Activo</th><th></th>
+                        <th style="cursor:pointer" @onclick="OrdenarNoEmpleado">No. Empleado <i class="@IconoNoEmpleado"></i></th>
+                        <th style="cursor:pointer" @onclick="OrdenarCodigoChecador">Cód. checador <i class="@IconoCodigoChecador"></i></th>
+                        <th style="cursor:pointer" @onclick="OrdenarNombre">Nombre <i class="@IconoNombre"></i></th>
+                        <th style="cursor:pointer" @onclick="OrdenarPosicion">Posición <i class="@IconoPosicion"></i></th>
+                        <th style="cursor:pointer" @onclick="OrdenarDepartamento">Depto <i class="@IconoDepartamento"></i></th>
+                        <th class="text-end">Vacaciones</th><th class="text-end">Banco horas</th>
+                        <th style="cursor:pointer" class="text-end" @onclick="OrdenarSueldo">Sueldo Base <i class="@IconoSueldo"></i></th>
+                        <th style="cursor:pointer" @onclick="OrdenarPeriodicidad">Periodicidad <i class="@IconoPeriodicidad"></i></th>
+                        <th>IMSS</th><th>ISR</th><th>Infonavit</th><th>Esquema</th><th>Turno</th>
+                        <th style="cursor:pointer" @onclick="OrdenarFechaContratacion">F. Contratación <i class="@IconoFechaContratacion"></i></th>
+                        <th style="cursor:pointer" class="text-center" @onclick="OrdenarActivo">Activo <i class="@IconoActivo"></i></th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var e in lista)
+                    @foreach (var e in ListaFiltrada)
                     {
                         <tr>
                             @if (_puedeEditar)
@@ -459,7 +506,7 @@
             </div>
 
             <div class="d-md-none">
-                @foreach (var e in lista)
+                @foreach (var e in ListaFiltrada)
                 {
                     <div class="ep-emp-card @(e.IsActive ? "" : "opacity-75")">
                         <div class="ep-emp-card__body">
