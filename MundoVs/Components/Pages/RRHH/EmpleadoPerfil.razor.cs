@@ -350,6 +350,7 @@ public partial class EmpleadoPerfil
                 Dias = _ausenciaEditando.Dias,
                 Horas = _ausenciaEditando.Horas,
                 ConGocePago = _ausenciaEditando.Tipo == TipoAusenciaRrhh.Vacaciones || _ausenciaEditando.ConGocePago,
+                DescuentaBancoHoras = RrhhAusencia.DebeDescuentarBancoPorDefecto(_ausenciaEditando.Tipo),
                 Motivo = string.IsNullOrWhiteSpace(_ausenciaEditando.Motivo) ? null : _ausenciaEditando.Motivo.Trim(),
                 Observaciones = string.IsNullOrWhiteSpace(_ausenciaEditando.Observaciones) ? null : _ausenciaEditando.Observaciones.Trim(),
                 IsActive = true,

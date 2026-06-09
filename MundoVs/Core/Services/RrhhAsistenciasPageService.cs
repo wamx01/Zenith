@@ -169,7 +169,21 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string FormatearAusencia(RrhhAusencia ausencia)
-        => ausencia.Tipo == TipoAusenciaRrhh.Vacaciones
-            ? "Vacaciones"
-            : $"Permiso {(ausencia.ConGocePago ? "con goce" : "sin goce")}{(ausencia.Horas > 0 ? $" ({ausencia.Horas:0.##} h)" : string.Empty)}";
+    {
+        var nombre = ausencia.Tipo switch
+        {
+            TipoAusenciaRrhh.Vacaciones => "Vacaciones",
+            TipoAusenciaRrhh.PermisoConGoce => "Permiso con goce",
+            TipoAusenciaRrhh.PermisoSinGoce => "Permiso sin goce",
+            TipoAusenciaRrhh.Capacitacion => "Capacitación",
+            TipoAusenciaRrhh.Incapacidad => "Incapacidad",
+            TipoAusenciaRrhh.FaltaInjustificada => "Falta injustificada",
+            TipoAusenciaRrhh.Suspension => "Suspensión",
+            TipoAusenciaRrhh.DiasEconomicos => "Días económicos",
+            TipoAusenciaRrhh.PermisoPaternidad => "Paternidad",
+            TipoAusenciaRrhh.PermisoMaternidad => "Maternidad",
+            _ => $"Permiso {(ausencia.ConGocePago ? "con goce" : "sin goce")}"
+        };
+        return ausencia.Horas > 0 ? $"{nombre} ({ausencia.Horas:0.##} h)" : nombre;
+    }
 }

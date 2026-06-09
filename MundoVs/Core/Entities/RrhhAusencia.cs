@@ -15,6 +15,14 @@ public class RrhhAusencia : BaseEntity
     public int Dias { get; set; }
     public decimal Horas { get; set; }
     public bool ConGocePago { get; set; }
+
+    /// <summary>
+    /// Indica si las horas de esta ausencia se descuentan del banco de horas acumulado del empleado.
+    /// Es independiente de ConGocePago: capacitación, incapacidad y maternidad son con goce pero NO descuentan banco.
+    /// Solo aplica a permisos parciales donde el empleado "gasta" su banco.
+    /// </summary>
+    public bool DescuentaBancoHoras { get; set; }
+
     public string? Motivo { get; set; }
     public string? Observaciones { get; set; }
     public DateTime? FechaAprobacion { get; set; }
@@ -36,12 +44,22 @@ public class RrhhAusencia : BaseEntity
     };
 
     /// <summary>
-    /// Determina si este tipo puede configurarse el goce de pago
+    /// Determina si este tipo puede configurarse el goce de pago (solo Permiso genérico)
     /// </summary>
     public bool PuedeConfigurarGocePago() => Tipo switch
     {
         TipoAusenciaRrhh.Permiso => true,
         _ => false
+    };
+
+    /// <summary>
+    /// Determina si este tipo descuenta banco de horas por defecto.
+    /// Solo los permisos donde el empleado usa su banco acumulado deben descontarlo.
+    /// </summary>
+    public static bool DebeDescuentarBancoPorDefecto(TipoAusenciaRrhh tipo) => tipo switch
+    {
+        TipoAusenciaRrhh.PermisoConGoce => true, // permiso explícitamente con goce = usa banco
+        _ => false // vacaciones, capacitación, incapacidad, maternidad, etc. NO descuentan banco
     };
 }
 

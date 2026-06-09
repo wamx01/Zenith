@@ -2,9 +2,11 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Interfaces
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IRrhhTiempoExtraResolutionService TiempoExtraResolutionService
 @rendermode InteractiveServer
 
 <PageTitle>Ausencias</PageTitle>
@@ -90,6 +92,18 @@
                                     </label>
                                 </div>
                             </div>
+                            @if (editando.ConGocePago)
+                            {
+                                <div class="col-md-3 d-flex align-items-end">
+                                    <div class="form-check mb-2">
+                                        <InputCheckbox class="form-check-input" @bind-Value="editando.DescuentaBancoHoras" disabled="@(!PuedeEditarDescuentaBanco())" />
+                                        <label class="form-check-label">
+                                            Descontar banco de horas
+                                            <small class="text-muted d-block">@ObtenerMensajeDescuentaBanco()</small>
+                                        </label>
+                                    </div>
+                                </div>
+                            }
                             <div class="col-md-2">
                                 <label class="form-label">Inicio</label>
                                 <InputDate class="form-control" @bind-Value="fechaInicioCaptura" @bind-Value:after="OnFechaChangedAsync" />
@@ -136,6 +150,7 @@
                             <th class="text-center">Días</th>
                             <th class="text-center">Horas</th>
                             <th>Goce</th>
+                            <th class="text-center">Banco</th>
                             <th>Motivo</th>
                             <th></th>
                         </tr>
@@ -143,7 +158,7 @@
                     <tbody>
                         @if (lista.Count == 0)
                         {
-                            <tr><td colspan="9" class="text-center text-muted py-4">No hay ausencias registradas.</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-4">No hay ausencias registradas.</td></tr>
                         }
                         else
                         {
@@ -169,6 +184,16 @@
                                         else
                                         {
                                             <i class="bi bi-x-circle-fill text-danger" title="Sin goce"></i>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        @if (item.DescuentaBancoHoras)
+                                        {
+                                            <i class="bi bi-hourglass-split text-warning" title="Descuenta banco de horas"></i>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">—</span>
                                         }
                                     </td>
                                     <td>
@@ -257,6 +282,7 @@
                 Dias = a.Dias,
                 Horas = a.Horas,
                 ConGocePago = a.ConGocePago,
+                DescuentaBancoHoras = a.DescuentaBancoHoras,
                 Motivo = a.Motivo,
                 Observaciones = a.Observaciones,
                 FechaAprobacion = a.FechaAprobacion,
@@ -273,6 +299,7 @@
             Tipo = TipoAusenciaRrhh.Permiso,
             Estatus = EstatusAusenciaRrhh.Solicitada,
             ConGocePago = false,
+            DescuentaBancoHoras = false,
             Dias = 1
         };
         fechaInicioCaptura = DateTime.Today;
@@ -294,6 +321,7 @@
             Dias = item.Dias,
             Horas = item.Horas,
             ConGocePago = item.ConGocePago,
+            DescuentaBancoHoras = item.DescuentaBancoHoras,
             Motivo = item.Motivo,
             Observaciones = item.Observaciones,
             FechaAprobacion = item.FechaAprobacion,
@@ -306,7 +334,6 @@
 
     private Task OnTipoChangedAsync()
     {
-        // Aplicar reglas de negocio según el tipo
         editando.ConGocePago = editando.Tipo switch
         {
             TipoAusenciaRrhh.Vacaciones => true,
@@ -321,6 +348,9 @@
             TipoAusenciaRrhh.PermisoPaternidad => true,
             _ => editando.ConGocePago
         };
+
+        // Resetear banco según el tipo — solo PermisoConGoce descuenta banco por defecto
+        editando.DescuentaBancoHoras = RrhhAusencia.DebeDescuentarBancoPorDefecto(editando.Tipo);
 
         if (editando.Dias <= 0)
         {
@@ -364,6 +394,36 @@
             TipoAusenciaRrhh.DiasEconomicos => "(Con goce)",
             TipoAusenciaRrhh.PermisoMaternidad => "(Con goce)",
             TipoAusenciaRrhh.PermisoPaternidad => "(Con goce)",
+            _ => string.Empty
+        };
+    }
+
+    private bool PuedeEditarDescuentaBanco()
+    {
+        // Solo se puede editar banco cuando es con goce y el tipo lo permite
+        return editando.ConGocePago && editando.Tipo switch
+        {
+            TipoAusenciaRrhh.Permiso => true,        // Permiso genérico con goce: el usuario decide
+            TipoAusenciaRrhh.PermisoConGoce => false, // siempre descuenta banco
+            _ => false                                // vacaciones, capacitación, incapacidad, etc.: nunca banco
+        };
+    }
+
+    private string ObtenerMensajeDescuentaBanco()
+    {
+        if (!editando.ConGocePago)
+            return string.Empty;
+
+        return editando.Tipo switch
+        {
+            TipoAusenciaRrhh.PermisoConGoce => "(Siempre descuenta banco)",
+            TipoAusenciaRrhh.Permiso => "El empleado usa su banco acumulado",
+            TipoAusenciaRrhh.Vacaciones => "(No descuenta banco)",
+            TipoAusenciaRrhh.Capacitacion => "(No descuenta banco — empresa paga)",
+            TipoAusenciaRrhh.Incapacidad => "(No descuenta banco — IMSS/empresa)",
+            TipoAusenciaRrhh.DiasEconomicos => "(No descuenta banco)",
+            TipoAusenciaRrhh.PermisoPaternidad => "(No descuenta banco)",
+            TipoAusenciaRrhh.PermisoMaternidad => "(No descuenta banco)",
             _ => string.Empty
         };
     }
@@ -429,7 +489,6 @@
             entity.FechaFin = DateOnly.FromDateTime(fechaFinCaptura.Date);
             entity.Dias = editando.Dias;
             entity.Horas = editando.Horas;
-            // Aplicar reglas de goce de pago según el tipo
             entity.ConGocePago = editando.Tipo switch
             {
                 TipoAusenciaRrhh.Vacaciones => true,
@@ -442,8 +501,16 @@
                 TipoAusenciaRrhh.DiasEconomicos => true,
                 TipoAusenciaRrhh.PermisoMaternidad => true,
                 TipoAusenciaRrhh.PermisoPaternidad => true,
-                TipoAusenciaRrhh.Permiso => editando.ConGocePago, // Solo Permiso genérico permite elegir
+                TipoAusenciaRrhh.Permiso => editando.ConGocePago,
                 _ => editando.ConGocePago
+            };
+
+            // DescuentaBancoHoras: regla forzada por tipo, con excepción para Permiso genérico
+            entity.DescuentaBancoHoras = editando.Tipo switch
+            {
+                TipoAusenciaRrhh.PermisoConGoce => true,  // siempre descuenta banco
+                TipoAusenciaRrhh.Permiso => entity.ConGocePago && editando.DescuentaBancoHoras, // solo si tiene goce y el usuario lo activó
+                _ => false // vacaciones, capacitación, incapacidad, maternidad, etc.: nunca banco
             };
             entity.Motivo = string.IsNullOrWhiteSpace(editando.Motivo) ? null : editando.Motivo.Trim();
             entity.Observaciones = string.IsNullOrWhiteSpace(editando.Observaciones) ? null : editando.Observaciones.Trim();
@@ -467,6 +534,30 @@
             }
 
             await db.SaveChangesAsync();
+
+            // Sincronizar movimiento de banco de horas según DescuentaBancoHoras
+            var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+            var usuarioActual = user.Identity?.Name ?? "sistema";
+            if (entity.DescuentaBancoHoras && entity.Horas > 0)
+            {
+                await TiempoExtraResolutionService.AplicarPermisoConGoceBancoHorasAsync(db, new RrhhPermisoBancoHorasCommand
+                {
+                    EmpresaId = _empresaId,
+                    EmpleadoId = entity.EmpleadoId,
+                    AusenciaId = entity.Id,
+                    Fecha = entity.FechaInicio,
+                    HorasPermiso = entity.Horas,
+                    Observaciones = string.IsNullOrWhiteSpace(entity.Motivo) ? "Consumo por permiso con goce." : entity.Motivo.Trim(),
+                    UsuarioActual = usuarioActual
+                });
+            }
+            else
+            {
+                await TiempoExtraResolutionService.RemoverPermisoBancoHorasAsync(db, _empresaId, entity.EmpleadoId, entity.Id);
+            }
+
+            await db.SaveChangesAsync();
+
             ok = "Ausencia guardada.";
             mostrarForm = false;
             await CargarAsync();
@@ -541,6 +632,7 @@
         public int Dias { get; set; }
         public decimal Horas { get; set; }
         public bool ConGocePago { get; set; }
+        public bool DescuentaBancoHoras { get; set; }
         public string? Motivo { get; set; }
         public string? Observaciones { get; set; }
         public DateTime? FechaAprobacion { get; set; }

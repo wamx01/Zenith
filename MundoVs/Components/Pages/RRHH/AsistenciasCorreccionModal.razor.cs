@@ -1853,6 +1853,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             permiso.Dias = 1;
             permiso.Horas = decimal.Round(horasPermisoDiaCaptura, 2, MidpointRounding.AwayFromZero);
             permiso.ConGocePago = permisoDiaConGoceCaptura;
+            // Los permisos parciales registrados desde asistencias siempre descuentan banco cuando son con goce
+            permiso.DescuentaBancoHoras = permisoDiaConGoceCaptura;
             permiso.Motivo = string.IsNullOrWhiteSpace(permisoDiaMotivo) ? "Permiso parcial desde asistencias." : permisoDiaMotivo.Trim();
             permiso.Observaciones = string.IsNullOrWhiteSpace(permisoDiaObservaciones) ? null : permisoDiaObservaciones.Trim();
             permiso.FechaAprobacion ??= DateTime.UtcNow;
@@ -1861,7 +1863,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             permiso.UpdatedBy = usuarioActual;
             permiso.IsActive = true;
 
-            if (permiso.ConGocePago)
+            if (permiso.DescuentaBancoHoras)
             {
                 saldoBancoHorasSeleccionado = await TiempoExtraResolutionService.AplicarPermisoConGoceBancoHorasAsync(db, new RrhhPermisoBancoHorasCommand
                 {
@@ -1883,7 +1885,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             await ReprocesarYRefrescarDiaAsync(
                 db,
                 fecha,
-                permiso.ConGocePago
+                permiso.DescuentaBancoHoras
                 ? "Permiso parcial guardado, banco descontado y asistencia reprocesada."
                 : "Permiso parcial guardado y asistencia reprocesada.");
         }
@@ -1959,7 +1961,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             permisoDiaSeleccionado.ConGocePago ? "con goce" : "sin goce"
         };
 
-        if (permisoDiaSeleccionado.ConGocePago)
+        if (permisoDiaSeleccionado.DescuentaBancoHoras)
         {
             partes.Add("descontado del banco de horas");
         }
@@ -2080,9 +2082,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         if (permisoDiaSeleccionado != null)
         {
-            reglas.Add(permisoDiaSeleccionado.ConGocePago
+            reglas.Add(permisoDiaSeleccionado.DescuentaBancoHoras
                 ? "El permiso parcial con goce descuenta saldo del banco de horas del empleado."
-                : "El permiso parcial sin goce no consume banco de horas.");
+                : "Este permiso parcial no consume banco de horas.");
         }
 
         if (asesorCorreccionActual != null)

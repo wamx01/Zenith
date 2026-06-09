@@ -132,7 +132,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
                 segmentos,
                 resolucionesDisponibles,
                 permisoDia.ConGocePago
-                    ? $"Permiso registrado: {FormatearMinutos(permisoMinutos)}. {(minutosCompensadosAprobados > 0 ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosAprobados)}. " : string.Empty)}Ya no queda faltante remanente por cubrir."
+                    ? $"Permiso con goce registrado: {FormatearMinutos(permisoMinutos)}. {(minutosCompensadosAprobados > 0 ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosAprobados)}. " : string.Empty)}Ya no queda faltante remanente por cubrir."
                     : $"Permiso sin goce registrado: {FormatearMinutos(permisoMinutos)}. {(minutosCompensadosAprobados > 0 ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosAprobados)}. " : string.Empty)}Ya no queda faltante remanente por cubrir.",
                 resolucionesDisponibles.Count > 0 ? "Las acciones de tiempo quedan como ajuste secundario; este faltante ya está cubierto por el permiso." : null,
                 false,
@@ -228,7 +228,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
                 null,
                 segmentos,
                 resolucionesDisponibles,
-                permisoDia.ConGocePago ? "El permiso con goce impacta el banco de horas del empleado." : "El permiso sin goce no consume banco de horas.",
+                permisoDia.DescuentaBancoHoras ? "El permiso descuenta banco de horas del empleado." : "Este permiso no consume banco de horas.",
                 resolucionesDisponibles.Count > 0 ? "La resolución de tiempo permanece disponible solo como ajuste secundario." : null,
                 false,
                 true,
