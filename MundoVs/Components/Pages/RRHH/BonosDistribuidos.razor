@@ -709,9 +709,9 @@
         foreach (var item in grupo.Empleados)
         {
             foreach (var detalle in item.Detalles)
-                detalle.MontoAsignado = Math.Round(grupo.MontoTotalDistribuir * (detalle.Porcentaje / 100m), 2);
+                detalle.MontoAsignado = Math.Round(grupo.MontoTotalDistribuir * (detalle.Porcentaje / 100m) * (detalle.TopePorcentaje / 100m), 2);
 
-            item.PorcentajeTotal = item.Detalles.Sum(d => d.Porcentaje);
+            item.PorcentajeTotal = item.Detalles.Sum(d => (d.Porcentaje / 100m) * (d.TopePorcentaje / 100m) * 100m);
             item.MontoAsignado = item.Detalles.Sum(d => d.MontoAsignado);
         }
     }

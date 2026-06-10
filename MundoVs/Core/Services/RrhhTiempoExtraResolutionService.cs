@@ -89,7 +89,9 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             ? command.FactorTiempoExtraOverride.Value
             : contextoEmpleado.Configuracion.FactorTiempoExtra;
         var bancoHorasHabilitado = contextoEmpleado.Configuracion.BancoHorasHabilitado;
-        var factorAcumulacionBanco = contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
+        var factorAcumulacionBanco = command.FactorTiempoExtraOverride.HasValue && command.FactorTiempoExtraOverride.Value > 0m
+            ? command.FactorTiempoExtraOverride.Value
+            : contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
         var saldoBancoDisponible = Math.Max(0, saldoBancoMinutos - netoPrevioMinutos);
         var extraResoluble = Math.Max(0, asistencia.MinutosExtra);
         var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);

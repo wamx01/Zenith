@@ -277,6 +277,53 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         Assert.Equal(60, result.MinutosPagoAplicados);
     }
 
+    [Fact]
+    public async Task AplicarResolucionAsync_CuandoHayOverrideFactor_UsaElManualParaBancoFactorado()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 7),
+            MinutosTrabajadosNetos = 540,
+            MinutosJornadaNetaProgramada = 540,
+            MinutosExtra = 60,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasHabilitado, "true"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, "1"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+        var result = await service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "BancoTodo",
+            MinutosBaseBanco = 60,
+            FactorTiempoExtraOverride = 1.5m,
+            UsuarioActual = "tester"
+        });
+
+        Assert.Equal(1.5m, result.FactorAcumulacionBancoHoras);
+        Assert.Equal(60, result.MinutosBaseBancoAplicados);
+        Assert.Equal(90, result.MinutosBancoAplicados);
+
+        await db.SaveChangesAsync();
+
+        var movimiento = await db.RrhhBancoHorasMovimientos.SingleAsync(m => m.ReferenciaTipo == $"Asistencia:{asistencia.Id:N}:extra-banco");
+        Assert.Equal(1.5m, movimiento.Horas);
+    }
+
     private static CrmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<CrmDbContext>()
