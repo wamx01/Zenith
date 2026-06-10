@@ -1144,16 +1144,27 @@
                 : $"Extra pend. {FormatearMinutos(minutosExtra)}";
         }
 
+        var visibleTexto = visible > 0 ? FormatearMinutos(visible) : "—";
+        var debidoTexto = debido > 0 ? FormatearMinutos(debido) : "—";
+        var diferenciaTexto = delta == 0
+            ? "En objetivo"
+            : delta > 0
+                ? $"+{FormatearMinutos(delta)}"
+                : $"-{FormatearMinutos(Math.Abs(delta))}";
+
         var tooltipExtra = minutosExtra > 0
             ? $" | Extra detectado: {FormatearMinutos(minutosExtra)} | Extra aprobado: {FormatearMinutos(minutosExtraAprobados)}"
             : string.Empty;
 
+        var fechaTexto = dia.ToString("dddd, dd/MM/yyyy", CulturaEsMx);
+        var tooltip = $"{fechaTexto} | Visible: {visibleTexto} | Debe: {debidoTexto} | Diferencia: {diferenciaTexto}{tooltipExtra}";
+
         return new PresentacionCeldaSemanal(
-            visible > 0 ? FormatearMinutos(visible) : "—",
-            debido > 0 ? FormatearMinutos(debido) : "—",
+            visibleTexto,
+            debidoTexto,
             deltaTexto,
             cssClass,
-            $"Visible: {(visible > 0 ? FormatearMinutos(visible) : "—")} | Debe: {(debido > 0 ? FormatearMinutos(debido) : "—")} | Diferencia: {(delta == 0 ? "En objetivo" : delta > 0 ? "+" + FormatearMinutos(delta) : "-" + FormatearMinutos(Math.Abs(delta)))}{tooltipExtra}");
+            tooltip);
     }
 
     private Task AbrirCorreccionDiaAsync(Guid empleadoId, DateOnly fecha)
