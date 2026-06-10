@@ -458,7 +458,7 @@
                                                                         <tbody>
                                                                             @foreach (var bono in bonosSeleccionados)
                                                                             {
-                                                                                <tr>
+                                                                                <tr @key="@bono.Id">
                                                                                     <td class="fw-semibold">@bono.Nombre</td>
                                                                                     <td class="text-end" style="max-width:140px">
                                                                                         <InputNumber class="form-control form-control-sm text-end" @bind-Value="bono.Importe" disabled="@(!PuedeModificarPrenominaActual)" />
@@ -530,7 +530,7 @@
                                                                         <tbody>
                                                                             @foreach (var percepcion in percepcionesSeleccionadas)
                                                                             {
-                                                                                <tr>
+                                                                                <tr @key="@percepcion.Id">
                                                                                     <td class="fw-semibold">@percepcion.Nombre</td>
                                                                                     <td class="text-end" style="max-width:140px">
                                                                                         <InputNumber class="form-control form-control-sm text-end" @bind-Value="percepcion.Importe" disabled="@(!PuedeModificarPrenominaActual)" />
@@ -1729,7 +1729,7 @@
             var existente = bonosExistentes.GetValueOrDefault(rubro.Id);
             return new PrenominaBonoEditable
             {
-                Id = existente?.Id ?? Guid.Empty,
+                Id = existente?.Id ?? Guid.NewGuid(),
                 BonoRubroRrhhId = rubro.Id,
                 Nombre = rubro.Nombre,
                 Orden = rubro.Orden,
@@ -1748,7 +1748,7 @@
             var existente = bonosExistentes.GetValueOrDefault(rubro.Id);
             return new PrenominaBonoEditable
             {
-                Id = existente?.Id ?? Guid.Empty,
+                Id = existente?.Id ?? Guid.NewGuid(),
                 BonoRubroRrhhId = rubro.Id,
                 Nombre = rubro.Nombre,
                 Orden = rubro.Orden,
@@ -1767,7 +1767,7 @@
             var existente = percepcionesExistentes.GetValueOrDefault(tipo.Id);
             return new PrenominaPercepcionEditable
             {
-                Id = existente?.Id ?? Guid.Empty,
+                Id = existente?.Id ?? Guid.NewGuid(),
                 TipoPercepcionId = tipo.Id,
                 Nombre = tipo.Nombre,
                 Orden = tipo.Orden,
@@ -1787,7 +1787,7 @@
             var existente = percepcionesExistentes.GetValueOrDefault(tipo.Id);
             return new PrenominaPercepcionEditable
             {
-                Id = existente?.Id ?? Guid.Empty,
+                Id = existente?.Id ?? Guid.NewGuid(),
                 TipoPercepcionId = tipo.Id,
                 Nombre = tipo.Nombre,
                 Orden = tipo.Orden,

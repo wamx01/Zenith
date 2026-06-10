@@ -217,7 +217,7 @@
 
                                                 @foreach (var rubro in item.Detalles.OrderBy(d => d.Orden))
                                                 {
-                                                    <td class="text-end" style="min-width:140px" @key="@($"{grupo.PosicionId}-{item.EmpleadoId}-{rubro.BonoRubroRrhhId}")">
+                                                    <td class="text-end" style="min-width:140px" @key="@rubro.Id">
                                                         <InputNumber class="form-control form-control-sm text-end" @bind-Value="rubro.Porcentaje" @bind-Value:after="OnDistribucionRubroChangedAsync" />
                                                         <div class="small text-muted text-end mt-1">@rubro.MontoAsignado.ToString("C2")</div>
                                                     </td>
@@ -962,6 +962,7 @@
 
     private sealed class RubroCapturaDistribucion
     {
+        public Guid Id { get; set; } = Guid.NewGuid();
         public Guid BonoRubroRrhhId { get; set; }
         public string RubroNombre { get; set; } = string.Empty;
         public decimal TopePorcentaje { get; set; }
