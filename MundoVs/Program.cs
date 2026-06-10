@@ -1226,6 +1226,8 @@ static async Task SeedAuth(CrmDbContext db, IAuthService authService, Guid empre
         ("inventario.editar", "Editar inventario", "Inventario", ModuloAccesoCatalog.Logistica, "Alta rápida de materias primas e insumos desde inventario"),
         ("inventario.movimientos", "Registrar movimientos", "Inventario", ModuloAccesoCatalog.Logistica, "Entradas, salidas y ajustes de inventario"),
         ("inventario.reportes", "Ver reportes de inventario", "Inventario", ModuloAccesoCatalog.Logistica, "Consulta de movimientos y costo de inventario"),
+        ("rrhh.bancohoras.ver", "Ver banco de horas", "Banco de Horas", ModuloAccesoCatalog.Rrhh, "Acceso al módulo de banco de horas"),
+        ("rrhh.bancohoras.editar", "Editar banco de horas", "Banco de Horas", ModuloAccesoCatalog.Rrhh, "Registrar ajustes y consumos de banco de horas"),
     };
 
     var existentes = await db.Capacidades.AsNoTracking().ToListAsync();
@@ -1270,7 +1272,7 @@ static async Task SeedAuth(CrmDbContext db, IAuthService authService, Guid empre
              "cotizaciones.ver", "cotizaciones.editar", "serigrafia.ver", "serigrafia.editar",
              "contabilidad.dashboard", "contabilidad.estado_resultados", "contabilidad.cuentas_cobrar", "facturas.ver", "facturas.editar",
               "configuracion.ver", "inventario.ver", "inventario.reportes",
-              "empleados.ver", "nominas.ver", "turnos.ver"]),
+              "empleados.ver", "nominas.ver", "turnos.ver", "rrhh.bancohoras.ver"]),
         ("Ventas", "Clientes, pedidos y cotizaciones", false,
             ["clientes.ver", "clientes.editar", "productos.ver",
              "pedidos.ver", "pedidos.crear", "pedidos.editar",

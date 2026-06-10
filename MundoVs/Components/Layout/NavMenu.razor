@@ -273,12 +273,15 @@
                         <span>Asistencia semanal</span>
                     </NavLink>
                 }
-                @if (HasCapacidad("nominas.ver"))
+                @if (HasCapacidad("rrhh.bancohoras.ver") || HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
                 {
                     <NavLink class="nav-link nav-link-sub" href="rrhh/banco-horas" @onclick="CloseMobileMenu" title="Banco de Horas">
                         <span class="bi bi-hourglass-split"></span>
                         <span>Banco de horas</span>
                     </NavLink>
+                }
+                @if (HasCapacidad("nominas.ver"))
+                {
                     <NavLink class="nav-link nav-link-sub" href="rrhh/vales-destajo" @onclick="CloseMobileMenu" title="Vales de Destajo">
                         <span class="bi bi-receipt"></span>
                         <span>Vales de Destajo</span>
