@@ -213,7 +213,11 @@
                                                                 }
                                                                 @if (AsistenciaActual.MinutosExtraAutorizadosBanco > 0)
                                                                 {
-                                                                    <span class="asis-chip asis-chip--info asis-chip--xs"><i class="bi bi-bank me-1"></i>Banco @FormatearMinutos(AsistenciaActual.MinutosExtraAutorizadosBanco)</span>
+                                                                    <span class="asis-chip asis-chip--info asis-chip--xs" title="Minutos base aprobados para banco"><i class="bi bi-bank me-1"></i>Banco base @FormatearMinutos(AsistenciaActual.MinutosExtraAutorizadosBanco)</span>
+                                                                }
+                                                                @if (ObtenerMinutosBancoAcumuladosActual() > 0)
+                                                                {
+                                                                    <span class="asis-chip asis-chip--resolved asis-chip--xs" title="Minutos reales acumulados al banco según movimientos"><i class="bi bi-piggy-bank me-1"></i>Banco acum. @FormatearMinutos(ObtenerMinutosBancoAcumuladosActual())</span>
                                                                 }
                                                                 @if (ObtenerMinutosCompensadosAprobadosActual() > 0)
                                                                 {
@@ -259,6 +263,7 @@
                                                                 <div class="asis-quick-hint mb-2">@ObtenerResumenAprobacionBaseTiempo()</div>
                                                                 <div class="asis-quick-hint mb-1">@ObtenerResumenDestinoTiempoActual()</div>
                                                                 <div class="asis-quick-hint mb-2">@ObtenerResumenSaldoBancoHoras()</div>
+                                                                <div class="asis-quick-hint mb-2">@ObtenerResumenBancoAcumuladoActual()</div>
                                                                 <div class="row g-2 align-items-end">
                                                                     <div class="col-md-4">
                                                                         <label class="asis-field-label">Resolución</label>

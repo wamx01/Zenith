@@ -10,7 +10,7 @@ public class NominaConfiguracion
     public decimal FactorFestivoTrabajado { get; set; } = 2m;
     public decimal FactorDescansoTrabajado { get; set; } = 2m;
     public bool BancoHorasHabilitado { get; set; }
-    public decimal BancoHorasFactorAcumulacion { get; set; } = 1m;
+    public decimal BancoHorasFactorAcumulacion { get; set; } = 2m;
     public decimal BancoHorasTopeHoras { get; set; } = 40m;
     public int DiasBaseSemanal { get; set; } = 7;
     public int DiasBaseQuincenal { get; set; } = 15;

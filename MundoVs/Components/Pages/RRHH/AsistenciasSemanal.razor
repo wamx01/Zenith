@@ -435,7 +435,7 @@
                                  <th class="text-end">Comp.</th>
                                   <th class="text-end">Banco apl.</th>
                                   <th class="text-end">Extra pag.</th>
-                                  <th class="text-end">A banco</th>
+                                 <th class="text-end" title="Minutos reales acumulados al banco por movimientos de horas extra">A banco acum.</th>
                                    <th class="text-end">Descuento</th>
                                    <th class="text-end">Retardo</th>
                                   <th class="text-end">Salida ant.</th>
@@ -478,7 +478,7 @@
                                      <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></div></td>
                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosBancoAplicado)</span></div></td>
                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></div></td>
-                                      <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></div></td>
+                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco acum.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></div></td>
                                         <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumen.TotalMinutosDescuento)" title="@ObtenerTooltipDescuento(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosDescuento)</span></div></td>
                                         <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumen.TotalMinutosRetardo)" title="@ObtenerTooltipRetardo(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosRetardo)</span></div></td>
                                        <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumen.TotalMinutosSalidaAnticipada)" title="@ObtenerTooltipSalidaAnticipada(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosSalidaAnticipada)</span></div></td>
@@ -501,7 +501,7 @@
                                  <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></div></td>
                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosBancoAplicado))</span></div></td>
                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></div></td>
-                                  <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></div></td>
+                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco acum.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></div></td>
                                     <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumenes.Sum(x => x.TotalMinutosDescuento))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosDescuento))</span></div></td>
                                     <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumenes.Sum(x => x.TotalMinutosRetardo))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosRetardo))</span></div></td>
                                    <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))</span></div></td>
@@ -662,7 +662,7 @@
                     TotalMinutosNormales = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(a)),
                     TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
                     TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
-                    TotalMinutosExtraAprobadoBanco = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)),
+                    TotalMinutosExtraAprobadoBanco = grupo.Sum(a => 0),
                     TotalMinutosBancoAplicado = grupo.Sum(a => Math.Max(0, a.MinutosCubiertosBancoHoras)),
                      TotalMinutosDescuento = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(a), ObtenerMinutosCompensados(a))),
                     TotalMinutosRetardo = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a, ObtenerMinutosPermisoAplicados(a))),
@@ -687,6 +687,34 @@
                         .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
                 })
                 .ToList();
+
+            var referenciasBancoExtraPeriodo = asistencias
+                .Select(a => RrhhTiempoExtraPolicy.ConstruirReferenciaResolucion(a.Id, "extra-banco"))
+                .Distinct()
+                .ToList();
+
+            var bancoExtraPorAsistencia = await db.RrhhBancoHorasMovimientos
+                .AsNoTracking()
+                .Where(m => m.EmpresaId == _empresaId
+                    && m.IsActive
+                    && m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra
+                    && referenciasBancoExtraPeriodo.Contains(m.ReferenciaTipo))
+                .Select(m => new
+                {
+                    m.EmpleadoId,
+                    m.ReferenciaTipo,
+                    Minutos = (int)Math.Round(m.Horas * 60m, MidpointRounding.AwayFromZero)
+                })
+                .ToListAsync();
+
+            var bancoExtraMinutosPorEmpleado = bancoExtraPorAsistencia
+                .GroupBy(m => m.EmpleadoId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.Minutos)));
+
+            resumenes = resumenes.Select(r => r with
+            {
+                TotalMinutosExtraAprobadoBanco = bancoExtraMinutosPorEmpleado.GetValueOrDefault(r.EmpleadoId)
+            }).ToList();
 
             // Saldo banco de horas por empleado (acumulado histórico hasta fecha de corte)
             var empIds = resumenes.Select(r => r.EmpleadoId).ToHashSet();
@@ -913,8 +941,8 @@
             encabezados.Add("TiempoExtraSemanalMin");
             encabezados.Add("TiempoExtraAprobadoPagoSemanal");
             encabezados.Add("TiempoExtraAprobadoPagoSemanalMin");
-            encabezados.Add("TiempoExtraAprobadoBancoSemanal");
-            encabezados.Add("TiempoExtraAprobadoBancoSemanalMin");
+            encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanal");
+            encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanalMin");
             encabezados.Add("PermisosSemanal");
             encabezados.Add("PermisosSemanalMin");
             encabezados.Add("CompensacionesSemanal");

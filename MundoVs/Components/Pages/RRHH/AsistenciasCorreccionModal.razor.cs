@@ -88,6 +88,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private decimal factorTiempoExtraConfigurado = 2m;
     private bool bancoHorasHabilitadoConfigurado;
     private decimal factorAcumulacionBancoHorasConfigurado = 1m;
+    private int minutosExtraBancoAcumuladosActual;
     private int minutosMinimosTiempoExtraConfigurado = 30;
     private int minutosCompensacionPermisoCaptura;
     private int minutosPerdonManualCaptura;
@@ -366,6 +367,16 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             .OrderByDescending(l => l.FechaUtc)
             .Take(10)
             .ToListAsync();
+
+        var horasBancoAcumuladasActual = await db.RrhhBancoHorasMovimientos
+            .AsNoTracking()
+            .Where(m => m.EmpresaId == _empresaId
+                && m.EmpleadoId == AsistenciaActual.EmpleadoId
+                && m.IsActive
+                && m.ReferenciaTipo == RrhhTiempoExtraPolicy.ConstruirReferenciaResolucion(AsistenciaActual.Id, "extra-banco"))
+            .SumAsync(m => (decimal?)m.Horas) ?? 0m;
+
+        minutosExtraBancoAcumuladosActual = (int)Math.Round(horasBancoAcumuladasActual * 60m, MidpointRounding.AwayFromZero);
 
         minutosCompensadosPermisoAprobados = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(bitacoraCorreccionDia, AsistenciaActual.EmpleadoId, AsistenciaActual.Fecha);
         minutosRecuperablesPermisoAprobables = RrhhPermisoCompensationPolicy.ObtenerMinutosRecuperablesAprobables(AsistenciaActual, minutosMinimosTiempoExtraConfigurado);
@@ -723,6 +734,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
 
+    private int ObtenerMinutosBancoAcumuladosActual()
+        => Math.Max(0, minutosExtraBancoAcumuladosActual);
+
     private int ObtenerMinutosCompensadosAprobadosActual()
         => Math.Max(0, minutosCompensadosPermisoAprobados);
 
@@ -789,6 +803,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         var pago = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosPago);
         var banco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
+        var bancoAcumulado = ObtenerMinutosBancoAcumuladosActual();
         var cubiertoBanco = Math.Max(0, AsistenciaActual.MinutosCubiertosBancoHoras);
 
         if (cubiertoBanco > 0)
@@ -798,7 +813,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         if (pago > 0 && banco > 0)
         {
-            return $"Resolución mixta · Pago: {FormatearMinutos(pago)} · Banco: {FormatearMinutos(banco)}.";
+            return bancoAcumulado > 0 && bancoAcumulado != banco
+                ? $"Resolución mixta · Pago: {FormatearMinutos(pago)} · Banco base: {FormatearMinutos(banco)} · Banco acumulado: {FormatearMinutos(bancoAcumulado)}."
+                : $"Resolución mixta · Pago: {FormatearMinutos(pago)} · Banco: {FormatearMinutos(banco)}.";
         }
 
         if (pago > 0)
@@ -808,7 +825,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         if (banco > 0)
         {
-            return $"Enviado a banco: {FormatearMinutos(banco)}.";
+            return bancoAcumulado > 0 && bancoAcumulado != banco
+                ? $"Enviado a banco: {FormatearMinutos(banco)} base · acumulado {FormatearMinutos(bancoAcumulado)}."
+                : $"Enviado a banco: {FormatearMinutos(banco)}.";
         }
 
         return string.IsNullOrWhiteSpace(AsistenciaActual.ResolucionTiempoExtra)
@@ -828,6 +847,31 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         return usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
             ? $"Factor manual activo: x{factorActivo:0.##}"
             : $"Factor configurado: x{factorActivo:0.##}";
+    }
+
+    private string ObtenerResumenBancoAcumuladoActual()
+    {
+        if (AsistenciaActual == null)
+        {
+            return "Sin datos de banco.";
+        }
+
+        var bancoBase = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
+        var bancoAcumulado = ObtenerMinutosBancoAcumuladosActual();
+
+        if (bancoBase <= 0)
+        {
+            return bancoAcumulado > 0
+                ? $"Banco acumulado real: {FormatearMinutos(bancoAcumulado)}."
+                : "Sin envío acumulado al banco en este día.";
+        }
+
+        if (bancoAcumulado > 0 && bancoAcumulado != bancoBase)
+        {
+            return $"Banco base: {FormatearMinutos(bancoBase)} · acumulado real: {FormatearMinutos(bancoAcumulado)}.";
+        }
+
+        return $"Banco aprobado: {FormatearMinutos(bancoBase)}.";
     }
 
     private static string FormatearMensajeBitacora(RrhhLogChecador log)
