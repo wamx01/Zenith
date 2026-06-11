@@ -213,7 +213,8 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         Assert.Equal(60, result.MinutosBasePagoAplicados);
         Assert.Equal(120, result.MinutosPagoAplicados);
         Assert.Equal(60, asistencia.MinutosExtraAutorizadosPago);
-        Assert.Equal(600, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0));
+        // Base = neto(540) − extra(64) = 476, cap programado(540) = 476 + extraAprobada(60) = 536
+        Assert.Equal(536, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0));
     }
 
     [Fact]
@@ -227,7 +228,8 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         };
 
         Assert.Equal(64, RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia));
-        Assert.Equal(604, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(new RrhhAsistencia
+        // Base = neto(540) − extra(64) = 476, cap programado(540) = 476 + extraAprobada(64) = 540
+        Assert.Equal(540, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(new RrhhAsistencia
         {
             MinutosTrabajadosNetos = 540,
             MinutosJornadaNetaProgramada = 540,

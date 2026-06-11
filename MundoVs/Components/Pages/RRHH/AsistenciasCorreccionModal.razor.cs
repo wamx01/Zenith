@@ -906,7 +906,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string ObtenerResumenVisibleExplicado()
         => AsistenciaActual == null
             ? string.Empty
-            : $"Base {FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}{(AsistenciaActual.MinutosPerdonadosManual > 0 ? $" · perdón manual {FormatearMinutos(AsistenciaActual.MinutosPerdonadosManual)}" : string.Empty)}.";
+            : $"Base {FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}{(AsistenciaActual.MinutosPerdonadosManual > 0 ? $" · perdón manual {FormatearMinutos(AsistenciaActual.MinutosPerdonadosManual)}" : string.Empty)}.";
 
     private IReadOnlyList<ResumenCalculoItem> ObtenerResumenCalculoDia()
     {

@@ -47,7 +47,7 @@
                         <span class="asis-metric-sep">|</span>
                         <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-person-workspace me-1"></i>@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</span>
                         <span class="asis-chip asis-chip--info asis-chip--xs" title="Visible = base trabajada + compensación aprobada del mismo día + extra aprobada"><i class="bi bi-eye me-1"></i>Visible @FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</span>
-                        <span class="asis-chip asis-chip--muted asis-chip--xs" title="Base trabajada sin extra no aprobada"><i class="bi bi-stopwatch me-1"></i>Base @FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))</span>
+                        <span class="asis-chip asis-chip--muted asis-chip--xs" title="Jornada neta programada del turno (excluye descansos no pagados)"><i class="bi bi-stopwatch me-1"></i>Base @FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)</span>
                         @if (ObtenerMinutosRetardoVisible(AsistenciaActual) > 0)
                         {
                             <span class="asis-chip @ObtenerClaseMetricaIncidencia(ObtenerMinutosRetardoVisible(AsistenciaActual)) asis-chip--xs"><i class="bi bi-alarm me-1"></i>Ret. @FormatearMinutosCortos(ObtenerMinutosRetardoVisible(AsistenciaActual))</span>
@@ -602,16 +602,20 @@
                                     </div>
 
                                     <div class="asis-wizard-side__section">
-                                       <div class="asis-wizard-side__title">Cómo se calcula</div>
-                                       <div class="asis-formula-row"><span>Base trabajada</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))</strong></div>
-                                       @if (AsistenciaActual.MinutosExtra > 0 && ObtenerMinutosExtraAprobados(AsistenciaActual) == 0)
-                                       {
-                                           <div class="asis-formula-row text-muted"><span>↳ Extra posible (sin aprobar)</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
-                                       }
-                                       <div class="asis-formula-row"><span>+ Compensación aprobada</span><strong>@FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</strong></div>
-                                       <div class="asis-formula-row"><span>+ Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
-                                       <div class="asis-formula-row"><span>= Tiempo visible</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</strong></div>
-                                       <div class="asis-wizard-side__note">La base excluye el extra hasta que se apruebe. Solo el permiso con goce suma al visible.</div>
+                                      <div class="asis-wizard-side__title">Cómo se calcula</div>
+                                      <div class="asis-formula-row"><span>Base trabajada</span><strong>@FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)</strong></div>
+                                      @if (ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual) != AsistenciaActual.MinutosJornadaNetaProgramada)
+                                      {
+                                          <div class="asis-formula-row text-muted"><span>↳ Real sin extra</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))</strong></div>
+                                      }
+                                      @if (AsistenciaActual.MinutosExtra > 0 && ObtenerMinutosExtraAprobados(AsistenciaActual) == 0)
+                                      {
+                                          <div class="asis-formula-row text-muted"><span>↳ Extra posible (sin aprobar)</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
+                                      }
+                                      <div class="asis-formula-row"><span>+ Compensación aprobada</span><strong>@FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</strong></div>
+                                      <div class="asis-formula-row"><span>+ Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
+                                      <div class="asis-formula-row"><span>= Tiempo visible</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</strong></div>
+                                      <div class="asis-wizard-side__note">La base es la jornada neta del turno. El visible se calcula desde el tiempo real, sin sumar extra no aprobada. Solo el permiso con goce suma al visible.</div>
                                     </div>
                                 </div>
                             </div>
