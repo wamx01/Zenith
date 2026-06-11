@@ -99,6 +99,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string minutosExtraBancoTexto = "0:00";
     private bool usarFactorTiempoExtraOverride;
     private decimal factorTiempoExtraOverrideCaptura;
+    // "EntradaSalida" | "NetoVsNeto"
+    private string modoSugerenciaExtra = "EntradaSalida";
     private int minutosCompensadosPermisoAprobados;
     private int minutosRecuperablesPermisoAprobables;
     private RrhhAusencia? permisoDiaSeleccionado;
@@ -121,6 +123,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private bool _mostrarAccionesRapidasTiempo;
     private bool _mostrarAccionesRapidasPermiso;
     private bool _mostrarAccionesRapidasTurno;
+    private bool _mostrarAccionesRapidasModoExtra;
     private bool _mostrarBitacora;
     private bool _mostrarMarcacionesDia;
     private int _toleranciaExcesoDescansoMinutos = RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoDefault;
@@ -213,6 +216,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         ReiniciarEstadoVisual();
         tipoResolucionTiempoExtra = "PagarTodo";
         resolucionTiempoExtraObservaciones = null;
+        modoSugerenciaExtra = AsistenciaActual.ModoSugerenciaExtra ?? "EntradaSalida";
         await CargarContextoTiempoExtraAsync(_draftDb);
         _toleranciaExcesoDescansoMinutos = (await RrhhAsistenciaDescansoSettings.LoadAsync(_draftDb, _empresaId)).ToleranciaExcesoDescansoMinutos;
         CargarCapturaResolucion(AsistenciaActual);
@@ -251,7 +255,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         _mostrarAccionesRapidasTiempo = false;
         _mostrarAccionesRapidasPermiso = false;
         _mostrarAccionesRapidasTurno = false;
+        _mostrarAccionesRapidasModoExtra = false;
         _mostrarBitacora = false;
+        modoSugerenciaExtra = "EntradaSalida";
     }
 
     private void ReiniciarEdicionManual()
@@ -1417,11 +1423,18 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return [];
         }
 
+        var extraLabel = string.IsNullOrWhiteSpace(AsistenciaActual.ResolucionTiempoExtra)
+            ? "Extra (sugerido)"
+            : "Extra";
+        var extraValor = string.IsNullOrWhiteSpace(AsistenciaActual.ResolucionTiempoExtra)
+            ? ObtenerMinutosExtraSugeridosModo(AsistenciaActual)
+            : AsistenciaActual.MinutosExtra;
+
         return
         [
             new("Visible", FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)), "asis-summary-side__item--primary"),
-            new("Extra", FormatearMinutos(AsistenciaActual.MinutosExtra), "asis-summary-side__item--accent"),
-            new("Permiso", permisoDiaSeleccionado == null ? FormatearMinutos(ObtenerMinutosPermisoSugeridos(AsistenciaActual)) : FormatearMinutos(ObtenerMinutosPermisoCapturados()), "asis-summary-side__item--warn"),
+            new(extraLabel, FormatearMinutos(extraValor), "asis-summary-side__item--accent"),
+            new("Permiso", permisoDiaSeleccionado == null ? FormatearMinutos(0) : FormatearMinutos(ObtenerMinutosPermisoCapturados()), "asis-summary-side__item--warn"),
             new("Compensación", FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual()), "asis-summary-side__item--info"),
             new("Descanso", FormatearMinutos(AsistenciaActual.MinutosDescansoTomado), "asis-summary-side__item--muted")
         ];
@@ -1648,6 +1661,45 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
         await RefrescarDiaAsync(db, fecha, mensajeOk, recargarResolucion);
         RegistrarCambioPendiente(string.IsNullOrWhiteSpace(mensajeOk) ? "Cambios pendientes en el día. Guarda al cerrar para aplicarlos definitivamente." : mensajeOk);
+    }
+
+    private async Task GuardarModoSugerenciaYReprocesarAsync()
+    {
+        if (AsistenciaActual == null || !PuedeAprobarTiempoExtra)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        var usuarioActual = await ObtenerUsuarioActualAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        try
+        {
+            var asistencia = await db.RrhhAsistencias.FirstOrDefaultAsync(a => a.Id == AsistenciaActual.Id);
+            if (asistencia == null)
+            {
+                error = "No se encontró la asistencia actual.";
+                return;
+            }
+
+            asistencia.ModoSugerenciaExtra = modoSugerenciaExtra;
+            asistencia.UpdatedAt = DateTime.UtcNow;
+            asistencia.UpdatedBy = usuarioActual;
+            await db.SaveChangesAsync();
+
+            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, $"Modo de cálculo cambiado a {(modoSugerenciaExtra == "NetoVsNeto" ? "neto vs neto" : "entrada/salida")}. Día reprocesado.", recargarResolucion: true);
+
+            tipoResolucionTiempoExtra = string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra) ? "PagarTodo" : asistencia.ResolucionTiempoExtra;
+            AjustarResolucionTiempoSugerida();
+            minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+            minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
     }
 
     private async Task ReconciliarResolucionesSegmentoDiaAsync(CrmDbContext db, DateOnly fecha)
@@ -2074,9 +2126,25 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             error = null;
             _mostrarAccionesRapidasPermiso = false;
             _mostrarAccionesRapidasTurno = false;
+            _mostrarAccionesRapidasModoExtra = false;
+            AjustarResolucionTiempoSugerida();
             minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
             minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
         }
+    }
+
+    private void CambiarModoSugerenciaExtra(string nuevoModo)
+    {
+        if (AsistenciaActual == null || nuevoModo == modoSugerenciaExtra)
+        {
+            return;
+        }
+
+        modoSugerenciaExtra = nuevoModo;
+        AjustarResolucionTiempoSugerida();
+        minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
+        minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
+        StateHasChanged();
     }
 
     private void AlternarAccionesRapidasPermiso()
@@ -2087,6 +2155,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             _mostrarAccionesRapidasTiempo = false;
             _mostrarAccionesRapidasTurno = false;
+            _mostrarAccionesRapidasModoExtra = false;
         }
     }
 
@@ -2098,6 +2167,19 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             _mostrarAccionesRapidasTiempo = false;
             _mostrarAccionesRapidasPermiso = false;
+            _mostrarAccionesRapidasModoExtra = false;
+        }
+    }
+
+    private void AlternarAccionesRapidasModoExtra()
+    {
+        var nuevoEstado = !_mostrarAccionesRapidasModoExtra;
+        _mostrarAccionesRapidasModoExtra = nuevoEstado;
+        if (nuevoEstado)
+        {
+            _mostrarAccionesRapidasTiempo = false;
+            _mostrarAccionesRapidasPermiso = false;
+            _mostrarAccionesRapidasTurno = false;
         }
     }
 
@@ -2208,7 +2290,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return;
         }
 
+        var sugerido = ObtenerMinutosExtraSugeridosModo(AsistenciaActual);
         var resoluble = RrhhTiempoExtraPolicy.ObtenerMinutosExtraResolubles(AsistenciaActual, factorTiempoExtraConfigurado);
+        var baseCaptura = Math.Min(sugerido, resoluble);
         var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(AsistenciaActual);
         minutosExtraPagoCaptura = 0;
         minutosExtraBancoCaptura = 0;
@@ -2217,14 +2301,14 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         switch (tipoResolucionTiempoExtra)
         {
             case "PagarTodo":
-                minutosExtraPagoCaptura = resoluble;
+                minutosExtraPagoCaptura = baseCaptura;
                 break;
             case "BancoTodo":
-                minutosExtraBancoCaptura = resoluble;
+                minutosExtraBancoCaptura = baseCaptura;
                 break;
             case "MitadMitad":
-                minutosExtraPagoCaptura = resoluble / 2;
-                minutosExtraBancoCaptura = resoluble - minutosExtraPagoCaptura;
+                minutosExtraPagoCaptura = baseCaptura / 2;
+                minutosExtraBancoCaptura = baseCaptura - minutosExtraPagoCaptura;
                 break;
             case "CubrirFaltanteConBanco":
                 minutosCubrirBancoCaptura = faltante;
@@ -2867,6 +2951,34 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private int ObtenerMinutosFaltanteBanco(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
+
+    /// <summary>
+    /// Sugerencia "neto vs neto": neto trabajado (+ perdón) − neto esperado del turno.
+    /// Es una sugerencia seleccionable en el modal; no la aplica el procesador automáticamente.
+    /// </summary>
+    private int ObtenerSugerenciaExtraNetoVsNeto(RrhhAsistencia asistencia)
+    {
+        var netoTrabajado = Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, asistencia.MinutosPerdonadosManual));
+        var netoEsperado  = Math.Max(0, asistencia.MinutosJornadaNetaProgramada);
+        return Math.Max(0, netoTrabajado - netoEsperado);
+    }
+
+    /// <summary>
+    /// Retorna los minutos de extra sugeridos según el modo actualmente seleccionado en el modal.
+    /// </summary>
+    private int ObtenerMinutosExtraSugeridosModo(RrhhAsistencia asistencia)
+        => modoSugerenciaExtra == "NetoVsNeto"
+            ? ObtenerSugerenciaExtraNetoVsNeto(asistencia)
+            : asistencia.MinutosExtra;   // "EntradaSalida": usa lo detectado por el procesador
+
+    private string ObtenerDescripcionModoSugerencia(RrhhAsistencia asistencia)
+    {
+        var porEntradaSalida = asistencia.MinutosExtra;
+        var porNeto = ObtenerSugerenciaExtraNetoVsNeto(asistencia);
+        return modoSugerenciaExtra == "NetoVsNeto"
+            ? $"Neto trabajado ({FormatearMinutos(asistencia.MinutosTrabajadosNetos)}) − neto esperado ({FormatearMinutos(asistencia.MinutosJornadaNetaProgramada)}) = {FormatearMinutos(porNeto)}."
+            : $"Detectado por el procesador: entrada/salida real vs programada = {FormatearMinutos(porEntradaSalida)}. Alternativa neto vs neto: {FormatearMinutos(porNeto)}.";
+    }
 
     private int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia)
     {

@@ -248,7 +248,12 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosMargenNoComputables = CalcularMinutosMargenNoComputables(detalleTurno, analisisJornada, configuracionNomina.MinutosMinimosTiempoExtra);
         var minutosTrabajadosBrutos = Math.Max(0, analisisJornada.MinutosTrabajadosBrutos - minutosMargenNoComputables);
         var minutosTrabajadosNetos = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
-        var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra, minutosMargenNoComputables);
+
+        var asistencia = await db.RrhhAsistencias
+            .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
+
+        var modoSugerencia = asistencia?.ModoSugerenciaExtra;
+        var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra, minutosMargenNoComputables, modoSugerencia);
 
         var (estatus, requiereRevision, observaciones) = ClasificarAsistencia(
             detalleTurno,
@@ -259,9 +264,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             minutosExtra,
             configuracionNomina.MinutosMinimosTiempoExtra);
         observaciones = AgregarObservacionMargenNoComputable(observaciones, detalleTurno, analisisJornada, configuracionNomina.MinutosMinimosTiempoExtra);
-
-        var asistencia = await db.RrhhAsistencias
-            .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
 
         if (asistencia == null)
         {
@@ -360,7 +362,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return (RrhhAsistenciaEstatus.AsistenciaNormal, requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, null, observacionesDescansos));
     }
 
-    private static int CalcularMinutosExtra(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, RrhhAsistenciaDescansoSettings configuracionDescansos, int minutosMinimosTiempoExtra, int minutosMargenNoComputables)
+    private static int CalcularMinutosExtra(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, RrhhAsistenciaDescansoSettings configuracionDescansos, int minutosMinimosTiempoExtra, int minutosMargenNoComputables, string? modoSugerencia = null)
     {
         minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra);
 
@@ -400,29 +402,44 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return extraAutomatico + analisisJornada.MinutosExtraManual;
         }
 
+        // Modo NetoVsNeto: calcula extra como (neto trabajado + perdón) − neto esperado del turno.
+        // Solo se usa cuando el usuario lo seleccionó explícitamente para este día.
+        if (string.Equals(modoSugerencia, "NetoVsNeto", StringComparison.OrdinalIgnoreCase))
+        {
+            var netoTrabajado = Math.Max(0, analisisJornada.MinutosTrabajadosNetos);
+            var netoEsperado = Math.Max(0, analisisJornada.MinutosJornadaNetaProgramada);
+            var excedenteNeto = Math.Max(0, netoTrabajado - netoEsperado);
+            var minutosExtraCalculados = excedenteNeto + analisisJornada.MinutosExtraManual;
+
+            if (minutosExtraCalculados > 0 && minutosExtraCalculados < minutosMinimosTiempoExtra)
+            {
+                minutosExtraCalculados = 0;
+            }
+
+            return minutosExtraCalculados;
+        }
+
         if (detalleTurno?.HoraEntrada is not TimeSpan entradaProgramada || detalleTurno.HoraSalida is not TimeSpan salidaProgramada)
         {
-            var minutosNetosAjustados = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
-            return Math.Max(0, minutosNetosAjustados - analisisJornada.MinutosJornadaNetaProgramada);
+            // Sin turno definido no hay referencia de entrada/salida; solo se cuenta extra manual
+            return analisisJornada.MinutosExtraManual;
         }
 
-        // Calcular tiempo extra como la diferencia entre trabajo neto real (ajustado) y esperado
-        // El trabajo neto ya descuenta descansos reales
-        // La jornada neta programada ya descuenta descansos programados y permisos
-        // Además, restamos el margen no computable (entrada/salida menor al umbral)
-        var minutosTrabajadosNetosAjustados = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
-        var excedenteNeto = Math.Max(0, minutosTrabajadosNetosAjustados - analisisJornada.MinutosJornadaNetaProgramada);
+        // Modo EntradaSalida (default): entrada anticipada + salida posterior respecto al turno programado.
+        var minutosEntradaAnticipada = analisisJornada.EntradaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes))
+            : 0;
+        var minutosSalidaPosterior = analisisJornada.SalidaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes))
+            : 0;
 
-        // Agregar el tiempo extra manual (si existe)
-        var minutosExtraCalculados = excedenteNeto + analisisJornada.MinutosExtraManual;
+        // Aplicar umbral mínimo a cada componente por separado
+        if (minutosEntradaAnticipada < minutosMinimosTiempoExtra) minutosEntradaAnticipada = 0;
+        if (minutosSalidaPosterior < minutosMinimosTiempoExtra) minutosSalidaPosterior = 0;
 
-        // Aplicar umbral mínimo: solo se considera tiempo extra si supera el mínimo configurado
-        if (minutosExtraCalculados > 0 && minutosExtraCalculados < minutosMinimosTiempoExtra)
-        {
-            minutosExtraCalculados = 0;
-        }
+        var minutosExtraCalculados2 = minutosEntradaAnticipada + minutosSalidaPosterior + analisisJornada.MinutosExtraManual;
 
-        return minutosExtraCalculados;
+        return minutosExtraCalculados2;
     }
 
     private static int CalcularMinutosMargenNoComputables(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, int minutosMinimosTiempoExtra)

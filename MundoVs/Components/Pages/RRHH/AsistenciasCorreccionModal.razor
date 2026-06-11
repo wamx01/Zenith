@@ -226,18 +226,21 @@
                                                                 <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-hourglass-split me-1"></i>Saldo banco @FormatearMinutos(Math.Max(0, saldoBancoHorasSeleccionado))</span>
                                                             </div>
                                                             <div class="asis-quick-actions mt-2">
-                                                                @if (PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
-                                                                {
-                                                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="AlternarAccionesRapidasTiempo">
-                                                                        <i class="bi bi-lightning-charge me-1"></i>Tiempo extra
-                                                                    </button>
-                                                                }
-                                                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="AlternarAccionesRapidasPermiso">
-                                                                    <i class="bi bi-shield-check me-1"></i>Permiso
-                                                                </button>
-                                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarAccionesRapidasTurno">
-                                                                    <i class="bi bi-arrow-left-right me-1"></i>Turno
-                                                                </button>
+                                                                 @if (PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
+                                                                 {
+                                                                     <button type="button" class="btn btn-sm btn-outline-warning" @onclick="AlternarAccionesRapidasTiempo">
+                                                                         <i class="bi bi-lightning-charge me-1"></i>Tiempo extra
+                                                                     </button>
+                                                                 }
+                                                                 <button type="button" class="btn btn-sm btn-outline-info" @onclick="AlternarAccionesRapidasPermiso">
+                                                                     <i class="bi bi-shield-check me-1"></i>Permiso
+                                                                 </button>
+                                                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarAccionesRapidasTurno">
+                                                                     <i class="bi bi-arrow-left-right me-1"></i>Turno
+                                                                 </button>
+                                                                 <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AlternarAccionesRapidasModoExtra">
+                                                                     <i class="bi bi-calculator me-1"></i>Método de cálculo
+                                                                 </button>
                                                             </div>
                                                         </div>
                                                         <div class="asis-summary-top__meta @ObtenerClaseEstadoCorreccionActual()">
@@ -390,6 +393,42 @@
                                                                         <button type="button" class="btn btn-sm btn-secondary" @onclick="GuardarTurnoDiaAsync">Aplicar</button>
                                                                     </div>
                                                                 </div>
+                                                            </div>
+                                                        </div>
+                                                    }
+
+                                                    @if (_mostrarAccionesRapidasModoExtra && AsistenciaActual != null)
+                                                    {
+                                                        <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                                            <div class="asis-quick-card__head">
+                                                                <strong>Método de cálculo</strong>
+                                                                <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasModoExtra"></button>
+                                                            </div>
+                                                            <div class="asis-quick-card__body">
+                                                                <div class="asis-quick-grid asis-quick-grid--compact mb-2">
+                                                                    <div><span>Detectada</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
+                                                                    <div><span>Sugerida</span><strong>@FormatearMinutos(ObtenerMinutosExtraSugeridosModo(AsistenciaActual))</strong></div>
+                                                                    <div><span>Aprobable</span><strong>@FormatearMinutos(ObtenerMinutosResolubles(AsistenciaActual))</strong></div>
+                                                                    <div><span>Aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
+                                                                </div>
+                                                                <div class="row g-2 align-items-center mb-2">
+                                                                    <div class="col-md-5">
+                                                                        <label class="asis-field-label">Modo de cálculo</label>
+                                                                        <select class="form-select form-select-sm" @onchange="@((ChangeEventArgs e) => CambiarModoSugerenciaExtra(e.Value?.ToString() ?? "EntradaSalida"))">
+                                                                            <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
+                                                                            <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div class="col-md-4 d-grid">
+                                                                        <button type="button" class="btn btn-sm btn-primary" @onclick="GuardarModoSugerenciaYReprocesarAsync" disabled="@cargando">
+                                                                            <i class="bi bi-arrow-repeat me-1"></i>Recalcular este día
+                                                                        </button>
+                                                                    </div>
+                                                                    <div class="col-md-3">
+                                                                        <div class="asis-quick-hint mt-1">@ObtenerDescripcionModoSugerencia(AsistenciaActual)</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="asis-quick-hint">El modo <strong>entrada/salida</strong> detecta extra por diferencia de horario real vs programado. El modo <strong>neto vs neto</strong> compara el tiempo neto trabajado contra el neto esperado del turno. Selecciona y recalcula para que el día use ese criterio.</div>
                                                             </div>
                                                         </div>
                                                     }
@@ -563,12 +602,16 @@
                                     </div>
 
                                     <div class="asis-wizard-side__section">
-                                        <div class="asis-wizard-side__title">Cómo se calcula</div>
-                                        <div class="asis-formula-row"><span>Base trabajada</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))</strong></div>
-                                        <div class="asis-formula-row"><span>+ Compensación aprobada</span><strong>@FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</strong></div>
-                                        <div class="asis-formula-row"><span>+ Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
-                                        <div class="asis-formula-row"><span>= Tiempo visible</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</strong></div>
-                                        <div class="asis-wizard-side__note">Solo el permiso con goce suma como trabajado. El permiso sin goce y el descanso no se suman.</div>
+                                       <div class="asis-wizard-side__title">Cómo se calcula</div>
+                                       <div class="asis-formula-row"><span>Base trabajada</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual))</strong></div>
+                                       @if (AsistenciaActual.MinutosExtra > 0 && ObtenerMinutosExtraAprobados(AsistenciaActual) == 0)
+                                       {
+                                           <div class="asis-formula-row text-muted"><span>↳ Extra posible (sin aprobar)</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
+                                       }
+                                       <div class="asis-formula-row"><span>+ Compensación aprobada</span><strong>@FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</strong></div>
+                                       <div class="asis-formula-row"><span>+ Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
+                                       <div class="asis-formula-row"><span>= Tiempo visible</span><strong>@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual))</strong></div>
+                                       <div class="asis-wizard-side__note">La base excluye el extra hasta que se apruebe. Solo el permiso con goce suma al visible.</div>
                                     </div>
                                 </div>
                             </div>

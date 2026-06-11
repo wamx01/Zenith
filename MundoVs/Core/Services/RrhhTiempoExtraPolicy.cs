@@ -110,9 +110,19 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
-        => asistencia.MinutosJornadaNetaProgramada > 0
-            ? Math.Max(0, Math.Min(ObtenerMinutosTrabajadosNetosEfectivos(asistencia), asistencia.MinutosJornadaNetaProgramada))
-            : 0;
+    {
+        if (asistencia.MinutosJornadaNetaProgramada <= 0)
+        {
+            return 0;
+        }
+
+        var netoEfectivo = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+        // El extra detectado se excluye del base: solo cuenta cuando está aprobado
+        // Esto garantiza que cambiar el modo de cálculo refleje el visible correctamente
+        var extraDetectado = Math.Max(0, asistencia.MinutosExtra);
+        var baseNeta = Math.Max(0, netoEfectivo - extraDetectado);
+        return Math.Min(baseNeta, asistencia.MinutosJornadaNetaProgramada);
+    }
 
     public static int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
     {

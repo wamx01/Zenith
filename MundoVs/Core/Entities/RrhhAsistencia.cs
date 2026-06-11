@@ -33,6 +33,12 @@ public class RrhhAsistencia : BaseEntity
     public int MinutosExtraAutorizadosBanco { get; set; }
     public int MinutosCubiertosBancoHoras { get; set; }
     public string? ResolucionTiempoExtra { get; set; }
+    /// <summary>
+    /// Modo de cálculo de tiempo extra para este día:
+    /// "EntradaSalida" = entrada/salida real vs programada (default),
+    /// "NetoVsNeto" = neto trabajado vs neto esperado del turno.
+    /// </summary>
+    public string? ModoSugerenciaExtra { get; set; }
     public RrhhAsistenciaEstatus Estatus { get; set; } = RrhhAsistenciaEstatus.Pendiente;
     public bool RequiereRevision { get; set; }
     public string? Observaciones { get; set; }
