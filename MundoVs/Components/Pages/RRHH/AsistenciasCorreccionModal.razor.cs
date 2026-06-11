@@ -732,13 +732,25 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     }
 
     private int ObtenerMinutosExtraAprobados(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+    {
+        if (string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra))
+        {
+            return 0;
+        }
+        return RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+    }
 
     private int ObtenerMinutosBancoAcumuladosActual()
         => Math.Max(0, minutosExtraBancoAcumuladosActual);
 
     private int ObtenerMinutosCompensadosAprobadosActual()
-        => Math.Max(0, minutosCompensadosPermisoAprobados);
+    {
+        if (!TieneCompensacionPermisoAprobada())
+        {
+            return 0;
+        }
+        return Math.Max(0, minutosCompensadosPermisoAprobados);
+    }
 
     private bool TieneResolucionTiempoActual()
         => AsistenciaActual != null && RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(AsistenciaActual);
