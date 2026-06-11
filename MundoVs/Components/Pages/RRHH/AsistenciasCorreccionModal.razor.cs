@@ -2868,7 +2868,9 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     {
         var permisoAplicadoActual = permisoDiaSeleccionado == null
             ? 0
-            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+            : permisoDiaSeleccionado.ConGocePago
+                ? (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero)
+                : 0;
         return RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, permisoAplicadoActual, minutosCompensadosPermisoAprobados);
     }
 

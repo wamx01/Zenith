@@ -474,7 +474,8 @@
                                              </td>
                                         }
                                       <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Normales</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosNormales)</span></div></td>
-                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermiso)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. c/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermisoConGoce)</span></div></td>
+                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. s/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermisoSinGoce)</span></div></td>
                                      <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></div></td>
                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosBancoAplicado)</span></div></td>
                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></div></td>
@@ -497,7 +498,8 @@
                                         <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</td>
                                     }
                                   <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Normales</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosNormales))</span></div></td>
-                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Permisos</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. c/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoConGoce))</span></div></td>
+                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. s/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce))</span></div></td>
                                  <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></div></td>
                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosBancoAplicado))</span></div></td>
                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></div></td>
@@ -535,6 +537,7 @@
     private List<TurnoBase> turnos = [];
     private Dictionary<DateOnly, int> totalesPorDia = new();
     private Dictionary<string, int> permisosPorEmpleado = new();
+    private Dictionary<string, int> permisosSinGocePorEmpleado = new();
     private bool _puedeVer;
     private bool _puedeReprocesar;
     private bool _puedeAprobarTiempoExtra;
@@ -643,6 +646,7 @@
 
             compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
             permisosPorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta);
+            permisosSinGocePorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta, conGoce: false);
             permisosPorDia = await ConstruirPermisosPorDiaAsync(db, asistencias, desde, hasta);
 
             resumenes = asistencias
@@ -678,7 +682,8 @@
                     DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
                     DiasFestivoTrabajadoDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Where(EsFestivoTrabajado).Distinct().ToList(),
                     TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
-                    TotalMinutosPermiso = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
+                    TotalMinutosPermisoConGoce = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
+                    TotalMinutosPermisoSinGoce = permisosSinGocePorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
                         .GroupBy(a => a.Fecha)
                         .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x))),
@@ -754,6 +759,7 @@
             totalesPorDia = new();
             compensacionesPorDia = new();
             permisosPorEmpleado = new();
+            permisosSinGocePorEmpleado = new();
             permisosPorDia = new();
             asistenciasPorEmpleadoDia = new();
             festivosPeriodo = [];
@@ -943,8 +949,10 @@
             encabezados.Add("TiempoExtraAprobadoPagoSemanalMin");
             encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanal");
             encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanalMin");
-            encabezados.Add("PermisosSemanal");
-            encabezados.Add("PermisosSemanalMin");
+            encabezados.Add("PermisosConGoceSemanal");
+            encabezados.Add("PermisosConGoceSemanalMin");
+            encabezados.Add("PermisosSinGoceSemanal");
+            encabezados.Add("PermisosSinGoceSemanalMin");
             encabezados.Add("CompensacionesSemanal");
             encabezados.Add("CompensacionesSemanalMin");
             encabezados.Add("DescuentoSemanal");
@@ -983,8 +991,10 @@
                 columnas.Add(resumen.TotalMinutosExtraAprobadoPago.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)));
                 columnas.Add(resumen.TotalMinutosExtraAprobadoBanco.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermiso)));
-                columnas.Add(resumen.TotalMinutosPermiso.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermisoConGoce)));
+                columnas.Add(resumen.TotalMinutosPermisoConGoce.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermisoSinGoce)));
+                columnas.Add(resumen.TotalMinutosPermisoSinGoce.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosCompensacion)));
                 columnas.Add(resumen.TotalMinutosCompensacion.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosDescuento)));
@@ -1022,8 +1032,10 @@
             totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))));
             totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermiso))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosPermiso).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoConGoce))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosPermisoConGoce).ToString());
+            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce))));
+            totales.Add(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))));
             totales.Add(resumenes.Sum(x => x.TotalMinutosCompensacion).ToString());
             totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosDescuento))));
@@ -1207,7 +1219,7 @@
             a => RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, a.EmpleadoId, a.Fecha));
     }
 
-    private async Task<Dictionary<string, int>> ConstruirPermisosPorEmpleadoAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta)
+    private async Task<Dictionary<string, int>> ConstruirPermisosPorEmpleadoAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta, bool conGoce = true)
     {
         if (asistencias.Count == 0)
         {
@@ -1215,16 +1227,18 @@
         }
 
         var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
-        var permisos = await db.RrhhAusencias
+        var query = db.RrhhAusencias
             .AsNoTracking()
             .Where(a => a.EmpresaId == _empresaId
                 && empleadoIds.Contains(a.EmpleadoId)
                 && a.IsActive
+                && a.ConGocePago == conGoce
                 && a.Tipo == TipoAusenciaRrhh.Permiso
                 && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
                 && a.FechaInicio <= hasta
-                && a.FechaFin >= desde)
-            .ToListAsync();
+                && a.FechaFin >= desde);
+
+        var permisos = await query.ToListAsync();
 
         return permisos
             .GroupBy(a => a.EmpleadoId.ToString("N"))
@@ -1359,7 +1373,8 @@
         public int TotalMinutosSalidaAnticipada { get; init; }
         public int TotalDiasTrabajados { get; init; }
         public int TotalDiasFestivoTrabajado { get; init; }
-        public int TotalMinutosPermiso { get; init; }
+        public int TotalMinutosPermisoConGoce { get; init; }
+        public int TotalMinutosPermisoSinGoce { get; init; }
         public int TotalMinutosCompensacion { get; init; }
         public int TotalDiasAusentismo { get; init; }
         public int TotalDiasRetardo { get; init; }
@@ -1373,7 +1388,7 @@
         public List<DateOnly> DiasFestivoTrabajadoDetalle { get; init; } = [];
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosDebidosPorDia { get; init; } = new();
-        public int TotalMinutosPagados => TotalMinutosNormales + TotalMinutosPermiso + TotalMinutosCompensacion + TotalMinutosBancoAplicado + TotalMinutosExtraAprobadoPago;
+        public int TotalMinutosPagados => TotalMinutosNormales + TotalMinutosPermisoConGoce + TotalMinutosCompensacion + TotalMinutosBancoAplicado + TotalMinutosExtraAprobadoPago;
         public int TotalMinutos => MinutosPorDia.Values.Sum();
     }
 
