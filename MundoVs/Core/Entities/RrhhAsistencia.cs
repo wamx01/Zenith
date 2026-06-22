@@ -44,6 +44,12 @@ public class RrhhAsistencia : BaseEntity
     public string? Observaciones { get; set; }
     public string? ResumenDescansos { get; set; }
     public string? ObservacionPerdonManual { get; set; }
+    /// <summary>
+    /// Números de descanso (separados por coma) que el usuario marcó como no descontados.
+    /// El empleado no tomó esos descansos y el tiempo se cuenta como trabajo efectivo.
+    /// Ejemplo: "1" o "1,2"
+    /// </summary>
+    public string? DescansosNoDescontar { get; set; }
 }
 
 public enum RrhhAsistenciaEstatus

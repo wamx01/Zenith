@@ -231,7 +231,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var configuracionDescansos = await RrhhAsistenciaDescansoSettings.LoadAsync(db, empresaId, cancellationToken);
         var permisoParcial = await ObtenerPermisoParcialDiaAsync(db, empresaId, grupo.EmpleadoId, fecha, cancellationToken);
         var resolucionesSegmento = await ObtenerResolucionesSegmentoAsync(db, empresaId, grupo.EmpleadoId, fecha, cancellationToken);
-        var analisisJornada = AnalizarJornada(detalleTurno, marcacionesClasificadas, resolucionesSegmento, configuracionDescansos, permisoParcial);
+        var asistenciaPrevia = await db.RrhhAsistencias
+            .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
+        var descansosNoDescontarPrevios = ParsearDescansosNoDescontar(asistenciaPrevia?.DescansosNoDescontar);
+        var analisisJornada = AnalizarJornada(detalleTurno, marcacionesClasificadas, resolucionesSegmento, configuracionDescansos, permisoParcial, descansosNoDescontarPrevios);
         await ConciliarResolucionesSegmentoAsync(db, empresaId, grupo.EmpleadoId, fecha, marcacionesClasificadas, resolucionesSegmento, cancellationToken);
 
         var entradaReal = analisisJornada.EntradaReal;
@@ -249,10 +252,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosTrabajadosBrutos = Math.Max(0, analisisJornada.MinutosTrabajadosBrutos - minutosMargenNoComputables);
         var minutosTrabajadosNetos = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
 
-        var asistencia = await db.RrhhAsistencias
-            .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
+        var asistencia = asistenciaPrevia;
 
-        var modoSugerencia = asistencia?.ModoSugerenciaExtra;
+        var modoSugerencia = asistenciaPrevia?.ModoSugerenciaExtra;
         var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra, minutosMargenNoComputables, modoSugerencia);
 
         var (estatus, requiereRevision, observaciones) = ClasificarAsistencia(
@@ -577,7 +579,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return partes.Count == 0 ? null : string.Join(" ", partes);
     }
 
-    private static AnalisisJornada AnalizarJornada(TurnoBaseDetalle? detalleTurno, IReadOnlyList<MarcacionProcesada> marcaciones, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, RrhhAsistenciaDescansoSettings configuracionDescansos, PermisoParcialDia? permisoParcial)
+    private static AnalisisJornada AnalizarJornada(TurnoBaseDetalle? detalleTurno, IReadOnlyList<MarcacionProcesada> marcaciones, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, RrhhAsistenciaDescansoSettings configuracionDescansos, PermisoParcialDia? permisoParcial, HashSet<int>? descansosNoDescontarPrevios = null)
     {
         var descansosConfigurados = ObtenerDescansosConfigurados(detalleTurno);
         var minutosJornadaProgramada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && detalleTurno.HoraSalida is TimeSpan salidaProgramada
@@ -802,7 +804,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaDescansos && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramadaDescansos - salidaReal.Value).TotalMinutes))
             : 0;
-        var descansosAplicados = CalcularDescansosAplicados(descansosConfigurados, descansosTomados, resolucionesSegmento, minutosSalidaAnticipada, permisoParcial, configuracionDescansos, observaciones);
+        var descansosAplicados = CalcularDescansosAplicados(descansosConfigurados, descansosTomados, resolucionesSegmento, minutosSalidaAnticipada, permisoParcial, configuracionDescansos, observaciones, descansosNoDescontarPrevios);
         var minutosDescansoTomado = descansosAplicados.Sum(d => d.MinutosAplicados);
         var minutosDescansoPagado = descansosAplicados.Where(d => d.EsPagado).Sum(d => d.MinutosAplicados);
         var minutosDescansoNoPagado = Math.Max(0, minutosDescansoTomado - minutosDescansoPagado);
@@ -975,6 +977,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                     minutosExtraManual += minutos;
                     observaciones.Add($"Se respetó la resolución manual del tramo {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} como bloque extra ({minutos} min); no se tomó como descanso.");
                     break;
+                case "descansoNoDescontar":
+                    observaciones.Add($"Se respetó la resolución manual del tramo {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} como descanso no descontado ({minutos} min); el tiempo se cuenta como trabajo efectivo y no se descuenta del neto.");
+                    break;
                 case "temporal":
                     minutosSalidaTemporal += minutos;
                     observaciones.Add($"Se detectó salida temporal de {minutos} min entre {inicio.FechaLocal:HH:mm} y {fin.FechaLocal:HH:mm}; no se tomó como descanso.");
@@ -1042,6 +1047,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 TipoSegmentoResolucionRrhh.Permiso => "permiso",
                 TipoSegmentoResolucionRrhh.NoConsiderar => "ignorar",
                 TipoSegmentoResolucionRrhh.Descanso => "descanso",
+                TipoSegmentoResolucionRrhh.DescansoNoDescontar => "descansoNoDescontar",
                 TipoSegmentoResolucionRrhh.Extra => "extra",
                 _ => "trabajo"
             };
@@ -1441,7 +1447,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         int minutosSalidaAnticipada,
         PermisoParcialDia? permisoParcial,
         RrhhAsistenciaDescansoSettings configuracionDescansos,
-        List<string> observaciones)
+        List<string> observaciones,
+        HashSet<int>? descansosNoDescontarPrevios = null)
     {
         if (descansosConfigurados.Count == 0 && descansosTomados.Count == 0)
         {
@@ -1450,7 +1457,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         var aplicados = new List<DescansoAplicado>();
         var resolucionesTrabajo = resolucionesSegmento
-            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente && r.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo)
+            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente
+                && (r.TipoSegmento == TipoSegmentoResolucionRrhh.Trabajo
+                    || r.TipoSegmento == TipoSegmentoResolucionRrhh.DescansoNoDescontar))
             .ToList();
         var descansosTomadosFiltrados = descansosTomados
             .Where(tomado => !resolucionesTrabajo.Any(r => SegmentoCoincideConResolucion(r, tomado.Salida, tomado.Regreso)))
@@ -1462,6 +1471,16 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             .Where(numero => numero.HasValue)
             .Select(numero => numero!.Value)
             .ToHashSet();
+        var descansosNoDescontar = resolucionesSegmento
+            .Where(r => r.Estado == EstadoSegmentoResolucionRrhh.Vigente && r.TipoSegmento == TipoSegmentoResolucionRrhh.DescansoNoDescontar)
+            .Select(resolucion => ObtenerNumeroDescansoResueltoComoTrabajo(descansosConfigurados, resolucion))
+            .Where(numero => numero.HasValue)
+            .Select(numero => numero!.Value)
+            .ToHashSet();
+        if (descansosNoDescontarPrevios != null)
+        {
+            descansosNoDescontar.UnionWith(descansosNoDescontarPrevios);
+        }
         var minutosSalidaDisponibles = Math.Max(0, minutosSalidaAnticipada);
 
         foreach (var configurado in descansosConfigurados
@@ -1539,6 +1558,27 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                     null,
                     0,
                     0,
+                    false,
+                    false,
+                    false,
+                    true));
+
+                continue;
+            }
+
+            if (descansosNoDescontar.Contains(configurado.Numero))
+            {
+                observaciones.Add($"El descanso {configurado.Numero} se marcó como no descontado: el empleado no tomó el descanso y el tiempo se cuenta como trabajo efectivo.");
+                aplicados.Add(new DescansoAplicado(
+                    configurado.Numero,
+                    configurado.Inicio,
+                    configurado.Fin,
+                    configurado.EsPagado,
+                    null,
+                    null,
+                    0,
+                    0,
+                    false,
                     false,
                     false,
                     false,
@@ -1842,7 +1882,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         return string.Join(" | ", descansosAplicados
             .OrderBy(d => d.Numero)
-            .Select(d => d.FueCubiertoPorPermiso
+            .Select(d => d.FueNoDescontado
+                ? $"D{d.Numero}: no descontado; el empleado no tomó el descanso y el tiempo se cuenta como trabajo efectivo ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
+                : d.FueCubiertoPorPermiso
                 ? $"D{d.Numero}: sin marcar; cubierto por permiso del día ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
                 : d.RequiereConfirmacion
                 ? $"D{d.Numero}: sin marcar; confirmar permiso o descuento ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
@@ -1977,7 +2019,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         bool FueMarcado,
         bool FueCubiertoPorSalidaAnticipada,
         bool RequiereConfirmacion,
-        bool FueCubiertoPorPermiso);
+        bool FueCubiertoPorPermiso,
+        bool FueNoDescontado = false);
 
     private sealed record AnalisisJornada(
         int TotalMarcaciones,
@@ -2032,6 +2075,25 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     private sealed record PermisoParcialDia(decimal Horas, bool ConGocePago, string? Motivo);
 
     private sealed record MarcacionProcesada(RrhhMarcacion Marcacion, DateTime FechaLocal);
+
+    private static HashSet<int> ParsearDescansosNoDescontar(string? descansosNoDescontar)
+    {
+        if (string.IsNullOrWhiteSpace(descansosNoDescontar))
+        {
+            return [];
+        }
+
+        var resultado = new HashSet<int>();
+        foreach (var segmento in descansosNoDescontar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (int.TryParse(segmento, out var numero))
+            {
+                resultado.Add(numero);
+            }
+        }
+
+        return resultado;
+    }
 
     private static TimeZoneInfo ResolverZonaHoraria(string? zonaHoraria)
     {

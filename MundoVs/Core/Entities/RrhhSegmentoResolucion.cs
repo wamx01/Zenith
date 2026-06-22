@@ -7,7 +7,8 @@ public enum TipoSegmentoResolucionRrhh
     Descanso = 3,
     SalidaTemporal = 4,
     Permiso = 5,
-    NoConsiderar = 6
+    NoConsiderar = 6,
+    DescansoNoDescontar = 7
 }
 
 public enum EstadoSegmentoResolucionRrhh

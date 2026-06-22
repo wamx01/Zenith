@@ -645,6 +645,10 @@
     background: linear-gradient(90deg, #facc15 0%, #eab308 100%);
 }
 
+.asis-dayline__segment--descanso-no-descontado {
+    background: linear-gradient(90deg, #fb923c 0%, #ea580c 100%);
+}
+
 .asis-dayline__segment--extra {
     background: linear-gradient(90deg, #c084fc 0%, #9333ea 100%);
 }

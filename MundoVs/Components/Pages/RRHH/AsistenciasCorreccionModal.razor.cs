@@ -126,7 +126,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private bool _mostrarAccionesRapidasModoExtra;
     private bool _mostrarBitacora;
     private bool _mostrarMarcacionesDia;
+    private bool _mostrarDescansosNoDescontar;
+    private HashSet<int> _descansosNoDescontarSeleccionados = [];
     private int _toleranciaExcesoDescansoMinutos = RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoDefault;
+    private TurnoBaseDetalle? _detalleTurnoVigenteCache;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -208,9 +211,16 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         _draftDb = await DbFactory.CreateDbContextAsync();
         AsistenciaActual = await _draftDb.RrhhAsistencias
             .Include(a => a.Empleado)
+                .ThenInclude(e => e.TurnoBase)
+                    .ThenInclude(t => t.Detalles)
+                        .ThenInclude(d => d.Descansos)
             .Include(a => a.TurnoBase)
+                .ThenInclude(t => t.Detalles)
+                    .ThenInclude(d => d.Descansos)
             .FirstOrDefaultAsync(a => a.Id == Asistencia.Id)
             ?? Asistencia;
+
+        await ResolverTurnoVigenteCacheAsync();
 
         _ultimaAsistenciaCargadaId = AsistenciaActual.Id;
         ReiniciarEstadoVisual();
@@ -219,6 +229,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         modoSugerenciaExtra = AsistenciaActual.ModoSugerenciaExtra ?? "EntradaSalida";
         await CargarContextoTiempoExtraAsync(_draftDb);
         _toleranciaExcesoDescansoMinutos = (await RrhhAsistenciaDescansoSettings.LoadAsync(_draftDb, _empresaId)).ToleranciaExcesoDescansoMinutos;
+        CargarDescansosNoDescontar(AsistenciaActual);
         CargarCapturaResolucion(AsistenciaActual);
         await CargarContextoDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarAsistencia: false);
     }
@@ -1124,6 +1135,11 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return ("Trabajo principal", "asis-dayline__segment--trabajo", "Tramo fijado manualmente como parte de la jornada principal; no debe volver a interpretarse como descanso.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "trabajo", estadoResolucion, fueInferidoAutomaticamente);
         }
 
+        if (resolucionManualVigente && resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.DescansoNoDescontar)
+        {
+            return ("Descanso no descontado", "asis-dayline__segment--descanso-no-descontado", "Descanso que el empleado no tomó; el tiempo se cuenta como trabajo efectivo y no se descuenta del neto.", TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida, "descansoNoDescontar", estadoResolucion, fueInferidoAutomaticamente);
+        }
+
         if (inicio.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.InicioDescanso || fin.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.FinDescanso)
         {
             return ("Descanso detectado", "asis-dayline__segment--descanso", "Se interpreta como descanso marcado o emparejado en la jornada.", TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso, "descanso", estadoResolucion, fueInferidoAutomaticamente);
@@ -1186,7 +1202,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 : "Alternancia base sugiere trabajo; revisa si este tramo realmente es descanso, permiso o salida temporal.";
         }
 
-        return accionActual is "descanso" or "permiso" or "temporal"
+        return accionActual is "descanso" or "descansoNoDescontar" or "permiso" or "temporal"
             ? "Alternancia base: pausa"
             : "Alternancia base sugiere pausa; revisa si este tramo debería clasificarse como descanso, permiso o salida temporal.";
     }
@@ -1221,6 +1237,13 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private (int? NumeroDescanso, int? MinutosProgramados, int? MinutosAplicados, string? OrigenAplicado) ObtenerPresentacionDescanso(TurnoBaseDetalle? detalleTurno, Guid inicioId, Guid finId, TimeSpan inicio, TimeSpan fin, int minutosDetectados)
     {
         var resolucion = ObtenerResolucionSegmento(inicioId, finId);
+        if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.DescansoNoDescontar)
+        {
+            var numeroNd = ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin);
+            var programadoNd = numeroNd.HasValue ? ObtenerMinutosProgramadosDescanso(detalleTurno, numeroNd.Value) : null;
+            return (numeroNd, programadoNd, 0, "No descontado");
+        }
+
         if (resolucion?.TipoSegmento == TipoSegmentoResolucionRrhh.Descanso && resolucion.MinutosAplicadosOverride.HasValue)
         {
             var numeroManual = ObtenerNumeroDescansoMasCercano(detalleTurno, inicio, fin);
@@ -1253,9 +1276,21 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private string ObtenerFormulaDescanso(TimelineSegmentoDia segmento)
     {
-        if (segmento.Accion != "descanso" || !segmento.MinutosAplicados.HasValue)
+        if (segmento.Accion != "descanso" && segmento.Accion != "descansoNoDescontar")
         {
             return string.Empty;
+        }
+
+        if (!segmento.MinutosAplicados.HasValue)
+        {
+            return string.Empty;
+        }
+
+        if (string.Equals(segmento.OrigenAplicado, "No descontado", StringComparison.OrdinalIgnoreCase))
+        {
+            return segmento.MinutosProgramados.HasValue
+                ? $"Cálculo: descanso D{segmento.NumeroDescanso?.ToString() ?? "?"} programado {FormatearMinutos(segmento.MinutosProgramados.Value)} no descontado; el tiempo se cuenta como trabajo efectivo."
+                : "Cálculo: descanso no descontado; el tiempo se cuenta como trabajo efectivo.";
         }
 
         if (!segmento.MinutosProgramados.HasValue)
@@ -1329,6 +1364,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             TipoSegmentoResolucionRrhh.Extra => "extra",
             TipoSegmentoResolucionRrhh.Descanso => "descanso",
+            TipoSegmentoResolucionRrhh.DescansoNoDescontar => "descansoNoDescontar",
             TipoSegmentoResolucionRrhh.SalidaTemporal => "temporal",
             TipoSegmentoResolucionRrhh.Permiso => "permiso",
             TipoSegmentoResolucionRrhh.NoConsiderar => "ignorar",
@@ -1385,6 +1421,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             "extra" => TipoSegmentoResolucionRrhh.Extra,
             "descanso" => TipoSegmentoResolucionRrhh.Descanso,
+            "descansoNoDescontar" => TipoSegmentoResolucionRrhh.DescansoNoDescontar,
             "temporal" => TipoSegmentoResolucionRrhh.SalidaTemporal,
             "permiso" => TipoSegmentoResolucionRrhh.Permiso,
             "ignorar" => TipoSegmentoResolucionRrhh.NoConsiderar,
@@ -1403,6 +1440,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             new("trabajo", "Trabajo principal", "Usa Entrada + Salida para que el tramo se tome como parte de la jornada efectiva."),
             new("extra", "Bloque extra", "Se mapea igual que trabajo, pero el texto del timeline lo presenta como tramo adicional al turno."),
             new("descanso", "Descanso", "Usa InicioDescanso + FinDescanso para descontar el tramo como descanso."),
+            new("descansoNoDescontar", "No descontar descanso", "El empleado no tomó el descanso pero ese tiempo se cuenta como trabajo efectivo; no se descuenta del neto trabajado."),
             new("temporal", "Salida temporal", "Se conserva fuera del tiempo laborado y no se trata como descanso; debe verse explícitamente como salida temporal."),
             new("permiso", "Permiso", "Marca el tramo como permiso del día para diferenciarlo de una salida temporal o de un descanso."),
             new("ignorar", "No considerar", "Saca el tramo del cálculo del día sin romper el timeline; seguirá visible como tramo no considerado.")
@@ -1456,6 +1494,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         var (clasificacionInicio, clasificacionFin) = segmentoAccionSeleccionada switch
         {
             "descanso" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
+            "descansoNoDescontar" => (TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida),
             "temporal" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
             "permiso" => (TipoClasificacionMarcacionRrhh.InicioDescanso, TipoClasificacionMarcacionRrhh.FinDescanso),
             _ => (TipoClasificacionMarcacionRrhh.Entrada, TipoClasificacionMarcacionRrhh.Salida)
@@ -1464,6 +1503,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         var mensaje = segmentoAccionSeleccionada switch
         {
             "descanso" => "Segmento marcado como descanso y día reprocesado.",
+            "descansoNoDescontar" => "Segmento marcado como descanso no descontado; el tiempo se cuenta como trabajo efectivo.",
             "temporal" => "Segmento marcado como salida temporal y día reprocesado.",
             "permiso" => "Segmento marcado como permiso y día reprocesado.",
             "extra" => "Segmento marcado como bloque extra y día reprocesado.",
@@ -1490,7 +1530,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
                 fin.UpdatedAt = DateTime.UtcNow;
                 fin.UpdatedBy = usuarioActual;
 
-                var numeroDescanso = segmentoAccionSeleccionada == "descanso"
+                var numeroDescanso = segmentoAccionSeleccionada is "descanso" or "descansoNoDescontar"
                     ? ObtenerNumeroDescansoMasCercano(ObtenerDetalleTurnoSeleccionadoDia(), ObtenerFechaHoraLocalMarcacion(inicio).TimeOfDay, ObtenerFechaHoraLocalMarcacion(fin).TimeOfDay)
                     : null;
 
@@ -1642,6 +1682,11 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         if (recargarResolucion && AsistenciaActual != null)
         {
             CargarCapturaResolucion(AsistenciaActual);
+        }
+
+        if (AsistenciaActual != null)
+        {
+            CargarDescansosNoDescontar(AsistenciaActual);
         }
 
         if (!string.IsNullOrWhiteSpace(mensajeOk))
@@ -2100,6 +2145,93 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
         minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
         factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
+    }
+
+    private void CargarDescansosNoDescontar(RrhhAsistencia asistencia)
+    {
+        _descansosNoDescontarSeleccionados.Clear();
+        if (string.IsNullOrWhiteSpace(asistencia.DescansosNoDescontar))
+        {
+            return;
+        }
+
+        foreach (var segmento in asistencia.DescansosNoDescontar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (int.TryParse(segmento, out var numero))
+            {
+                _descansosNoDescontarSeleccionados.Add(numero);
+            }
+        }
+    }
+
+    private List<(int Numero, TimeSpan Inicio, TimeSpan Fin, int Minutos, bool EsPagado)> ObtenerDescansosConfiguradosDia()
+    {
+        var detalle = ObtenerDetalleTurnoSeleccionadoDia();
+        if (detalle == null || !detalle.Labora)
+        {
+            return [];
+        }
+
+        return detalle.Descansos
+            .Where(d => d.HoraInicio.HasValue && d.HoraFin.HasValue)
+            .OrderBy(d => d.Orden)
+            .Select(d => ((int)d.Orden, d.HoraInicio!.Value, d.HoraFin!.Value, (int)Math.Round((d.HoraFin!.Value - d.HoraInicio!.Value).TotalMinutes), d.EsPagado))
+            .ToList();
+    }
+
+    private bool EsDescansoNoDescontar(int numeroDescanso)
+        => _descansosNoDescontarSeleccionados.Contains(numeroDescanso);
+
+    private void ToggleDescansoNoDescontar(int numeroDescanso)
+    {
+        if (_descansosNoDescontarSeleccionados.Contains(numeroDescanso))
+        {
+            _descansosNoDescontarSeleccionados.Remove(numeroDescanso);
+        }
+        else
+        {
+            _descansosNoDescontarSeleccionados.Add(numeroDescanso);
+        }
+    }
+
+    private async Task GuardarDescansosNoDescontarAsync()
+    {
+        if (AsistenciaActual == null || !PuedeReprocesar)
+        {
+            return;
+        }
+
+        error = null;
+        ok = null;
+
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var asistencia = await db.RrhhAsistencias.FirstOrDefaultAsync(a => a.Id == AsistenciaActual.Id);
+            if (asistencia == null)
+            {
+                error = "No se encontró la asistencia actual.";
+                return;
+            }
+
+            var valor = _descansosNoDescontarSeleccionados.Count == 0
+                ? null
+                : string.Join(",", _descansosNoDescontarSeleccionados.Order());
+
+            asistencia.DescansosNoDescontar = valor;
+            asistencia.UpdatedAt = DateTime.UtcNow;
+            asistencia.UpdatedBy = usuarioActual;
+            await db.SaveChangesAsync();
+
+            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, _descansosNoDescontarSeleccionados.Count > 0
+                ? $"Descansos no descontados actualizados: D{string.Join(", D", _descansosNoDescontarSeleccionados.Order())}."
+                : "Se restauró el descuento automático de todos los descansos.", recargarResolucion: true);
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
     }
 
     private bool PuedeMostrarResolucionTiempo()
@@ -2713,11 +2845,73 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         return descansos.Count == 0 ? "Sin descansos configurados." : string.Join(" · ", descansos);
     }
 
+    private async Task ResolverTurnoVigenteCacheAsync()
+    {
+        if (AsistenciaActual == null || _draftDb == null)
+        {
+            return;
+        }
+
+        var empleadoId = AsistenciaActual.EmpleadoId;
+        var fecha = AsistenciaActual.Fecha;
+        var vigencia = await _draftDb.RrhhEmpleadosTurno
+            .AsNoTracking()
+            .Include(v => v.TurnoBase)
+                .ThenInclude(t => t.Detalles)
+                    .ThenInclude(d => d.Descansos)
+            .Where(v => v.EmpresaId == _empresaId
+                && v.EmpleadoId == empleadoId
+                && v.IsActive
+                && v.VigenteDesde <= fecha
+                && (v.VigenteHasta == null || v.VigenteHasta >= fecha))
+            .OrderByDescending(v => v.VigenteDesde)
+            .FirstOrDefaultAsync();
+
+        var turno = vigencia?.TurnoBase;
+        if (turno == null && AsistenciaActual.Empleado?.TurnoBase != null)
+        {
+            turno = AsistenciaActual.Empleado.TurnoBase;
+        }
+
+        if (turno == null && AsistenciaActual.TurnoBaseId.HasValue)
+        {
+            turno = await _draftDb.TurnosBase
+                .AsNoTracking()
+                .Include(t => t.Detalles)
+                    .ThenInclude(d => d.Descansos)
+                .FirstOrDefaultAsync(t => t.Id == AsistenciaActual.TurnoBaseId && t.EmpresaId == _empresaId);
+        }
+
+        if (turno != null)
+        {
+            AsistenciaActual.TurnoBaseId = turno.Id;
+            _detalleTurnoVigenteCache = turno.Detalles.FirstOrDefault(d => d.DiaSemana == MapDiaSemana(fecha.DayOfWeek));
+            turnoDiaSeleccionadoIdTexto = turno.Id.ToString();
+        }
+    }
+
+    private static DiaSemanaTurno MapDiaSemana(DayOfWeek dayOfWeek)
+        => dayOfWeek switch
+        {
+            DayOfWeek.Monday => DiaSemanaTurno.Lunes,
+            DayOfWeek.Tuesday => DiaSemanaTurno.Martes,
+            DayOfWeek.Wednesday => DiaSemanaTurno.Miercoles,
+            DayOfWeek.Thursday => DiaSemanaTurno.Jueves,
+            DayOfWeek.Friday => DiaSemanaTurno.Viernes,
+            DayOfWeek.Saturday => DiaSemanaTurno.Sabado,
+            _ => DiaSemanaTurno.Domingo
+        };
+
     private TurnoBaseDetalle? ObtenerDetalleTurnoSeleccionadoDia()
     {
         if (AsistenciaActual == null)
         {
             return null;
+        }
+
+        if (_detalleTurnoVigenteCache != null)
+        {
+            return _detalleTurnoVigenteCache;
         }
 
         var turnoIdTexto = string.IsNullOrWhiteSpace(turnoDiaSeleccionadoIdTexto)
@@ -2730,6 +2924,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         }
 
         var turno = Turnos.FirstOrDefault(t => t.Id == turnoId);
+        if (turno == null && _draftDb != null)
+        {
+            turno = _draftDb.TurnosBase
+                .AsNoTracking()
+                .Include(t => t.Detalles)
+                    .ThenInclude(d => d.Descansos)
+                .FirstOrDefault(t => t.Id == turnoId && t.EmpresaId == _empresaId);
+        }
+
         if (turno == null)
         {
             return null;
