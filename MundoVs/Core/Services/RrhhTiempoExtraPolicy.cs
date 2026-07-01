@@ -111,9 +111,11 @@ public static class RrhhTiempoExtraPolicy
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
     {
+        // Empleado sin turno fijo: no hay jornada esperada de referencia,
+        // se le paga el tiempo real trabajado (entrada a salida) sin cap de jornada.
         if (asistencia.MinutosJornadaNetaProgramada <= 0)
         {
-            return 0;
+            return ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
         }
 
         var netoEfectivo = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);

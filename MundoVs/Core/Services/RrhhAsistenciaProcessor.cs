@@ -326,6 +326,13 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         if (detalleTurno == null)
         {
+            // Sin turno fijo: si el empleado registró entrada y salida (2+ marcaciones),
+            // se le paga el tiempo trabajado como asistencia normal sin requerir revisión.
+            if (analisisJornada.TotalMarcaciones >= 2 && analisisJornada.EntradaReal.HasValue && analisisJornada.SalidaReal.HasValue)
+            {
+                return (RrhhAsistenciaEstatus.AsistenciaNormal, false, "Asistencia sin turno fijo; se paga el tiempo registrado de entrada a salida.");
+            }
+
             return (RrhhAsistenciaEstatus.TurnoNoAsignado, true, "El empleado no tiene turno configurado para este día.");
         }
 
