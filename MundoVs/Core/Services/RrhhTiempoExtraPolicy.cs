@@ -111,11 +111,19 @@ public static class RrhhTiempoExtraPolicy
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
     {
-        // Empleado sin turno fijo: no hay jornada esperada de referencia,
-        // se le paga el tiempo real trabajado (entrada a salida) sin cap de jornada.
-        if (asistencia.MinutosJornadaNetaProgramada <= 0)
+        // Empleado sin turno fijo (TurnoBaseId == null): no hay jornada esperada de referencia,
+        // se le paga el tiempo real trabajado (entrada a salida) sin clasificarlo como extra.
+        // En este caso MinutosExtra siempre es 0, por lo que no hay riesgo de doble conteo.
+        // Si el día es descanso con turno (Labora = false), TurnoBaseId sí existe y
+        // MinutosJornadaNetaProgramada = 0; ese caso sigue pagando sólo por extra aprobado.
+        if (asistencia.MinutosJornadaNetaProgramada <= 0 && asistencia.TurnoBaseId is null)
         {
             return ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+        }
+
+        if (asistencia.MinutosJornadaNetaProgramada <= 0)
+        {
+            return 0;
         }
 
         var netoEfectivo = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
