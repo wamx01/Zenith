@@ -1,0 +1,561 @@
+@page "/rrhh/reporte-tiempo-extra"
+@using System.Globalization
+@using System.Text
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
+@using MundoVs.Core.Interfaces
+@using MundoVs.Core.Models
+@using MundoVs.Infrastructure.Data
+@inject IDbContextFactory<CrmDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IRrhhTiempoExtraReporteService ReporteService
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Reporte de tiempo extra</PageTitle>
+
+<div class="container-fluid px-4">
+    @if (!_puedeVer)
+    {
+        <div class="alert alert-warning mt-3">No tienes permisos para ver el reporte de tiempo extra.</div>
+    }
+    else
+    {
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div>
+                <h1 class="display-6 fw-bold mb-1"><i class="bi bi-clock-history me-2"></i>Reporte de tiempo extra</h1>
+                <p class="text-muted mb-0">Compilado por persona y fecha. Considera sugerencia del motor, autorización a pago, autorización a banco y banco aplicado.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ExportarCsvAsync" disabled="@(exportandoCsv || cargando || respuestaReporte is null)">
+                    @if (exportandoCsv)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-filetype-csv me-1"></i>
+                    }
+                    Exportar CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label">Desde</label>
+                        <InputDate @bind-Value="filtroFechaDesde" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Hasta</label>
+                        <InputDate @bind-Value="filtroFechaHasta" class="form-control form-control-sm" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Departamento</label>
+                        <InputText @bind-Value="filtroDepartamento" class="form-control form-control-sm" placeholder="Todos" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Agrupar por</label>
+                        <InputSelect @bind-Value="filtroAgrupadoPor" class="form-select form-select-sm">
+                            <option value="dia">Día</option>
+                            <option value="empleado">Empleado</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Empleado (opcional)</label>
+                        <InputText @bind-Value="filtroEmpleadoId" class="form-control form-control-sm" placeholder="GUID" />
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="button" class="btn btn-primary btn-sm flex-grow-1" @onclick="CargarReporteAsync" disabled="@cargando">
+                            @if (cargando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-search me-1"></i>
+                            }
+                            Consultar
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="RestablecerFiltrosAsync" disabled="@cargando" title="Restablecer">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(ok))
+        {
+            <div class="alert alert-success">@ok</div>
+        }
+
+        @if (respuestaReporte is not null)
+        {
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="small text-muted">Horas extra (sugerido)</div>
+                            <div class="fs-4 fw-bold text-primary">@respuestaReporte.Totales.TotalHorasExtraFormateado</div>
+                            <div class="small text-muted">@respuestaReporte.Totales.DiasConExtra día(s) con extra · @respuestaReporte.TotalEmpleados empleado(s)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="small text-muted">Autorizado a pago</div>
+                            <div class="fs-4 fw-bold text-success">@respuestaReporte.Totales.TotalHorasExtraPagoFormateado</div>
+                            <div class="small text-muted">Lo que se liquida como tiempo extra</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="small text-muted">Autorizado a banco</div>
+                            <div class="fs-4 fw-bold text-info">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</div>
+                            <div class="small text-muted">Lo que se va al banco de horas</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="small text-muted">Banco aplicado</div>
+                            <div class="fs-4 fw-bold text-warning">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</div>
+                            <div class="small text-muted">Tiempo ya compensado desde el banco</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (respuestaReporte.Empleados.Count == 0)
+            {
+                <div class="alert alert-light border text-center text-muted py-4">No hay horas extra en el rango seleccionado.</div>
+            }
+            else
+            {
+                <div class="card border-0 shadow-sm">
+                    <div class="table-responsive te-reporte-wrap">
+                        <table class="table table-sm align-middle mb-0 te-reporte-table">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Empleado</th>
+                                    <th class="text-end">Días con extra</th>
+                                    <th class="text-end">Extra sugerido</th>
+                                    <th class="text-end">Base a pago</th>
+                                    <th class="text-end">Pago × factor</th>
+                                    <th class="text-end">Base a banco</th>
+                                    <th class="text-end">Banco × factor</th>
+                                    <th class="text-end">Banco aplicado</th>
+                                    <th class="text-end">Retardo</th>
+                                    <th class="text-end">Salida ant.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var emp in respuestaReporte.Empleados)
+                                {
+                                    <tr class="te-reporte-empleado-row" @onclick="() => ToggleEmpleado(emp.EmpleadoId)" style="cursor:pointer">
+                                        <td>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <i class="bi @(Expandido(emp.EmpleadoId) ? "bi-chevron-down" : "bi-chevron-right") small text-muted"></i>
+                                                <div>
+                                                    <div class="fw-semibold">@emp.NombreCompleto</div>
+                                                    <div class="small text-muted">
+                                                        @emp.NumeroEmpleado
+                                                        @if (!string.IsNullOrWhiteSpace(emp.Departamento))
+                                                        {
+                                                            <span> · @emp.Departamento</span>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(emp.Puesto))
+                                                        {
+                                                            <span> · @emp.Puesto</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-end">@emp.Totales.DiasConExtra</td>
+                                        <td class="text-end"><span class="badge @ObtenerClaseTotal(emp.Totales.TotalMinutosExtra)">@FormatearMinutos(emp.Totales.TotalMinutosExtra)</span></td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosExtraAutorizadosPago)</td>
+                                        <td class="text-end"><span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">@FormatearMinutos(emp.Totales.TotalMinutosPagoFactorado)</span></td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosExtraAutorizadosBanco)</td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosBancoFactorado)</td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosCubiertosBancoHoras)</td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosRetardo)</td>
+                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosSalidaAnticipada)</td>
+                                    </tr>
+                                    @if (Expandido(emp.EmpleadoId))
+                                    {
+                                        <tr class="te-reporte-detalle-row">
+                                            <td colspan="10" class="p-0">
+                                                <div class="te-reporte-detalle">
+                                                    @if (emp.Dias.Count == 0)
+                                                    {
+                                                        <div class="text-muted small px-3 py-2">Modo agrupado por empleado: consulta con "Día" para ver el detalle por fecha.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <table class="table table-sm mb-0">
+                                                            <thead class="table-light">
+                                                                <tr>
+                                                                    <th>Fecha</th>
+                                                                    <th>Estatus</th>
+                                                                    <th class="text-end">Extra sugerido</th>
+                                                                    <th class="text-end">Base pago</th>
+                                                                    <th class="text-end">Pago ×factor</th>
+                                                                    <th class="text-end">Base banco</th>
+                                                                    <th class="text-end">Banco ×factor</th>
+                                                                    <th class="text-end">Banco aplicado</th>
+                                                                    <th>Turno</th>
+                                                                    <th class="text-end">Horas reales</th>
+                                                                    <th>Resolución</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var dia in emp.Dias)
+                                                                {
+                                                                    <tr class="@(dia.RequiereRevision ? "table-warning" : null)">
+                                                                        <td>@dia.Fecha.ToString("ddd dd/MM/yyyy", CulturaEsMx)</td>
+                                                                        <td><span class="badge bg-light text-dark border">@dia.Estatus</span></td>
+                                                                        <td class="text-end"><span class="badge @ObtenerClaseTotal(dia.MinutosExtra)">@FormatearMinutos(dia.MinutosExtra)</span></td>
+                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosExtraAutorizadosPago)</td>
+                                                                        <td class="text-end"><strong>@FormatearMinutos(dia.MinutosPagoFactorado)</strong></td>
+                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosExtraAutorizadosBanco)</td>
+                                                                        <td class="text-end"><strong>@FormatearMinutos(dia.MinutosBancoFactorado)</strong></td>
+                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosCubiertosBancoHoras)</td>
+                                                                        <td>
+                                                                            @if (!string.IsNullOrWhiteSpace(dia.Turno))
+                                                                            {
+                                                                                <div class="small">@dia.Turno</div>
+                                                                                <div class="small text-muted">@FormatearHora(dia.HoraEntradaProgramada)–@FormatearHora(dia.HoraSalidaProgramada)</div>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <span class="text-muted small">—</span>
+                                                                            }
+                                                                        </td>
+                                                                        <td class="text-end small">@FormatearHora(dia.HoraEntradaReal)–@FormatearHora(dia.HoraSalidaReal)</td>
+                                                                        <td class="small">@(string.IsNullOrWhiteSpace(dia.ResolucionTiempoExtra) ? "—" : dia.ResolucionTiempoExtra)</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                            <tfoot class="table-light fw-semibold">
+                                <tr>
+                                    <td>Totales</td>
+                                    <td class="text-end">@respuestaReporte.Totales.DiasConExtra</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraPagoFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalPagoFactoradoFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalBancoFactoradoFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</td>
+                                    <td class="text-end">@FormatearMinutos(respuestaReporte.Totales.TotalMinutosRetardo)</td>
+                                    <td class="text-end">@FormatearMinutos(respuestaReporte.Totales.TotalMinutosSalidaAnticipada)</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+<style>
+    .te-reporte-wrap {
+        max-height: calc(100vh - 360px);
+        overflow: auto;
+    }
+
+    .te-reporte-table {
+        font-size: .85rem;
+    }
+
+    .te-reporte-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+    }
+
+    .te-reporte-detalle {
+        background: #fafbfc;
+    }
+
+    .te-reporte-detalle .table {
+        font-size: .82rem;
+    }
+</style>
+
+@code {
+    private static readonly CultureInfo CulturaEsMx = new("es-MX");
+
+    private bool _puedeVer;
+    private bool cargando;
+    private bool exportandoCsv;
+    private string? error;
+    private string? ok;
+
+    private DateTime filtroFechaDesde = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime filtroFechaHasta = new(DateTime.Today.Year, DateTime.Today.Month, DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+    private string? filtroDepartamento;
+    private string filtroAgrupadoPor = "dia";
+    private string? filtroEmpleadoId;
+
+    private RrhhTiempoExtraReporteResponse? respuestaReporte;
+    private readonly HashSet<Guid> _empleadosExpandidos = new();
+    private Guid _empresaId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAccesoAsync();
+        if (_puedeVer)
+        {
+            await CargarReporteAsync();
+        }
+    }
+
+    private async Task CargarAccesoAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _puedeVer = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar")
+            || state.User.HasClaim("Capacidad", "nominas.ver")
+            || state.User.HasClaim("Capacidad", "empleados.ver");
+        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
+    }
+
+    private async Task CargarReporteAsync()
+    {
+        error = null;
+        ok = null;
+
+        if (filtroFechaHasta < filtroFechaDesde)
+        {
+            error = "La fecha 'Hasta' no puede ser menor a 'Desde'.";
+            return;
+        }
+
+        if (_empresaId == Guid.Empty)
+        {
+            error = "No se pudo determinar la empresa del usuario actual.";
+            return;
+        }
+
+        cargando = true;
+        try
+        {
+            var request = new RrhhTiempoExtraReporteRequest
+            {
+                EmpresaId = _empresaId,
+                FechaDesde = DateOnly.FromDateTime(filtroFechaDesde),
+                FechaHasta = DateOnly.FromDateTime(filtroFechaHasta),
+                Departamento = string.IsNullOrWhiteSpace(filtroDepartamento) ? null : filtroDepartamento.Trim(),
+                AgrupadoPor = filtroAgrupadoPor,
+                EmpleadoId = !string.IsNullOrWhiteSpace(filtroEmpleadoId) && Guid.TryParse(filtroEmpleadoId.Trim(), out var empId) ? empId : null
+            };
+
+            respuestaReporte = await ReporteService.GenerarAsync(DbFactory, request);
+            _empleadosExpandidos.Clear();
+        }
+        catch (ArgumentException ex)
+        {
+            error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            error = $"Error al consultar el reporte: {ex.Message}";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private async Task RestablecerFiltrosAsync()
+    {
+        filtroFechaDesde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        filtroFechaHasta = new DateTime(DateTime.Today.Year, DateTime.Today.Month, DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
+        filtroDepartamento = null;
+        filtroAgrupadoPor = "dia";
+        filtroEmpleadoId = null;
+        await CargarReporteAsync();
+    }
+
+    private void ToggleEmpleado(Guid empleadoId)
+    {
+        if (!_empleadosExpandidos.Add(empleadoId))
+        {
+            _empleadosExpandidos.Remove(empleadoId);
+        }
+    }
+
+    private bool Expandido(Guid empleadoId) => _empleadosExpandidos.Contains(empleadoId);
+
+    private async Task ExportarCsvAsync()
+    {
+        if (respuestaReporte is null)
+        {
+            return;
+        }
+
+        exportandoCsv = true;
+        try
+        {
+            var csv = ConstruirCsv(respuestaReporte);
+            var nombreArchivo = $"reporte-tiempo-extra-{respuestaReporte.FechaDesde:yyyyMMdd}-{respuestaReporte.FechaHasta:yyyyMMdd}.csv";
+            await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", nombreArchivo, csv);
+            ok = "Reporte exportado correctamente.";
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo exportar el CSV: {ex.Message}";
+        }
+        finally
+        {
+            exportandoCsv = false;
+        }
+    }
+
+    private static string ConstruirCsv(RrhhTiempoExtraReporteResponse reporte)
+    {
+        var sb = new StringBuilder();
+        sb.Append("EmpleadoId,NumeroEmpleado,CodigoChecador,NombreCompleto,Departamento,Puesto,Fecha,Estatus,");
+        sb.Append("MinutosExtra,MinutosExtraAutorizadosPago,MinutosExtraAutorizadosBanco,MinutosCubiertosBancoHoras,");
+        sb.Append("MinutosRetardo,MinutosSalidaAnticipada,MinutosTrabajadosNetos,HoraEntradaProgramada,HoraSalidaProgramada,");
+        sb.AppendLine("HoraEntradaReal,HoraSalidaReal,Turno,ResolucionTiempoExtra,RequiereRevision,Observaciones");
+
+        if (reporte.AgrupadoPor.Equals("empleado", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var emp in reporte.Empleados)
+            {
+                AgregarLineaEmpleadoResumen(sb, emp);
+            }
+        }
+        else
+        {
+            foreach (var emp in reporte.Empleados)
+            {
+                if (emp.Dias.Count == 0)
+                {
+                    AgregarLineaEmpleadoResumen(sb, emp);
+                    continue;
+                }
+
+                foreach (var dia in emp.Dias)
+                {
+                    AgregarLineaDia(sb, emp, dia);
+                }
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AgregarLineaEmpleadoResumen(StringBuilder sb, RrhhTiempoExtraReporteEmpleadoDto emp)
+    {
+        sb.Append(Csv(emp.EmpleadoId.ToString())).Append(',');
+        sb.Append(Csv(emp.NumeroEmpleado)).Append(',');
+        sb.Append(Csv(emp.CodigoChecador)).Append(',');
+        sb.Append(Csv(emp.NombreCompleto)).Append(',');
+        sb.Append(Csv(emp.Departamento)).Append(',');
+        sb.Append(Csv(emp.Puesto)).Append(',');
+        sb.Append("RESUMEN,");
+        sb.Append(Csv($"DiasConExtra={emp.Totales.DiasConExtra}; TotalExtra={emp.Totales.TotalMinutosExtra} min; Pago={emp.Totales.TotalMinutosExtraAutorizadosPago} min; Banco={emp.Totales.TotalMinutosExtraAutorizadosBanco} min; BancoAplicado={emp.Totales.TotalMinutosCubiertosBancoHoras} min; Retardo={emp.Totales.TotalMinutosRetardo} min; SalidaAnticipada={emp.Totales.TotalMinutosSalidaAnticipada} min"));
+        sb.AppendLine();
+    }
+
+    private static void AgregarLineaDia(StringBuilder sb, RrhhTiempoExtraReporteEmpleadoDto emp, RrhhTiempoExtraReporteDiaDto dia)
+    {
+        sb.Append(Csv(emp.EmpleadoId.ToString())).Append(',');
+        sb.Append(Csv(emp.NumeroEmpleado)).Append(',');
+        sb.Append(Csv(emp.CodigoChecador)).Append(',');
+        sb.Append(Csv(emp.NombreCompleto)).Append(',');
+        sb.Append(Csv(emp.Departamento)).Append(',');
+        sb.Append(Csv(emp.Puesto)).Append(',');
+        sb.Append(Csv(dia.Fecha.ToString("yyyy-MM-dd"))).Append(',');
+        sb.Append(Csv(dia.Estatus)).Append(',');
+        sb.Append(dia.MinutosExtra).Append(',');
+        sb.Append(dia.MinutosExtraAutorizadosPago).Append(',');
+        sb.Append(dia.MinutosExtraAutorizadosBanco).Append(',');
+        sb.Append(dia.MinutosCubiertosBancoHoras).Append(',');
+        sb.Append(dia.MinutosRetardo).Append(',');
+        sb.Append(dia.MinutosSalidaAnticipada).Append(',');
+        sb.Append(dia.MinutosTrabajadosNetos).Append(',');
+        sb.Append(Csv(FormatearHoraCsv(dia.HoraEntradaProgramada))).Append(',');
+        sb.Append(Csv(FormatearHoraCsv(dia.HoraSalidaProgramada))).Append(',');
+        sb.Append(Csv(FormatearHoraCsv(dia.HoraEntradaReal))).Append(',');
+        sb.Append(Csv(FormatearHoraCsv(dia.HoraSalidaReal))).Append(',');
+        sb.Append(Csv(dia.Turno)).Append(',');
+        sb.Append(Csv(dia.ResolucionTiempoExtra)).Append(',');
+        sb.Append(dia.RequiereRevision ? "Sí" : "No").Append(',');
+        sb.Append(Csv(dia.Observaciones));
+        sb.AppendLine();
+    }
+
+    private static string Csv(string? valor)
+    {
+        if (string.IsNullOrEmpty(valor))
+        {
+            return string.Empty;
+        }
+
+        var necesitaComillas = valor.Contains(',') || valor.Contains('"') || valor.Contains('\n') || valor.Contains('\r');
+        var escapado = valor.Replace("\"", "\"\"");
+        return necesitaComillas ? $"\"{escapado}\"" : escapado;
+    }
+
+    private static string? FormatearHoraCsv(TimeSpan? hora)
+        => hora.HasValue ? hora.Value.ToString(@"hh\:mm") : null;
+
+    private static string FormatearMinutos(int minutos)
+    {
+        if (minutos <= 0)
+        {
+            return "0h 0m";
+        }
+
+        var horas = minutos / 60;
+        var mins = minutos % 60;
+        return $"{horas}h {mins}m";
+    }
+
+    private static string FormatearHora(TimeSpan? hora)
+        => hora.HasValue ? hora.Value.ToString(@"hh\:mm") : "—";
+
+    private static string ObtenerClaseTotal(int minutos)
+    {
+        if (minutos <= 0)
+        {
+            return "bg-light text-muted border";
+        }
+
+        if (minutos < 30)
+        {
+            return "bg-warning-subtle text-warning-emphasis border border-warning-subtle";
+        }
+
+        if (minutos < 120)
+        {
+            return "bg-warning text-dark";
+        }
+
+        return "bg-success-subtle text-success-emphasis border border-success-subtle";
+    }
+}

@@ -21,6 +21,7 @@ public class NominaCalculationInput
     public decimal HorasExtraTriples { get; init; }
     public decimal HorasExtraBanco { get; init; }
     public decimal HorasExtra { get; init; }
+    public decimal FactorPagoTiempoExtra { get; init; }
     public decimal MontoDestajo { get; init; }
     public decimal MontoBono { get; init; }
     public decimal MontoPercepcionesManuales { get; init; }

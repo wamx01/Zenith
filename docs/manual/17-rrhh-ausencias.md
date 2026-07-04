@@ -1,7 +1,7 @@
 # 17. Ausencias en `RRHH`
 
 ## Objetivo
-Este manual explica para qué sirven las `Ausencias`, qué tipos maneja el sistema y cómo se relacionan con `Asistencias`, `Prenómina` y `Nómina` en `Zenith`.
+Este manual explica para qué sirven las `Ausencias`, qué tipos maneja el sistema y cómo se relacionan con `Asistencias`, `Prenómina` y `Nómina` en `MundoVs`.
 
 ## Alcance
 Incluye:
@@ -316,3 +316,16 @@ Este manual ocurre después de:
 ## Siguiente manual sugerido
 El siguiente paso lógico es:
 - `18-admin-configuracion-bonos.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [18. Configuración de bonos en Admin](./18-admin-configuracion-bonos.md)
+- [Permisos, descansos y banco de horas — plan técnico](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

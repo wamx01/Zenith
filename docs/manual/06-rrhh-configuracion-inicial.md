@@ -211,3 +211,18 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - `07-rrhh-turnos.md`
 - o `07-rrhh-esquemas-de-pago.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [01. Configuración inicial de una empresa nueva](./01-configuracion-inicial-empresa.md)
+- [02. Administración inicial dentro de la empresa](./02-admin-empresa-configuracion-base.md)
+- [03. Administración de usuarios y roles](./03-admin-usuarios-y-roles.md)
+- [04. Estructura organizacional](./04-admin-estructura-organizacional.md)
+- [05. Configuración base de nómina](./05-admin-configuracion-nomina.md)
+- [07. Configuración de turnos](./07-rrhh-turnos.md)
+- [08. Esquemas de pago](./08-rrhh-esquemas-de-pago.md)
+- [09. Empleados](./09-rrhh-empleados.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

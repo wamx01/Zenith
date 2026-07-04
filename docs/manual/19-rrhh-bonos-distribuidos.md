@@ -184,3 +184,15 @@ Con este manual, la cobertura funcional principal de `RRHH` queda prácticamente
 - bonos distribuidos
 
 Todavía podrían existir manuales más finos o especializados, pero la guía operativa principal de `RRHH` ya queda cerrada.
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [15. Bonos y deducciones](./15-rrhh-bonos-y-deducciones.md)
+- [18. Configuración de bonos en Admin](./18-admin-configuracion-bonos.md)
+- [Mapa técnico de nómina](./rrhh-nomina-tecnica.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

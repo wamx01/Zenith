@@ -1477,3 +1477,18 @@ Al terminar estas fases, la solución debe quedar así:
 - La red del cliente nunca toca SQL del `VPS`.
 - La lógica de turnos y asistencia vive centralizada en `Zenith`.
 - Se puede crecer a varias empresas, varias sucursales y varios agentes sin rehacer el modelo.
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [Manual de puesta en marcha — RRHH asistencia con Zenith + ZkTecoApi](./manuales/rrhh-asistencia-zkteco-puesta-en-marcha.md)
+- [Configuración inicial de RRHH](./manual/06-rrhh-configuracion-inicial.md)
+- [Configuración de turnos en RRHH](./manual/07-rrhh-turnos.md)
+- [Marcaciones y asistencias en RRHH](./manual/10-rrhh-marcaciones-y-asistencias.md)
+- [Descansos no marcados](./manual/rrhh-descansos-no-marcados.md)
+- [Plan de resolución de vulnerabilidades en cálculo de asistencias](./manual/rrhh-plan-resolucion-vulnerabilidades-asistencia.md)
+- [Permisos, descansos y banco de horas — plan técnico](./manual/rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Cálculo de tiempo visible](./manual/20-rrhh-calculo-tiempo-visible.md)
+- [Especificación técnica del módulo RRHH](./modulos/detalle/06-rrhh.md)

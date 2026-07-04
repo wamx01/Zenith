@@ -3814,6 +3814,9 @@ namespace MundoVs.Migrations
                     b.Property<Guid?>("EsquemaPagoId")
                         .HasColumnType("char(36)");
 
+                    b.Property<decimal>("FactorPagoTiempoExtra")
+                        .HasColumnType("decimal(65,30)");
+
                     b.Property<decimal>("HorasExtra")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -5788,6 +5791,9 @@ namespace MundoVs.Migrations
 
                     b.Property<int>("Estatus")
                         .HasColumnType("int");
+
+                    b.Property<decimal?>("FactorTiempoExtraAplicado")
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<DateOnly>("Fecha")
                         .HasColumnType("date");

@@ -500,7 +500,7 @@ Se almacenan en `ReglasPrenominaJson` y se exponen en `ConfiguracionNomina.razor
 - `TablaIsrJson`, `TablaSubsidioJson` y `TablaVacacionesJson` son texto libre; si el JSON es inválido, el sistema cae a valores default.
 - El comentario de ISR reconoce una simplificación: percepciones manuales se asumen gravables.
 - El cálculo de horas extra legales usa un corte fijo de `9` horas; cualquier política distinta requeriría ajuste de código.
-- La tabla default ISR/subsidio está anotada como vigente `2024`; debe revisarse al cambiar ejercicio fiscal.
+- La tabla default ISR/subsidio está vigente para el ejercicio fiscal `2026` (mensual) y se escala por factor para semanal y quincenal; debe revisarse al cambiar ejercicio fiscal.
 
 ## Referencias internas revisadas
 - `MundoVs/Core/Services/NominaConfiguracionLoader.cs`
@@ -514,3 +514,16 @@ Se almacenan en `ReglasPrenominaJson` y se exponen en `ConfiguracionNomina.razor
 - `MundoVs/Components/Pages/Admin/ConfiguracionNomina.razor`
 - `MundoVs/Components/Pages/SuperAdmin/ConfiguracionNominaGlobal.razor`
 - `MundoVs.Tests/NominaConfiguracionLoaderTests.cs`
+
+## Cobertura de pruebas unitarias
+
+Los siguientes tests viven en `MundoVs.Tests/` y cubren la cadena de cálculo y configuración de nómina:
+
+| Test | Cubre |
+|---|---|
+| `NominaConfiguracionLoaderTests` | Carga de `NominaConfiguracion` por empresa desde `AppConfig` con claves válidas / inválidas. |
+| `NominaPeriodoHelperTests` | Cortes de período semanal / quincenal / mensual, fechas de inicio/fin. |
+| `NominaReciboBuilderTests` | Construcción del modelo de recibo (`INominaReciboBuilder`). |
+| `NominaVacacionesImssTests` | Cálculo de vacaciones e integración con cuotas IMSS. |
+
+Para los tests que cubren el resto del módulo RRHH (asistencia, marcación, tiempo extra, banco de horas, corrección), ver [Cobertura de pruebas en 06-rrhh.md](../modulos/detalle/06-rrhh.md#cobertura-de-pruebas).

@@ -1,7 +1,7 @@
 # 16. Banco de horas en `RRHH`
 
 ## Objetivo
-Este manual explica para qué sirve el `Banco de horas`, cómo se alimenta, cómo se consume y qué relación tiene con `Asistencias`, `Prenómina` y `Nómina` en `Zenith`.
+Este manual explica para qué sirve el `Banco de horas`, cómo se alimenta, cómo se consume y qué relación tiene con `Asistencias`, `Prenómina` y `Nómina` en `MundoVs`.
 
 ## Alcance
 Incluye:
@@ -160,3 +160,16 @@ Este manual ocurre después de:
 ## Siguiente manual sugerido
 El siguiente paso lógico es:
 - `17-rrhh-ausencias.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [20. Cálculo de tiempo visible](./20-rrhh-calculo-tiempo-visible.md)
+- [Permisos, descansos y banco de horas — plan técnico](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

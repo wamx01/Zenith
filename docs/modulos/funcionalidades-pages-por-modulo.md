@@ -1,5 +1,8 @@
 # Documentación funcional por módulo
 
+> Última revisión: 2026-07-03
+> Mantenedor: equipo MundoVs
+
 ## Objetivo
 Este documento resume las funcionalidades implementadas en `Components/Pages`, agrupadas por módulo según la organización actual de carpetas y páginas del proyecto.
 
@@ -172,22 +175,31 @@ Función general: gestión comercial de clientes, productos, relaciones cliente-
 ---
 
 ## 6. Módulo `RRHH`
-Función general: administración de empleados, esquemas de pago, vales de destajo y nómina.
+Función general: administración de empleados, turnos, marcaciones, asistencias, esquemas de pago, vales de destajo, prenóminas, ausencias, banco de horas, bonos, deducciones e integración de nómina. Es el módulo con mayor superficie del CRM MundoVs.
 
 ### Páginas
+
+- `RRHH/Dashboard.razor` — ruta `/rrhh/dashboard`
+  - Vista de KPIs: empleados activos, checadores en línea, prenóminas pendientes, nóminas del período, alertas de jornada.
+
 - `RRHH/Empleados.razor` — ruta `/rrhh/empleados`
   - Administra empleados.
-  - Captura datos personales, laborales y salariales.
-  - Asigna posición, periodicidad de pago y esquema de pago vigente.
+  - Captura datos personales, laborales y salariales (incluye `TipoNomina`, `PeriodicidadPago`, `AplicaImss`, `AplicaIsr`, `AplicaInfonavit`).
+  - Asigna posición, departamento, periodicidad de pago y esquema de pago vigente.
   - Muestra historial de esquemas asignados por empleado.
   - Incluye botón por fila para navegar al perfil del empleado.
 
-- `RRHH/EmpleadoPerfil.razor` — ruta `/rrhh/empleados/{id}/perfil`
+- `RRHH/EmpleadoPerfil.razor` — ruta `/rrhh/empleados/{id:guid}/perfil`
   - Perfil detallado por empleado con pestañas: Resumen, Personal, Horario, Laboral, Nómina, Asistencias, Ausencias, Saldos, Conceptos y Notas.
   - KPIs rápidos en encabezado: vacaciones, banco de horas, esquema, turno y estatus.
   - Edición por secciones según capability (`empleados.editar`).
   - Lógica de consulta separada en `IRrhhEmpleadoPerfilPageService`.
-  - Sección "Horario" con vista de calendario semanal mostrando horario laboral y descansos por día.
+  - Sección "Horario" con vista de calendario semanal mostrando horario laboral y descansos por día (1-4 descansos dinámicos).
+
+- `RRHH/Turnos.razor` — ruta `/rrhh/turnos`
+  - Catálogo de turnos.
+  - Define jornada diaria por día de la semana con descansos dinámicos (1-4) pagados/no pagados.
+  - Valida con `RrhhTurnoValidator` (no permite descansos traslapados).
 
 - `RRHH/EsquemasPago.razor` — ruta `/rrhh/esquemas-pago`
   - Define esquemas de pago.
@@ -195,12 +207,61 @@ Función general: administración de empleados, esquemas de pago, vales de desta
   - Permite configurar sueldo base sugerido, metas y reglas de reparto.
   - Permite registrar tarifas por proceso y/o posición.
 
+- `RRHH/Checadores.razor` — ruta `/rrhh/checadores`
+  - Catálogo de relojes checadores ZKTeco.
+  - Configura IP, puerto, número de máquina, zona horaria, último evento leído.
+
+- `RRHH/EstadoAgente.razor` — ruta `/rrhh/estado-agente`
+  - Monitoreo del agente de sincronización ZKTeco (`RrhhEstadoAgente`).
+  - Muestra último heartbeat, marcaciones leídas/enviadas, último error, versión.
+
+- `RRHH/Marcaciones.razor` — ruta `/rrhh/marcaciones`
+  - Listado de marcaciones crudas con filtros por checador, empleado y fecha.
+  - Permite corrección de zona horaria (`RrhhMarcacionZonaHorariaService`).
+
+- `RRHH/Asistencias.razor` — ruta `/rrhh/asistencias`
+  - Asistencias interpretadas por día.
+  - Permite reprocesar asistencias por rango y reintentar religado de marcaciones por `CodigoChecador`.
+  - Abre `AsistenciasCorreccionModal` para correcciones manuales.
+
+- `RRHH/AsistenciasSemanal.razor` — ruta `/rrhh/asistencias-semanal`
+  - Resumen semanal de asistencias con totales de jornada, descansos, retardos y tiempo extra.
+
+- `RRHH/AsistenciasCorreccionModal.razor` — (modal, sin ruta)
+  - Modal con 4 pestañas: Resumen, Tiempo, Marcaciones, Permisos.
+  - Permite ajustar minutos (jornada, retardo, salida anticipada, extra), perdón manual, descansos no descontados y permisos.
+  - Las correcciones se persisten en `RrhhSegmentoResolucion`.
+
+- `RRHH/ControlTiempo.razor` — ruta `/rrhh/control-tiempo`
+  - Vista combinada de checadores + marcaciones + asistencias para investigación operativa.
+
+- `RRHH/Ausencias.razor` — ruta `/rrhh/ausencias`
+  - Solicitudes y administración de vacaciones, permisos, incapacidades, faltas y días económicos.
+  - Filtra por empleado, tipo, estatus y fechas.
+  - Aplica la migración `AusenciaDescuentaBancoHoras` (consume banco de horas cuando aplica).
+
+- `RRHH/BancoHoras.razor` — ruta `/rrhh/banco-horas`
+  - Saldos y movimientos del banco de horas por empleado.
+  - Tipos de movimiento: `GeneradoPorHorasExtra`, `AjusteManual`, `Consumo`.
+
 - `RRHH/ValesDestajo.razor` — ruta `/rrhh/vales-destajo`
   - Registra vales de destajo por empleado.
   - Filtra por empleado, fechas y estatus.
   - Captura detalle de producción por proceso y pedido.
-  - Calcula tarifa aplicada e importe por línea.
+  - Resuelve la tarifa con `DestajoTarifaResolver` (cotización → esquema).
+  - Permite autocargar desde `RegistroDestajoProceso` (migración `VincularRegistrosDestajoAVales`).
   - Maneja flujo de borrador, aprobación, envío a nómina, pago o cancelación.
+
+- `RRHH/BonosDistribuidos.razor` — ruta `/rrhh/bonos-distribuidos`
+  - Distribución de bonos por período / posición / estructura / rubro.
+  - Porcentajes como topes máximos.
+  - Entidades: `BonoDistribucionPeriodoRrhh`, `BonoDistribucionEmpleadoRrhh`, `BonoDistribucionEmpleadoDetalleRrhh`.
+
+- `RRHH/Prenominas.razor` — ruta `/rrhh/prenominas`
+  - Prenóminas con captura rápida de bonos/percepciones.
+  - Consolida días trabajados, vacaciones, faltas, incapacidades, horas extra, validación IMSS.
+  - Al cerrar: congela la configuración vía `IRrhhPrenominaSnapshotService`.
+  - Entidades: `Prenomina`, `PrenominaDetalle`, `PrenominaCapturaRapidaRrhh`.
 
 - `RRHH/Nominas.razor` — ruta `/rrhh/nominas`
   - Administra periodos de nómina.
@@ -208,6 +269,23 @@ Función general: administración de empleados, esquemas de pago, vales de desta
   - Calcula detalle por empleado con sueldo base, destajo, bonos, horas extra y deducciones.
   - Integra vales de destajo aprobados dentro del cálculo.
   - Permite recalcular nómina y guardar ajustes por empleado.
+  - Servicios: `INominaCalculator`, `INominaResumenBuilder`, `INominaReciboBuilder`, `INominaLegalPolicyService`, `INominaPdfService`, `INominaSatCatalogInitializer`.
+
+- `RRHH/ReciboNomina.razor` — ruta `/rrhh/nominas/recibo/{DetalleId:guid}`
+  - Vista individual de recibo de nómina (PDF + HTML).
+
+- `RRHH/RecibosNomina.razor` — ruta `/rrhh/nominas/recibos/{NominaId:guid}`
+  - Listado de recibos de una nómina específica.
+
+- `RRHH/NominaReciboCard.razor` — (componente, sin ruta)
+  - Tarjeta reutilizable de recibo de nómina, usada dentro de `ReciboNomina.razor` y `RecibosNomina.razor`.
+
+### Partials / pestañas internas (sin `@page`)
+
+- `RRHH/AsistenciasCorreccionMarcacionesTab.razor`
+- `RRHH/AsistenciasCorreccionPermisosTab.razor`
+- `RRHH/AsistenciasCorreccionResumenTab.razor`
+- `RRHH/AsistenciasCorreccionTiempoTab.razor`
 
 ---
 

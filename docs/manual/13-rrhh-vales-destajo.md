@@ -1,7 +1,7 @@
 # 13. Vales de destajo en `RRHH`
 
 ## Objetivo
-Este manual explica para qué sirven los `Vales de destajo`, cómo deben capturarse y cuál es su relación con `Esquemas de pago`, `Prenómina` y `Nómina` en `Zenith`.
+Este manual explica para qué sirven los `Vales de destajo`, cómo deben capturarse y cuál es su relación con `Esquemas de pago`, `Prenómina` y `Nómina` en `MundoVs`.
 
 ## Alcance
 Incluye:
@@ -214,3 +214,15 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - `14-rrhh-recibo-nomina.md`
 - o `14-rrhh-bonos-y-deducciones.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [08. Esquemas de pago](./08-rrhh-esquemas-de-pago.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [14. Recibo de nómina](./14-rrhh-recibo-nomina.md)
+- [15. Bonos y deducciones](./15-rrhh-bonos-y-deducciones.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

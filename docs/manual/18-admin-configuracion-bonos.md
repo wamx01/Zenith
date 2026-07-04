@@ -1,7 +1,7 @@
 # 18. Configuración de bonos en `Admin`
 
 ## Objetivo
-Este manual explica cómo configurar los `Bonos de nómina` en `Zenith`, incluyendo rubros, estructuras de bono y asignación por posición, para después poder operar `Bonos distribuidos`, `Prenómina`, `Nómina` y `Recibo de nómina`.
+Este manual explica cómo configurar los `Bonos de nómina` en `MundoVs`, incluyendo rubros, estructuras de bono y asignación por posición, para después poder operar `Bonos distribuidos`, `Prenómina`, `Nómina` y `Recibo de nómina`.
 
 ## Alcance
 Incluye:

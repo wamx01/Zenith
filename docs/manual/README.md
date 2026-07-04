@@ -4,6 +4,7 @@
 - [Autenticación - Recuperación de contraseña](./auth-recuperacion-password.md)
 - [RRHH - Descansos no marcados en asistencia](./rrhh-descansos-no-marcados.md)
 - [RRHH - Nómina técnica y mapa de reglas de cálculo](./rrhh-nomina-tecnica.md)
+- [RRHH - Corrección de asistencias y resolución de tiempo extra](./rrhh-correccion-asistencias.md)
 
 ## Notas
 - Este índice concentra la documentación operativa y técnica creada dentro del repositorio.

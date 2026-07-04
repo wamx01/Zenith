@@ -71,83 +71,146 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         foreach (var empleado in empleadosPeriodo)
         {
             var ausenciasEmpleado = ausenciasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
-
-            // Clasificar ausencias por tipo y goce de pago
-            var vacacionesPeriodo = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Vacaciones).Sum(a => a.Dias);
-            var diasIncapacidad = ausenciasEmpleado.Where(a => a.Tipo == TipoAusenciaRrhh.Incapacidad).Sum(a => a.Dias);
-
-            // Ausencias CON goce de pago (no se descuentan del pago)
-            var diasConGoce = ausenciasEmpleado
-                .Where(a => a.ConGocePago && a.Tipo != TipoAusenciaRrhh.Vacaciones) // Vacaciones se maneja por separado
-                .Sum(a => a.Dias);
-
-            // Ausencias SIN goce de pago (sí se descuentan del pago)
-            var diasSinGoce = ausenciasEmpleado
-                .Where(a => !a.ConGocePago)
-                .Sum(a => a.Dias);
-
-            var notaAusencias = ConstruirNotaAusencias(ausenciasEmpleado);
             var resumen = resumenAsistencias.GetValueOrDefault(empleado.Id) ?? new ResumenAsistenciaPrenominaSnapshot();
 
-            // Días trabajados: total del período menos vacaciones y ausencias con/sin goce
-            var diasTrabajados = resumen.TieneAsistencias 
-                ? resumen.DiasTrabajados 
-                : Math.Max(0, diasPeriodo - vacacionesPeriodo - diasConGoce - diasSinGoce);
-
-            var faltasInjustificadas = resumen.TieneAsistencias ? resumen.DiasFaltaInjustificada : 0;
-
-            // Días PAGADOS: solo se descuentan ausencias sin goce y faltas injustificadas
-            // Las ausencias con goce (permisos con goce, capacitaciones, etc.) NO se descuentan
-            var diasPagados = Math.Max(0, diasPeriodo - diasSinGoce - faltasInjustificadas);
-            var cicloVacacional = _nominaLegalPolicy.ObtenerCicloVacacional(empleado, inicio, configuracion);
-            var vacacionesUsadasCiclo = (vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [])
-                .Sum(a => CalcularDiasAusenciaEnRango(a, DateOnly.FromDateTime(cicloVacacional.InicioCiclo), DateOnly.FromDateTime(cicloVacacional.FinCiclo)));
-            var diasVacacionesDisponibles = _nominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, inicio, vacacionesUsadasCiclo, configuracion);
-            var montoDestajoEmpleado = montoDestajo.GetValueOrDefault(empleado.Id);
-            var asignacion = esquemasPorEmpleado.GetValueOrDefault(empleado.Id);
             if (!saldosBancoActuales.ContainsKey(empleado.Id))
             {
-                saldosBancoActuales[empleado.Id] = Math.Round((await _tiempoExtraResolutionService.ObtenerSaldoBancoHorasAsync(db, empleado.EmpresaId, empleado.Id, cancellationToken)) / 60m, 2);
+                saldosBancoActuales[empleado.Id] = Math.Round(
+                    (await _tiempoExtraResolutionService.ObtenerSaldoBancoHorasAsync(db, empleado.EmpresaId, empleado.Id, cancellationToken)) / 60m, 2);
             }
 
-            snapshots.Add(new RrhhPrenominaSnapshotItem
-            {
-                Empleado = empleado,
-                AsignacionEsquema = asignacion,
-                DiasTrabajados = diasTrabajados,
-                DiasPagados = diasPagados,
-                DiasVacaciones = vacacionesPeriodo,
-                DiasFaltaJustificada = diasSinGoce, // Ausencias sin goce (permisos sin goce, suspensiones, etc.)
-                DiasFaltaInjustificada = faltasInjustificadas,
-                DiasIncapacidad = diasIncapacidad,
-                DiasDescansoTrabajado = resumen.DiasDescansoTrabajado,
-                DiasConMarcacion = resumen.DiasConMarcacion,
-                DiasDomingoTrabajado = resumen.DiasDomingoTrabajado,
-                DiasFestivoTrabajado = resumen.DiasFestivoTrabajado,
-                HorasTrabajadasNetas = resumen.HorasTrabajadasNetas,
-                HorasExtraBase = resumen.HorasExtraBase,
-                HorasExtra = resumen.HorasExtra,
-                HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
-                HorasBancoConsumidas = resumen.HorasBancoConsumidas,
-                HorasBancoSaldoActual = saldosBancoActuales.GetValueOrDefault(empleado.Id),
-                HorasDescansoTomado = resumen.HorasDescansoTomado,
-                HorasDescansoPagado = resumen.HorasDescansoPagado,
-                HorasDescansoNoPagado = resumen.HorasDescansoNoPagado,
-                MinutosRetardo = resumen.MinutosRetardo,
-                MinutosSalidaAnticipada = resumen.MinutosSalidaAnticipada,
-                MinutosFaltanteDescontable = resumen.MinutosFaltanteDescontable,
-                MinutosDescuentoManual = 0,
-                FactorPagoTiempoExtra = configuracion.FactorHoraExtra,
-                MontoDestajoInformativo = montoDestajoEmpleado,
-                DiasVacacionesDisponibles = diasVacacionesDisponibles,
-                DiasVacacionesRestantes = Math.Max(0, diasVacacionesDisponibles - vacacionesPeriodo),
-                ComplementoSalarioMinimoSugerido = _nominaLegalPolicy.CalcularComplementoSalarioMinimo(empleado, asignacion, diasPagados, montoDestajoEmpleado, configuracion),
-                AplicaImss = empleado.AplicaImss,
-                Notas = CombinarNotas(notaAusencias, resumen.NotasRevision)
-            });
+            snapshots.Add(ConstruirSnapshotEmpleado(
+                empleado,
+                ausenciasEmpleado,
+                resumen,
+                esquemasPorEmpleado.GetValueOrDefault(empleado.Id),
+                montoDestajo.GetValueOrDefault(empleado.Id),
+                saldosBancoActuales[empleado.Id],
+                diasPeriodo,
+                inicio,
+                configuracion,
+                vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? []));
         }
 
         return snapshots;
+    }
+
+    private RrhhPrenominaSnapshotItem ConstruirSnapshotEmpleado(
+        Empleado empleado,
+        IReadOnlyList<RrhhAusencia> ausenciasEmpleado,
+        ResumenAsistenciaPrenominaSnapshot resumen,
+        EmpleadoEsquemaPago? asignacion,
+        decimal montoDestajoEmpleado,
+        decimal saldoBancoActual,
+        int diasPeriodo,
+        DateTime inicioPeriodo,
+        NominaConfiguracion configuracion,
+        IReadOnlyList<RrhhAusencia> vacacionesHistoricas)
+    {
+        var clasificacion = ClasificarAusenciasEmpleado(ausenciasEmpleado);
+        var diasTrabajados = resumen.TieneAsistencias
+            ? resumen.DiasTrabajados
+            : Math.Max(0, diasPeriodo - clasificacion.Vacaciones - clasificacion.DiasConGoce - clasificacion.DiasSinGoce);
+        var faltasInjustificadas = resumen.TieneAsistencias ? resumen.DiasFaltaInjustificada : 0;
+        var diasPagados = Math.Max(0, diasPeriodo - clasificacion.DiasSinGoce - faltasInjustificadas);
+
+        var cicloVacacional = _nominaLegalPolicy.ObtenerCicloVacacional(empleado, inicioPeriodo, configuracion);
+        var vacacionesUsadasCiclo = vacacionesHistoricas
+            .Sum(a => CalcularDiasAusenciaEnRango(a, DateOnly.FromDateTime(cicloVacacional.InicioCiclo), DateOnly.FromDateTime(cicloVacacional.FinCiclo)));
+        var diasVacacionesDisponibles = _nominaLegalPolicy.CalcularDiasVacacionesDisponibles(empleado, inicioPeriodo, vacacionesUsadasCiclo, configuracion);
+
+        var factorOverride = resumen.FactorTiempoExtraOverride;
+        var notaAusencias = ConstruirNotaAusencias(ausenciasEmpleado);
+
+        return new RrhhPrenominaSnapshotItem
+        {
+            Empleado = empleado,
+            AsignacionEsquema = asignacion,
+            DiasTrabajados = diasTrabajados,
+            DiasPagados = diasPagados,
+            DiasVacaciones = clasificacion.Vacaciones,
+            DiasFaltaJustificada = clasificacion.DiasSinGoce,
+            DiasFaltaInjustificada = faltasInjustificadas,
+            DiasIncapacidad = clasificacion.DiasIncapacidad,
+            DiasDescansoTrabajado = resumen.DiasDescansoTrabajado,
+            DiasConMarcacion = resumen.DiasConMarcacion,
+            DiasDomingoTrabajado = resumen.DiasDomingoTrabajado,
+            DiasFestivoTrabajado = resumen.DiasFestivoTrabajado,
+            HorasTrabajadasNetas = resumen.HorasTrabajadasNetas,
+            HorasExtraBase = resumen.HorasExtraBase,
+            HorasExtra = resumen.HorasExtra,
+            HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
+            HorasBancoConsumidas = resumen.HorasBancoConsumidas,
+            HorasBancoSaldoActual = saldoBancoActual,
+            HorasDescansoTomado = resumen.HorasDescansoTomado,
+            HorasDescansoPagado = resumen.HorasDescansoPagado,
+            HorasDescansoNoPagado = resumen.HorasDescansoNoPagado,
+            MinutosRetardo = resumen.MinutosRetardo,
+            MinutosSalidaAnticipada = resumen.MinutosSalidaAnticipada,
+            MinutosFaltanteDescontable = resumen.MinutosFaltanteDescontable,
+            MinutosDescuentoManual = 0,
+            FactorPagoTiempoExtra = factorOverride > 0m ? factorOverride : configuracion.FactorHoraExtra,
+            MontoDestajoInformativo = montoDestajoEmpleado,
+            DiasVacacionesDisponibles = diasVacacionesDisponibles,
+            DiasVacacionesRestantes = Math.Max(0, diasVacacionesDisponibles - clasificacion.Vacaciones),
+            ComplementoSalarioMinimoSugerido = _nominaLegalPolicy.CalcularComplementoSalarioMinimo(empleado, asignacion, diasPagados, montoDestajoEmpleado, configuracion),
+            AplicaImss = empleado.AplicaImss,
+            Notas = CombinarNotas(notaAusencias, resumen.NotasRevision)
+        };
+    }
+
+    private sealed record ClasificacionAusencias(
+        int Vacaciones,
+        int DiasIncapacidad,
+        int DiasConGoce,
+        int DiasSinGoce);
+
+    private static ClasificacionAusencias ClasificarAusenciasEmpleado(IReadOnlyList<RrhhAusencia> ausencias)
+    {
+        var vacaciones = ausencias.Where(a => a.Tipo == TipoAusenciaRrhh.Vacaciones).Sum(a => a.Dias);
+        var diasIncapacidad = ausencias.Where(a => a.Tipo == TipoAusenciaRrhh.Incapacidad).Sum(a => a.Dias);
+        var diasConGoce = ausencias
+            .Where(a => a.ConGocePago && a.Tipo != TipoAusenciaRrhh.Vacaciones)
+            .Sum(a => a.Dias);
+        var diasSinGoce = ausencias
+            .Where(a => !a.ConGocePago)
+            .Sum(a => a.Dias);
+
+        return new ClasificacionAusencias(vacaciones, diasIncapacidad, diasConGoce, diasSinGoce);
+    }
+
+    private static (int MinutosExtraPago, int MinutosBancoAcumulados, int MinutosBancoConsumidos) AjustarBancoHorasSnapshot(
+        int minutosExtraPagoBase,
+        int minutosBancoAcumuladosBase,
+        int minutosBancoConsumidosBase,
+        NominaConfiguracion configuracion)
+    {
+        var minutosExtraPago = minutosExtraPagoBase;
+        var minutosBancoAcumulados = minutosBancoAcumuladosBase;
+        var minutosBancoConsumidos = minutosBancoConsumidosBase;
+
+        if (!configuracion.BancoHorasHabilitado)
+        {
+            minutosExtraPago += minutosBancoAcumulados;
+            minutosBancoAcumulados = 0;
+            minutosBancoConsumidos = 0;
+            return (minutosExtraPago, minutosBancoAcumulados, minutosBancoConsumidos);
+        }
+
+        if (configuracion.BancoHorasFactorAcumulacion > 0m && configuracion.BancoHorasFactorAcumulacion != 1m)
+        {
+            minutosBancoAcumulados = (int)Math.Round(minutosBancoAcumulados * configuracion.BancoHorasFactorAcumulacion);
+        }
+
+        var topeMinutos = (int)Math.Round(configuracion.BancoHorasTopeHoras * 60m);
+        if (topeMinutos > 0 && minutosBancoAcumulados > topeMinutos)
+        {
+            var excedente = minutosBancoAcumulados - topeMinutos;
+            minutosBancoAcumulados = topeMinutos;
+            minutosExtraPago += excedente;
+        }
+
+        return (minutosExtraPago, minutosBancoAcumulados, minutosBancoConsumidos);
     }
 
     private static int CalcularDiasAusenciaEnRango(RrhhAusencia ausencia, DateOnly inicio, DateOnly fin)
@@ -233,31 +296,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var minutosBancoAcumulados = asistencias.Sum(a => a.MinutosExtraAutorizadosBanco);
         var minutosBancoConsumidos = asistencias.Sum(a => a.MinutosCubiertosBancoHoras);
 
-        // Si el banco de horas está deshabilitado, los minutos marcados para banco se reconvierten a pago
-        // y los consumos quedan en cero (no hay banco del cual descontar).
-        if (!configuracion.BancoHorasHabilitado)
-        {
-            minutosExtraPago += minutosBancoAcumulados;
-            minutosBancoAcumulados = 0;
-            minutosBancoConsumidos = 0;
-        }
-        else
-        {
-            // Aplicar factor de acumulación al banco (p.ej. 1.5 para premiar acumulación).
-            if (configuracion.BancoHorasFactorAcumulacion > 0m && configuracion.BancoHorasFactorAcumulacion != 1m)
-            {
-                minutosBancoAcumulados = (int)Math.Round(minutosBancoAcumulados * configuracion.BancoHorasFactorAcumulacion);
-            }
-
-            // Aplicar tope de banco: el excedente se paga como horas extra en lugar de acumularse.
-            var topeMinutos = (int)Math.Round(configuracion.BancoHorasTopeHoras * 60m);
-            if (topeMinutos > 0 && minutosBancoAcumulados > topeMinutos)
-            {
-                var excedente = minutosBancoAcumulados - topeMinutos;
-                minutosBancoAcumulados = topeMinutos;
-                minutosExtraPago += excedente;
-            }
-        }
+        (minutosExtraPago, minutosBancoAcumulados, minutosBancoConsumidos) = AjustarBancoHorasSnapshot(
+            minutosExtraPago, minutosBancoAcumulados, minutosBancoConsumidos, configuracion);
 
         var minutosDescansoTomado = asistencias.Sum(a => a.MinutosDescansoTomado);
         var minutosDescansoPagado = asistencias.Sum(a => a.MinutosDescansoPagado);
@@ -308,6 +348,11 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             MinutosSalidaAnticipadaOriginales = minutosSalidaAnticipadaOriginales,
             MinutosPerdonadosManual = minutosPerdonadosManual,
             MinutosFaltanteDescontable = minutosFaltanteDescontable,
+            FactorTiempoExtraOverride = asistencias
+                .Where(a => a.FactorTiempoExtraAplicado.HasValue && a.FactorTiempoExtraAplicado.Value > 0m)
+                .OrderByDescending(a => a.Fecha)
+                .Select(a => a.FactorTiempoExtraAplicado!.Value)
+                .FirstOrDefault(),
             NotasRevision = notas.Count == 0 ? null : string.Join(" | ", notas)
         };
     }
@@ -411,6 +456,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         public int MinutosSalidaAnticipadaOriginales { get; set; }
         public int MinutosPerdonadosManual { get; set; }
         public int MinutosFaltanteDescontable { get; set; }
+        public decimal FactorTiempoExtraOverride { get; set; }
         public string? NotasRevision { get; set; }
     }
 }

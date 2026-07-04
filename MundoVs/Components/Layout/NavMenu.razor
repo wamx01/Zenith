@@ -272,6 +272,13 @@
                         <span class="bi bi-calendar-week"></span>
                         <span>Asistencia semanal</span>
                     </NavLink>
+                    @if (HasCapacidad("rrhh.tiempoextra.aprobar") || HasCapacidad("nominas.ver") || HasCapacidad("empleados.ver"))
+                    {
+                        <NavLink class="nav-link nav-link-sub" href="rrhh/reporte-tiempo-extra" @onclick="CloseMobileMenu" title="Reporte de tiempo extra">
+                            <span class="bi bi-clock-history"></span>
+                            <span>Reporte tiempo extra</span>
+                        </NavLink>
+                    }
                 }
                 @if (HasCapacidad("rrhh.bancohoras.ver") || HasCapacidad("empleados.ver") || HasCapacidad("nominas.ver"))
                 {

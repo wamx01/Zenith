@@ -1,7 +1,7 @@
 # 12. Nómina en `RRHH`
 
 ## Objetivo
-Este manual explica cómo usar `Nóminas` en `Zenith` como etapa final de cálculo y cierre del periodo después de revisar la `Prenómina`.
+Este manual explica cómo usar `Nóminas` en `MundoVs` como etapa final de cálculo y cierre del periodo después de revisar la `Prenómina`.
 
 ## Alcance
 Incluye:
@@ -184,3 +184,18 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - `13-rrhh-vales-destajo.md`
 - o `13-rrhh-recibo-nomina.md` si quieres separar la parte de salida documental
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [05. Configuración base de nómina](./05-admin-configuracion-nomina.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [13. Vales de destajo](./13-rrhh-vales-destajo.md)
+- [14. Recibo de nómina](./14-rrhh-recibo-nomina.md)
+- [15. Bonos y deducciones](./15-rrhh-bonos-y-deducciones.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [Mapa técnico de nómina](./rrhh-nomina-tecnica.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

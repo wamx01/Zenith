@@ -111,14 +111,15 @@ public static class RrhhTiempoExtraPolicy
 
     public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
     {
-        // Empleado sin turno fijo (TurnoBaseId == null): no hay jornada esperada de referencia,
-        // se le paga el tiempo real trabajado (entrada a salida) sin clasificarlo como extra.
-        // En este caso MinutosExtra siempre es 0, por lo que no hay riesgo de doble conteo.
-        // Si el día es descanso con turno (Labora = false), TurnoBaseId sí existe y
-        // MinutosJornadaNetaProgramada = 0; ese caso sigue pagando sólo por extra aprobado.
+        // Empleado sin turno fijo (TurnoBaseId == null): todo el tiempo trabajado es visible.
+        // El usuario decide cuánto es extra mediante la resolución de tiempo extra.
+        // El extra aprobado se resta del base para no duplicar: si el usuario aprueba
+        // 2h de extra sobre 10h trabajadas, el base visible = 8h y el visible total = 8h + 2h = 10h.
         if (asistencia.MinutosJornadaNetaProgramada <= 0 && asistencia.TurnoBaseId is null)
         {
-            return ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+            var netoEfectivoSinTurno = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+            var extraAprobadoSinTurno = ObtenerMinutosExtraAprobados(asistencia);
+            return Math.Max(0, netoEfectivoSinTurno - extraAprobadoSinTurno);
         }
 
         if (asistencia.MinutosJornadaNetaProgramada <= 0)
@@ -127,8 +128,6 @@ public static class RrhhTiempoExtraPolicy
         }
 
         var netoEfectivo = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
-        // El extra detectado se excluye del base: solo cuenta cuando está aprobado
-        // Esto garantiza que cambiar el modo de cálculo refleje el visible correctamente
         var extraDetectado = Math.Max(0, asistencia.MinutosExtra);
         var baseNeta = Math.Max(0, netoEfectivo - extraDetectado);
         return Math.Min(baseNeta, asistencia.MinutosJornadaNetaProgramada);
@@ -138,6 +137,15 @@ public static class RrhhTiempoExtraPolicy
     {
         var aprobados = Math.Max(0, asistencia.MinutosExtraAutorizadosPago) + Math.Max(0, asistencia.MinutosExtraAutorizadosBanco);
         var detectados = Math.Max(0, asistencia.MinutosExtra);
+
+        // Sin turno: el procesador no auto-detecta extra (MinutosExtra = 0).
+        // El usuario aprueba manualmente cuánto del tiempo trabajado es extra,
+        // así que no se limita por detectados.
+        if (asistencia.TurnoBaseId is null)
+        {
+            return aprobados;
+        }
+
         return detectados > 0
             ? Math.Min(aprobados, detectados)
             : aprobados;
@@ -182,7 +190,16 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosExtraResolubles(RrhhAsistencia asistencia, decimal factorTiempoExtra)
-        => Math.Max(0, asistencia.MinutosExtra);
+    {
+        // Sin turno: el máximo resoluble es el tiempo total trabajado, ya que
+        // el usuario decide manualmente cuánto de ese tiempo es extra.
+        if (asistencia.TurnoBaseId is null)
+        {
+            return Math.Max(0, asistencia.MinutosTrabajadosNetos);
+        }
+
+        return Math.Max(0, asistencia.MinutosExtra);
+    }
 
     public static string ConstruirReferenciaResolucion(Guid asistenciaId, string sufijo)
         => $"Asistencia:{asistenciaId:N}:{sufijo}";
@@ -222,6 +239,14 @@ public static class RrhhTiempoExtraPolicy
         if (TieneCoberturaAusencia(resumenAusencia) || TieneResolucionTiempoAplicada(asistencia))
         {
             return false;
+        }
+
+        // Sin turno: siempre se muestra el apartado de tiempo extra para que el usuario
+        // pueda decidir cuánto del tiempo trabajado es extra.
+        if (asistencia.TurnoBaseId is null)
+        {
+            return asistencia.RequiereRevision
+                || Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0;
         }
 
         return asistencia.RequiereRevision

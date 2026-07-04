@@ -1,7 +1,7 @@
 # 11. Prenómina en `RRHH`
 
 ## Objetivo
-Este manual explica cómo usar `Prenóminas` como etapa de revisión y consolidación antes de generar la `Nómina` final en `Zenith`.
+Este manual explica cómo usar `Prenóminas` como etapa de revisión y consolidación antes de generar la `Nómina` final en `MundoVs`.
 
 ## Alcance
 Incluye:
@@ -193,3 +193,19 @@ Este manual ocurre después de:
 ## Siguiente manual sugerido
 El siguiente paso lógico es:
 - `12-rrhh-nomina.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [08. Esquemas de pago](./08-rrhh-esquemas-de-pago.md)
+- [09. Empleados](./09-rrhh-empleados.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [13. Vales de destajo](./13-rrhh-vales-destajo.md)
+- [15. Bonos y deducciones](./15-rrhh-bonos-y-deducciones.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [Mapa técnico de nómina](./rrhh-nomina-tecnica.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

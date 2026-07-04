@@ -1,6 +1,14 @@
 # Manual operativo
 
-## RRHH
-- [Nómina técnica y mapa de reglas de cálculo](./rrhh-nomina-tecnica.md)
-- [Propuesta evolutiva de nómina](./rrhh-nomina-propuesta-evolutiva.md)
-- [Plan técnico — permisos parciales, descansos dinámicos y banco de horas](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+> Última revisión: 2026-07-03
+
+Este archivo existe solo por compatibilidad con enlaces antiguos.
+
+El índice principal del directorio `docs/manual/` está en [`indice.md`](./indice.md).
+
+Para localizar un manual, usa siempre `indice.md`, que concentra:
+
+- la secuencia de arranque numerada (`01-` … `20-`);
+- los manuales por módulo;
+- los documentos técnicos complementarios de `RRHH`;
+- las referencias cruzadas a `docs/manuales/` y `docs/rrhh-asistencia-zkteco-arquitectura-fases.md`.

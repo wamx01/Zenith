@@ -155,3 +155,18 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - continuar con manuales por subflujo específico de `RRHH`
 - o abrir la secuencia de `Ventas`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [14. Recibo de nómina](./14-rrhh-recibo-nomina.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [18. Configuración de bonos en Admin](./18-admin-configuracion-bonos.md)
+- [19. Bonos distribuidos](./19-rrhh-bonos-distribuidos.md)
+- [Mapa técnico de nómina](./rrhh-nomina-tecnica.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

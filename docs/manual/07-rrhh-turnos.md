@@ -1,7 +1,7 @@
 # 07. Configuración de turnos en `RRHH`
 
 ## Objetivo
-Este manual explica cómo configurar los turnos base para que `Zenith` pueda interpretar jornadas, descansos, asistencias y control de tiempo de forma consistente.
+Este manual explica cómo configurar los turnos base para que `MundoVs` pueda interpretar jornadas, descansos, asistencias y control de tiempo de forma consistente.
 
 ## Alcance
 Incluye:
@@ -143,3 +143,18 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - `08-rrhh-esquemas-de-pago.md`
 - o `08-rrhh-empleados.md` si la empresa ya tiene bien definidos sus esquemas
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [06. Configuración inicial de RRHH](./06-rrhh-configuracion-inicial.md)
+- [08. Esquemas de pago](./08-rrhh-esquemas-de-pago.md)
+- [09. Empleados](./09-rrhh-empleados.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [20. Cálculo de tiempo visible](./20-rrhh-calculo-tiempo-visible.md)
+- [Descansos no marcados](./rrhh-descansos-no-marcados.md)
+- [Permisos, descansos y banco de horas — plan técnico](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

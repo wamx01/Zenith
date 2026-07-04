@@ -316,14 +316,113 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
             UsuarioActual = "tester"
         });
 
-        Assert.Equal(1.5m, result.FactorAcumulacionBancoHoras);
+        Assert.Equal(1m, result.FactorAcumulacionBancoHoras);
         Assert.Equal(60, result.MinutosBaseBancoAplicados);
-        Assert.Equal(90, result.MinutosBancoAplicados);
+        Assert.Equal(60, result.MinutosBancoAplicados);
 
         await db.SaveChangesAsync();
 
         var movimiento = await db.RrhhBancoHorasMovimientos.SingleAsync(m => m.ReferenciaTipo == $"Asistencia:{asistencia.Id:N}:extra-banco");
-        Assert.Equal(1.5m, movimiento.Horas);
+        Assert.Equal(1m, movimiento.Horas);
+    }
+
+    [Fact]
+    public async Task AplicarResolucionAsync_CuandoHayOverrideFactor_NoAfectaAcumulacionBanco()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 8),
+            MinutosTrabajadosNetos = 540,
+            MinutosJornadaNetaProgramada = 540,
+            MinutosExtra = 120,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasHabilitado, "true"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, "2"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.FactorHoraExtra, "2"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+
+        // Override de factor de pago a 3, pero banco acumulación configurado en 2.
+        // El override SOLO debe afectar al pago, no a la acumulación del banco.
+        var result = await service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "MitadMitad",
+            MinutosBasePago = 60,
+            MinutosBaseBanco = 60,
+            FactorTiempoExtraOverride = 3m,
+            UsuarioActual = "tester"
+        });
+
+        // Pago: 60 base × 3 (override) = 180
+        Assert.Equal(3m, result.FactorTiempoExtra);
+        Assert.Equal(60, result.MinutosBasePagoAplicados);
+        Assert.Equal(180, result.MinutosPagoAplicados);
+
+        // Banco: 60 base × 2 (configurado, NO override) = 120
+        Assert.Equal(2m, result.FactorAcumulacionBancoHoras);
+        Assert.Equal(60, result.MinutosBaseBancoAplicados);
+        Assert.Equal(120, result.MinutosBancoAplicados);
+
+        await db.SaveChangesAsync();
+
+        var movimiento = await db.RrhhBancoHorasMovimientos.SingleAsync(m => m.ReferenciaTipo == $"Asistencia:{asistencia.Id:N}:extra-banco");
+        Assert.Equal(2m, movimiento.Horas); // 120 min / 60 = 2 horas
+    }
+
+    [Fact]
+    public async Task AplicarResolucionAsync_CuandoNoHayOverrideFactor_UsaFactorConfiguradoParaBanco()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 9),
+            MinutosTrabajadosNetos = 540,
+            MinutosJornadaNetaProgramada = 540,
+            MinutosExtra = 60,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasHabilitado, "true"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, "1.5"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+        var result = await service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "BancoTodo",
+            MinutosBaseBanco = 60,
+            UsuarioActual = "tester"
+        });
+
+        Assert.Equal(1.5m, result.FactorAcumulacionBancoHoras);
+        Assert.Equal(60, result.MinutosBaseBancoAplicados);
+        Assert.Equal(90, result.MinutosBancoAplicados);
     }
 
     private static CrmDbContext CreateDbContext()

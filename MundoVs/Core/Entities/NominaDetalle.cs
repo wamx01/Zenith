@@ -64,6 +64,7 @@ public class NominaDetalle
     public decimal HorasExtraTriples { get; set; }
     public decimal HorasExtraBanco { get; set; }
     public decimal HorasExtra { get; set; }
+    public decimal FactorPagoTiempoExtra { get; set; }
     public decimal MontoHorasExtra { get; set; }
     public decimal Bonos { get; set; }
     public decimal Deducciones { get; set; }

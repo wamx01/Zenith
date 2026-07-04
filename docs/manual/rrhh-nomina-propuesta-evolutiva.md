@@ -1,6 +1,35 @@
 # RRHH - Propuesta evolutiva de nómina
 
-## Objetivo
+> ⚠️ **ESTADO: HISTÓRICO** (última revisión 2026-07-03)
+>
+> Este documento es una propuesta originalmente escrita en marzo 2026 ("Documento preparado por Arzmec Desarrollo"). Las entidades, enums y propiedades calculadas que aquí se proponían **ya fueron implementadas** en abril 2026 — ver migración `20260428153000_RrhhConceptosConfigurablesYProvisionesManual` y la entidad `NominaConceptoConfigRrhh`.
+>
+> **Para el estado actual del modelo de nómina consultar:**
+> - [12-rrhh-nomina.md](./12-rrhh-nomina.md) — manual operativo
+> - [rrhh-nomina-tecnica.md](./rrhh-nomina-tecnica.md) — mapa de cálculo, configuración y entidades
+>
+> Se conserva el texto original a continuación como referencia histórica de las decisiones de diseño que motivaron la implementación.
+
+## Estado de las propuestas (snapshot 2026-07-03)
+
+| Propuesta original | Estado actual | Evidencia |
+|---|---|---|
+| Tabla `rrhh_nomina_concepto_config` | ✅ Implementada como `NominaConceptoConfigRrhh` | `Core/Entities/NominaConceptoConfigRrhh.cs` |
+| Tabla `rrhh_empleado_concepto` | ✅ Implementada como `EmpleadoConceptoRrhh` | misma entidad anterior |
+| Tabla `rrhh_nomina_provision_detalle` | ✅ Implementada como `NominaProvisionDetalleRrhh` | misma entidad anterior |
+| Enum `NaturalezaConceptoNominaRrhh` | ✅ Implementado | `NominaConceptoConfigRrhh.cs` |
+| Enum `DestinoConceptoNominaRrhh` | ✅ Implementado | `NominaConceptoConfigRrhh.cs` |
+| Enum `TipoCalculoConceptoNominaRrhh` | ✅ Implementado | `NominaConceptoConfigRrhh.cs` |
+| `NominaDetalle.TotalObligacionesTerceros` | ✅ Implementado | `NominaDetalle.cs` |
+| `NominaDetalle.TotalAportacionesPatronales` | ✅ Implementado | `NominaDetalle.cs` |
+| `NominaDetalle.TotalProvisiones` | ✅ Implementado | `NominaDetalle.cs` |
+| `NominaDetalle.CostoEmpresa` | ✅ Implementado | `NominaDetalle.cs` |
+| UI de configuración por empresa | 🟡 Pendiente | la pantalla de configuración en `Admin/ConfiguracionNomina.razor` aún no expone estos conceptos en su forma final |
+| Reporte detallado de provisiones | 🟡 Pendiente | generación de PDF a través de `NominaPdfService` todavía no separa visualmente la provisión |
+
+---
+
+## Objetivo (texto original)
 Completar el modelo actual de nómina reutilizando la base ya implementada en `MundoVs`, agregando soporte escalable para provisiones por concepto, reglas recurrentes por empleado y separación explícita entre:
 - neto pagado al empleado;
 - obligaciones a terceros;

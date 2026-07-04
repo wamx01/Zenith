@@ -32,7 +32,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
             || (asistencia.RequiereRevision && asistencia.TurnoBaseId == null);
         var salidaTempranaCompensaDescanso = asistencia.Observaciones?.Contains("salida anticipada sugiere permiso o descanso no tomado", StringComparison.OrdinalIgnoreCase) ?? false;
 
-        var resolucionesDisponibles = ConstruirResolucionesDisponibles(extraMinutos, extraResoluble, faltanteRemanenteMinutos, bancoHorasHabilitado, puedeAprobarTiempoExtra, saldoBancoHorasMinutos);
+        var resolucionesDisponibles = ConstruirResolucionesDisponibles(extraMinutos, extraResoluble, faltanteRemanenteMinutos, bancoHorasHabilitado, puedeAprobarTiempoExtra, saldoBancoHorasMinutos, asistencia);
         var extraAprobadaMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
         var segmentos = ConstruirSegmentos(asistencia, permisoCubriendoMinutos, faltanteRemanenteMinutos, extraMinutos, extraAprobadaMinutos, minutosCompensadosAprobados);
 
@@ -259,7 +259,8 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         int faltanteMinutos,
         bool bancoHorasHabilitado,
         bool puedeAprobarTiempoExtra,
-        int saldoBancoHorasMinutos)
+        int saldoBancoHorasMinutos,
+        RrhhAsistencia? asistencia = null)
     {
         var opciones = new List<RrhhAsistenciaCorreccionResolucionOption>();
         if (!puedeAprobarTiempoExtra)
@@ -267,7 +268,19 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
             return opciones;
         }
 
-        if (extraMinutos > 0 && extraResoluble > 0)
+        // Sin turno: siempre ofrecer la opción de aprobar tiempo extra, ya que
+        // el procesador no auto-detecta extra y el usuario debe decidir manualmente.
+        var sinTurno = asistencia?.TurnoBaseId is null;
+        if (sinTurno && extraResoluble > 0)
+        {
+            opciones.Add(new("PagarTodo", "Pagar tiempo extra", "Decide cuánto del tiempo trabajado se paga como extra."));
+            if (bancoHorasHabilitado)
+            {
+                opciones.Add(new("BancoTodo", "Enviar extra a banco", "Acumula tiempo extra en banco de horas."));
+                opciones.Add(new("MitadMitad", "Mitad pago / mitad banco", "Divide el tiempo extra entre pago y banco."));
+            }
+        }
+        else if (extraMinutos > 0 && extraResoluble > 0)
         {
             opciones.Add(new("PagarTodo", "Pagar tiempo extra", "Autoriza todo el tiempo extra como pago."));
             if (bancoHorasHabilitado)

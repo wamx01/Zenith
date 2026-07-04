@@ -144,3 +144,17 @@ Este manual ocurre después de:
 ## Siguiente manual sugerido
 El siguiente paso lógico es:
 - `15-rrhh-bonos-y-deducciones.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [13. Vales de destajo](./13-rrhh-vales-destajo.md)
+- [15. Bonos y deducciones](./15-rrhh-bonos-y-deducciones.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [19. Bonos distribuidos](./19-rrhh-bonos-distribuidos.md)
+- [Mapa técnico de nómina](./rrhh-nomina-tecnica.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

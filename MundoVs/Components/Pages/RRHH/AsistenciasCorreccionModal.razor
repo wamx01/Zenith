@@ -414,9 +414,16 @@
                                                                 <div class="row g-2 align-items-center mb-2">
                                                                     <div class="col-md-5">
                                                                         <label class="asis-field-label">Modo de cálculo</label>
-                                                                        <select class="form-select form-select-sm" @onchange="@((ChangeEventArgs e) => CambiarModoSugerenciaExtra(e.Value?.ToString() ?? "EntradaSalida"))">
-                                                                            <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
-                                                                            <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
+                                                                        <select class="form-select form-select-sm" @onchange="@((ChangeEventArgs e) => CambiarModoSugerenciaExtra(e.Value?.ToString() ?? "EntradaSalida"))" disabled="@(modoSugerenciaExtra == "SinTurno")">
+                                                                            @if (modoSugerenciaExtra == "SinTurno")
+                                                                            {
+                                                                                <option value="SinTurno" selected>Sin turno: el usuario decide el extra</option>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
+                                                                                <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
+                                                                            }
                                                                         </select>
                                                                     </div>
                                                                     <div class="col-md-4 d-grid">

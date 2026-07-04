@@ -814,3 +814,18 @@ Si quieres empezar rápido y bien:
 ## Archivo relacionado
 Este manual complementa:
 - `docs/rrhh-asistencia-zkteco-arquitectura-fases.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [Configuración inicial de RRHH](../manual/06-rrhh-configuracion-inicial.md)
+- [Marcaciones y asistencias en RRHH](../manual/10-rrhh-marcaciones-y-asistencias.md)
+- [Prenómina](../manual/11-rrhh-prenomina.md)
+- [Cálculo de tiempo visible](../manual/20-rrhh-calculo-tiempo-visible.md)
+- [Descansos no marcados](../manual/rrhh-descansos-no-marcados.md)
+- [Plan de resolución de vulnerabilidades en cálculo de asistencias](../manual/rrhh-plan-resolucion-vulnerabilidades-asistencia.md)
+- [Permisos, descansos y banco de horas — plan técnico](../manual/rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Arquitectura propuesta por fases — RRHH asistencia](../rrhh-asistencia-zkteco-arquitectura-fases.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

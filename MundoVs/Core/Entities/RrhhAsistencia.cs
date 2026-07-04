@@ -34,6 +34,11 @@ public class RrhhAsistencia : BaseEntity
     public int MinutosCubiertosBancoHoras { get; set; }
     public string? ResolucionTiempoExtra { get; set; }
     /// <summary>
+    /// Factor aplicado al autorizar tiempo extra. Si es null o 0, se usa el factor de configuración.
+    /// Se persiste para que la nómina y el reporte respeten el override manual.
+    /// </summary>
+    public decimal? FactorTiempoExtraAplicado { get; set; }
+    /// <summary>
     /// Modo de cálculo de tiempo extra para este día:
     /// "EntradaSalida" = entrada/salida real vs programada (default),
     /// "NetoVsNeto" = neto trabajado vs neto esperado del turno.

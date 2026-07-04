@@ -60,3 +60,18 @@ Con esta política:
 - no se paga tiempo extra falso por descansos no marcados,
 - no se descuenta automáticamente cuando el operador probablemente salió temprano en lugar de descansar,
 - los casos dudosos quedan visibles para revisión manual.
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [07. Configuración de turnos](./07-rrhh-turnos.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [20. Cálculo de tiempo visible](./20-rrhh-calculo-tiempo-visible.md)
+- [Permisos, descansos y banco de horas — plan técnico](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Plan de resolución de vulnerabilidades en cálculo de asistencias](./rrhh-plan-resolucion-vulnerabilidades-asistencia.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

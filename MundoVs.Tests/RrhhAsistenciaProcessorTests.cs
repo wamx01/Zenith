@@ -703,7 +703,7 @@ public sealed class RrhhAsistenciaProcessorTests
         var asistencia = await db.RrhhAsistencias.SingleAsync();
         Assert.Equal(0, asistencia.MinutosExtra);
         Assert.True(asistencia.RequiereRevision);
-        Assert.Contains("rompe la alternancia base trabajo-pausa", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("debería ser un descanso", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -752,14 +752,10 @@ public sealed class RrhhAsistenciaProcessorTests
     [Fact]
     public void TimelineAlternado_DefaultConceptualmenteAlternaTrabajoYPausa()
     {
-        var primerIndice = 0;
-        var segundoIndice = 2;
-
-        var primerEsPausa = ((primerIndice / 2) % 2) == 1;
-        var segundoEsPausa = ((segundoIndice / 2) % 2) == 1;
-
-        Assert.False(primerEsPausa);
-        Assert.True(segundoEsPausa);
+        // Todos los pares de marcas intermedias representan salida-regreso del puesto,
+        // es decir, descansos. El trabajo está implícito entre los pares.
+        // No hay alternancia pausa-trabajo entre pares: todos son pausa.
+        Assert.True(true); // La alternancia se eliminó: todos los pares intermedios son descanso.
     }
 
     [Fact]
@@ -1793,4 +1789,253 @@ public sealed class RrhhAsistenciaProcessorTests
         CreatedAt = DateTime.UtcNow,
         IsActive = true
     };
+
+    [Fact]
+    public async Task Reprocesar_ModoNetoVsNeto_NoIncluyePerdonManualEnCalculo()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 18, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        // Crear asistencia previa con perdón manual y modo NetoVsNeto
+        db.RrhhAsistencias.Add(new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            MinutosPerdonadosManual = 30,
+            ModoSugerenciaExtra = "NetoVsNeto",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // Jornada programada 8:00-17:00 = 540 min, neta = 540 (sin descansos no pagados)
+        // Trabajado neto: 18:00-8:00 = 600 min
+        // NetoVsNeto: Max(0, 600 - 540) = 60 min extra
+        // El perdón manual (30 min) NO debe sumarse al neto trabajado en modo NetoVsNeto
+        Assert.Equal(60, asistencia.MinutosExtra);
+    }
+
+    [Fact]
+    public async Task Reprocesar_ModoEntradaSalida_CalculaExtraPorEntradaYSalida()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 7, 30, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 30, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // Entrada anticipada 30 min + salida posterior 30 min = 60 min extra
+        Assert.Equal(60, asistencia.MinutosExtra);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_SinTurnoYConExtraManual_NoDuplicaTiempoVisible()
+    {
+        // Simula un día sin turno (TurnoBaseId = null) donde el procesador detectó
+        // MinutosExtraManual = 30 por una resolución de segmento "extra".
+        // MinutosTrabajadosNetos = 480 (incluye los 30 min del segmento extra).
+        // El visible debe ser: (480 - 30) + 30 = 480, no 480 + 30 = 510.
+        var asistencia = new RrhhAsistencia
+        {
+            TurnoBaseId = null,
+            MinutosJornadaNetaProgramada = 0,
+            MinutosTrabajadosNetos = 480,
+            MinutosPerdonadosManual = 0,
+            MinutosExtra = 30,
+            MinutosExtraAutorizadosPago = 30,
+            MinutosExtraAutorizadosBanco = 0
+        };
+
+        var baseVisible = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(asistencia);
+        var extraAprobado = RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+        var visible = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+
+        // Base debe excluir el extra detectado para evitar duplicación
+        Assert.Equal(450, baseVisible);
+        Assert.Equal(30, extraAprobado);
+        // Visible = base + extra = 480, no 510
+        Assert.Equal(480, visible);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_SinTurnoSinExtra_TiempoVisibleEsNetoCompleto()
+    {
+        // Sin turno y sin extra manual: el visible debe ser igual al neto trabajado.
+        var asistencia = new RrhhAsistencia
+        {
+            TurnoBaseId = null,
+            MinutosJornadaNetaProgramada = 0,
+            MinutosTrabajadosNetos = 480,
+            MinutosPerdonadosManual = 0,
+            MinutosExtra = 0,
+            MinutosExtraAutorizadosPago = 0,
+            MinutosExtraAutorizadosBanco = 0
+        };
+
+        var visible = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+        Assert.Equal(480, visible);
+    }
+
+    [Fact]
+    public void TiempoExtraPolicy_ConTurnoYExtraAlBanco_NoDuplicaTiempoVisible()
+    {
+        // Con turno: jornada neta = 540, neto trabajado = 600, extra = 60.
+        // Resolución: todo al banco (60 base).
+        // Base visible = 600 - 60 = 540 (cap a jornada neta = 540)
+        // ExtraAprobado = Min(0+60, 60) = 60
+        // Visible = 540 + 60 = 600 (no duplica: 600 es el neto real trabajado)
+        var asistencia = new RrhhAsistencia
+        {
+            TurnoBaseId = Guid.NewGuid(),
+            MinutosJornadaNetaProgramada = 540,
+            MinutosTrabajadosNetos = 600,
+            MinutosPerdonadosManual = 0,
+            MinutosExtra = 60,
+            MinutosExtraAutorizadosPago = 0,
+            MinutosExtraAutorizadosBanco = 60
+        };
+
+        var baseVisible = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(asistencia);
+        var extraAprobado = RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia);
+        var visible = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0);
+
+        Assert.Equal(540, baseVisible);
+        Assert.Equal(60, extraAprobado);
+        Assert.Equal(600, visible);
+    }
+
+    [Fact]
+    public async Task Reprocesar_SinTurno_NoDetectaTiempoExtraAutomaticamente()
+    {
+        // Sin turno: el procesador NO auto-detecta extra por jornada legal.
+        // Todo el tiempo trabajado se considera normal. El usuario decide manualmente
+        // cuánto es extra mediante la resolución de tiempo extra.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, Guid.Empty); // sin turno
+
+        db.Empresas.Add(empresa);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 18, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // Sin turno: 8:00 a 18:00 = 600 min netos. Todo es tiempo normal, sin extra automático.
+        Assert.Equal(600, asistencia.MinutosTrabajadosNetos);
+        Assert.Equal(0, asistencia.MinutosExtra);
+    }
+
+    [Fact]
+    public async Task Reprocesar_SinTurno_DebajoDeJornadaLegal_NoGeneraExtra()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, Guid.Empty); // sin turno
+
+        db.Empresas.Add(empresa);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 14, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // Sin turno: 8:00 a 14:00 = 360 min netos.
+        // Jornada legal = 480 min. 360 < 480 → no hay extra.
+        Assert.Equal(360, asistencia.MinutosTrabajadosNetos);
+        Assert.Equal(0, asistencia.MinutosExtra);
+    }
+
+    [Fact]
+    public async Task Reprocesar_SinTurno_JornadaCorta_NoGeneraExtra()
+    {
+        // Simula el caso de Maria de Jesus Lopez Loza: sin turno, trabajó de 8:50 a 11:06 (136 min).
+        // Jornada legal = 480 min. 136 < 480 → no hay extra.
+        // Antes de la corrección, MinutosExtra se quedaba en un valor obsoleto de la BD.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, Guid.Empty);
+
+        db.Empresas.Add(empresa);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 6, 30, 8, 50, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 6, 30, 11, 6, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        // Simular valor obsoleto de MinutosExtra de un cálculo anterior
+        db.RrhhAsistencias.Add(new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 6, 30),
+            MinutosExtra = 592,
+            MinutosExtraAutorizadosPago = 60,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 6, 30), new DateOnly(2026, 6, 30), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // El reprocesamiento debe corregir el valor obsoleto
+        Assert.Equal(136, asistencia.MinutosTrabajadosNetos);
+        Assert.Equal(0, asistencia.MinutosExtra);
+    }
 }

@@ -1,7 +1,7 @@
 # 09. Alta y administración de empleados en `RRHH`
 
 ## Objetivo
-Este manual explica cómo capturar empleados en `Zenith` para que queden listos para asistencia, control de tiempo, destajo, prenómina y nómina.
+Este manual explica cómo capturar empleados en `MundoVs` para que queden listos para asistencia, control de tiempo, destajo, prenómina y nómina.
 
 ## Alcance
 Incluye:
@@ -169,3 +169,17 @@ Este manual ocurre después de:
 El siguiente paso lógico es:
 - `10-rrhh-marcaciones-y-asistencias.md`
 - o `10-rrhh-prenomina.md` si primero se documentará el cálculo operativo
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [06. Configuración inicial de RRHH](./06-rrhh-configuracion-inicial.md)
+- [07. Configuración de turnos en RRHH](./07-rrhh-turnos.md)
+- [08. Esquemas de pago en RRHH](./08-rrhh-esquemas-de-pago.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

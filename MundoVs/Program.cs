@@ -96,6 +96,7 @@ builder.Services.AddScoped<IRrhhAsistenciasPageService, RrhhAsistenciasPageServi
 builder.Services.AddScoped<IRrhhEmpleadoPerfilPageService, RrhhEmpleadoPerfilPageService>();
 builder.Services.AddScoped<IRrhhAsistenciaCorreccionAdvisor, RrhhAsistenciaCorreccionAdvisor>();
 builder.Services.AddScoped<IRrhhTiempoExtraResolutionService, RrhhTiempoExtraResolutionService>();
+builder.Services.AddScoped<IRrhhTiempoExtraReporteService, RrhhTiempoExtraReporteService>();
 builder.Services.AddScoped<IRrhhPrenominaSnapshotService, RrhhPrenominaSnapshotService>();
 builder.Services.AddScoped<IRrhhMarcacionIngestionService, RrhhMarcacionIngestionService>();
 builder.Services.AddScoped<IRrhhMarcacionZonaHorariaService, RrhhMarcacionZonaHorariaService>();
@@ -392,6 +393,80 @@ app.MapPost("/api/rrhh/asistencias/reprocesar", async (HttpContext httpContext, 
         Mensaje = "Reproceso de asistencias completado."
     });
 });
+
+app.MapGet("/api/rrhh/tiempo-extra/reporte", async (
+    HttpContext httpContext,
+    IDbContextFactory<CrmDbContext> dbFactory,
+    IRrhhTiempoExtraReporteService reporteService,
+    Guid empresaId,
+    DateOnly fechaDesde,
+    DateOnly fechaHasta,
+    Guid? empleadoId,
+    string? departamento,
+    int? minutosExtraMinimos,
+    string? agrupadoPor) =>
+{
+    if (empresaId == Guid.Empty)
+    {
+        return Results.BadRequest("EmpresaId es requerido.");
+    }
+
+    if (!(httpContext.User.Identity?.IsAuthenticated ?? false))
+    {
+        return Results.Unauthorized();
+    }
+
+    var puedeConsultar = httpContext.User.HasClaim("Capacidad", "nominas.ver")
+        || httpContext.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar")
+        || httpContext.User.HasClaim("Capacidad", "empleados.ver");
+    if (!puedeConsultar)
+    {
+        return Results.Forbid();
+    }
+
+    if (!Guid.TryParse(httpContext.User.FindFirst("EmpresaId")?.Value, out var empresaIdSesion) || empresaIdSesion == Guid.Empty)
+    {
+        return Results.Forbid();
+    }
+
+    if (empresaIdSesion != empresaId)
+    {
+        return Results.Forbid();
+    }
+
+    if (fechaHasta < fechaDesde)
+    {
+        return Results.BadRequest("La fecha final no puede ser menor a la fecha inicial.");
+    }
+
+    // Evitar que un usuario pida rangos absurdos (1 año = 366 días) que revienten la memoria.
+    var diasRango = fechaHasta.DayNumber - fechaDesde.DayNumber + 1;
+    if (diasRango > 366)
+    {
+        return Results.BadRequest("El rango máximo permitido para el reporte es de 366 día(s).");
+    }
+
+    var request = new MundoVs.Core.Models.RrhhTiempoExtraReporteRequest
+    {
+        EmpresaId = empresaId,
+        FechaDesde = fechaDesde,
+        FechaHasta = fechaHasta,
+        EmpleadoId = empleadoId,
+        Departamento = string.IsNullOrWhiteSpace(departamento) ? null : departamento.Trim(),
+        MinutosExtraMinimos = minutosExtraMinimos,
+        AgrupadoPor = string.IsNullOrWhiteSpace(agrupadoPor) ? "dia" : agrupadoPor.Trim()
+    };
+
+    try
+    {
+        var response = await reporteService.GenerarAsync(dbFactory, request, httpContext.RequestAborted);
+        return Results.Ok(response);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+}).RequireAuthorization();
 
 app.MapGet("/api/rrhh/agentes/configuracion", async (HttpContext httpContext, CrmDbContext db, IConfiguration configuration, Guid empresaId, string? nombreAgente) =>
 {

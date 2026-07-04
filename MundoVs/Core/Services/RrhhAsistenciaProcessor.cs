@@ -255,6 +255,15 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var asistencia = asistenciaPrevia;
 
         var modoSugerencia = asistenciaPrevia?.ModoSugerenciaExtra;
+
+        // Sin turno: forzar modo "SinTurno" automáticamente. El procesador no
+        // auto-detecta extra; el usuario decide manualmente cuánto del tiempo
+        // trabajado es extra mediante la resolución de tiempo extra.
+        if (detalleTurno?.HoraEntrada is not TimeSpan || detalleTurno.HoraSalida is not TimeSpan)
+        {
+            modoSugerencia = "SinTurno";
+        }
+
         var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra, minutosMargenNoComputables, modoSugerencia);
 
         var (estatus, requiereRevision, observaciones) = ClasificarAsistencia(
@@ -298,6 +307,17 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         asistencia.MinutosRetardo = minutosRetardo;
         asistencia.MinutosSalidaAnticipada = minutosSalidaAnticipada;
         asistencia.MinutosExtra = minutosExtra;
+        // Persistir el modo de cálculo: "SinTurno" se asigna automáticamente cuando
+        // no hay turno configurado para ese día.
+        if (detalleTurno?.HoraEntrada is not TimeSpan || detalleTurno.HoraSalida is not TimeSpan)
+        {
+            asistencia.ModoSugerenciaExtra = "SinTurno";
+        }
+        else if (asistencia.ModoSugerenciaExtra == "SinTurno")
+        {
+            // Si antes estaba sin turno pero ahora tiene turno, limpiar el modo
+            asistencia.ModoSugerenciaExtra = null;
+        }
         asistencia.Estatus = estatus;
         asistencia.RequiereRevision = requiereRevision;
         asistencia.Observaciones = observaciones;
@@ -411,6 +431,16 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return extraAutomatico + analisisJornada.MinutosExtraManual;
         }
 
+        // Modo SinTurno: sin turno no hay referencia de entrada/salida programada.
+        // Todo el tiempo trabajado se considera normal. El usuario decide manualmente
+        // cuánto del tiempo trabajado es tiempo extra mediante la resolución de
+        // tiempo extra (MinutosExtraAutorizadosPago/Banco). Solo se respeta
+        // MinutosExtraManual por resoluciones de segmento "extra" explícitas.
+        if (string.Equals(modoSugerencia, "SinTurno", StringComparison.OrdinalIgnoreCase))
+        {
+            return analisisJornada.MinutosExtraManual;
+        }
+
         // Modo NetoVsNeto: calcula extra como (neto trabajado + perdón) − neto esperado del turno.
         // Solo se usa cuando el usuario lo seleccionó explícitamente para este día.
         if (string.Equals(modoSugerencia, "NetoVsNeto", StringComparison.OrdinalIgnoreCase))
@@ -430,7 +460,12 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         if (detalleTurno?.HoraEntrada is not TimeSpan entradaProgramada || detalleTurno.HoraSalida is not TimeSpan salidaProgramada)
         {
-            // Sin turno definido no hay referencia de entrada/salida; solo se cuenta extra manual
+            // Sin turno definido: NO se auto-detecta tiempo extra por jornada legal.
+            // Sin turno no hay referencia de entrada/salida programada, por lo que
+            // todo el tiempo trabajado se considera normal. El usuario decide manualmente
+            // cuánto de ese tiempo trabajado es tiempo extra mediante la resolución de
+            // tiempo extra (MinutosExtraAutorizadosPago/Banco). Solo se respeta
+            // MinutosExtraManual por resoluciones de segmento "extra" explícitas.
             return analisisJornada.MinutosExtraManual;
         }
 
@@ -910,14 +945,15 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             }
 
             var accion = ResolverAccionSegmento(inicio.Marcacion, fin.Marcacion, resolucionesSegmento);
-            var indiceSegmento = (i / 2) + 1;
-            var esperaPausa = indiceSegmento % 2 != 0;
             var minutos = Math.Max(0, (int)Math.Round((fin.FechaLocal - inicio.FechaLocal).TotalMinutes));
             var esPausa = accion is "descanso" or "permiso" or "temporal" || DebeInferirseComoDescansoEnMotor(descansosConfigurados, inicio.FechaLocal.TimeOfDay, fin.FechaLocal.TimeOfDay, minutos);
 
-            if (esperaPausa && !esPausa)
+            // Todos los pares de marcas intermedias representan salida-regreso del puesto,
+            // es decir, descansos. El trabajo está implícito entre los pares.
+            // Si un par no es pausa, se marca conflicto.
+            if (!esPausa)
             {
-                observaciones.Add($"El tramo intermedio {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} rompe la alternancia base trabajo-pausa; revisar si corresponde descanso, permiso o salida temporal.");
+                observaciones.Add($"El tramo intermedio {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} debería ser un descanso, permiso o salida temporal; revisar si corresponde clasificarlo así.");
                 requiereRevision = true;
                 bloquearTiempoExtraAutomatico = true;
             }

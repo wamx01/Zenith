@@ -17,7 +17,7 @@ public class NominaCalculator : INominaCalculator
             ? Math.Round(sueldoDiario * input.DiasVacaciones * input.Configuracion.PrimaVacacionalMinima, 2)
             : 0m;
         var (horasDobles, horasTriples) = ObtenerHorasExtraLegales(input);
-        var montoHorasExtra = CalcularMontoHorasExtra(input.Empleado, horasDobles, horasTriples, input.SueldoReferencia, input.Configuracion);
+        var montoHorasExtra = CalcularMontoHorasExtra(input.Empleado, horasDobles, horasTriples, input.SueldoReferencia, input.Configuracion, input.FactorPagoTiempoExtra);
         var montoDescuentoMinutos = CalcularMontoDescuentoMinutos(input.Empleado, input.MinutosDescuento, sueldoDiario, input.Configuracion);
         var diasVacacionesAnuales = input.DiasVacacionesAnualesOverride ?? input.Configuracion.ObtenerDiasVacacionesPorAntiguedad(input.AniosServicio);
         var cuotasImss = CalcularCuotasImss(input.AplicaImss, sueldoDiario, input.DiasPagados, diasVacacionesAnuales, input.Configuracion, input.AplicaSalarioMinimoFrontera);
@@ -96,15 +96,19 @@ public class NominaCalculator : INominaCalculator
         return (horasDobles, horasTriples);
     }
 
-    private static decimal CalcularMontoHorasExtra(Empleado empleado, decimal horasDobles, decimal horasTriples, decimal sueldoReferencia, NominaConfiguracion configuracion)
+    private static decimal CalcularMontoHorasExtra(Empleado empleado, decimal horasDobles, decimal horasTriples, decimal sueldoReferencia, NominaConfiguracion configuracion, decimal factorPagoTiempoExtra = 0m)
     {
         if (horasDobles <= 0 && horasTriples <= 0)
             return 0m;
 
         var horasBase = Math.Max(1, configuracion.ObtenerHorasBase(empleado.PeriodicidadPago));
         var sueldoHora = sueldoReferencia / horasBase;
-        var montoDobles = horasDobles * sueldoHora * Math.Max(configuracion.FactorHoraExtra, 0m);
-        var montoTriples = horasTriples * sueldoHora * Math.Max(configuracion.FactorHoraExtraTriple, 0m);
+        // Si el snapshot trae un factor override (persistido en la resolución de tiempo extra),
+        // usarlo en vez del factor de configuración. Si es 0 o negativo, cae al default.
+        var factorDobles = factorPagoTiempoExtra > 0m ? factorPagoTiempoExtra : Math.Max(configuracion.FactorHoraExtra, 0m);
+        var factorTriples = factorPagoTiempoExtra > 0m ? factorPagoTiempoExtra : Math.Max(configuracion.FactorHoraExtraTriple, 0m);
+        var montoDobles = horasDobles * sueldoHora * factorDobles;
+        var montoTriples = horasTriples * sueldoHora * factorTriples;
         return Math.Round(montoDobles + montoTriples, 2);
     }
 

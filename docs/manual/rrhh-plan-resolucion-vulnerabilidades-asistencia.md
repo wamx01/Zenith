@@ -537,3 +537,19 @@ Marcaciones -> Segmentos -> Clasificación -> Cálculo -> Revisión RRHH -> Nóm
 ```
 
 Esto permite que la asistencia sea explicable, corregible y auditable.
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [07. Configuración de turnos](./07-rrhh-turnos.md)
+- [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [16. Banco de horas](./16-rrhh-banco-de-horas.md)
+- [17. Ausencias](./17-rrhh-ausencias.md)
+- [20. Cálculo de tiempo visible](./20-rrhh-calculo-tiempo-visible.md)
+- [Descansos no marcados](./rrhh-descansos-no-marcados.md)
+- [Permisos, descansos y banco de horas — plan técnico](./rrhh-permisos-descansos-banco-horas-plan-tecnico.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)

@@ -20,7 +20,7 @@ No incluye:
 - `RRHH > Esquemas de pago`
 
 ## Para qué sirve un `Esquema de pago`
-Sirve para decirle a `Zenith` cuál es la lógica con la que se debe calcular el pago de un empleado.
+Sirve para decirle a `MundoVs` cuál es la lógica con la que se debe calcular el pago de un empleado.
 
 En términos prácticos, el esquema responde preguntas como:
 - si al empleado se le paga fijo, por pieza, por operación o mixto
@@ -297,3 +297,17 @@ Este manual ocurre después de:
 ## Siguiente manual sugerido
 El siguiente paso lógico es:
 - `09-rrhh-empleados.md`
+
+---
+
+> Última revisión: 2026-07-03
+
+## Ver también
+- [06. Configuración inicial de RRHH](./06-rrhh-configuracion-inicial.md)
+- [07. Configuración de turnos en RRHH](./07-rrhh-turnos.md)
+- [09. Empleados](./09-rrhh-empleados.md)
+- [11. Prenómina](./11-rrhh-prenomina.md)
+- [12. Nómina](./12-rrhh-nomina.md)
+- [13. Vales de destajo](./13-rrhh-vales-destajo.md)
+- [18. Configuración de bonos en Admin](./18-admin-configuracion-bonos.md)
+- [Especificación técnica del módulo RRHH](../modulos/detalle/06-rrhh.md)
