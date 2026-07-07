@@ -91,8 +91,8 @@ public partial class AsistenciasCorreccionModal
             : factorTiempoExtraConfigurado;
 
         return usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
-            ? $"Factor manual activo: x{factorActivo:0.##}"
-            : $"Factor configurado: x{factorActivo:0.##}";
+            ? $"Override activo x{factorActivo:0.##} · aplica a pago y banco de horas"
+            : $"Factor configurado: x{factorActivo:0.##} (pago) · banco: x{(factorAcumulacionBancoHorasConfigurado > 0m ? factorAcumulacionBancoHorasConfigurado : 1m):0.##}";
     }
 
     private string ObtenerResumenBancoAcumuladoActual()

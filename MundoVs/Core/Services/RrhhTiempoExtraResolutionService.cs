@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Interfaces;
 using MundoVs.Infrastructure.Data;
@@ -89,9 +89,11 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             ? command.FactorTiempoExtraOverride.Value
             : contextoEmpleado.Configuracion.FactorTiempoExtra;
         var bancoHorasHabilitado = contextoEmpleado.Configuracion.BancoHorasHabilitado;
-        // El override del factor de tiempo extra aplica al PAGO, no a la acumulación
+        // El override del factor de tiempo extra aplica tanto al PAGO como a la acumulación
         // del banco de horas. La acumulación del banco siempre usa su propia configuración.
-        var factorAcumulacionBanco = contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
+        var factorAcumulacionBanco = command.FactorTiempoExtraOverride.HasValue && command.FactorTiempoExtraOverride.Value > 0m
+            ? command.FactorTiempoExtraOverride.Value
+            : contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
         var saldoBancoDisponible = Math.Max(0, saldoBancoMinutos - netoPrevioMinutos);
         var extraResoluble = RrhhTiempoExtraPolicy.ObtenerMinutosExtraResolubles(asistencia, factorTiempoExtra);
         var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
