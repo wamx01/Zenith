@@ -235,6 +235,32 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
                 false);
         }
 
+        // Día de descanso con turno asignado (jornada neta = 0) y trabajo real:
+        // explicar al usuario que ese tiempo se puede aprobar como extra.
+        var jornadaNetaProgramadaAsesor = asistencia.MinutosJornadaNetaProgramada;
+        var esDescansoConTrabajoAsesor = jornadaNetaProgramadaAsesor <= 0
+            && asistencia.TurnoBaseId is not null
+            && Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0;
+        if (esDescansoConTrabajoAsesor && resolucionesDisponibles.Count > 0)
+        {
+            return new RrhhAsistenciaCorreccionAdvice(
+                "DescansoConTrabajo",
+                $"Día de descanso con tiempo trabajado: {FormatearMinutos(Math.Max(0, asistencia.MinutosTrabajadosNetos))}",
+                "El empleado no tenía jornada programada para este día pero sí registró marcaciones. Decide si el tiempo trabajado se paga como extra, se envía al banco o se reparte entre ambos.",
+                "text-bg-warning",
+                "bi-calendar-week",
+                RrhhAsistenciaCorreccionTabs.Tiempo,
+                "Resolver tiempo extra",
+                "PagarTodo",
+                segmentos,
+                resolucionesDisponibles,
+                "Como es día de descanso, el procesador no detectó extra automáticamente. Tú decides cuánto del tiempo trabajado se aprueba como extra.",
+                "Solo se ofrecen resoluciones compatibles con un día de descanso trabajado.",
+                false,
+                false,
+                true);
+        }
+
         return new RrhhAsistenciaCorreccionAdvice(
             "JornadaConsistente",
             "Jornada consistente",
@@ -270,6 +296,13 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
 
         // Sin turno: siempre ofrecer la opción de aprobar tiempo extra, ya que
         // el procesador no auto-detecta extra y el usuario debe decidir manualmente.
+        // Día de descanso con turno asignado: igual, permitir que el usuario decida
+        // cuánto del tiempo trabajado se paga/envía a banco aunque no haya extra auto.
+        var jornadaNetaProgramada = asistencia?.MinutosJornadaNetaProgramada ?? 0;
+        var esDescansoConTrabajo = asistencia is not null
+            && asistencia.TurnoBaseId is not null
+            && jornadaNetaProgramada <= 0
+            && Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0;
         var sinTurno = asistencia?.TurnoBaseId is null;
         if (sinTurno && extraResoluble > 0)
         {
@@ -280,12 +313,16 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
                 opciones.Add(new("MitadMitad", "Mitad pago / mitad banco", "Divide el tiempo extra entre pago y banco."));
             }
         }
-        else if (extraMinutos > 0 && extraResoluble > 0)
+        else if ((extraMinutos > 0 || esDescansoConTrabajo) && extraResoluble > 0)
         {
-            opciones.Add(new("PagarTodo", "Pagar tiempo extra", "Autoriza todo el tiempo extra como pago."));
+            opciones.Add(new("PagarTodo", "Pagar tiempo extra", esDescansoConTrabajo
+                ? "Día de descanso con tiempo trabajado: autoriza pago como extra."
+                : "Autoriza todo el tiempo extra como pago."));
             if (bancoHorasHabilitado)
             {
-                opciones.Add(new("BancoTodo", "Enviar extra a banco", "Acumula todo el tiempo extra en banco de horas."));
+                opciones.Add(new("BancoTodo", "Enviar extra a banco", esDescansoConTrabajo
+                    ? "Día de descanso: acumula el tiempo trabajado en banco de horas."
+                    : "Acumula todo el tiempo extra en banco de horas."));
                 opciones.Add(new("MitadMitad", "Mitad pago / mitad banco", "Divide el tiempo extra entre pago y banco."));
             }
         }

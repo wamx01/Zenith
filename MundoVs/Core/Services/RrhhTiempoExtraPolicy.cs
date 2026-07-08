@@ -198,6 +198,15 @@ public static class RrhhTiempoExtraPolicy
             return Math.Max(0, asistencia.MinutosTrabajadosNetos);
         }
 
+        // Día de descanso con turno asignado pero jornada neta programada = 0:
+        // permitir que el tiempo trabajado se apruebe como extra manualmente,
+        // porque la jornada programada no detectó extra automático.
+        if (asistencia.MinutosJornadaNetaProgramada <= 0
+            && Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0)
+        {
+            return Math.Max(0, asistencia.MinutosTrabajadosNetos);
+        }
+
         return Math.Max(0, asistencia.MinutosExtra);
     }
 

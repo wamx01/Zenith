@@ -25,6 +25,15 @@ public partial class AsistenciasCorreccionModal
             return Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos);
         }
 
+        // Día de descanso con turno asignado (jornada neta = 0) y trabajo real:
+        // el máximo disponible es el tiempo trabajado porque no se detectó extra
+        // automático pero el usuario puede aprobar el tiempo como extra.
+        if (AsistenciaActual.MinutosJornadaNetaProgramada <= 0
+            && Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos) > 0)
+        {
+            return Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos);
+        }
+
         return Math.Max(0, AsistenciaActual.MinutosExtra);
     }
 
@@ -422,8 +431,14 @@ public partial class AsistenciasCorreccionModal
 
         // Sin turno: sugerir el excedente sobre 8h (480 min) como extra, pero el usuario
         // puede ajustar manualmente cualquier valor hasta el total trabajado.
-        var sugerido = AsistenciaActual.TurnoBaseId is null
-            ? Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos - 480)
+        // Día de descanso con turno (jornada neta = 0) y trabajo real: sugerir todo lo
+        // trabajado como extra porque la jornada programada no detectó nada.
+        var jornadaNetaProgramada = Math.Max(0, AsistenciaActual.MinutosJornadaNetaProgramada);
+        var sugerido = (AsistenciaActual.TurnoBaseId is null
+                        || jornadaNetaProgramada <= 0) && Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos) > 0
+            ? (AsistenciaActual.TurnoBaseId is null
+                ? Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos - 480)
+                : Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos))
             : ObtenerMinutosExtraSugeridosModo(AsistenciaActual);
 
         var baseCaptura = Math.Min(sugerido, resoluble);
