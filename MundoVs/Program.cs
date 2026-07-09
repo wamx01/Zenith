@@ -13,6 +13,7 @@ using MundoVs.Core.Entities.Auth;
 using MundoVs.Core.Models;
 using MundoVs.Infrastructure.Repositories;
 using MundoVs.Core.Security;
+using MundoVs.Workers;
 using Microsoft.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -104,6 +105,12 @@ builder.Services.AddScoped<CodigoNegocioService>();
 builder.Services.AddScoped<INotaEntregaPdfService, NotaEntregaPdfService>();
 builder.Services.AddScoped<ModuloStateService>();
 builder.Services.AddMemoryCache();
+
+// Cola FIFO + worker en segundo plano para procesar marcaciones pendientes
+// sin bloquear el endpoint HTTP de ingestión (evita timeouts cuando el
+// procesador tarda más que el HttpClient.Timeout del agente).
+builder.Services.AddSingleton<RrhhMarcacionesPendientesQueue>();
+builder.Services.AddHostedService<RrhhProcesarPendientesWorker>();
 
 builder.Services.AddScoped<IEmpresaContext, EmpresaContext>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -307,7 +314,7 @@ app.MapPost("/auth/session/refresh", async (HttpContext context, IAuthService au
     return Results.Ok(new AuthSessionResponse(true));
 }).RequireAuthorization();
 
-app.MapPost("/api/rrhh/marcaciones/sync", async (HttpContext httpContext, CrmDbContext db, IConfiguration configuration, IRrhhAsistenciaProcessor rrhhAsistenciaProcessor, IRrhhMarcacionIngestionService rrhhMarcacionIngestionService, MarcacionSyncBatchDto batch) =>
+app.MapPost("/api/rrhh/marcaciones/sync", async (HttpContext httpContext, CrmDbContext db, IConfiguration configuration, IRrhhAsistenciaProcessor rrhhAsistenciaProcessor, IRrhhMarcacionIngestionService rrhhMarcacionIngestionService, RrhhMarcacionesPendientesQueue marcacionesPendientesQueue, MarcacionSyncBatchDto batch) =>
 {
     if (!TryAuthenticateAgentRequest(httpContext, configuration, batch.EmpresaId, null, out _))
     {
@@ -318,7 +325,14 @@ app.MapPost("/api/rrhh/marcaciones/sync", async (HttpContext httpContext, CrmDbC
 
     if (ingestionResult.IsSuccess)
     {
-        await rrhhAsistenciaProcessor.ProcesarMarcacionesPendientesAsync(db, batch.EmpresaId, batch.ChecadorId, httpContext.RequestAborted);
+        // En lugar de ejecutar el procesador dentro de la request HTTP
+        // (lo que puede tardar más que el HttpClient.Timeout del agente y
+        // disparar timeouts en cadena), encolamos la solicitud y respondemos
+        // de inmediato. El RrhhProcesarPendientesWorker drena la cola
+        // clasificándolas una a una en orden FIFO.
+        await marcacionesPendientesQueue.EnqueueAsync(
+            new RrhhColaPendientesItem(batch.EmpresaId, batch.ChecadorId),
+            httpContext.RequestAborted);
     }
 
     return ingestionResult.StatusCode switch

@@ -74,13 +74,13 @@ public sealed class RrhhMarcacionIngestionService : IRrhhMarcacionIngestionServi
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        var hashesExistentes = hashes.Count == 0
-            ? new HashSet<string>(StringComparer.Ordinal)
+        var marcacionesExistentes = hashes.Count == 0
+            ? new Dictionary<string, RrhhMarcacion>(StringComparer.Ordinal)
             : (await db.RrhhMarcaciones
                 .Where(m => hashes.Contains(m.HashUnico))
-                .Select(m => m.HashUnico)
                 .ToListAsync(cancellationToken))
-                .ToHashSet(StringComparer.Ordinal);
+                .ToDictionary(m => m.HashUnico, m => m, StringComparer.Ordinal);
+        var hashesExistentes = marcacionesExistentes.Keys.ToHashSet(StringComparer.Ordinal);
 
         foreach (var marcacion in marcaciones)
         {
@@ -96,6 +96,18 @@ public sealed class RrhhMarcacionIngestionService : IRrhhMarcacionIngestionServi
             var hash = CalcularHashMarcacion(marcacion, fechaHoraUtc);
             if (!hashesExistentes.Add(hash))
             {
+                // Si la marcación ya existe pero quedó huérfana como "Pendiente de clasificación"
+                // (típicamente porque el ProcesarMarcacionesPendientesAsync falló en una llamada
+                // anterior por timeout, error de concurrencia, etc.), la re-marcamos para que
+                // el procesador que se ejecuta justo después de IngerirLoteAsync la reprocese.
+                if (marcacionesExistentes.TryGetValue(hash, out var existente)
+                    && !existente.Procesada
+                    && string.Equals(existente.ResultadoProcesamiento, "Pendiente de clasificación", StringComparison.Ordinal))
+                {
+                    existente.Procesada = false;
+                    existente.ResultadoProcesamiento = "Pendiente de clasificación";
+                    existente.UpdatedAt = DateTime.UtcNow;
+                }
                 duplicadas++;
                 continue;
             }
