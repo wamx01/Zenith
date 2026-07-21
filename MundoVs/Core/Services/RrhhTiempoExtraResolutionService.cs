@@ -28,7 +28,8 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
                 && (c.Clave == ClavesConfiguracionNomina.BancoHorasTopeHoras
                     || c.Clave == ClavesConfiguracionNomina.FactorHoraExtra
                     || c.Clave == ClavesConfiguracionNomina.BancoHorasHabilitado
-                    || c.Clave == ClavesConfiguracionNomina.BancoHorasFactorAcumulacion))
+                    || c.Clave == ClavesConfiguracionNomina.BancoHorasFactorAcumulacion
+                    || c.Clave == ClavesConfiguracionNomina.ReglasPrenominaJson))
             .ToDictionaryAsync(c => c.Clave, c => c.Valor ?? string.Empty, cancellationToken);
 
         return new RrhhTiempoExtraConfiguracionSnapshot
@@ -36,8 +37,26 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             TopeBancoMinutos = ConvertirHorasAMinutos(ObtenerDecimal(configuraciones, ClavesConfiguracionNomina.BancoHorasTopeHoras, 40m)),
             FactorTiempoExtra = Math.Max(0m, ObtenerDecimal(configuraciones, ClavesConfiguracionNomina.FactorHoraExtra, 2m)),
             BancoHorasHabilitado = ObtenerBooleano(configuraciones, ClavesConfiguracionNomina.BancoHorasHabilitado, false),
-            FactorAcumulacionBancoHoras = Math.Max(0m, ObtenerDecimal(configuraciones, ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, 1m))
+            FactorAcumulacionBancoHoras = Math.Max(0m, ObtenerDecimal(configuraciones, ClavesConfiguracionNomina.BancoHorasFactorAcumulacion, 1m)),
+            RequiereResolucionAutorizadaParaNomina = ObtenerRequiereResolucionAutorizada(configuraciones)
         };
+    }
+
+    private static bool ObtenerRequiereResolucionAutorizada(IReadOnlyDictionary<string, string> configuraciones)
+    {
+        try
+        {
+            if (configuraciones.TryGetValue(ClavesConfiguracionNomina.ReglasPrenominaJson, out var json) && !string.IsNullOrWhiteSpace(json))
+            {
+                var reglas = System.Text.Json.JsonSerializer.Deserialize<ReglasPrenominaConfiguracion>(json);
+                if (reglas is not null)
+                {
+                    return reglas.RequiereResolucionAutorizadaParaNomina;
+                }
+            }
+        }
+        catch { }
+        return true; // default del gate Fase 7
     }
 
     public async Task<RrhhTiempoExtraEmpleadoContexto> ObtenerContextoEmpleadoAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, CancellationToken cancellationToken = default)
@@ -96,7 +115,7 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             : contextoEmpleado.Configuracion.FactorAcumulacionBancoHoras;
         var saldoBancoDisponible = Math.Max(0, saldoBancoMinutos - netoPrevioMinutos);
         var extraResoluble = RrhhTiempoExtraPolicy.ObtenerMinutosExtraResolubles(asistencia, factorTiempoExtra);
-        var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
+        var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia);
         var pagoBase = Math.Max(0, command.MinutosBasePago > 0 ? command.MinutosBasePago : command.MinutosPago);
         var bancoBase = Math.Max(0, command.MinutosBaseBanco > 0 ? command.MinutosBaseBanco : command.MinutosBanco);
         var pago = (int)Math.Round(pagoBase * Math.Max(1m, factorTiempoExtra), MidpointRounding.AwayFromZero);
@@ -104,6 +123,15 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
             ? (int)Math.Round(bancoBase * factorAcumulacionBanco, MidpointRounding.AwayFromZero)
             : 0;
         var cubiertoBanco = Math.Max(0, command.MinutosCubrirBanco);
+
+        // F4 decisión 5 (opción 1): en un día festivo, un empleado PorHoras NO puede
+        // acumular tiempo extra manual. El tiempo trabajado ese día va al factor festivo
+        // (F4b, cálculo por minutos), sin subir a 4x. El UI también lo deshabilita (F5).
+        if (asistencia.EsPorHoras && pagoBase + bancoBase > 0
+            && await EsFestivoAsync(db, asistencia.Fecha, cancellationToken))
+        {
+            throw new InvalidOperationException("No se puede autorizar tiempo extra manual en un día festivo para un empleado por horas: el tiempo trabajado va al factor festivo.");
+        }
 
         if (pagoBase + bancoBase > extraResoluble)
             throw new InvalidOperationException("La suma base de pago y banco no puede exceder el tiempo extra detectado del día.");
@@ -336,6 +364,66 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
         return saldoActualMinutos - minutosRemovidos;
     }
 
+    public async Task<RrhhCompensacionBackfillResult> BackfillCompensacionDesdeBitacoraAsync(CrmDbContext db, Guid? empresaId, string usuario, CancellationToken cancellationToken = default)
+    {
+        // Carga el bitácora legado de compensaciones aprobadas (Mensaje contiene la frase de
+        // auditoría). Por cada asistencia, el parser filtra los logs por Detalle (empleado=...
+        // y fecha=... — RrhhLogChecador no tiene columna EmpleadoId). Siembra la columna
+        // RrhhAsistencia.MinutosCompensacionPermisoAprobados con el valor más reciente.
+        // Idempotente: si la fila ya refleja ese valor no la toca.
+        var queryLogs = db.RrhhLogsChecador
+            .AsNoTracking()
+            .Where(l => l.Detalle != null
+                && l.Mensaje.Contains("compensación aprobada de permiso"));
+        if (empresaId.HasValue)
+        {
+            queryLogs = queryLogs.Where(l => l.EmpresaId == empresaId.Value);
+        }
+
+        var logs = await queryLogs.OrderByDescending(l => l.FechaUtc).ToListAsync(cancellationToken);
+        if (logs.Count == 0)
+        {
+            return new RrhhCompensacionBackfillResult { FilasActualizadas = 0, FilasOmitidas = 0 };
+        }
+
+        var empresas = logs.Select(l => l.EmpresaId).Distinct().ToList();
+        var fechaMin = DateOnly.FromDateTime(logs.Min(l => l.FechaUtc));
+        var fechaMax = DateOnly.FromDateTime(logs.Max(l => l.FechaUtc));
+
+        var asistencias = await db.RrhhAsistencias
+            .Where(a => empresas.Contains(a.EmpresaId)
+                && a.Fecha >= fechaMin
+                && a.Fecha <= fechaMax)
+            .ToListAsync(cancellationToken);
+
+        var actualizadas = 0;
+        var omitidas = 0;
+
+        foreach (var asistencia in asistencias)
+        {
+            var minutosBitacora = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(
+                logs.Where(l => l.EmpresaId == asistencia.EmpresaId),
+                asistencia.EmpleadoId,
+                asistencia.Fecha);
+
+            if (asistencia.MinutosCompensacionPermisoAprobados == minutosBitacora)
+            {
+                omitidas++;
+                continue;
+            }
+
+            asistencia.MinutosCompensacionPermisoAprobados = minutosBitacora;
+            actualizadas++;
+        }
+
+        if (actualizadas > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return new RrhhCompensacionBackfillResult { FilasActualizadas = actualizadas, FilasOmitidas = omitidas };
+    }
+
     private static string ConstruirReferenciaPermisoBanco(Guid ausenciaId)
         => $"{ReferenciaPermisoBancoPrefix}:{ausenciaId:N}";
 
@@ -355,4 +443,15 @@ public sealed class RrhhTiempoExtraResolutionService : IRrhhTiempoExtraResolutio
 
     private static int ConvertirHorasAMinutos(decimal horas)
         => (int)Math.Round(Math.Max(0m, horas) * 60m, MidpointRounding.AwayFromZero);
+
+    // ¿Es festivo (rrhh_festivo) esta fecha? Empresa-scoped vía query filter del contexto.
+    // La columna Fecha es `date` (DateTime sin tiempo); se compara por rango del día.
+    private static async Task<bool> EsFestivoAsync(CrmDbContext db, DateOnly fecha, CancellationToken cancellationToken)
+    {
+        var inicioDia = fecha.ToDateTime(TimeOnly.MinValue);
+        var finDia = inicioDia.AddDays(1);
+        return await db.FestivosRrhh
+            .AsNoTracking()
+            .AnyAsync(f => f.IsActive && f.Fecha >= inicioDia && f.Fecha < finDia, cancellationToken);
+    }
 }

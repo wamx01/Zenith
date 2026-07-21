@@ -73,6 +73,38 @@ public sealed class RrhhTiempoExtraReporteTotalesDto
 }
 
 /// <summary>
+/// Fase 8 — una línea de la resolución de tiempo extra de un periodo (un segmento por
+/// factor/destino). El monto estimado = Minutos/60 × Factor × sueldoHora (solo para Pago).
+/// </summary>
+public sealed class RrhhTiempoExtraReporteLineaDto
+{
+    public string Destino { get; set; } = "Pago";
+    public int Minutos { get; set; }
+    public decimal Factor { get; set; } = 1m;
+    public int MinutosFactorados { get; set; }
+    public decimal MontoEstimado { get; set; }
+    public string? Observaciones { get; set; }
+}
+
+/// <summary>
+/// Fase 8 — un periodo de nómina con su resolución de tiempo extra autorizada y sus líneas.
+/// </summary>
+public sealed class RrhhTiempoExtraReportePeriodoDto
+{
+    public string PeriodoEtiqueta { get; set; } = string.Empty;
+    public string PeriodoKey { get; set; } = string.Empty;
+    public DateOnly FechaInicio { get; set; }
+    public DateOnly FechaFin { get; set; }
+    public string Estatus { get; set; } = string.Empty;
+    public string? AutorizadoPor { get; set; }
+    public DateTime? FechaAutorizacion { get; set; }
+    public IReadOnlyList<RrhhTiempoExtraReporteLineaDto> Lineas { get; set; } = [];
+    public int MinutosPago { get; set; }
+    public int MinutosBanco { get; set; }
+    public decimal MontoEstimado { get; set; }
+}
+
+/// <summary>
 /// Renglón de empleado dentro del reporte de tiempo extra.
 /// </summary>
 public sealed class RrhhTiempoExtraReporteEmpleadoDto
@@ -85,7 +117,12 @@ public sealed class RrhhTiempoExtraReporteEmpleadoDto
     public string? Puesto { get; set; }
     public decimal SueldoSemanal { get; set; }
     public string PeriodicidadPago { get; set; } = string.Empty;
+    /// <summary>Fase 8 — detección diaria (contexto: minutos extra detectados por día).</summary>
     public IReadOnlyList<RrhhTiempoExtraReporteDiaDto> Dias { get; set; } = [];
+    /// <summary>Fase 8 — periodos autorizados con sus líneas (lo aprobado). Vacío si no hay resolución.</summary>
+    public IReadOnlyList<RrhhTiempoExtraReportePeriodoDto> Periodos { get; set; } = [];
+    /// <summary>Fase 8 — true cuando hay detección diaria de extra pero ninguna resolución Autorizada en el rango.</summary>
+    public bool SinAutorizar { get; set; }
     public RrhhTiempoExtraReporteTotalesDto Totales { get; set; } = new();
 }
 

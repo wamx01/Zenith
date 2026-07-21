@@ -1,0 +1,266 @@
+@using MundoVs.Core.Entities
+
+@if (Visible && _resumenPeriodo is not null && !_cargandoDatos)
+{
+    var resumenPeriodo = _resumenPeriodo!;
+    var resolucion = _resolucion;
+    var extraAbsorbible = ExtraAbsorbible;
+    var totalLineasMin = _edicion.Lineas.Sum(l => Math.Max(0, l.Minutos));
+    var totalLineasPago = _edicion.Lineas.Where(l => l.Destino == RrhhDestinoTiempoExtraLinea.Pago).Sum(l => Math.Max(0, l.Minutos));
+    var totalLineasBanco = _edicion.Lineas.Where(l => l.Destino == RrhhDestinoTiempoExtraLinea.Banco).Sum(l => Math.Max(0, l.Minutos));
+    var factoradasPreview = _edicion.Lineas.Where(l => l.Destino == RrhhDestinoTiempoExtraLinea.Pago).Sum(l => Math.Max(0, l.Minutos) / 60m * Math.Max(0m, l.Factor));
+    var excedeCap = totalLineasMin > extraAbsorbible;
+    var autorizada = resolucion is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+
+    <div class="modal fade show d-block asis-modal-backdrop" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable asis-modal-dialog-wide">
+            <div class="modal-content border-0 shadow-lg asis-modal-shell">
+                <div class="modal-header asis-modal-header">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <h5 class="modal-title mb-0">@NombreEmpleado</h5>
+                        <span class="badge @ObtenerClaseEstatus(resolucion)">@ObtenerEtiquetaEstatus(resolucion)</span>
+                        <span class="badge bg-light text-dark border">@resumenPeriodo.PeriodoEtiqueta</span>
+                    </div>
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CerrarAsync"></button>
+                </div>
+
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(error))
+                    {
+                        <div class="alert alert-danger py-2 small">@error</div>
+                    }
+                    @if (!string.IsNullOrEmpty(ok))
+                    {
+                        <div class="alert alert-success py-2 small">@ok</div>
+                    }
+
+                    <div class="asis-res-neteo">
+                        <div class="asis-res-neteo__row">
+                            <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                <span class="asis-res-neteo__label">Extra detectado</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosExtraDetectado)</span>
+                            </div>
+                            @if (resumenPeriodo.MinutosPermisoConGocePeriodo > 0)
+                            {
+                                <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                    <span class="asis-res-neteo__label">Permiso c/goce</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosPermisoConGocePeriodo)</span>
+                                </div>
+                            }
+                            <div class="asis-res-neteo__item asis-res-neteo__item--bad">
+                                <span class="asis-res-neteo__label">Faltante neto</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosFaltanteNetoPeriodo)</span>
+                            </div>
+                            <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                <span class="asis-res-neteo__label">Extra tapa faltante</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosFaltanteAbsorbidoExtra)</span>
+                            </div>
+                            @if (resumenPeriodo.MinutosRetardoAbsorbidoExtra > 0)
+                            {
+                                <div class="asis-res-neteo__item asis-res-neteo__item--warn">
+                                    <span class="asis-res-neteo__label">Extra tapa retardo</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosRetardoAbsorbidoExtra)</span>
+                                </div>
+                            }
+                            @if (resumenPeriodo.MinutosBancoConsumidoPeriodo > 0)
+                            {
+                                <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                    <span class="asis-res-neteo__label">Banco consumido</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosBancoConsumidoPeriodo)</span>
+                                </div>
+                                <div class="asis-res-neteo__item asis-res-neteo__item--good">
+                                    <span class="asis-res-neteo__label">Extra restaura banco</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosBancoRestauradoExtra)</span>
+                                </div>
+                            }
+                            <div class="asis-res-neteo__item asis-res-neteo__item--good asis-res-neteo__item--destacado">
+                                <span class="asis-res-neteo__label">Extra absorbible (pagable)</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(extraAbsorbible)</span>
+                            </div>
+                            <div class="asis-res-neteo__item asis-res-neteo__item--good">
+                                <span class="asis-res-neteo__label">Saldo banco</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.SaldoBancoHorasMinutos)</span>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2">Neteo del periodo: el extra detectado tapa primero el faltante neto (@FormatearMinutos(resumenPeriodo.MinutosFaltanteAbsorbidoExtra) min), luego el retardo (@FormatearMinutos(resumenPeriodo.MinutosRetardoAbsorbidoExtra) min), y por último repone el banco consumido en el periodo (@FormatearMinutos(resumenPeriodo.MinutosBancoRestauradoExtra) min). Solo el extra absorbible (@FormatearMinutos(extraAbsorbible) min) se reparte entre las líneas.</small>
+                    </div>
+
+                    @if (resumenPeriodo.Dias is { Count: > 0 })
+                    {
+                        <div class="asis-res-dias mt-3">
+                            <h6 class="asis-res-dias__title">Desglose por día del periodo</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-borderless align-middle mb-0 asis-res-dias__table">
+                                    <thead>
+                                        <tr>
+                                            <th>Día</th>
+                                            <th class="text-end">Extra detect.</th>
+                                            <th class="text-end">Faltante neto</th>
+                                            <th class="text-end">Perm. c/goce</th>
+                                            <th class="text-end">Retardo</th>
+                                            <th class="text-end">Trab. netos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var dia in resumenPeriodo.Dias)
+                                        {
+                                            var tieneMovimiento = dia.MinutosExtra > 0 || dia.MinutosFaltanteNeto > 0 || dia.MinutosRetardo > 0 || dia.MinutosPermisoConGoce > 0;
+                                            <tr class="@(tieneMovimiento ? string.Empty : "asis-res-dias__row--muted")">
+                                                <td class="asis-res-dias__fecha">
+                                                    <span class="asis-res-dias__dia">@ObtenerAbreviaturaDia(dia.Fecha)</span>
+                                                    <span class="asis-res-dias__num">@dia.Fecha.ToString("dd/MM")</span>
+                                                </td>
+                                                <td class="text-end @(dia.MinutosExtra > 0 ? "fw-semibold text-success" : "text-muted")">@FormatearMinutos(dia.MinutosExtra)</td>
+                                                <td class="text-end @(dia.MinutosFaltanteNeto > 0 ? "fw-semibold text-danger" : "text-muted")">@FormatearMinutos(dia.MinutosFaltanteNeto)</td>
+                                                <td class="text-end @(dia.MinutosPermisoConGoce > 0 ? "fw-semibold" : "text-muted")">@FormatearMinutos(dia.MinutosPermisoConGoce)</td>
+                                                <td class="text-end @(dia.MinutosRetardo > 0 ? "fw-semibold text-warning" : "text-muted")">@FormatearMinutos(dia.MinutosRetardo)</td>
+                                                <td class="text-end text-muted">@FormatearMinutos(dia.MinutosTrabajadosNetos)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="fw-semibold asis-res-dias__totales">
+                                            <td>Periodo</td>
+                                            <td class="text-end text-success">@FormatearMinutos(resumenPeriodo.MinutosExtraDetectado)</td>
+                                            <td class="text-end text-danger">@FormatearMinutos(resumenPeriodo.MinutosFaltanteNetoPeriodo)</td>
+                                            <td class="text-end">@FormatearMinutos(resumenPeriodo.MinutosPermisoConGocePeriodo)</td>
+                                            <td class="text-end text-warning">@FormatearMinutos(resumenPeriodo.MinutosRetardoDetectado)</td>
+                                            <td class="text-end">@FormatearMinutos(resumenPeriodo.MinutosTrabajadosNetosDetectado)</td>
+                                        </tr>
+                                        @if (autorizada)
+                                        {
+                                            <tr class="asis-res-dias__autorizado">
+                                                <td colspan="2" class="text-end">Autorizado → Pago</td>
+                                                <td class="text-end text-success">@FormatearMinutos(resolucion!.MinutosExtraPago)</td>
+                                                <td class="text-end">Banco</td>
+                                                <td class="text-end text-success" colspan="2">@FormatearMinutos(resolucion.MinutosExtraBanco)</td>
+                                            </tr>
+                                        }
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
+                    @if (autorizada)
+                    {
+                        <div class="alert alert-light border mt-3 mb-0">
+                            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                <span><strong>Periodo autorizado</strong> · Pago @FormatearMinutos(resolucion!.MinutosExtraPago) · Banco @FormatearMinutos(resolucion.MinutosExtraBanco)</span>
+                                <span class="small text-muted">Por @resolucion.AutorizadoPor el @((resolucion.FechaAutorizacion ?? DateTime.UtcNow).ToLocalTime().ToString("dd/MM/yyyy HH:mm"))</span>
+                            </div>
+                            @if (resolucion.Lineas is { Count: > 0 })
+                            {
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-borderless mb-0">
+                                        <thead><tr><th>Destino</th><th class="text-end">Minutos</th><th>Factor</th><th class="text-end">Min. factorados</th><th>Obs.</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var linea in resolucion.Lineas.OrderBy(l => l.Orden))
+                                            {
+                                                <tr>
+                                                    <td><span class="badge @(linea.Destino == RrhhDestinoTiempoExtraLinea.Banco ? "bg-info text-dark" : "bg-success")">@(linea.Destino == RrhhDestinoTiempoExtraLinea.Banco ? "Banco" : "Pago")</span></td>
+                                                    <td class="text-end">@FormatearMinutos(linea.Minutos)</td>
+                                                    <td>x@linea.Factor</td>
+                                                    <td class="text-end">@FormatearMinutos((int)Math.Round(linea.Minutos * linea.Factor, MidpointRounding.AwayFromZero))</td>
+                                                    <td class="small text-muted">@linea.Observaciones</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (PuedeAprobarTiempoExtra)
+                    {
+                        <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick='@(() => AplicarQuickResolucion("PagarTodo"))'>Todo pago</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick='@(() => AplicarQuickResolucion("BancoTodo"))'>Todo banco</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick='@(() => AplicarQuickResolucion("MitadMitad"))'>Mitad/mitad</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick='@(() => AplicarQuickResolucion("Descartado"))' title="Aceptar la detección sin pagar ni compensar: el faltante/retardo se descuenta completo">Descartar</button>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="AgregarLinea"><i class="bi bi-plus-lg me-1"></i>Agregar línea</button>
+                        </div>
+
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm align-middle">
+                                <thead><tr><th>Destino</th><th>Minutos</th><th>Factor</th><th>Obs.</th><th></th></tr></thead>
+                                <tbody>
+                                    @for (var i = 0; i < _edicion.Lineas.Count; i++)
+                                    {
+                                        var idx = i;
+                                        var linea = _edicion.Lineas[i];
+                                        <tr>
+                                            <td style="width:130px">
+                                                <select class="form-select form-select-sm" @bind="linea.Destino">
+                                                    <option value="@RrhhDestinoTiempoExtraLinea.Pago">Pago</option>
+                                                    <option value="@RrhhDestinoTiempoExtraLinea.Banco">Banco</option>
+                                                </select>
+                                            </td>
+                                            <td style="width:120px"><input type="number" class="form-control form-control-sm" @bind="linea.Minutos" /></td>
+                                            <td style="width:120px"><input type="number" step="0.25" class="form-control form-control-sm" @bind="linea.Factor" /></td>
+                                            <td><input type="text" class="form-control form-control-sm" placeholder="Obs." @bind="linea.Observaciones" /></td>
+                                            <td style="width:44px"><button class="btn btn-sm btn-outline-danger" @onclick="() => QuitarLinea(idx)" title="Quitar línea"><i class="bi bi-x-lg"></i></button></td>
+                                        </tr>
+                                    }
+                                    @if (_edicion.Lineas.Count == 0)
+                                    {
+                                        <tr><td colspan="5" class="text-muted small">Sin líneas. Usa "Agregar línea" o un quick button.</td></tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-semibold">
+                                        <td>Totales</td>
+                                        <td class="text-end @((excedeCap) ? "text-danger" : "text-success")">@FormatearMinutos(totalLineasMin) / @FormatearMinutos(extraAbsorbible)</td>
+                                        <td colspan="2">
+                                            <span class="small text-muted d-block">Pago @FormatearMinutos(totalLineasPago) · Banco @FormatearMinutos(totalLineasBanco) · Horas ponderadas (pago) @factoradasPreview.ToString("0.00")</span>
+                                        </td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        @if (excedeCap)
+                        {
+                            <div class="alert alert-danger py-1 small mt-2">Las líneas suman @FormatearMinutos(totalLineasMin) min y exceden el extra absorbible (@FormatearMinutos(extraAbsorbible) min). Ajusta antes de autorizar.</div>
+                        }
+
+                        <div class="mt-2">
+                            <label class="form-label small text-muted mb-1">Observaciones</label>
+                            <input type="text" class="form-control form-control-sm" placeholder="Observaciones de la autorización" @bind="_edicion.Observaciones" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-light border mt-3 mb-0 small">No tienes permiso para aprobar tiempo extra. El periodo está pendiente de resolución.</div>
+                    }
+                </div>
+
+                <div class="modal-footer">
+                    @if (autorizada && PuedeAprobarTiempoExtra)
+                    {
+                        <button class="btn btn-outline-warning" @onclick="ReabrirAsync" disabled="@cargando"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir</button>
+                    }
+                    else if (!autorizada && PuedeAprobarTiempoExtra)
+                    {
+                        <button class="btn btn-success" @onclick="AutorizarAsync" disabled="@(cargando)" title="@(_edicion.DescartarExtra ? "Aceptar la detección descartando el extra (descuento completo, sin pago)" : (totalLineasMin == 0 ? "No hay minutos asignados: usa 'Todo pago', 'Descartar' o edita las líneas" : (excedeCap ? "Las líneas exceden el extra absorbible" : "Autorizar la resolución del periodo")))"><i class="bi bi-check2-circle me-1"></i>@(_edicion.DescartarExtra ? "Aceptar y descartar" : "Autorizar periodo")</button>
+                        <small class="text-muted ms-2" style="font-size:.7rem">[diag cargando=@cargando excedeCap=@excedeCap totalLineas=@totalLineasMin absorbible=@extraAbsorbible permiso=@PuedeAprobarTiempoExtra autorizada=@autorizada]</small>
+                    }
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAsync">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else if (Visible && _cargandoDatos)
+{
+    <div class="modal fade show d-block asis-modal-backdrop" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable asis-modal-dialog-wide">
+            <div class="modal-content border-0 shadow-lg asis-modal-shell">
+                <div class="modal-body text-center text-muted py-5">
+                    <div class="spinner-border spinner-border-sm me-2"></div>Cargando resolución del periodo…
+                </div>
+            </div>
+        </div>
+    </div>
+}

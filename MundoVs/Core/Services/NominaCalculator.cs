@@ -17,7 +17,7 @@ public class NominaCalculator : INominaCalculator
             ? Math.Round(sueldoDiario * input.DiasVacaciones * input.Configuracion.PrimaVacacionalMinima, 2)
             : 0m;
         var (horasDobles, horasTriples) = ObtenerHorasExtraLegales(input);
-        var montoHorasExtra = CalcularMontoHorasExtra(input.Empleado, horasDobles, horasTriples, input.SueldoReferencia, input.Configuracion, input.FactorPagoTiempoExtra);
+        var montoHorasExtra = CalcularMontoHorasExtra(input.Empleado, horasDobles, horasTriples, input.SueldoReferencia, input.Configuracion, input.FactorPagoTiempoExtra, input.HorasExtraFactoradas);
         var montoDescuentoMinutos = CalcularMontoDescuentoMinutos(input.Empleado, input.MinutosDescuento, sueldoDiario, input.Configuracion);
         var diasVacacionesAnuales = input.DiasVacacionesAnualesOverride ?? input.Configuracion.ObtenerDiasVacacionesPorAntiguedad(input.AniosServicio);
         var cuotasImss = CalcularCuotasImss(input.AplicaImss, sueldoDiario, input.DiasPagados, diasVacacionesAnuales, input.Configuracion, input.AplicaSalarioMinimoFrontera);
@@ -53,6 +53,7 @@ public class NominaCalculator : INominaCalculator
             HorasExtraDobles = horasDobles,
             HorasExtraTriples = horasTriples,
             HorasExtraBanco = input.HorasExtraBanco,
+            HorasExtraFactoradas = input.HorasExtraFactoradas,
             MontoHorasExtra = montoHorasExtra,
             MontoPercepcionesManuales = input.MontoPercepcionesManuales,
             MontoDeducciones = input.MontoDeducciones,
@@ -91,13 +92,24 @@ public class NominaCalculator : INominaCalculator
         }
 
         var horasLegales = Math.Min(horasBase, horasPagables);
-        var horasDobles = Math.Min(9m, horasLegales);
+        var horasDoblesTope = Math.Max(0m, input.Configuracion.HorasExtraDoblesPorSemana);
+        var horasDobles = Math.Min(horasDoblesTope, horasLegales);
         var horasTriples = Math.Max(0m, horasLegales - horasDobles);
         return (horasDobles, horasTriples);
     }
 
-    private static decimal CalcularMontoHorasExtra(Empleado empleado, decimal horasDobles, decimal horasTriples, decimal sueldoReferencia, NominaConfiguracion configuracion, decimal factorPagoTiempoExtra = 0m)
+    private static decimal CalcularMontoHorasExtra(Empleado empleado, decimal horasDobles, decimal horasTriples, decimal sueldoReferencia, NominaConfiguracion configuracion, decimal factorPagoTiempoExtra = 0m, decimal horasExtraFactoradas = 0m)
     {
+        // Fase 8 — path por líneas: las horas ya vienen ponderadas (Σ min/60 × factor por línea).
+        // monto = horas ponderadas × sueldoHora. Reproduce el path dobles cuando hay una sola
+        // línea @ x2 (factoradas = horas×2 == horasDobles×2) y soporta múltiples factores.
+        if (horasExtraFactoradas > 0m)
+        {
+            var horasBaseF = Math.Max(1, configuracion.ObtenerHorasBase(empleado.PeriodicidadPago));
+            var sueldoHoraF = sueldoReferencia / horasBaseF;
+            return Math.Round(horasExtraFactoradas * sueldoHoraF, 2);
+        }
+
         if (horasDobles <= 0 && horasTriples <= 0)
             return 0m;
 

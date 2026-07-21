@@ -157,6 +157,7 @@
                                     <th class="text-end">Base a banco</th>
                                     <th class="text-end">Banco × factor</th>
                                     <th class="text-end">Banco aplicado</th>
+                                    <th class="text-end">Monto est.</th>
                                     <th class="text-end">Retardo</th>
                                     <th class="text-end">Salida ant.</th>
                                 </tr>
@@ -169,7 +170,13 @@
                                             <div class="d-flex align-items-center gap-2">
                                                 <i class="bi @(Expandido(emp.EmpleadoId) ? "bi-chevron-down" : "bi-chevron-right") small text-muted"></i>
                                                 <div>
-                                                    <div class="fw-semibold">@emp.NombreCompleto</div>
+                                                    <div class="fw-semibold">
+                                                        @emp.NombreCompleto
+                                                        @if (emp.SinAutorizar)
+                                                        {
+                                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Extra detectado sin resolución autorizada">Sin autorizar</span>
+                                                        }
+                                                    </div>
                                                     <div class="small text-muted">
                                                         @emp.NumeroEmpleado
                                                         @if (!string.IsNullOrWhiteSpace(emp.Departamento))
@@ -191,65 +198,102 @@
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosExtraAutorizadosBanco)</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosBancoFactorado)</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosCubiertosBancoHoras)</td>
+                                        <td class="text-end">@emp.Totales.TotalMontoHorasExtraEstimado.ToString("C2")</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosRetardo)</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosSalidaAnticipada)</td>
                                     </tr>
                                     @if (Expandido(emp.EmpleadoId))
                                     {
                                         <tr class="te-reporte-detalle-row">
-                                            <td colspan="10" class="p-0">
+                                            <td colspan="11" class="p-0">
                                                 <div class="te-reporte-detalle">
+                                                    @if (emp.SinAutorizar)
+                                                    {
+                                                        <div class="alert alert-warning py-2 mx-3 mt-2 mb-2 small"><i class="bi bi-exclamation-triangle me-1"></i>Hay tiempo extra detectado sin resolución autorizada en el rango. Apruébalo por periodo en <strong>Asistencias Semanal</strong>.</div>
+                                                    }
+                                                    @if (emp.Periodos.Count > 0)
+                                                    {
+                                                        <div class="px-3 pt-2">
+                                                            <div class="small text-muted fw-semibold mb-1">Periodos autorizados (lo aprobado)</div>
+                                                            @foreach (var periodo in emp.Periodos)
+                                                            {
+                                                                <div class="mb-2 border rounded p-2 bg-white">
+                                                                    <div class="d-flex flex-wrap gap-2 align-items-center mb-1">
+                                                                        <span class="badge bg-success">@periodo.Estatus</span>
+                                                                        <strong>@periodo.PeriodoEtiqueta</strong>
+                                                                        <span class="small text-muted">@periodo.FechaInicio.ToString("dd/MM/yyyy")–@periodo.FechaFin.ToString("dd/MM/yyyy")</span>
+                                                                        <span class="small text-muted">· Pago @FormatearMinutos(periodo.MinutosPago) · Banco @FormatearMinutos(periodo.MinutosBanco) · Monto est. @periodo.MontoEstimado.ToString("C2")</span>
+                                                                        @if (!string.IsNullOrWhiteSpace(periodo.AutorizadoPor))
+                                                                        {
+                                                                            <span class="small text-muted ms-auto">Por @periodo.AutorizadoPor</span>
+                                                                        }
+                                                                    </div>
+                                                                    <table class="table table-sm table-borderless mb-0 te-reporte-lineas">
+                                                                        <thead class="table-light">
+                                                                            <tr><th>Destino</th><th class="text-end">Minutos</th><th>Factor</th><th class="text-end">Min. factorados</th><th class="text-end">Monto est.</th><th>Obs.</th></tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            @foreach (var linea in periodo.Lineas)
+                                                                            {
+                                                                                <tr>
+                                                                                    <td><span class="badge @(linea.Destino == "Banco" ? "bg-info text-dark" : "bg-success")">@linea.Destino</span></td>
+                                                                                    <td class="text-end">@FormatearMinutos(linea.Minutos)</td>
+                                                                                    <td>x@linea.Factor</td>
+                                                                                    <td class="text-end">@FormatearMinutos(linea.MinutosFactorados)</td>
+                                                                                    <td class="text-end">@(linea.Destino == "Pago" ? linea.MontoEstimado.ToString("C2") : "—")</td>
+                                                                                    <td class="small text-muted">@linea.Observaciones</td>
+                                                                                </tr>
+                                                                            }
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
                                                     @if (emp.Dias.Count == 0)
                                                     {
-                                                        <div class="text-muted small px-3 py-2">Modo agrupado por empleado: consulta con "Día" para ver el detalle por fecha.</div>
+                                                        <div class="text-muted small px-3 py-2">Modo agrupado por empleado: consulta con "Día" para ver el detalle por fecha (detección diaria).</div>
                                                     }
                                                     else
                                                     {
-                                                        <table class="table table-sm mb-0">
-                                                            <thead class="table-light">
-                                                                <tr>
-                                                                    <th>Fecha</th>
-                                                                    <th>Estatus</th>
-                                                                    <th class="text-end">Extra sugerido</th>
-                                                                    <th class="text-end">Base pago</th>
-                                                                    <th class="text-end">Pago ×factor</th>
-                                                                    <th class="text-end">Base banco</th>
-                                                                    <th class="text-end">Banco ×factor</th>
-                                                                    <th class="text-end">Banco aplicado</th>
-                                                                    <th>Turno</th>
-                                                                    <th class="text-end">Horas reales</th>
-                                                                    <th>Resolución</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                @foreach (var dia in emp.Dias)
-                                                                {
-                                                                    <tr class="@(dia.RequiereRevision ? "table-warning" : null)">
-                                                                        <td>@dia.Fecha.ToString("ddd dd/MM/yyyy", CulturaEsMx)</td>
-                                                                        <td><span class="badge bg-light text-dark border">@dia.Estatus</span></td>
-                                                                        <td class="text-end"><span class="badge @ObtenerClaseTotal(dia.MinutosExtra)">@FormatearMinutos(dia.MinutosExtra)</span></td>
-                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosExtraAutorizadosPago)</td>
-                                                                        <td class="text-end"><strong>@FormatearMinutos(dia.MinutosPagoFactorado)</strong></td>
-                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosExtraAutorizadosBanco)</td>
-                                                                        <td class="text-end"><strong>@FormatearMinutos(dia.MinutosBancoFactorado)</strong></td>
-                                                                        <td class="text-end">@FormatearMinutos(dia.MinutosCubiertosBancoHoras)</td>
-                                                                        <td>
-                                                                            @if (!string.IsNullOrWhiteSpace(dia.Turno))
-                                                                            {
-                                                                                <div class="small">@dia.Turno</div>
-                                                                                <div class="small text-muted">@FormatearHora(dia.HoraEntradaProgramada)–@FormatearHora(dia.HoraSalidaProgramada)</div>
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                <span class="text-muted small">—</span>
-                                                                            }
-                                                                        </td>
-                                                                        <td class="text-end small">@FormatearHora(dia.HoraEntradaReal)–@FormatearHora(dia.HoraSalidaReal)</td>
-                                                                        <td class="small">@(string.IsNullOrWhiteSpace(dia.ResolucionTiempoExtra) ? "—" : dia.ResolucionTiempoExtra)</td>
+                                                        <div class="px-3 pb-2">
+                                                            <div class="small text-muted fw-semibold mb-1 mt-2">Detección diaria (contexto)</div>
+                                                            <table class="table table-sm mb-0">
+                                                                <thead class="table-light">
+                                                                    <tr>
+                                                                        <th>Fecha</th>
+                                                                        <th>Estatus</th>
+                                                                        <th class="text-end">Extra sugerido</th>
+                                                                        <th>Turno</th>
+                                                                        <th class="text-end">Horas reales</th>
+                                                                        <th>Resolución</th>
                                                                     </tr>
-                                                                }
-                                                            </tbody>
-                                                        </table>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach (var dia in emp.Dias)
+                                                                    {
+                                                                        <tr class="@(dia.RequiereRevision ? "table-warning" : null)">
+                                                                            <td>@dia.Fecha.ToString("ddd dd/MM/yyyy", CulturaEsMx)</td>
+                                                                            <td><span class="badge bg-light text-dark border">@dia.Estatus</span></td>
+                                                                            <td class="text-end"><span class="badge @ObtenerClaseTotal(dia.MinutosExtra)">@FormatearMinutos(dia.MinutosExtra)</span></td>
+                                                                            <td>
+                                                                                @if (!string.IsNullOrWhiteSpace(dia.Turno))
+                                                                                {
+                                                                                    <div class="small">@dia.Turno</div>
+                                                                                    <div class="small text-muted">@FormatearHora(dia.HoraEntradaProgramada)–@FormatearHora(dia.HoraSalidaProgramada)</div>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <span class="text-muted small">—</span>
+                                                                                }
+                                                                            </td>
+                                                                            <td class="text-end small">@FormatearHora(dia.HoraEntradaReal)–@FormatearHora(dia.HoraSalidaReal)</td>
+                                                                            <td class="small">@(string.IsNullOrWhiteSpace(dia.ResolucionTiempoExtra) ? "—" : dia.ResolucionTiempoExtra)</td>
+                                                                        </tr>
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
                                                     }
                                                 </div>
                                             </td>
@@ -267,6 +311,7 @@
                                     <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalBancoFactoradoFormateado</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</td>
+                                    <td class="text-end">@respuestaReporte.Totales.TotalMontoHorasExtraEstimado.ToString("C2")</td>
                                     <td class="text-end">@FormatearMinutos(respuestaReporte.Totales.TotalMinutosRetardo)</td>
                                     <td class="text-end">@FormatearMinutos(respuestaReporte.Totales.TotalMinutosSalidaAnticipada)</td>
                                 </tr>
@@ -465,7 +510,42 @@
             }
         }
 
+        // Fase 8 — bloque de periodos autorizados con sus líneas (lo aprobado, por factor/destino).
+        sb.AppendLine();
+        sb.AppendLine("PERIODOS AUTORIZADOS");
+        sb.AppendLine("EmpleadoId,NumeroEmpleado,NombreCompleto,PeriodoKey,PeriodoEtiqueta,FechaInicio,FechaFin,Estatus,AutorizadoPor,Destino,Minutos,Factor,MinutosFactorados,MontoEstimado,Observaciones");
+        foreach (var emp in reporte.Empleados)
+        {
+            foreach (var periodo in emp.Periodos)
+            {
+                foreach (var linea in periodo.Lineas)
+                {
+                    AgregarLineaPeriodo(sb, emp, periodo, linea);
+                }
+            }
+        }
+
         return sb.ToString();
+    }
+
+    private static void AgregarLineaPeriodo(StringBuilder sb, RrhhTiempoExtraReporteEmpleadoDto emp, RrhhTiempoExtraReportePeriodoDto periodo, RrhhTiempoExtraReporteLineaDto linea)
+    {
+        sb.Append(Csv(emp.EmpleadoId.ToString())).Append(',');
+        sb.Append(Csv(emp.NumeroEmpleado)).Append(',');
+        sb.Append(Csv(emp.NombreCompleto)).Append(',');
+        sb.Append(Csv(periodo.PeriodoKey)).Append(',');
+        sb.Append(Csv(periodo.PeriodoEtiqueta)).Append(',');
+        sb.Append(Csv(periodo.FechaInicio.ToString("yyyy-MM-dd"))).Append(',');
+        sb.Append(Csv(periodo.FechaFin.ToString("yyyy-MM-dd"))).Append(',');
+        sb.Append(Csv(periodo.Estatus)).Append(',');
+        sb.Append(Csv(periodo.AutorizadoPor)).Append(',');
+        sb.Append(Csv(linea.Destino)).Append(',');
+        sb.Append(linea.Minutos).Append(',');
+        sb.Append(linea.Factor).Append(',');
+        sb.Append(linea.MinutosFactorados).Append(',');
+        sb.Append(linea.MontoEstimado).Append(',');
+        sb.Append(Csv(linea.Observaciones));
+        sb.AppendLine();
     }
 
     private static void AgregarLineaEmpleadoResumen(StringBuilder sb, RrhhTiempoExtraReporteEmpleadoDto emp)

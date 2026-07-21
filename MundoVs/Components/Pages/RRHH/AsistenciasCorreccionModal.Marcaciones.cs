@@ -320,7 +320,6 @@ public partial class AsistenciasCorreccionModal
         _mostrarAccionesRapidasTurno = nuevoEstado;
         if (nuevoEstado)
         {
-            _mostrarAccionesRapidasTiempo = false;
             _mostrarAccionesRapidasPermiso = false;
             _mostrarAccionesRapidasModoExtra = false;
         }

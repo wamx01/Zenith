@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Interfaces;
@@ -701,7 +702,7 @@ public partial class AsistenciasCorreccionModal
 
         return
         [
-            new("Visible", FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)), "asis-summary-side__item--primary"),
+            new("Visible", FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual)), "asis-summary-side__item--primary"),
             new(extraLabel, FormatearMinutos(extraValor), "asis-summary-side__item--accent"),
             new("Permiso", permisoDiaSeleccionado == null ? FormatearMinutos(0) : FormatearMinutos(ObtenerMinutosPermisoCapturados()), "asis-summary-side__item--warn"),
             new("Compensación", FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual()), "asis-summary-side__item--info"),
@@ -714,4 +715,485 @@ public partial class AsistenciasCorreccionModal
 
     private IReadOnlyList<RrhhAsistenciaCorreccionSegmento> ObtenerSegmentosAjusteTimeline()
         => asesorCorreccionActual?.Segmentos.Where(s => s.EsAjuste).ToList() ?? [];
+
+    // ===== Línea de tiempo del día (eje de reloj + pines + bloques posicionados) =====
+
+    private sealed record TimelineVentanaDia(DateTime Inicio, DateTime Fin, int TotalMinutos);
+
+    private sealed record TimelinePinDia(
+        Guid MarcacionId,
+        DateTime HoraLocal,
+        string Etiqueta,
+        string Origen,
+        bool EsManual,
+        bool EsAnulada,
+        double PosPercent);
+
+    private sealed record TimelineBloqueVista(
+        TimelineSegmentoDia Segmento,
+        double LeftPercent,
+        double WidthPercent,
+        string Indicador,
+        string EstadoClase);
+
+    private sealed record TimelineAlerta(string Icono, string Texto, string Clase);
+
+    /// <summary>Ventana de reloj del día: desde la primera hasta la última marcación activa,
+    /// ajustada a bordes de hora para que el eje muestre ticks limpios (HH:00).</summary>
+    private TimelineVentanaDia? ObtenerTimelineVentanaDia()
+    {
+        if (AsistenciaActual == null || marcacionesDia.Count == 0)
+        {
+            return null;
+        }
+
+        var activas = marcacionesDia
+            .Where(m => !m.EsAnulada)
+            .OrderBy(ObtenerFechaHoraLocalMarcacion)
+            .ToList();
+        if (activas.Count == 0)
+        {
+            return null;
+        }
+
+        var primera = ObtenerFechaHoraLocalMarcacion(activas[0]);
+        var ultima = ObtenerFechaHoraLocalMarcacion(activas[^1]);
+        if (ultima <= primera)
+        {
+            return null;
+        }
+
+        var inicio = primera.Date.AddHours(primera.Hour);
+        var fin = ultima.Minute == 0
+            ? ultima
+            : ultima.Date.AddHours(ultima.Hour + 1);
+        if (fin <= inicio)
+        {
+            fin = inicio.AddHours(1);
+        }
+
+        var total = Math.Max(1, (int)Math.Round((fin - inicio).TotalMinutes));
+        return new TimelineVentanaDia(inicio, fin, total);
+    }
+
+    /// <summary>Pines de cada marcación sobre el eje de reloj, con tipo, origen y estado.</summary>
+    private IReadOnlyList<TimelinePinDia> ObtenerTimelinePinesDia()
+    {
+        var ventana = ObtenerTimelineVentanaDia();
+        if (ventana == null)
+        {
+            return [];
+        }
+
+        return marcacionesDia
+            .OrderBy(ObtenerFechaHoraLocalMarcacion)
+            .Select(m =>
+            {
+                var hora = ObtenerFechaHoraLocalMarcacion(m);
+                var pos = Math.Clamp((hora - ventana.Inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100);
+                return new TimelinePinDia(m.Id, hora, ObtenerEtiquetaPin(m), ObtenerOrigenPin(m), m.EsManual, m.EsAnulada, pos);
+            })
+            .ToList();
+    }
+
+    private static string ObtenerEtiquetaPin(RrhhMarcacion m)
+        => m.ClasificacionOperativa switch
+        {
+            TipoClasificacionMarcacionRrhh.Entrada => "Entrada",
+            TipoClasificacionMarcacionRrhh.Salida => "Salida",
+            TipoClasificacionMarcacionRrhh.InicioDescanso => "Inicio de descanso",
+            TipoClasificacionMarcacionRrhh.FinDescanso => "Fin de descanso",
+            _ => "Marca"
+        };
+
+    private static string ObtenerOrigenPin(RrhhMarcacion m)
+        => string.IsNullOrWhiteSpace(m.Origen)
+            ? "Reloj checador"
+            : (string.Equals(m.Origen, "Manual", StringComparison.OrdinalIgnoreCase) ? "Manual" : m.Origen);
+
+    /// <summary>Bloques del día posicionados por reloj (left/width porcentual sobre la ventana),
+    /// con indicador de estado (✓ fijo, ✎ inferido, ⚠ revisar, ✕ no considerado).</summary>
+    private IReadOnlyList<TimelineBloqueVista> ObtenerTimelineBloquesVista()
+    {
+        var ventana = ObtenerTimelineVentanaDia();
+        var segmentos = ObtenerTimelineSegmentosDia().Where(s => !s.EsReferenciaTurno).ToList();
+        if (ventana == null || segmentos.Count == 0)
+        {
+            return [];
+        }
+
+        var horas = marcacionesDia.ToDictionary(m => m.Id, ObtenerFechaHoraLocalMarcacion);
+        return segmentos.Select(s =>
+        {
+            double left = 0;
+            double width = (double)s.WidthPercent;
+            if (s.MarcacionInicioId.HasValue && s.MarcacionFinId.HasValue
+                && horas.TryGetValue(s.MarcacionInicioId.Value, out var ini)
+                && horas.TryGetValue(s.MarcacionFinId.Value, out var fin))
+            {
+                left = Math.Clamp((ini - ventana.Inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100);
+                width = Math.Clamp((fin - ini).TotalMinutes / ventana.TotalMinutos * 100, 0, 100 - left);
+            }
+            return new TimelineBloqueVista(s, left, width, ObtenerIndicadorEstadoBloque(s), ObtenerClaseEstadoBloque(s));
+        }).ToList();
+    }
+
+    private static string ObtenerIndicadorEstadoBloque(TimelineSegmentoDia s)
+    {
+        if (s.Accion == "ignorar")
+        {
+            return "✕";
+        }
+
+        if (s.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente && !s.FueInferidoAutomaticamente)
+        {
+            return "✓";
+        }
+
+        return s.FueInferidoAutomaticamente ? "✎" : "⚠";
+    }
+
+    private static string ObtenerClaseEstadoBloque(TimelineSegmentoDia s)
+    {
+        if (s.Accion == "ignorar")
+        {
+            return "asis-tl__seg--ignored";
+        }
+
+        if (s.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente && !s.FueInferidoAutomaticamente)
+        {
+            return "asis-tl__seg--ok";
+        }
+
+        return s.FueInferidoAutomaticamente ? "asis-tl__seg--draft" : "asis-tl__seg--warn";
+    }
+
+    private static string ObtenerClaseIndicadorBloque(TimelineSegmentoDia s)
+    {
+        if (s.Accion == "ignorar")
+        {
+            return "asis-tl__ind--ignored";
+        }
+
+        if (s.EstadoResolucion == EstadoSegmentoResolucionRrhh.Vigente && !s.FueInferidoAutomaticamente)
+        {
+            return "asis-tl__ind--ok";
+        }
+
+        return s.FueInferidoAutomaticamente ? "asis-tl__ind--draft" : "asis-tl__ind--warn";
+    }
+
+    /// <summary>Ticks de hora (HH:mm) sobre la ventana; paso de 2h si la jornada supera 20h.</summary>
+    private IReadOnlyList<(string Etiqueta, double PosPercent)> ObtenerTimelineHorasAxis(TimelineVentanaDia ventana)
+    {
+        var ticks = new List<(string, double)>();
+        var pasoHoras = ventana.TotalMinutos > 20 * 60 ? 2 : 1;
+        for (var t = ventana.Inicio; t <= ventana.Fin; t = t.AddHours(pasoHoras))
+        {
+            var pos = Math.Clamp((t - ventana.Inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100);
+            ticks.Add((t.ToString("HH:mm"), pos));
+        }
+        return ticks;
+    }
+
+    /// <summary>Alertas contextuales: tramos por confirmar, inferidos, no considerados y extra detectada.</summary>
+    private IReadOnlyList<TimelineAlerta> ObtenerTimelineAlertasDia()
+    {
+        var alertas = new List<TimelineAlerta>();
+        if (AsistenciaActual == null)
+        {
+            return alertas;
+        }
+
+        var segmentos = ObtenerTimelineSegmentosDia().Where(s => !s.EsReferenciaTurno).ToList();
+        var revisar = segmentos.Count(s => s.EstadoResolucion != EstadoSegmentoResolucionRrhh.Vigente && s.Accion != "ignorar");
+        var inferidos = segmentos.Count(s => s.FueInferidoAutomaticamente);
+        var ignorados = segmentos.Count(s => s.Accion == "ignorar");
+
+        if (revisar > 0)
+        {
+            alertas.Add(new("bi-exclamation-triangle", $"{revisar} tramo(s) por confirmar.", "asis-tl__alert--warn"));
+        }
+        if (inferidos > 0)
+        {
+            alertas.Add(new("bi-magic", $"{inferidos} tramo(s) inferido(s) automáticamente.", "asis-tl__alert--info"));
+        }
+        if (ignorados > 0)
+        {
+            alertas.Add(new("bi-slash-circle", $"{ignorados} tramo(s) no considerado(s).", "asis-tl__alert--muted"));
+        }
+        if (AsistenciaActual.MinutosExtra > 0 && ObtenerMinutosExtraAprobados(AsistenciaActual) == 0)
+        {
+            alertas.Add(new("bi-plus-circle", $"Extra detectada: {FormatearMinutos(AsistenciaActual.MinutosExtra)} (se autoriza en Asistencias Semanal).", "asis-tl__alert--accent"));
+        }
+        return alertas;
+    }
+
+    // ===== Selección / edición desde la línea de tiempo =====
+
+    private sealed record TimelineTurnoOverlay(double LeftPercent, double WidthPercent, string Etiqueta);
+    private sealed record TimelineCasoEspecial(string Icono, string Texto, string Sugerencia);
+    private sealed record TimelineDescansoPlaneado(int Numero, double LeftPercent, double WidthPercent, TimeSpan Inicio, TimeSpan Fin, int Minutos, bool EsPagado, bool Tomado);
+    private sealed record TimelinePlanTurno(
+        TimeSpan? EntradaPlaneada,
+        TimeSpan? SalidaPlaneada,
+        int MinutosJornadaNeta,
+        DateTime? EntradaReal,
+        DateTime? SalidaReal,
+        int? DeltaEntradaMin,
+        int? DeltaSalidaMin,
+        IReadOnlyList<TimelineDescansoPlaneado> Descansos,
+        bool CruzaMedianoche);
+
+    /// <summary>Overlay del turno esperado sobre el eje de reloj (línea fantasma).</summary>
+    private TimelineTurnoOverlay? ObtenerTimelineTurnoOverlay()
+    {
+        var ventana = ObtenerTimelineVentanaDia();
+        var detalle = ObtenerDetalleTurnoSeleccionadoDia();
+        if (ventana == null || detalle?.HoraEntrada is not TimeSpan entrada || detalle.HoraSalida is not TimeSpan salida)
+        {
+            return null;
+        }
+
+        var inicioTurno = ventana.Inicio.Date.Add(entrada);
+        var finTurno = ventana.Inicio.Date.Add(salida);
+        if (finTurno <= inicioTurno)
+        {
+            finTurno = finTurno.AddDays(1);
+        }
+
+        var left = Math.Clamp((inicioTurno - ventana.Inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100);
+        var width = Math.Clamp((finTurno - inicioTurno).TotalMinutes / ventana.TotalMinutos * 100, 0, 100 - left);
+        return new TimelineTurnoOverlay(left, width, $"{entrada:hh\\:mm}→{salida:hh\\:mm}");
+    }
+
+    /// <summary>Plan del turno para el día: entrada/salida planeada vs real (con delta) y
+    /// descansos planificados posicionados sobre el eje, marcando si fueron tomados.</summary>
+    private TimelinePlanTurno? ObtenerPlanTurnoDia()
+    {
+        var detalle = ObtenerDetalleTurnoSeleccionadoDia();
+        if (detalle == null || !detalle.Labora || detalle.HoraEntrada is null || detalle.HoraSalida is null || AsistenciaActual == null)
+        {
+            return null;
+        }
+
+        var ventana = ObtenerTimelineVentanaDia();
+        var baseDate = ventana?.Inicio.Date ?? AsistenciaActual.Fecha.ToDateTime(TimeOnly.MinValue);
+        var entradaPlan = baseDate.Add(detalle.HoraEntrada.Value);
+        var salidaPlan = baseDate.Add(detalle.HoraSalida.Value);
+        var cruza = salidaPlan <= entradaPlan;
+        if (cruza)
+        {
+            salidaPlan = salidaPlan.AddDays(1);
+        }
+
+        var pines = ObtenerTimelinePinesDia();
+        DateTime? entradaReal = pines.Count > 0 ? pines[0].HoraLocal : null;
+        DateTime? salidaReal = pines.Count > 1 ? pines[^1].HoraLocal : pines.Count == 1 ? pines[0].HoraLocal : null;
+
+        int? deltaEntrada = entradaReal.HasValue
+            ? (int)Math.Round((entradaReal.Value - entradaPlan).TotalMinutes)
+            : null;
+        int? deltaSalida = salidaReal.HasValue
+            ? (int)Math.Round((salidaReal.Value - salidaPlan).TotalMinutes)
+            : null;
+
+        var descansos = ObtenerTimelineDescansosPlaneados(detalle, ventana, baseDate);
+
+        return new TimelinePlanTurno(
+            detalle.HoraEntrada,
+            detalle.HoraSalida,
+            Math.Max(0, AsistenciaActual.MinutosJornadaNetaProgramada),
+            entradaReal,
+            salidaReal,
+            deltaEntrada,
+            deltaSalida,
+            descansos,
+            cruza);
+    }
+
+    private IReadOnlyList<TimelineDescansoPlaneado> ObtenerTimelineDescansosPlaneados(
+        TurnoBaseDetalle detalle, TimelineVentanaDia? ventana, DateTime baseDate)
+    {
+        var lista = new List<TimelineDescansoPlaneado>();
+        if (ventana == null)
+        {
+            return lista;
+        }
+
+        var tomados = ObtenerTimelineSegmentosDia()
+            .Where(s => (s.Accion == "descanso" || s.Accion == "descansoNoDescontar") && s.NumeroDescanso.HasValue)
+            .Select(s => s.NumeroDescanso!.Value)
+            .ToHashSet();
+
+        foreach (var d in detalle.Descansos.Where(x => x.HoraInicio.HasValue && x.HoraFin.HasValue).OrderBy(x => x.Orden))
+        {
+            var inicio = baseDate.Add(d.HoraInicio!.Value);
+            var fin = baseDate.Add(d.HoraFin!.Value);
+            if (fin <= inicio)
+            {
+                fin = fin.AddDays(1);
+            }
+            var left = Math.Clamp((inicio - ventana.Inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100);
+            var width = Math.Clamp((fin - inicio).TotalMinutes / ventana.TotalMinutos * 100, 0, 100 - left);
+            lista.Add(new TimelineDescansoPlaneado(
+                d.Orden,
+                left,
+                width,
+                d.HoraInicio!.Value,
+                d.HoraFin!.Value,
+                (int)Math.Round((fin - inicio).TotalMinutes),
+                d.EsPagado,
+                tomados.Contains(d.Orden)));
+        }
+        return lista;
+    }
+
+    /// <summary>Clase de badge para el delta de entrada: positivo = tarde (rojo), resto a tiempo/temprano.</summary>
+    private static string ObtenerClaseDeltaEntrada(int delta)
+        => delta switch { > 0 => "text-bg-danger", 0 => "text-bg-success", _ => "text-bg-secondary" };
+
+    /// <summary>Clase de badge para el delta de salida: negativo = salió temprano (rojo), resto a tiempo/tarde.</summary>
+    private static string ObtenerClaseDeltaSalida(int delta)
+        => delta switch { < 0 => "text-bg-danger", 0 => "text-bg-success", _ => "text-bg-secondary" };
+
+    private static string FormatearDeltaMin(int delta)
+        => delta == 0 ? "a tiempo" : $"{(delta > 0 ? "+" : "−")}{Math.Abs(delta)} min";
+
+    /// <summary>Impacto de un bloque en el cálculo del día (tooltip en hover).</summary>
+    private static string ObtenerImpactoBloque(TimelineSegmentoDia s)
+        => s.Accion switch
+        {
+            "trabajo" => "Suma al tiempo neto trabajado.",
+            "extra" => "Tiempo fuera del turno; extra detectada (se autoriza en Asistencias Semanal).",
+            "descanso" => "Resta del tiempo neto.",
+            "descansoNoDescontar" => "No se descuenta: cuenta como trabajo efectivo.",
+            "permiso" => "No suma al neto; sí al visible si es con goce.",
+            "temporal" => "Salida temporal: no cuenta como trabajo ni descanso.",
+            "ignorar" => "No considerado en el cálculo del día.",
+            _ => "Tramo del día."
+        };
+
+    /// <summary>Casos especiales de un bloque (hueco/no considerado, por confirmar, extra sin autorizar).</summary>
+    private IReadOnlyList<TimelineCasoEspecial> ObtenerCasosEspecialesBloque(TimelineSegmentoDia s)
+    {
+        var casos = new List<TimelineCasoEspecial>();
+        if (s.Accion == "ignorar")
+        {
+            casos.Add(new("bi-slash-circle", "Tramo no considerado.", "Reclasifícalo si corresponde a trabajo, descanso o permiso."));
+        }
+        else if (s.EstadoResolucion != EstadoSegmentoResolucionRrhh.Vigente && s.Accion != "descanso")
+        {
+            casos.Add(new("bi-exclamation-triangle", "Tramo por confirmar.", "Confirma el tipo de bloque para fijar la interpretación."));
+        }
+
+        if (s.Accion == "extra" && AsistenciaActual is { MinutosExtra: > 0 } a && ObtenerMinutosExtraAprobados(a) == 0)
+        {
+            casos.Add(new("bi-plus-circle", "Extra sin autorizar.", "La extra se autoriza por periodo en Asistencias Semanal."));
+        }
+        return casos;
+    }
+
+    /// <summary>Casos especiales del día (descansos programados no tomados, extra sin resolver).</summary>
+    private IReadOnlyList<TimelineCasoEspecial> ObtenerCasosEspecialesDia()
+    {
+        var casos = new List<TimelineCasoEspecial>();
+        if (AsistenciaActual == null)
+        {
+            return casos;
+        }
+
+        var descansosConfig = ObtenerDescansosConfiguradosDia();
+        var descansosDetectados = ObtenerTimelineSegmentosDia()
+            .Where(s => !s.EsReferenciaTurno && s.Accion == "descanso" && s.NumeroDescanso.HasValue)
+            .Select(s => s.NumeroDescanso!.Value)
+            .ToHashSet();
+
+        foreach (var d in descansosConfig)
+        {
+            if (!descansosDetectados.Contains(d.Numero))
+            {
+                casos.Add(new("bi-cup-hot", $"Descanso D{d.Numero} no tomado.", "Marca 'no descontar' o agrega las marcaciones de descanso."));
+            }
+        }
+
+        if (AsistenciaActual.MinutosExtra > 0 && ObtenerMinutosExtraAprobados(AsistenciaActual) == 0)
+        {
+            casos.Add(new("bi-plus-circle", $"Extra detectada: {FormatearMinutos(AsistenciaActual.MinutosExtra)}.", "Se autoriza por periodo en Asistencias Semanal."));
+        }
+        return casos;
+    }
+
+    private RrhhMarcacion? ObtenerMarcacionPorId(Guid id)
+        => marcacionesDia.FirstOrDefault(m => m.Id == id);
+
+    private TimelineSegmentoDia? ObtenerSegmentoSeleccionadoActual()
+    {
+        if (!segmentoEditandoInicioId.HasValue || !segmentoEditandoFinId.HasValue)
+        {
+            return null;
+        }
+        return ObtenerTimelineSegmentosDia().FirstOrDefault(s => !s.EsReferenciaTurno
+            && s.MarcacionInicioId == segmentoEditandoInicioId.Value
+            && s.MarcacionFinId == segmentoEditandoFinId.Value);
+    }
+
+    private RrhhMarcacion? ObtenerPinSeleccionadoActual()
+        => _pinSeleccionadoId.HasValue ? ObtenerMarcacionPorId(_pinSeleccionadoId.Value) : null;
+
+    private void SeleccionarSegmentoTimeline(TimelineSegmentoDia segmento)
+    {
+        _pinSeleccionadoId = null;
+        if (PuedeEditarSegmento(segmento))
+        {
+            EditarSegmento(segmento);
+        }
+    }
+
+    private void SeleccionarPinTimeline(TimelinePinDia pin)
+    {
+        CancelarEdicionSegmento();
+        _pinSeleccionadoId = pin.MarcacionId;
+    }
+
+    private void CerrarSeleccionTimeline()
+    {
+        CancelarEdicionSegmento();
+        _pinSeleccionadoId = null;
+    }
+
+    private async Task AnularPinSeleccionadoAsync()
+    {
+        if (_pinSeleccionadoId.HasValue)
+        {
+            var id = _pinSeleccionadoId.Value;
+            _pinSeleccionadoId = null;
+            await AlternarAnulacionMarcacionAsync(id);
+        }
+    }
+
+    private void EditarPinSeleccionado()
+    {
+        if (_pinSeleccionadoId.HasValue && ObtenerMarcacionPorId(_pinSeleccionadoId.Value) is { EsManual: true } m)
+        {
+            IniciarEdicionMarcacionManual(m);
+            _mostrarMarcacionesDia = true;
+            _pinSeleccionadoId = null;
+        }
+    }
+
+    private async Task ReclasificarPinSeleccionadoAsync(ChangeEventArgs e)
+    {
+        var valor = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(valor) || !Enum.TryParse<TipoClasificacionMarcacionRrhh>(valor, ignoreCase: true, out var clasificacion))
+        {
+            return;
+        }
+        if (_pinSeleccionadoId.HasValue)
+        {
+            var id = _pinSeleccionadoId.Value;
+            _pinSeleccionadoId = null;
+            await CambiarClasificacionMarcacionAsync(id, clasificacion);
+        }
+    }
 }

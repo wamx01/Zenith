@@ -6,6 +6,7 @@
 @using Microsoft.EntityFrameworkCore
 @using MundoVs.Core.Entities
 @using MundoVs.Infrastructure.Data
+@using MundoVs.Core.Services
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject INominaPdfService NominaPdfService
@@ -822,6 +823,7 @@
     private bool _puedeVerEmpleados;
     private bool _puedeVerNominas;
     private Guid _empresaId;
+    private DayOfWeek _diaCorteSemana = DayOfWeek.Sunday;
     private string empresaEtiqueta = "Empresa actual";
     private DashboardResumenVm resumen = new();
     private DashboardComparativoVm comparativo = new();
@@ -887,6 +889,14 @@
             var fechaDesde = DateOnly.FromDateTime(filtroDesde.Date);
             var fechaHasta = DateOnly.FromDateTime(filtroHasta.Date);
 
+            // Ancla la "semana" del dashboard al corte de nómina real (single source of truth).
+            var corteSemanal = await db.NominaCortesRrhh
+                .AsNoTracking()
+                .Where(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == PeriodicidadPago.Semanal)
+                .Select(c => (DayOfWeek?)c.DiaCorteSemana)
+                .FirstOrDefaultAsync();
+            _diaCorteSemana = corteSemanal ?? DayOfWeek.Sunday;
+
             var empleadosActivos = await db.Empleados
                 .AsNoTracking()
                 .Where(e => e.EmpresaId == _empresaId && e.IsActive)
@@ -923,6 +933,19 @@
                     MinutosExtraAutorizadosBanco = a.MinutosExtraAutorizadosBanco
                 })
                 .ToListAsync();
+
+            // Fase 8 — el tiempo extra aprobado se lee de la resolución por periodo Autorizada
+            // (las columnas diarias MinutosExtraAutorizadosPago/Banco están dormidas en el flujo por
+            // periodo). Cubre los periodos que tocan el rango del dashboard. Funciona aún antes de
+            // generar nómina (a diferencia de leer detallesNomina).
+            var minutosExtraResolucion = await db.RrhhResolucionesTiempoExtraPeriodo
+                .AsNoTracking()
+                .Where(r => r.EmpresaId == _empresaId
+                    && r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada
+                    && r.FechaInicio <= fechaHasta
+                    && r.FechaFin >= fechaDesde
+                    && r.IsActive)
+                .SumAsync(r => (int?)(r.MinutosExtraPago + r.MinutosExtraBanco)) ?? 0;
 
             var ausencias = await db.RrhhAusencias
                 .AsNoTracking()
@@ -1035,7 +1058,7 @@
                     .ToListAsync()
                 : [];
 
-            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle);
+            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle, minutosExtraResolucion);
         }
         catch (Exception ex)
         {
@@ -1062,7 +1085,8 @@
         List<NominaBonoDetalle> bonosDetalle,
         List<NominaPercepcion> percepcionesDetalle,
         List<NominaDeduccion> deduccionesDetalle,
-        List<NominaProvisionDetalleRrhh> provisionesDetalle)
+        List<NominaProvisionDetalleRrhh> provisionesDetalle,
+        int minutosExtraResolucion)
     {
         var totalEmpleados = empleadosActivos.Count;
         var heartbeatLimite = DateTime.UtcNow.AddHours(-12);
@@ -1196,7 +1220,7 @@
             FaltasPeriodo = asistencias.Count(a => a.Estatus == RrhhAsistenciaEstatus.Falta),
             AusenciasActivas = ausencias.Count(a => a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada),
             AusenciasPendientes = ausencias.Count(a => a.Estatus == EstatusAusenciaRrhh.Solicitada),
-            HorasExtraPeriodo = Math.Round(asistencias.Sum(a => a.MinutosExtraAutorizadosPago + a.MinutosExtraAutorizadosBanco) / 60m, 2),
+            HorasExtraPeriodo = Math.Round(minutosExtraResolucion / 60m, 2),
             HorasBancoPeriodo = CalcularHorasBanco(movimientosBancoPeriodo),
             HorasBancoSaldoActual = CalcularHorasBanco(movimientosBancoTotales),
             PrenominasCerradas = prenominas.Count(p => p.Estatus == EstatusPrenomina.Cerrada),
@@ -1526,14 +1550,11 @@
         return Math.Round((actual * 100m) / baseComparacion, 1);
     }
 
-    private static DateTime ObtenerInicioSemana(DateTime fecha)
-    {
-        var diferencia = ((int)fecha.DayOfWeek + 6) % 7;
-        return fecha.Date.AddDays(-diferencia);
-    }
+    private DateTime ObtenerInicioSemana(DateTime fecha)
+        => NominaPeriodoHelper.ObtenerPeriodoSemanalCalendario(fecha.Date, _diaCorteSemana).Inicio;
 
-    private static int ObtenerNumeroSemana(DateTime fecha)
-        => CultureInfo.GetCultureInfo("es-MX").Calendar.GetWeekOfYear(fecha, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    private int ObtenerNumeroSemana(DateTime fecha)
+        => NominaPeriodoHelper.ObtenerPeriodoSemanalCalendario(fecha.Date, _diaCorteSemana).NumeroPeriodo;
 
     private static string ObtenerEstiloBarraVertical(decimal valor, decimal maximo)
     {

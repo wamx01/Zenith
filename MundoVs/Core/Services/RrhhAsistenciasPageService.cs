@@ -32,7 +32,7 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
             .ToListAsync(cancellationToken);
 
         var ausenciasPorDia = await ConstruirAusenciasPorDiaAsync(db, empresaId, asistencias, cancellationToken);
-        var compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, empresaId, asistencias, cancellationToken);
+        var permisosVisiblesPorDia = await ConstruirPermisosVisiblesPorDiaAsync(db, empresaId, asistencias, cancellationToken);
 
         return new RrhhAsistenciasPageData
         {
@@ -40,7 +40,7 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
             Turnos = turnos,
             EmpleadosReproceso = empleadosReproceso,
             AusenciasPorDia = ausenciasPorDia,
-            CompensacionesPorDia = compensacionesPorDia
+            PermisosVisiblesPorDia = permisosVisiblesPorDia
         };
     }
 
@@ -137,26 +137,39 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
         return mapa.ToDictionary(kvp => kvp.Key, kvp => string.Join(" | ", kvp.Value.Distinct()));
     }
 
-    private static async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, Guid empresaId, IReadOnlyCollection<RrhhAsistencia> asistencias, CancellationToken cancellationToken)
+    private static async Task<Dictionary<string, int>> ConstruirPermisosVisiblesPorDiaAsync(CrmDbContext db, Guid empresaId, IReadOnlyCollection<RrhhAsistencia> asistencias, CancellationToken cancellationToken)
     {
         if (asistencias.Count == 0)
         {
             return new Dictionary<string, int>();
         }
 
-        var logs = await db.RrhhLogsChecador
+        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
+        var fechaMin = asistencias.Min(a => a.Fecha);
+        var fechaMax = asistencias.Max(a => a.Fecha);
+        var permisos = await db.RrhhAusencias
             .AsNoTracking()
-            .Where(l => l.EmpresaId == empresaId
-                && l.Detalle != null
-                && l.Mensaje.Contains("compensación aprobada de permiso"))
-            .OrderByDescending(l => l.FechaUtc)
+            .Where(a => a.EmpresaId == empresaId
+                && empleadoIds.Contains(a.EmpleadoId)
+                && a.IsActive
+                && a.ConGocePago
+                && a.Horas > 0
+                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
+                && a.FechaInicio <= fechaMax
+                && a.FechaFin >= fechaMin)
             .ToListAsync(cancellationToken);
 
         var resultado = new Dictionary<string, int>();
-        foreach (var asistencia in asistencias)
+        foreach (var permiso in permisos)
         {
-            var minutos = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, asistencia.EmpleadoId, asistencia.Fecha);
-            resultado[CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha)] = minutos;
+            var minutosDia = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoConGocePorDia(permiso);
+            var inicio = permiso.FechaInicio < fechaMin ? fechaMin : permiso.FechaInicio;
+            var fin = permiso.FechaFin > fechaMax ? fechaMax : permiso.FechaFin;
+            for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(1))
+            {
+                var clave = CrearClaveDia(permiso.EmpleadoId, fecha);
+                resultado[clave] = resultado.GetValueOrDefault(clave) + minutosDia;
+            }
         }
 
         return resultado;
@@ -165,7 +178,7 @@ public sealed class RrhhAsistenciasPageService : IRrhhAsistenciasPageService
     private static string CrearClaveAusencia(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
-    private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
+    private static string CrearClaveDia(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string FormatearAusencia(RrhhAusencia ausencia)

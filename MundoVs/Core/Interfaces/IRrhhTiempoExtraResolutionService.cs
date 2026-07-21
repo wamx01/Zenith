@@ -17,6 +17,9 @@ public interface IRrhhTiempoExtraResolutionService
     Task<int> RemoverPermisoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, Guid ausenciaId, CancellationToken cancellationToken = default);
     Task<int> AplicarCompensacionPermisoBancoHorasAsync(CrmDbContext db, RrhhCompensacionPermisoBancoHorasCommand command, CancellationToken cancellationToken = default);
     Task<int> RemoverCompensacionPermisoBancoHorasAsync(CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fecha, CancellationToken cancellationToken = default);
+    /// <summary>Fase 6 backfill one-shot: siembra RrhhAsistencia.MinutosCompensacionPermisoAprobados
+    /// desde el bitácora legado (minutosCompensados=N). Idempotente.</summary>
+    Task<RrhhCompensacionBackfillResult> BackfillCompensacionDesdeBitacoraAsync(CrmDbContext db, Guid? empresaId, string usuario, CancellationToken cancellationToken = default);
 }
 
 public sealed class RrhhTiempoExtraConfiguracionSnapshot
@@ -25,6 +28,9 @@ public sealed class RrhhTiempoExtraConfiguracionSnapshot
     public decimal FactorTiempoExtra { get; init; }
     public bool BancoHorasHabilitado { get; init; }
     public decimal FactorAcumulacionBancoHoras { get; init; }
+    /// <summary>Fase 8 — true cuando el flujo de resolución por periodo está activo (gate Fase 7).
+    /// El modal diario oculta su captura de tiempo extra con un aviso cuando está en true.</summary>
+    public bool RequiereResolucionAutorizadaParaNomina { get; init; } = true;
 }
 
 public sealed class RrhhTiempoExtraEmpleadoContexto
@@ -83,4 +89,10 @@ public sealed class RrhhPermisoBancoHorasCommand
     public decimal HorasPermiso { get; init; }
     public string? Observaciones { get; init; }
     public string UsuarioActual { get; init; } = string.Empty;
+}
+
+public sealed class RrhhCompensacionBackfillResult
+{
+    public int FilasActualizadas { get; init; }
+    public int FilasOmitidas { get; init; }
 }

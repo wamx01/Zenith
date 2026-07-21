@@ -47,7 +47,7 @@ public partial class Asistencias : ComponentBase
     private string? reprocesoMotivo;
     private RrhhAsistencia? asistenciaSeleccionada;
     private Dictionary<string, string> ausenciasPorDia = new();
-    private Dictionary<string, int> compensacionesPorDia = new();
+    private Dictionary<string, int> permisosVisiblesPorDia = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -105,7 +105,7 @@ public partial class Asistencias : ComponentBase
             empleadosReproceso = resultado.EmpleadosReproceso.ToList();
             lista = resultado.Asistencias.ToList();
             ausenciasPorDia = resultado.AusenciasPorDia;
-            compensacionesPorDia = resultado.CompensacionesPorDia;
+            permisosVisiblesPorDia = resultado.PermisosVisiblesPorDia;
             await GuardarFiltrosPersistidosAsync();
         }
         catch (Exception ex)
@@ -772,7 +772,7 @@ public partial class Asistencias : ComponentBase
     private static string CrearClaveAusencia(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
-    private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
+    private static string CrearClaveDia(Guid empleadoId, DateOnly fecha)
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private static string FormatearAusencia(RrhhAusencia ausencia)
@@ -801,12 +801,20 @@ public partial class Asistencias : ComponentBase
             : "—";
 
     private int ObtenerMinutosCompensados(RrhhAsistencia asistencia)
-        => compensacionesPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
+        => Math.Max(0, asistencia.MinutosCompensacionPermisoAprobados);
+
+    private int ObtenerMinutosPermisoConGoceDia(RrhhAsistencia asistencia)
+        => permisosVisiblesPorDia.TryGetValue(CrearClaveDia(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
             ? Math.Max(0, minutos)
             : 0;
 
-    private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, ObtenerMinutosCompensados(asistencia));
+    private int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, ObtenerMinutosPermisoConGoceDia(asistencia), ObtenerMinutosCompensados(asistencia));
+
+    // Neto efectivo = neto trabajado + perdón manual. Es la base que va a nómina (igual
+    // que el snapshot y Nominas); antes aquí se mostraba MinutosTrabajadosNetos sin perdón.
+    private static int ObtenerMinutosNetoEfectivo(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(asistencia);
 
     private async Task ExportarCsvAsync()
     {
@@ -823,6 +831,13 @@ public partial class Asistencias : ComponentBase
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
+            var diaCorteSemana = await db.NominaCortesRrhh
+                .AsNoTracking()
+                .Where(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == PeriodicidadPago.Semanal)
+                .Select(c => (DayOfWeek?)c.DiaCorteSemana)
+                .FirstOrDefaultAsync() ?? DayOfWeek.Sunday;
+            var configuracionNomina = await NominaConfiguracionLoader.LoadAsync(db, _empresaId);
+            var minutosDoblesPorSemana = Math.Max(0, configuracionNomina.HorasExtraDoblesPorSemana) * 60;
             Guid? turnoFiltroId = Guid.TryParse(filtroTurnoIdTexto, out var turnoId) && turnoId != Guid.Empty ? turnoId : null;
             RrhhAsistenciaEstatus? estatusFiltro = int.TryParse(filtroEstatus, out var estatusValor) && Enum.IsDefined(typeof(RrhhAsistenciaEstatus), estatusValor)
                 ? (RrhhAsistenciaEstatus)estatusValor
@@ -891,7 +906,7 @@ public partial class Asistencias : ComponentBase
                 .ToListAsync())
                 .ToDictionary(x => x.EmpleadoId, x => (int)Math.Round(x.Horas * 60m, MidpointRounding.AwayFromZero));
 
-            var minutosPagoEstimado = CalcularMinutosPagoDobleyTriple(asistencias);
+            var minutosPagoEstimado = CalcularMinutosPagoDobleyTriple(asistencias, diaCorteSemana, minutosDoblesPorSemana);
 
             var builder = new StringBuilder();
             builder.AppendLine("Fecha,Empleado,NumeroEmpleado,CodigoChecador,Turno,Estatus,RequiereRevision,EntradaProgramada,SalidaProgramada,EntradaReal,SalidaReal,Descanso1Entrada,Descanso1Salida,Descanso2Entrada,Descanso2Salida,TiempoDescanso1,TiempoDescanso1Min,TiempoDescanso2,TiempoDescanso2Min,TiempoTrabajadoNeto,TiempoTrabajadoNetoMin,TiempoTrabajadoBruto,TiempoTrabajadoBrutoMin,DescansoProgramado,DescansoProgramadoMin,DescansoTomado,DescansoTomadoMin,DescansoPagado,DescansoPagadoMin,DescansoNoPagado,DescansoNoPagadoMin,RetardoMin,SalidaAnticipadaMin,HorasExtra,HorasExtraMin,ExtraAutorizadoPago,ExtraAutorizadoPagoMin,PagadasDoble,PagadasDobleMin,PagadasTriple,PagadasTripleMin,BancoHorasGenerado,BancoHorasGeneradoMin,CubiertoConBanco,CubiertoConBancoMin,SaldoBancoHorasActual,SaldoBancoHorasActualMin,JornadaProgramada,JornadaProgramadaMin,JornadaNetaProgramada,JornadaNetaProgramadaMin,TotalMarcaciones,Ausencia,ResumenDescansos,ResolucionTiempoExtra,Observaciones,CriterioPagoExtra");
@@ -961,7 +976,7 @@ public partial class Asistencias : ComponentBase
                     EscapeCsv(asistencia.ResumenDescansos),
                     EscapeCsv(ObtenerResumenResolucion(asistencia, ausenciasPorDiaExportacion.GetValueOrDefault(claveDia, "—"))),
                     EscapeCsv(asistencia.Observaciones),
-                    EscapeCsv("Primeras 9 horas extra pagadas por semana como dobles; excedente como triple.")));
+                    EscapeCsv($"Primeras {configuracionNomina.HorasExtraDoblesPorSemana} horas extra pagadas por semana como dobles; excedente como triple.")));
             }
 
             var nombreArchivo = $"asistencias-{DateTime.Now:yyyyMMdd-HHmmss}.csv";
@@ -978,12 +993,11 @@ public partial class Asistencias : ComponentBase
         }
     }
 
-    private static Dictionary<Guid, PagoTiempoExtraExportacion> CalcularMinutosPagoDobleyTriple(IEnumerable<RrhhAsistencia> asistencias)
+    private static Dictionary<Guid, PagoTiempoExtraExportacion> CalcularMinutosPagoDobleyTriple(IEnumerable<RrhhAsistencia> asistencias, DayOfWeek diaCorteSemana, int minutosDoblesPorSemana)
     {
-        const int minutosDoblesPorSemana = 9 * 60;
         var resultado = new Dictionary<Guid, PagoTiempoExtraExportacion>();
 
-        foreach (var grupo in asistencias.GroupBy(a => new { a.EmpleadoId, Semana = ObtenerInicioSemanaExportacion(a.Fecha) }))
+        foreach (var grupo in asistencias.GroupBy(a => new { a.EmpleadoId, Semana = ObtenerInicioSemanaExportacion(a.Fecha, diaCorteSemana) }))
         {
             var disponibleDoble = minutosDoblesPorSemana;
             foreach (var asistencia in grupo.OrderBy(a => a.Fecha).ThenBy(a => a.CreatedAt))
@@ -999,10 +1013,10 @@ public partial class Asistencias : ComponentBase
         return resultado;
     }
 
-    private static DateOnly ObtenerInicioSemanaExportacion(DateOnly fecha)
+    private static DateOnly ObtenerInicioSemanaExportacion(DateOnly fecha, DayOfWeek diaCorteSemana)
     {
-        var desplazamiento = ((int)fecha.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return fecha.AddDays(-desplazamiento);
+        var (inicio, _) = NominaPeriodoHelper.ObtenerPeriodoSemanal(fecha.ToDateTime(TimeOnly.MinValue), diaCorteSemana);
+        return DateOnly.FromDateTime(inicio);
     }
 
     private static DescansosExportacion ObtenerDescansosExportacion(IEnumerable<RrhhMarcacion> marcaciones)

@@ -405,7 +405,7 @@ DescansoNoPagadoExcluido = Min(descansoNoPagadoProgramado, Max(0, ausenciaBruta 
 7. minutosRetardo = Suma(ObtenerMinutosRetardoEfectivos(a, permiso))
 8. minutosSalidaAnticipada = Suma(ObtenerMinutosSalidaAnticipadaEfectivos(a, permiso))
 9. minutosFaltanteDescontable = Suma(ObtenerMinutosFaltanteDescontable(a, permiso, 0))
-10. HorasTrabajadasNetas = Suma(ObtenerMinutosTrabajadosNetosEfectivos(a)) / 60
+10. HorasTrabajadasNetas = Suma(ObtenerMinutosNetoEfectivo(a)) / 60
 11. HorasExtra = minutosExtraPago / 60  (después de ajuste de banco)
 12. FactorTiempoExtraOverride = último día con FactorTiempoExtraAplicado > 0
 ```

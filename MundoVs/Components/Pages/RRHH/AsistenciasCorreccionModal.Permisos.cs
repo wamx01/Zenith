@@ -44,7 +44,7 @@ public partial class AsistenciasCorreccionModal
             return 0;
         }
 
-        var faltanteNeto = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(AsistenciaActual));
+        var faltanteNeto = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(AsistenciaActual));
         return Math.Max(0, Math.Min(faltanteNeto, minutosRecuperablesPermisoAprobables));
     }
 
@@ -149,6 +149,14 @@ public partial class AsistenciasCorreccionModal
             }
 
             saldoBancoHorasSeleccionado = await TiempoExtraResolutionService.RemoverCompensacionPermisoBancoHorasAsync(db, _empresaId, AsistenciaActual.EmpleadoId, fecha);
+
+            // Columna autoritativa de read-back (Fase 6). AsistenciaActual vive en _draftDb
+            // (no trackeado en este db fresco), por eso se carga la row y se setea aquí.
+            var asistenciaDb = await db.RrhhAsistencias
+                .FirstAsync(a => a.EmpresaId == _empresaId
+                    && a.EmpleadoId == AsistenciaActual.EmpleadoId
+                    && a.Fecha == fecha);
+            asistenciaDb.MinutosCompensacionPermisoAprobados = minutosAprobados;
 
             await RegistrarBitacoraCorreccionAsync(
                 db,
@@ -482,7 +490,6 @@ public partial class AsistenciasCorreccionModal
         _mostrarAccionesRapidasPermiso = nuevoEstado;
         if (nuevoEstado)
         {
-            _mostrarAccionesRapidasTiempo = false;
             _mostrarAccionesRapidasTurno = false;
             _mostrarAccionesRapidasModoExtra = false;
         }

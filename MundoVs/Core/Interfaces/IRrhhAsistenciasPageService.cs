@@ -15,5 +15,8 @@ public sealed class RrhhAsistenciasPageData
     public IReadOnlyList<TurnoBase> Turnos { get; init; } = [];
     public IReadOnlyList<Empleado> EmpleadosReproceso { get; init; } = [];
     public Dictionary<string, string> AusenciasPorDia { get; init; } = new();
-    public Dictionary<string, int> CompensacionesPorDia { get; init; } = new();
+    // Minutos de permiso con goce prorrateados al día (multi-día repartido, no el total
+    // a cada día). Fuente canónica del "permiso visible" compartida por lista diaria,
+    // semanal y modal. El banco-cobertura NO va aquí: lo añade el policy.
+    public Dictionary<string, int> PermisosVisiblesPorDia { get; init; } = new();
 }

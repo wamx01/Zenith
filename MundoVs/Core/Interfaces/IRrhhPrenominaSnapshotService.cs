@@ -23,6 +23,12 @@ public sealed class RrhhPrenominaSnapshotItem
     public int DiasConMarcacion { get; init; }
     public int DiasDomingoTrabajado { get; init; }
     public int DiasFestivoTrabajado { get; init; }
+    // F4b: desglose PorHoras (pago por minutos). DiasFestivoTrabajadoFija = festivos
+    // trabajados no-PorHoras (los PorHoras festivos van al base por minutos × factor).
+    public int DiasPorHorasTrabajados { get; init; }
+    public int MinutosPorHorasNetos { get; init; }
+    public int MinutosPorHorasFestivoNetos { get; init; }
+    public int DiasFestivoTrabajadoFija { get; init; }
     public decimal HorasTrabajadasNetas { get; init; }
     public decimal HorasExtraBase { get; init; }
     public decimal HorasExtra { get; init; }

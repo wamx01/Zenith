@@ -6,7 +6,12 @@ public class NominaConfiguracion
 {
     public decimal FactorHoraExtra { get; set; } = 2m;
     public decimal FactorHoraExtraTriple { get; set; } = 3m;
-    public int MinutosMinimosTiempoExtra { get; set; } = 30;
+    public int MinutosMinimosTiempoExtra { get; set; } = 15;
+    // Techo de horas extra pagadas como DOBLES por periodo de resolución (LFT:
+    // primeras 9h semanales = doble, excedente = triple). Default 9. El excedente
+    // del pago sobre este techo se paga como triple. Solo aplica al PAGO (el
+    // banco acumula en crudo, sin dobles/triples).
+    public int HorasExtraDoblesPorSemana { get; set; } = 9;
     public decimal FactorFestivoTrabajado { get; set; } = 2m;
     public decimal FactorDescansoTrabajado { get; set; } = 2m;
     public bool BancoHorasHabilitado { get; set; }
@@ -234,6 +239,9 @@ public sealed class ReglasPrenominaConfiguracion
     public bool PermitirHorasExtraManual { get; set; } = true;
     public bool ValidarDiasPagadosContraPeriodo { get; set; } = true;
     public bool RequierePrenominaCerradaParaNomina { get; set; } = true;
+    /// <summary>Gate duro: bloquea generar prenómina y calcular nómina cuando hay tiempo extra
+    /// detectado sin resolución Autorizada del periodo (Fase 7).</summary>
+    public bool RequiereResolucionAutorizadaParaNomina { get; set; } = true;
 }
 
 public enum TipoCicloVacacionalRrhh
@@ -267,6 +275,7 @@ public static class ClavesConfiguracionNomina
     public const string FactorHoraExtra = "Nomina:FactorHoraExtra";
     public const string FactorHoraExtraTriple = "Nomina:FactorHoraExtra:Triple";
     public const string MinutosMinimosTiempoExtra = "Nomina:FactorHoraExtra:MinutosMinimos";
+    public const string HorasExtraDoblesPorSemana = "Nomina:HorasExtra:DoblesPorSemana";
     public const string FactorFestivoTrabajado = "Nomina:FactorFestivoTrabajado";
     public const string FactorDescansoTrabajado = "Nomina:FactorDescansoTrabajado";
     public const string BancoHorasHabilitado = "Nomina:BancoHoras:Habilitado";

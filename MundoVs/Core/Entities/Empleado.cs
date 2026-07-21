@@ -51,6 +51,7 @@ public class Empleado
     public ICollection<PrenominaDetalle> PrenominaDetalles { get; set; } = [];
     public ICollection<EmpleadoConceptoRrhh> ConceptosNomina { get; set; } = [];
     public ICollection<EmpleadoEsquemaPago> EsquemasPago { get; set; } = [];
+    public ICollection<EmpleadoEsquemaJornada> EsquemasJornada { get; set; } = [];
     public ICollection<ValeDestajo> ValesDestajo { get; set; } = [];
 }
 

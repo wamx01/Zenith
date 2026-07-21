@@ -22,6 +22,8 @@ public partial class Empleados
     private List<EsquemaPago> esquemasPago = [];
     private List<TurnoBase> turnosBase = [];
     private Dictionary<Guid, string> esquemaActivoPorEmpleado = new();
+    // F5a: esquema de jornada vigente por empleado (para el badge del listado).
+    private Dictionary<Guid, TipoJornada> jornadaActivaPorEmpleado = new();
     private Dictionary<Guid, decimal> vacacionesDisponiblesPorEmpleado = new();
     private Dictionary<Guid, decimal> bancoHorasPorEmpleado = new();
     private List<NominaConceptoConfigRrhh> conceptosNominaDisponibles = [];
@@ -43,6 +45,10 @@ public partial class Empleados
     private DateTime? turnoVigenteHasta;
     private decimal? esquemaSueldoOverride;
     private List<HistorialEsquemaVm> historialEsquemas = [];
+    // F5a: captura del esquema de jornada (Fija/PorHoras) con vigencia.
+    private TipoJornada jornadaSeleccionada = TipoJornada.Fija;
+    private DateTime jornadaVigenteDesde = DateTime.Today;
+    private List<HistorialJornadaVm> historialJornadas = [];
     private List<HistorialTurnoVm> historialTurnos = [];
     private string? turnoObservaciones;
     private bool mostrarForm, guardando;
@@ -368,6 +374,19 @@ public partial class Empleados
         }
         catch { esquemaActivoPorEmpleado = new(); }
 
+        try
+        {
+            var hoyJornada = DateTime.Today;
+            var jornadas = await db.EmpleadosEsquemaJornada
+                .AsNoTracking()
+                .Where(a => a.VigenteDesde <= hoyJornada && (a.VigenteHasta == null || a.VigenteHasta >= hoyJornada))
+                .ToListAsync();
+            jornadaActivaPorEmpleado = jornadas
+                .GroupBy(a => a.EmpleadoId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.VigenteDesde).First().TipoJornada);
+        }
+        catch { jornadaActivaPorEmpleado = new(); }
+
         await CargarSaldosEmpleadoAsync(db);
     }
 
@@ -459,6 +478,9 @@ public partial class Empleados
         esquemaSueldoOverride = null;
         historialEsquemas = [];
         historialTurnos = [];
+        jornadaSeleccionada = TipoJornada.Fija;
+        jornadaVigenteDesde = DateTime.Today;
+        historialJornadas = [];
         conceptosEmpleadoEditando = [];
         conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
         conceptoEmpleadoTipoSeleccionadoId = string.Empty;
@@ -490,6 +512,7 @@ public partial class Empleados
 
         turnoSeleccionadoId = e.TurnoBaseId;
         await CargarHistorialEsquemas(e.Id);
+        await CargarHistorialJornadas(e.Id);
         await CargarHistorialTurnos(e.Id);
         await CargarConceptosEmpleado(e.Id);
         mostrarForm = true;
@@ -552,6 +575,27 @@ public partial class Empleados
         esquemaSeleccionadoId = vigente?.EsquemaPagoId;
         esquemaVigenteDesde = vigente?.VigenteDesde ?? DateTime.Today;
         esquemaSueldoOverride = vigente?.SueldoBaseOverride;
+    }
+
+    private async Task CargarHistorialJornadas(Guid empleadoId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var asignaciones = await db.EmpleadosEsquemaJornada
+            .AsNoTracking()
+            .Where(a => a.EmpleadoId == empleadoId)
+            .OrderByDescending(a => a.VigenteDesde)
+            .ToListAsync();
+
+        historialJornadas = asignaciones.Select(a => new HistorialJornadaVm
+        {
+            TipoJornada = a.TipoJornada,
+            Desde = a.VigenteDesde,
+            Hasta = a.VigenteHasta
+        }).ToList();
+
+        var vigente = asignaciones.FirstOrDefault(a => a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today);
+        jornadaSeleccionada = vigente?.TipoJornada ?? TipoJornada.Fija;
+        jornadaVigenteDesde = vigente?.VigenteDesde ?? DateTime.Today;
     }
 
     private async Task CargarHistorialTurnos(Guid empleadoId)
@@ -731,6 +775,36 @@ public partial class Empleados
                     asignacionExistente.UpdatedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
+            }
+
+            // F5a: guardar esquema de jornada. Si cambió el tipo o la vigencia respecto al
+            // vigente hoy, cerrar el esquema anterior abierto (VigenteHasta = nueva fecha - 1)
+            // e insertar el nuevo. Sin patrón de borrado (igual que el esquema de pago).
+            var jornadaVigente = await db.EmpleadosEsquemaJornada
+                .AsNoTracking()
+                .Where(a => a.EmpleadoId == empId && (a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today))
+                .OrderByDescending(a => a.VigenteDesde)
+                .FirstOrDefaultAsync();
+            if (jornadaVigente is null
+                || jornadaVigente.TipoJornada != jornadaSeleccionada
+                || jornadaVigente.VigenteDesde != jornadaVigenteDesde)
+            {
+                var anterioresJornada = await db.EmpleadosEsquemaJornada
+                    .Where(a => a.EmpleadoId == empId && a.VigenteHasta == null)
+                    .ToListAsync();
+                foreach (var ant in anterioresJornada)
+                {
+                    ant.VigenteHasta = jornadaVigenteDesde.AddDays(-1);
+                    ant.UpdatedAt = DateTime.UtcNow;
+                }
+
+                db.EmpleadosEsquemaJornada.Add(new EmpleadoEsquemaJornada
+                {
+                    EmpleadoId = empId,
+                    TipoJornada = jornadaSeleccionada,
+                    VigenteDesde = jornadaVigenteDesde
+                });
+                await db.SaveChangesAsync();
             }
 
             ok = "Guardado."; mostrarForm = false; await Cargar();
@@ -1079,6 +1153,15 @@ public partial class Empleados
     private string ObtenerEsquemaActivo(Guid empleadoId)
         => esquemaActivoPorEmpleado.TryGetValue(empleadoId, out var nombre) ? nombre : "—";
 
+    private static string ObtenerEtiquetaJornada(TipoJornada tipo)
+        => tipo == TipoJornada.PorHoras ? "Por horas" : "Fija";
+
+    private string ObtenerJornadaActiva(Guid empleadoId)
+        => jornadaActivaPorEmpleado.TryGetValue(empleadoId, out var tipo) ? ObtenerEtiquetaJornada(tipo) : "Fija";
+
+    private bool EsJornadaPorHoras(Guid empleadoId)
+        => jornadaActivaPorEmpleado.TryGetValue(empleadoId, out var tipo) && tipo == TipoJornada.PorHoras;
+
     private static string ObtenerEtiquetaTurno(TurnoBase turno)
         => turno.IsActive ? turno.Nombre : $"{turno.Nombre} (inactivo)";
 
@@ -1106,6 +1189,13 @@ public partial class Empleados
         public DateTime Desde { get; set; }
         public DateTime? Hasta { get; set; }
         public decimal? Override { get; set; }
+    }
+
+    private class HistorialJornadaVm
+    {
+        public TipoJornada TipoJornada { get; set; } = TipoJornada.Fija;
+        public DateTime Desde { get; set; }
+        public DateTime? Hasta { get; set; }
     }
 
     private class HistorialTurnoVm

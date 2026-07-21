@@ -1,3 +1,5 @@
+using MundoVs.Core.Entities;
+
 namespace MundoVs.Core.Models;
 
 public sealed class RrhhAsistenciasFiltroState
@@ -13,6 +15,11 @@ public sealed class RrhhAsistenciasFiltroState
     public string Orden { get; set; } = "nombre";
     public string? Empleado { get; set; }
 
+    // Solo usa la vista semanal (por periodo de nómina). La lista diaria ignora
+    // estos campos y sigue usando Desde/Hasta.
+    public int? Periodicidad { get; set; }
+    public DateTime? FechaReferenciaPeriodo { get; set; }
+
     public static RrhhAsistenciasFiltroState CreateDefault()
         => new()
         {
@@ -22,6 +29,8 @@ public sealed class RrhhAsistenciasFiltroState
             Estatus = "todos",
             Revision = "todos",
             Orden = "nombre",
-            Empleado = null
+            Empleado = null,
+            Periodicidad = (int)PeriodicidadPago.Semanal,
+            FechaReferenciaPeriodo = DateTime.Today
         };
 }

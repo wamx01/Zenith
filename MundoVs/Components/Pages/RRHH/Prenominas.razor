@@ -11,6 +11,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject INominaLegalPolicyService NominaLegalPolicy
 @inject IRrhhPrenominaSnapshotService PrenominaSnapshotService
+@inject IRrhhResolucionPeriodoService ResolucionPeriodo
 @rendermode InteractiveServer
 
 <PageTitle>Prenóminas</PageTitle>
@@ -799,6 +800,10 @@
             DiasConMarcacion = d.DiasConMarcacion,
             DiasDomingoTrabajado = d.DiasDomingoTrabajado,
             DiasFestivoTrabajado = d.DiasFestivoTrabajado,
+            DiasPorHorasTrabajados = d.DiasPorHorasTrabajados,
+            MinutosPorHorasNetos = d.MinutosPorHorasNetos,
+            MinutosPorHorasFestivoNetos = d.MinutosPorHorasFestivoNetos,
+            DiasFestivoTrabajadoFija = d.DiasFestivoTrabajadoFija,
             HorasTrabajadasNetas = d.HorasTrabajadasNetas,
             HorasExtraBase = d.HorasExtraBase,
             HorasExtra = d.HorasExtra,
@@ -961,6 +966,21 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         var inicio = editando.FechaInicio.Date;
         var fin = editando.FechaFin.Date;
+
+        // Fase 7 — gate duro: si hay tiempo extra detectado sin resolución Autorizada del
+        // periodo, no se arma la prenómina (secuencia ordenada: autorizar en Asistencias Semanal
+        // → prenómina → nómina). Un periodo sin extra no se bloquea.
+        if (configuracionNomina.ObtenerReglasPrenomina().RequiereResolucionAutorizadaParaNomina)
+        {
+            var sinAutorizar = await ResolucionPeriodo.ObtenerEmpleadosConExtraSinAutorizarAsync(
+                db, _empresaId, editando.PeriodicidadPago, inicio, fin);
+            if (sinAutorizar.Count > 0)
+            {
+                error = $"Falta autorizar el tiempo extra de {sinAutorizar.Count} empleado(s) del periodo en Asistencias Semanal antes de generar la prenómina.";
+                return;
+            }
+        }
+
         var snapshots = (await PrenominaSnapshotService.ConstruirSnapshotPeriodoAsync(db, inicio, fin, configuracionNomina))
             .Where(s => s.Empleado.PeriodicidadPago == editando.PeriodicidadPago)
             .ToList();
@@ -995,6 +1015,10 @@
             detalle.DiasConMarcacion = snapshot.DiasConMarcacion;
             detalle.DiasDomingoTrabajado = snapshot.DiasDomingoTrabajado;
             detalle.DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado;
+            detalle.DiasPorHorasTrabajados = snapshot.DiasPorHorasTrabajados;
+            detalle.MinutosPorHorasNetos = snapshot.MinutosPorHorasNetos;
+            detalle.MinutosPorHorasFestivoNetos = snapshot.MinutosPorHorasFestivoNetos;
+            detalle.DiasFestivoTrabajadoFija = snapshot.DiasFestivoTrabajadoFija;
             detalle.HorasExtraBase = snapshot.HorasExtraBase;
             detalle.HorasExtra = snapshot.HorasExtra;
             detalle.HorasBancoAcumuladas = snapshot.HorasBancoAcumuladas;
@@ -1042,6 +1066,10 @@
             DiasConMarcacion = snapshot.DiasConMarcacion,
             DiasDomingoTrabajado = snapshot.DiasDomingoTrabajado,
             DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado,
+            DiasPorHorasTrabajados = snapshot.DiasPorHorasTrabajados,
+            MinutosPorHorasNetos = snapshot.MinutosPorHorasNetos,
+            MinutosPorHorasFestivoNetos = snapshot.MinutosPorHorasFestivoNetos,
+            DiasFestivoTrabajadoFija = snapshot.DiasFestivoTrabajadoFija,
             HorasExtraBase = snapshot.HorasExtraBase,
             HorasExtra = snapshot.HorasExtra,
             HorasTrabajadasNetas = snapshot.HorasTrabajadasNetas,
@@ -1117,8 +1145,13 @@
             ? "—"
             : string.Join(", ", festivos.Select(f => $"{f.Fecha:dd/MM} {f.Nombre} x{f.Factor:0.##}{(f.UsaFallback ? " (global)" : string.Empty)}"));
 
+    // Replica RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal: retardo + salida +
+    // faltante descontable + descuento manual. Antes omitía retardo y salida, con lo que
+    // el "tiempo descontado total" de la prenómina quedaba por debajo del real.
     private static int ObtenerMinutosDescuentoTotal(PrenominaDetalleEditable detalle)
-        => Math.Max(0, detalle.MinutosFaltanteDescontable)
+        => Math.Max(0, detalle.MinutosRetardo)
+            + Math.Max(0, detalle.MinutosSalidaAnticipada)
+            + Math.Max(0, detalle.MinutosFaltanteDescontable)
             + Math.Max(0, detalle.MinutosDescuentoManual);
 
 
@@ -1280,6 +1313,10 @@
                 entity.DiasConMarcacion = detalle.DiasConMarcacion;
                 entity.DiasDomingoTrabajado = detalle.DiasDomingoTrabajado;
                 entity.DiasFestivoTrabajado = detalle.DiasFestivoTrabajado;
+                entity.DiasPorHorasTrabajados = detalle.DiasPorHorasTrabajados;
+                entity.MinutosPorHorasNetos = detalle.MinutosPorHorasNetos;
+                entity.MinutosPorHorasFestivoNetos = detalle.MinutosPorHorasFestivoNetos;
+                entity.DiasFestivoTrabajadoFija = detalle.DiasFestivoTrabajadoFija;
                 entity.HorasExtraBase = detalle.HorasExtraBase;
                 entity.HorasExtra = detalle.HorasExtra;
                 entity.HorasTrabajadasNetas = detalle.HorasTrabajadasNetas;
@@ -1925,6 +1962,12 @@
         public int DiasConMarcacion { get; set; }
         public int DiasDomingoTrabajado { get; set; }
         public int DiasFestivoTrabajado { get; set; }
+        // F4b: agregados PorHoras (no editables manualmente; vienen del snapshot y se preservan
+        // en el round-trip editable ↔ entity).
+        public int DiasPorHorasTrabajados { get; set; }
+        public int MinutosPorHorasNetos { get; set; }
+        public int MinutosPorHorasFestivoNetos { get; set; }
+        public int DiasFestivoTrabajadoFija { get; set; }
         public decimal HorasTrabajadasNetas { get; set; }
         public decimal HorasExtraBase { get; set; }
         public decimal HorasExtra { get; set; }

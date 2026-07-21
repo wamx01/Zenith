@@ -11,11 +11,13 @@
 @inject IAppConfigRepository AppConfig
 @inject INominaCalculator NominaCalculator
 @inject INominaLegalPolicyService NominaLegalPolicy
+@inject INominaSueldoBasePolicy NominaSueldoBasePolicy
 @inject INominaResumenBuilder NominaResumenBuilder
 @inject CodigoNegocioService CodigoNegocio
 @inject IAuditService AuditService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
+@inject IRrhhResolucionPeriodoService ResolucionPeriodo
 @rendermode InteractiveServer
 
 <PageTitle>Nóminas</PageTitle>
@@ -863,7 +865,7 @@
                 g => g.Key,
                 g => new ResumenAsistenciaNominaVm
                 {
-                    HorasTrabajadasNetas = Math.Round(g.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosNetosEfectivos(a)) / 60m, 2),
+                    HorasTrabajadasNetas = Math.Round(g.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a)) / 60m, 2),
                     HorasExtraDetectadas = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtra)) / 60m, 2),
                     HorasExtraAprobadasPago = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)) / 60m, 2),
                     HorasExtraAprobadasBanco = Math.Round(g.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosBanco)) / 60m, 2),
@@ -1728,6 +1730,18 @@
             throw new InvalidOperationException(ObtenerMensajePrenominaRequerida());
         }
 
+        // Fase 7 — gate duro: no se calcula la nómina con tiempo extra detectado sin resolución
+        // Autorizada del periodo (backstop del paso de dinero). Un periodo sin extra no se bloquea.
+        if (reglasPrenomina.RequiereResolucionAutorizadaParaNomina)
+        {
+            var sinAutorizar = await ResolucionPeriodo.ObtenerEmpleadosConExtraSinAutorizarAsync(
+                db, nomina.EmpresaId, nomina.PeriodicidadPago, inicio, fin);
+            if (sinAutorizar.Count > 0)
+            {
+                throw new InvalidOperationException(ObtenerMensajeResolucionRequerida(sinAutorizar.Count));
+            }
+        }
+
         prenomina = await db.Prenominas
             .Include(p => p.Detalles)
                 .ThenInclude(d => d.BonosRapidos)
@@ -1953,7 +1967,8 @@
                     && (a.Estatus == RrhhAsistenciaEstatus.AsistenciaNormal
                         || a.Estatus == RrhhAsistenciaEstatus.Retardo
                         || a.Estatus == RrhhAsistenciaEstatus.Incompleta
-                        || a.Estatus == RrhhAsistenciaEstatus.DescansoTrabajado))
+                        || a.Estatus == RrhhAsistenciaEstatus.DescansoTrabajado
+                        || a.Estatus == RrhhAsistenciaEstatus.TrabajadoPorHoras))
                 .Select(a => new { a.EmpleadoId, a.Fecha })
                 .ToListAsync();
 
@@ -1963,6 +1978,20 @@
                     g => g.Key,
                     g => g.Sum(a => factoresFestivoPorFecha.TryGetValue(a.Fecha, out var factor) ? factor : configuracionNomina.ObtenerFactorFestivoTrabajado()));
         }
+
+        // Fase 5.5 — resoluciones por periodo autorizadas para esta nómina (fuente
+        // autoritativa del tiempo extra). Una sola consulta por nómina, indexada por
+        // empleado. Si no hay resolución Autorizada para un empleado, el sourcing cae
+        // a la incidencia de prenómina (comportamiento histórico).
+        var resolucionesPeriodo = await db.RrhhResolucionesTiempoExtraPeriodo
+            .Include(r => r.Lineas)
+            .Where(r => r.EmpresaId == nomina.EmpresaId
+                && r.PeriodicidadPago == nomina.PeriodicidadPago
+                && r.AnioPeriodo == nomina.AnioPeriodo
+                && r.NumeroPeriodo == nomina.NumeroPeriodo
+                && r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada
+                && r.IsActive)
+            .ToDictionaryAsync(r => r.EmpleadoId);
 
         foreach (var empleado in empleadosActivos)
         {
@@ -1986,7 +2015,10 @@
             var diasPagados = incidencia?.DiasPagados ?? 0;
             var diasTrabajados = incidencia?.DiasTrabajados ?? 0;
             var diasVacaciones = incidencia?.DiasVacaciones ?? 0;
-            var horasExtra = incidencia?.HorasExtra ?? detalle.HorasExtra;
+            var resolucionPeriodo = resolucionesPeriodo.GetValueOrDefault(empleado.Id);
+            var sourcing = NominaTiempoExtraSourcing.Source(
+                NominaTiempoExtraSourcing.InputFrom(incidencia ?? new PrenominaDetalle()),
+                resolucionPeriodo, configuracionNomina, detalle.FactorPagoTiempoExtra);
             detalle.EsquemaPagoId = esquema?.Id;
             detalle.TipoPago = empleado.TipoNomina;
             detalle.DiasTrabajados = diasTrabajados;
@@ -2000,26 +2032,50 @@
             detalle.DiasDomingoTrabajado = incidencia?.DiasDomingoTrabajado ?? 0;
             detalle.DiasFestivoTrabajado = incidencia?.DiasFestivoTrabajado ?? 0;
             detalle.HorasTrabajadasNetas = incidencia?.HorasTrabajadasNetas ?? detalle.HorasTrabajadasNetas;
-            detalle.HorasExtraBase = incidencia?.HorasExtraBase ?? detalle.HorasExtraBase;
-            detalle.HorasExtraBanco = incidencia?.HorasBancoAcumuladas ?? detalle.HorasExtraBanco;
-            detalle.MinutosRetardo = incidencia?.MinutosRetardo ?? 0;
-            detalle.MinutosSalidaAnticipada = incidencia?.MinutosSalidaAnticipada ?? 0;
-            detalle.MinutosPerdonadosManual = incidencia?.MinutosPerdonadosManual ?? 0;
-            detalle.MinutosFaltanteDescontable = incidencia?.MinutosFaltanteDescontable ?? 0;
-            detalle.MinutosDescuentoManual = incidencia?.MinutosDescuentoManual ?? 0;
+            // Fase 5.5 — tiempo extra y deducciones vienen de la resolución por periodo
+            // autorizada (fuente autoritativa; alivia la deducción de los minutos que el
+            // extra absorbió) o, si no existe, de la incidencia de prenómina (histórico).
+            detalle.HorasExtra = sourcing.HorasExtra;
+            detalle.HorasExtraBase = sourcing.HorasExtraBase;
+            detalle.HorasExtraBanco = sourcing.HorasExtraBanco;
+            detalle.HorasExtraDobles = sourcing.HorasExtraDobles;
+            detalle.HorasExtraTriples = sourcing.HorasExtraTriples;
+            detalle.FactorPagoTiempoExtra = sourcing.FactorPagoTiempoExtra;
+            detalle.HorasExtraFactoradas = sourcing.HorasExtraFactoradas;
+            detalle.MinutosFaltanteDescontable = sourcing.MinutosFaltanteDescontable;
+            detalle.MinutosRetardo = sourcing.MinutosRetardo;
+            detalle.MinutosSalidaAnticipada = sourcing.MinutosSalidaAnticipada;
+            detalle.MinutosDescuentoManual = sourcing.MinutosDescuentoManual;
+            detalle.MinutosPerdonadosManual = sourcing.MinutosPerdonadosManual;
             detalle.AplicaImss = empleado.AplicaImss && (incidencia?.AplicaImss ?? true);
-            detalle.HorasExtra = horasExtra;
 
             var sueldoReferencia = NominaLegalPolicy.ObtenerSueldoReferencia(empleado, asignacion);
             var incluyeSueldoBase = NominaLegalPolicy.IncluyeSueldoBase(asignacion);
-            if (incluyeSueldoBase)
+            // F4b: factor festivo se necesita antes del sueldo base (la parte PorHoras festivo va
+            // al base por minutos × factor). Se calcula una vez aquí y se reusa en el calculator.
+            var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
+            var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
+                ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
+                : configuracionNomina.ObtenerFactorFestivoTrabajado();
+            // F4b: festivo efectivo (sólo Fija) para no duplicar el festivo PorHoras (ya va en el
+            // base por minutos × factor). En puro Fija sigue al total de DiasFestivoTrabajado para
+            // respetar correcciones manuales del campo en la prenómina (sin regresión vs. calc previo).
+            var diasFestivoTrabajadoEfectivo = (incidencia?.DiasPorHorasTrabajados ?? 0) == 0
+                ? incidencia?.DiasFestivoTrabajado ?? 0
+                : incidencia?.DiasFestivoTrabajadoFija ?? 0;
+            // F4b: sueldo base mixto Fija (días × sueldo diario) + PorHoras (minutos × sueldo hora).
+            detalle.SueldoBase = NominaSueldoBasePolicy.Calcular(new SueldoBaseInput
             {
-                detalle.SueldoBase = NominaLegalPolicy.CalcularSueldoBasePeriodo(sueldoReferencia, empleado.PeriodicidadPago, diasPagados, configuracionNomina);
-            }
-            else
-            {
-                detalle.SueldoBase = 0;
-            }
+                PeriodicidadPago = empleado.PeriodicidadPago,
+                IncluyeSueldoBase = incluyeSueldoBase,
+                SueldoReferencia = sueldoReferencia,
+                DiasPagados = diasPagados,
+                DiasPorHorasTrabajados = incidencia?.DiasPorHorasTrabajados ?? 0,
+                MinutosPorHorasNetos = incidencia?.MinutosPorHorasNetos ?? 0,
+                MinutosPorHorasFestivoNetos = incidencia?.MinutosPorHorasFestivoNetos ?? 0,
+                FactorFestivo = factorFestivoAplicado,
+                Configuracion = configuracionNomina
+            }).SueldoBase;
 
             if (valesPorEmp.TryGetValue(empleado.Id, out var valesEmp))
             {
@@ -2063,27 +2119,20 @@
             var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : 0m;
             var conceptoDeduccionBase = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : null;
             detalle.ConceptoDeducciones = conceptoDeduccionBase;
-            var sumaFactorFestivo = sumaFactorFestivoPorEmpleado.GetValueOrDefault(empleado.Id);
-            var factorFestivoAplicado = detalle.DiasFestivoTrabajado > 0 && sumaFactorFestivo > 0m
-                ? Math.Round(sumaFactorFestivo / detalle.DiasFestivoTrabajado, 4)
-                : configuracionNomina.ObtenerFactorFestivoTrabajado();
 
             var aniosServicio = CalcularAniosServicio(empleado, fin);
             var cicloVacacional = NominaLegalPolicy.ObtenerCicloVacacional(empleado, fin, configuracionNomina);
-            var horasExtraBase = Math.Max(0m, detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra);
-            var horasExtraPagables = Math.Max(0m, detalle.HorasExtra);
-            detalle.HorasExtraDobles = Math.Min(9m, Math.Min(horasExtraBase, horasExtraPagables));
-            detalle.HorasExtraTriples = Math.Max(0m, Math.Min(horasExtraBase, horasExtraPagables) - detalle.HorasExtraDobles);
             var resultado = NominaCalculator.Calculate(new NominaCalculationInput
             {
                 Empleado = empleado,
                 Configuracion = configuracionNomina,
                 SueldoReferencia = incluyeSueldoBase ? sueldoReferencia : 0m,
+                SueldoBaseOverride = detalle.SueldoBase,
                 DiasPagados = diasPagados,
                 DiasVacaciones = diasVacaciones,
                 DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
                 DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
-                DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
+                DiasFestivoTrabajado = diasFestivoTrabajadoEfectivo,
                 MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosFaltanteDescontable + detalle.MinutosDescuentoManual,
                 AplicaImss = detalle.AplicaImss,
                 AplicaIsr = empleado.AplicaIsr,
@@ -2093,6 +2142,7 @@
                 HorasExtraBanco = detalle.HorasExtraBanco,
                 HorasExtra = detalle.HorasExtra,
                 FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra,
+                HorasExtraFactoradas = detalle.HorasExtraFactoradas,
                 MontoDestajo = detalle.MontoDestajo,
                 MontoBono = detalle.MontoBono,
                 MontoPercepcionesManuales = percepcionesManual + totalPercepcionesConfigurables,
@@ -2247,6 +2297,19 @@
             {
                 error = ObtenerMensajePrenominaRequerida();
                 return;
+            }
+
+            // Fase 7 — gate duro: no se guarda la nómina con tiempo extra detectado sin resolución
+            // Autorizada del periodo. Un periodo sin extra no se bloquea.
+            if (reglasPrenomina.RequiereResolucionAutorizadaParaNomina)
+            {
+                var sinAutorizar = await ResolucionPeriodo.ObtenerEmpleadosConExtraSinAutorizarAsync(
+                    db, empresaId, editando.PeriodicidadPago, editando.FechaInicio.Date, editando.FechaFin.Date);
+                if (sinAutorizar.Count > 0)
+                {
+                    error = ObtenerMensajeResolucionRequerida(sinAutorizar.Count);
+                    return;
+                }
             }
 
             if (await db.Nominas.AnyAsync(n => n.EmpresaId == empresaId
@@ -2643,6 +2706,7 @@
             AplicaIsr = empleado.AplicaIsr,
             HorasExtra = detalle.HorasExtra,
             FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra,
+            HorasExtraFactoradas = detalle.HorasExtraFactoradas,
             MontoDestajo = detalle.MontoDestajo,
             MontoBono = detalle.MontoBono,
             MontoPercepcionesManuales = detalle.Bonos,
@@ -3061,6 +3125,11 @@
         => reglasPrenomina.RequierePrenominaCerradaParaNomina
             ? "Debes cerrar una prenómina del mismo periodo antes de guardar la nómina."
             : "Debes guardar una prenómina del mismo periodo antes de guardar la nómina.";
+
+    private string ObtenerMensajeResolucionRequerida(int cantidad)
+        => reglasPrenomina.RequiereResolucionAutorizadaParaNomina
+            ? $"Debes autorizar la resolución de tiempo extra de {cantidad} empleado(s) del periodo en Asistencias Semanal antes de calcular la nómina."
+            : $"Guarda una resolución de tiempo extra para {cantidad} empleado(s) del periodo en Asistencias Semanal antes de calcular la nómina.";
 
     private static Task<Prenomina?> ObtenerPrenominaPeriodoAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
         => db.Prenominas

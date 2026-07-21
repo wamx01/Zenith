@@ -67,10 +67,11 @@ builder.Logging.AddDebug();
 var connectionString = GetRequiredConnectionString(builder.Configuration);
 var serverVersion = new MariaDbServerVersion(new Version(10, 11));
 
-builder.Services.AddDbContext<CrmDbContext>(options =>
-    options.UseMySql(connectionString, serverVersion));
-
-// Factory para contextos independientes (evita concurrencia en Blazor Server)
+// Factory para contextos independientes (evita concurrencia en Blazor Server).
+// Scoped: el factory debe ser Scoped porque CrmDbContext depende de IEmpresaContext
+// (también Scoped). Si el factory fuera Singleton, intentaría resolver IEmpresaContext
+// desde el root provider, lo cual no está permitido. El worker hosted resuelve el
+// factory desde un scope creado por iteración vía IServiceScopeFactory.
 builder.Services.AddDbContextFactory<CrmDbContext>(options =>
     options.UseMySql(connectionString, serverVersion), ServiceLifetime.Scoped);
 
@@ -86,6 +87,7 @@ builder.Services.AddScoped<IPresupuestoProductoRepository, PresupuestoProductoRe
 builder.Services.AddScoped<IAppConfigRepository, AppConfigRepository>();
 builder.Services.AddScoped<INominaCalculator, NominaCalculator>();
 builder.Services.AddScoped<INominaLegalPolicyService, NominaLegalPolicyService>();
+builder.Services.AddScoped<INominaSueldoBasePolicy, NominaSueldoBasePolicy>();
 builder.Services.AddScoped<INominaPdfService, NominaPdfService>();
 builder.Services.AddScoped<ICuentasPorCobrarPdfService, CuentasPorCobrarPdfService>();
 builder.Services.AddScoped<INotaEntregaConsolidadaService, NotaEntregaConsolidadaService>();
@@ -97,6 +99,7 @@ builder.Services.AddScoped<IRrhhAsistenciasPageService, RrhhAsistenciasPageServi
 builder.Services.AddScoped<IRrhhEmpleadoPerfilPageService, RrhhEmpleadoPerfilPageService>();
 builder.Services.AddScoped<IRrhhAsistenciaCorreccionAdvisor, RrhhAsistenciaCorreccionAdvisor>();
 builder.Services.AddScoped<IRrhhTiempoExtraResolutionService, RrhhTiempoExtraResolutionService>();
+builder.Services.AddScoped<IRrhhResolucionPeriodoService, RrhhResolucionPeriodoService>();
 builder.Services.AddScoped<IRrhhTiempoExtraReporteService, RrhhTiempoExtraReporteService>();
 builder.Services.AddScoped<IRrhhPrenominaSnapshotService, RrhhPrenominaSnapshotService>();
 builder.Services.AddScoped<IRrhhMarcacionIngestionService, RrhhMarcacionIngestionService>();
@@ -405,6 +408,103 @@ app.MapPost("/api/rrhh/asistencias/reprocesar", async (HttpContext httpContext, 
         request.EmpleadoId,
         GruposProcesados = grupos,
         Mensaje = "Reproceso de asistencias completado."
+    });
+});
+
+// Migración one-shot: genera RrhhResolucionTiempoExtraPeriodo (Autorizada) desde
+// las columnas diarias heredadas MinutosExtraAutorizadosPago/Banco. Idempotente.
+app.MapPost("/api/rrhh/resolucion-periodo/backfill", async (
+    HttpContext httpContext,
+    IDbContextFactory<CrmDbContext> dbFactory,
+    IRrhhResolucionPeriodoService resolucionPeriodo,
+    Guid? empresaId) =>
+{
+    if (!(httpContext.User.Identity?.IsAuthenticated ?? false))
+    {
+        return Results.Unauthorized();
+    }
+
+    var puedeEditar = httpContext.User.HasClaim("Capacidad", "nominas.editar");
+    if (!puedeEditar)
+    {
+        return Results.Forbid();
+    }
+
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var usuario = httpContext.User.Identity?.Name ?? "backfill";
+    var resultado = await resolucionPeriodo.BackfillDesdeAutorizacionDiariaAsync(db, empresaId, usuario, httpContext.RequestAborted);
+    return Results.Ok(new
+    {
+        empresaId,
+        resultado.EmpleadosProcesados,
+        resultado.PeriodosCreados,
+        resultado.PeriodosOmitidos,
+        Mensaje = "Backfill de resoluciones por periodo completado."
+    });
+});
+
+// Fase 9 — backfill opcional: siembra líneas en resoluciones Autorizada pre-Fase 8 (sin
+// líneas) a partir de los escalares persistidos, para que el nuevo UI las muestre y la
+// resolución pase al path por líneas (monto idéntico al legado). Idempotente.
+app.MapPost("/api/rrhh/resolucion-periodo/backfill-lineas", async (
+    HttpContext httpContext,
+    IDbContextFactory<CrmDbContext> dbFactory,
+    IRrhhResolucionPeriodoService resolucionPeriodo,
+    Guid? empresaId) =>
+{
+    if (!(httpContext.User.Identity?.IsAuthenticated ?? false))
+    {
+        return Results.Unauthorized();
+    }
+
+    var puedeEditar = httpContext.User.HasClaim("Capacidad", "nominas.editar");
+    if (!puedeEditar)
+    {
+        return Results.Forbid();
+    }
+
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var usuario = httpContext.User.Identity?.Name ?? "backfill";
+    var resultado = await resolucionPeriodo.SembrarLineasEnResolucionesAutorizadasAsync(db, empresaId, usuario, httpContext.RequestAborted);
+    return Results.Ok(new
+    {
+        empresaId,
+        resultado.PeriodosProcesados,
+        resultado.PeriodosOmitidos,
+        resultado.LineasCreadas,
+        Mensaje = "Backfill de líneas Fase 9 completado."
+    });
+});
+
+// Fase 6 — backfill one-shot: siembra RrhhAsistencia.MinutosCompensacionPermisoAprobados desde
+// el bitácora legado (minutosCompensados=N), para que la columna sea autoritativa y el read-back
+// ya no parse el Detalle. Idempotente. Tras correrlo, la columna queda como fuente y el bitácora
+// sólo como auditoría.
+app.MapPost("/api/rrhh/asistencias/backfill-compensacion", async (
+    HttpContext httpContext,
+    IDbContextFactory<CrmDbContext> dbFactory,
+    IRrhhTiempoExtraResolutionService tiempoExtra,
+    Guid? empresaId) =>
+{
+    if (!(httpContext.User.Identity?.IsAuthenticated ?? false))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!httpContext.User.HasClaim("Capacidad", "nominas.editar"))
+    {
+        return Results.Forbid();
+    }
+
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var usuario = httpContext.User.Identity?.Name ?? "backfill";
+    var resultado = await tiempoExtra.BackfillCompensacionDesdeBitacoraAsync(db, empresaId, usuario, httpContext.RequestAborted);
+    return Results.Ok(new
+    {
+        empresaId,
+        resultado.FilasActualizadas,
+        resultado.FilasOmitidas,
+        Mensaje = "Backfill de compensación Fase 6 completado."
     });
 });
 

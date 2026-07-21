@@ -65,6 +65,10 @@ public class NominaDetalle
     public decimal HorasExtraBanco { get; set; }
     public decimal HorasExtra { get; set; }
     public decimal FactorPagoTiempoExtra { get; set; }
+    // Fase 8 — horas ponderadas a pago = Σ pago.Minutos/60 × Factor (de las líneas
+    // de la resolución por periodo). El calculador usa esto para el monto exacto
+    // cuando hay varios factores. 0 → cae al path dobles/triples×factor.
+    public decimal HorasExtraFactoradas { get; set; }
     public decimal MontoHorasExtra { get; set; }
     public decimal Bonos { get; set; }
     public decimal Deducciones { get; set; }

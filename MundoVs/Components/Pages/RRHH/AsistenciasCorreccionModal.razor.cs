@@ -24,6 +24,13 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     [Parameter] public bool PuedeAprobarTiempoExtra { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnUpdated { get; set; }
+    // Flechas ◀ ▶ de día: el padre (vista semanal) resuelve la asistencia del día
+    // destino y la setea como Asistencia. El modal NO conoce el periodo; sólo
+    // pide el cambio. Si el padre no conecta el callback (vista diaria), las
+    // flechas no se renderizan (gate por HasDelegate).
+    [Parameter] public EventCallback<DateOnly> OnCambioDiaSolicitado { get; set; }
+    [Parameter] public DateOnly? FechaMinimaPeriodo { get; set; }
+    [Parameter] public DateOnly? FechaMaximaPeriodo { get; set; }
 
     #region Records internos
 
@@ -37,6 +44,18 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         string? Aprobacion);
 
     private sealed record ResumenCalculoItem(string Etiqueta, string Valor, string? Nota = null, string? CssClass = null);
+
+    // Cifras centrales del día para el bloque "Cifras del día":
+    // Bruto = tiempo crudo (entrada→salida sin reglas), Neto = trabajado efectivo
+    // (ya con descansos/salidas temporales descontados + perdón manual), Visible =
+    // tiempo que cuenta para la jornada (base + permiso + compensación + extra
+    // aprobado), Pagado = visible menos el extra autorizado al banco de horas (que
+    // no se paga como dinero, se acumula). Ver RrhhTiempoExtraPolicy.
+    private sealed record DesgloseDiaCifras(int Bruto, int Neto, int Visible, int Pagado);
+
+    // Delta legible para la línea bruto→neto→visible: qué se restó (EsSuma=false)
+    // o sumó (EsSuma=true) y cuántos minutos. Sólo se muestran los no nulos.
+    private sealed record DeltaDiaLegible(string Etiqueta, int Minutos, bool EsSuma);
 
     private sealed record TimelineSegmentoDia(
         string Titulo,
@@ -63,6 +82,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private sealed record ResumenLateralItem(string Etiqueta, string Valor, string CssClass);
 
+    // Término de la barra de fórmula "Bruto − descansos = Neto + permiso + extra = Visible − banco = Pagado".
+    // Signo es el operador que precede al término ("", "−", "+", "="); el primer término lleva signo vacío.
+    private sealed record FormulaTermino(string Etiqueta, int Minutos, string Signo);
+
     private delegate void AplicarCambiosSegmentoDelegate(RrhhMarcacion inicio, RrhhMarcacion fin, string usuarioActual, CrmDbContext db);
 
     #endregion
@@ -88,12 +111,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string? marcacionManualEditandoObservacion;
     private List<RrhhLogChecador> bitacoraCorreccionDia = [];
     private string tipoResolucionTiempoExtra = "PagarTodo";
-    private string? resolucionTiempoExtraObservaciones;
     private int saldoBancoHorasSeleccionado;
     private int topeBancoHorasConfigurado = 40 * 60;
     private decimal factorTiempoExtraConfigurado = 2m;
     private bool bancoHorasHabilitadoConfigurado;
     private decimal factorAcumulacionBancoHorasConfigurado = 1m;
+    // Fase 8 — true cuando el flujo de resolución por periodo está activo (gate Fase 7). En ese
+    // modo el modal diario oculta la captura de tiempo extra con un aviso (la autorización va por
+    // periodo en Asistencias Semanal); el resto del modal sigue autoritativo a nivel día.
+    private bool requiereResolucionAutorizadaParaNomina = true;
     private int minutosExtraBancoAcumuladosActual;
     private int minutosMinimosTiempoExtraConfigurado = 30;
     private int minutosCompensacionPermisoCaptura;
@@ -126,13 +152,25 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private CrmDbContext? _draftDb;
     private bool _tieneCambiosPendientes;
     private bool _mostrarConfirmacionCierre;
-    private bool _mostrarAccionesRapidasTiempo;
+    // Día destino cuando se pide cambiar de día con cambios sin guardar: se
+    // guarda y dispara OnCambioDiaSolicitado al confirmar (guardar/descartar).
+    private DateOnly? _fechaDestinoPendiente;
     private bool _mostrarAccionesRapidasPermiso;
     private bool _mostrarAccionesRapidasTurno;
     private bool _mostrarAccionesRapidasModoExtra;
     private bool _mostrarBitacora;
     private bool _mostrarMarcacionesDia;
     private bool _mostrarDescansosNoDescontar;
+    private bool _mostrarAyudaDia;
+    // Timeline-first: pin seleccionado (popover de marcación). La selección de bloque
+    // reutiliza segmentoEditandoInicioId/FinId (EditarSegmento).
+    private Guid? _pinSeleccionadoId;
+    // Acordeón "Corregir" que agrupa los 6 botones de acciones rápidas.
+    private bool _mostrarCorrecciones;
+    // F5b: cierto cuando el día cargado es festivo para la empresa. Usado para deshabilitar
+    // la autorización manual de tiempo extra en PorHoras (decisión 5: el tiempo trabajado
+    // en festivo va al factor festivo, no a extra). Complementa el gate de servicio F4a.
+    private bool _esFestivoActual;
     private HashSet<int> _descansosNoDescontarSeleccionados = [];
     private int _toleranciaExcesoDescansoMinutos = RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoDefault;
     private TurnoBaseDetalle? _detalleTurnoVigenteCache;
@@ -233,7 +271,6 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         _ultimaAsistenciaCargadaId = AsistenciaActual.Id;
         ReiniciarEstadoVisual();
         tipoResolucionTiempoExtra = "PagarTodo";
-        resolucionTiempoExtraObservaciones = null;
         modoSugerenciaExtra = AsistenciaActual.ModoSugerenciaExtra ?? "EntradaSalida";
         await CargarContextoTiempoExtraAsync(_draftDb);
         _toleranciaExcesoDescansoMinutos = (await RrhhAsistenciaDescansoSettings.LoadAsync(_draftDb, _empresaId)).ToleranciaExcesoDescansoMinutos;
@@ -287,7 +324,17 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         bitacoraCorreccionDia = [];
         permisoDiaSeleccionado = null;
         resumenAusenciaActual = null;
+        _esFestivoActual = false;
         ActualizarAsesorCorreccion();
+    }
+
+    private static async Task<bool> EsFestivoAsync(CrmDbContext db, DateOnly fecha)
+    {
+        var inicioDia = fecha.ToDateTime(TimeOnly.MinValue);
+        var finDia = inicioDia.AddDays(1);
+        return await db.FestivosRrhh
+            .AsNoTracking()
+            .AnyAsync(f => f.IsActive && f.Fecha >= inicioDia && f.Fecha < finDia);
     }
 
     private async Task CargarContextoDiaAsync(CrmDbContext db, DateOnly fecha, bool recargarAsistencia)
@@ -302,6 +349,8 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             LimpiarContextoDia();
             return;
         }
+
+        _esFestivoActual = await EsFestivoAsync(db, AsistenciaActual.Fecha);
 
         var (desdeUtc, hastaUtc) = ObtenerVentanaConsultaUtc(fecha);
 
@@ -350,7 +399,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         minutosExtraBancoAcumuladosActual = (int)Math.Round(horasBancoAcumuladasActual * 60m, MidpointRounding.AwayFromZero);
 
-        minutosCompensadosPermisoAprobados = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(bitacoraCorreccionDia, AsistenciaActual.EmpleadoId, AsistenciaActual.Fecha);
+        minutosCompensadosPermisoAprobados = AsistenciaActual.MinutosCompensacionPermisoAprobados;
         minutosRecuperablesPermisoAprobables = RrhhPermisoCompensationPolicy.ObtenerMinutosRecuperablesAprobables(AsistenciaActual, minutosMinimosTiempoExtraConfigurado);
         var minutosCompensacionSugeridos = ObtenerMinutosCompensacionPermisoSugeridosAprobacion();
         minutosCompensacionPermisoCaptura = minutosCompensadosPermisoAprobados > 0
@@ -472,11 +521,13 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         minutosPerdonManualCaptura = AsistenciaActual?.MinutosPerdonadosManual ?? 0;
         ReiniciarEdicionManual();
         CancelarEdicionSegmento();
-        _mostrarAccionesRapidasTiempo = false;
         _mostrarAccionesRapidasPermiso = false;
         _mostrarAccionesRapidasTurno = false;
         _mostrarAccionesRapidasModoExtra = false;
         _mostrarBitacora = false;
+        _mostrarAyudaDia = false;
+        _pinSeleccionadoId = null;
+        _mostrarCorrecciones = false;
         modoSugerenciaExtra = "EntradaSalida";
     }
 
@@ -484,6 +535,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     {
         if (_tieneCambiosPendientes)
         {
+            _fechaDestinoPendiente = null;
             _mostrarConfirmacionCierre = true;
             return;
         }
@@ -491,7 +543,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         await CerrarSinGuardarAsync();
     }
 
-    private async Task CerrarSinGuardarAsync()
+    // Reset del estado interno SIN disparar OnClose. Lo usan tanto el cierre
+    // normal como el cambio de día (que mantiene el modal abierto y sólo
+    // cambia la Asistencia que pasa el padre).
+    private async Task ResetEstadoInternoAsync()
     {
         _ultimaAsistenciaCargadaId = null;
         AsistenciaActual = null;
@@ -500,7 +555,21 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         mostrarAyudaReglas = false;
         _mostrarConfirmacionCierre = false;
         _tieneCambiosPendientes = false;
+        _mostrarAyudaDia = false;
         await DisposeDraftContextAsync();
+    }
+
+    private async Task CerrarSinGuardarAsync()
+    {
+        var destino = _fechaDestinoPendiente;
+        await ResetEstadoInternoAsync();
+        if (destino.HasValue && OnCambioDiaSolicitado.HasDelegate)
+        {
+            _fechaDestinoPendiente = null;
+            await OnCambioDiaSolicitado.InvokeAsync(destino.Value);
+            return;
+        }
+        _fechaDestinoPendiente = null;
         if (OnClose.HasDelegate)
         {
             await OnClose.InvokeAsync();
@@ -522,15 +591,83 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             await ReprocesarYRefrescarDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarResolucion: true);
             await _draftDb.SaveChangesAsync();
-            _tieneCambiosPendientes = false;
-            _mostrarConfirmacionCierre = false;
+            var destino = _fechaDestinoPendiente;
+            await ResetEstadoInternoAsync();
             await NotificarActualizacionAsync();
-            await CerrarSinGuardarAsync();
+            if (destino.HasValue && OnCambioDiaSolicitado.HasDelegate)
+            {
+                _fechaDestinoPendiente = null;
+                await OnCambioDiaSolicitado.InvokeAsync(destino.Value);
+                return;
+            }
+            _fechaDestinoPendiente = null;
+            if (OnClose.HasDelegate)
+            {
+                await OnClose.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {
             error = ex.InnerException?.Message ?? ex.Message;
         }
+    }
+
+    // Cancelar el confirm de cierre: oculta el diálogo y descarta cualquier
+    // cambio de día pendiente (el usuario decidió quedarse en el día actual).
+    private void CancelarConfirmacionCierre()
+    {
+        _mostrarConfirmacionCierre = false;
+        _fechaDestinoPendiente = null;
+    }
+
+    // Flecha ◀ (-1) / ▶ (+1). Si hay cambios sin guardar, abre el confirm de
+    // cierre con el destino pendiente; al guardar/descartar se dispara el
+    // cambio. Sino, pide el día destino al padre directo.
+    private async Task SolicitarCambioDiaAsync(int direccion)
+    {
+        if (AsistenciaActual == null || !OnCambioDiaSolicitado.HasDelegate)
+        {
+            return;
+        }
+
+        var destino = AsistenciaActual.Fecha.AddDays(direccion);
+        if (FechaMinimaPeriodo.HasValue && destino < FechaMinimaPeriodo.Value)
+        {
+            return;
+        }
+        if (FechaMaximaPeriodo.HasValue && destino > FechaMaximaPeriodo.Value)
+        {
+            return;
+        }
+
+        if (_tieneCambiosPendientes)
+        {
+            _fechaDestinoPendiente = destino;
+            _mostrarConfirmacionCierre = true;
+            return;
+        }
+
+        _fechaDestinoPendiente = null;
+        await OnCambioDiaSolicitado.InvokeAsync(destino);
+    }
+
+    // ¿Está la flecha de dirección habilitada? (borde del periodo o sin callback)
+    private bool FlechaDiaHabilitada(int direccion)
+    {
+        if (AsistenciaActual == null || !OnCambioDiaSolicitado.HasDelegate)
+        {
+            return false;
+        }
+        var destino = AsistenciaActual.Fecha.AddDays(direccion);
+        if (FechaMinimaPeriodo.HasValue && destino < FechaMinimaPeriodo.Value)
+        {
+            return false;
+        }
+        if (FechaMaximaPeriodo.HasValue && destino > FechaMaximaPeriodo.Value)
+        {
+            return false;
+        }
+        return true;
     }
 
     private async Task NotificarActualizacionAsync()

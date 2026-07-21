@@ -1497,3 +1497,901 @@
         flex-direction: column;
     }
 }
+
+/* ===== Rediseño Propuesta B: header sticky, flechas de día, cifras del día,
+   barra de acciones y ayuda del día colapsable ============================ */
+
+/* Header fijo arriba del scroll del modal para que flechas/estatus/qué sigue
+   siempre queden visibles. */
+.asis-modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+}
+
+.asis-modal-header__next {
+    font-size: .68rem;
+    opacity: .85;
+    line-height: 1.25;
+    max-width: 38ch;
+}
+
+/* Flechas ◀ ▶ de navegación entre días del periodo. Reusan el patrón del
+   help-button (translúcido sobre el header oscuro). */
+.asis-day-arrow {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, .45);
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    font-size: .95rem;
+    line-height: 1;
+    transition: background .15s ease;
+}
+
+.asis-day-arrow:hover:not(:disabled) {
+    background: rgba(255, 255, 255, .28);
+}
+
+.asis-day-arrow:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+
+/* Cifras del día: la cifra central del modal. */
+.asis-cifras {
+    background: #f8fafc;
+}
+
+.asis-cifras__row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .6rem;
+}
+
+.asis-cifra {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: .65rem;
+    padding: .55rem .65rem;
+    text-align: center;
+}
+
+.asis-cifra__label {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.asis-cifra__value {
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #0f172a;
+}
+
+.asis-cifra__hint {
+    font-size: .62rem;
+    color: #94a3b8;
+    margin-top: .15rem;
+}
+
+.asis-cifra--accent {
+    border-color: #c7d2fe;
+    background: #eef2ff;
+}
+
+.asis-cifra--accent .asis-cifra__value {
+    color: #3730a3;
+}
+
+.asis-cifra--paid {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+
+.asis-cifra--paid .asis-cifra__value {
+    color: #166534;
+}
+
+.asis-cifras__flow {
+    margin-top: .55rem;
+    font-size: .74rem;
+    color: #475569;
+    text-align: center;
+}
+
+.asis-cifras__flow strong {
+    color: #0f172a;
+}
+
+.asis-cifras__deltas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    justify-content: center;
+    margin-top: .5rem;
+}
+
+.asis-delta {
+    font-size: .68rem;
+    font-weight: 700;
+    padding: .2rem .5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.asis-delta--minus {
+    color: #b91c1c;
+    background: #fee2e2;
+}
+
+.asis-delta--plus {
+    color: #166534;
+    background: #dcfce7;
+}
+
+/* Barra de acciones "Corregir". */
+.asis-actions-bar {
+    background: #fff;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+}
+
+/* Ayuda del día: bloque colapsable que reúne las superficies explicativas. */
+.asis-ayuda-dia {
+    border: 1px solid #e2e8f0;
+    border-radius: .65rem;
+    background: #fff;
+    padding: .8rem;
+}
+
+.asis-ayuda-dia__section {
+    padding-block: .5rem;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.asis-ayuda-dia__section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.asis-ayuda-dia__section:first-child {
+    padding-top: 0;
+}
+
+@media (max-width: 720px) {
+    .asis-cifras__row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* ===== Rediseño 2-col: asesor lateral, barra de fórmula, timeline visual ===== */
+
+/* Asesor lateral fijo en la columna derecha del body (grid .asis-layout). */
+.asis-asesor-lateral {
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    position: sticky;
+    top: .75rem;
+}
+
+.asis-asesor-lateral__head {
+    border: 1px solid #e2e8f0;
+    border-radius: .85rem;
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+    padding: .85rem .9rem;
+}
+
+.asis-asesor-lateral__actions {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+}
+
+.asis-asesor-lateral__note {
+    font-size: .74rem;
+    color: #1d4ed8;
+    background: #dbeafe;
+    border: 1px solid #bfdbfe;
+    border-radius: .55rem;
+    padding: .4rem .55rem;
+    line-height: 1.4;
+}
+
+.asis-asesor-lateral__summary {
+    border: 1px solid #e2e8f0;
+    border-radius: .85rem;
+    background: #fff;
+    padding: .75rem .8rem;
+}
+
+.asis-asesor-lateral__state {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .75rem;
+    border-radius: .65rem;
+    padding: .45rem .6rem;
+    font-size: .76rem;
+    border: 1px solid transparent;
+}
+
+.asis-asesor-lateral__state span {
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    font-size: .68rem;
+}
+
+.asis-asesor-lateral__state strong {
+    color: #0f172a;
+    font-size: .8rem;
+}
+
+/* Barra de fórmula Bruto − descansos = Neto + … = Visible − banco = Pagado. */
+.asis-formula-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem .5rem;
+    margin-top: .55rem;
+    padding: .5rem .6rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: .65rem;
+}
+
+.asis-formula-bar__term {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+}
+
+.asis-formula-bar__label {
+    font-size: .62rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.asis-formula-bar__value {
+    font-size: .92rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.asis-formula-bar__op {
+    font-size: .9rem;
+    font-weight: 800;
+    color: #94a3b8;
+    align-self: center;
+    padding: 0 .15rem;
+}
+
+/* Barra visual agregada del timeline (excluye la referencia de turno). */
+.asis-timeline-bar {
+    display: flex;
+    width: 100%;
+    height: .9rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #e2e8f0;
+    box-shadow: inset 0 0 0 1px #cbd5e1;
+}
+
+.asis-timeline-bar__seg {
+    display: block;
+    height: 100%;
+    min-width: .35rem;
+    transition: width .2s ease;
+}
+
+.asis-timeline-markers {
+    font-size: .72rem;
+}
+
+/* Chips de incidencias en el header oscuro. */
+.asis-modal-header__chips .asis-chip {
+    font-size: .66rem;
+}
+
+@media (max-width: 1199.98px) {
+    .asis-asesor-lateral {
+        position: static;
+    }
+}
+
+/* ===== Línea de tiempo del día: eje de reloj, pines, bloques posicionados ===== */
+
+.asis-tl {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+
+.asis-tl__alerts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.asis-tl__alert {
+    display: inline-flex;
+    align-items: center;
+    font-size: .7rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: .18rem .55rem;
+}
+
+.asis-tl__alert--warn { background: #fef3c7; color: #92400e; }
+.asis-tl__alert--info { background: #dbeafe; color: #1d4ed8; }
+.asis-tl__alert--muted { background: #f1f5f9; color: #475569; }
+.asis-tl__alert--accent { background: #ede9fe; color: #6d28d9; }
+
+.asis-tl__axis {
+    position: relative;
+    height: 1rem;
+    margin: 0 .15rem;
+}
+
+.asis-tl__tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: .62rem;
+    font-weight: 700;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
+.asis-tl__tick::before {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    width: 1px;
+    height: .3rem;
+    background: #cbd5e1;
+}
+
+.asis-tl__track {
+    position: relative;
+    width: 100%;
+    height: 1.1rem;
+    border-radius: .3rem;
+    background: #f1f5f9;
+    box-shadow: inset 0 0 0 1px #e2e8f0;
+    overflow: visible;
+}
+
+.asis-tl__seg {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    min-width: .15rem;
+    border-radius: .25rem;
+    transition: width .2s ease, left .2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.asis-tl__seg--active {
+    outline: 2px solid #1d4ed8;
+    outline-offset: 1px;
+    z-index: 3;
+}
+
+.asis-tl__seg--warn { box-shadow: inset 0 0 0 1px rgba(180, 83, 9, .55); }
+.asis-tl__seg--draft { box-shadow: inset 0 0 0 1px rgba(124, 58, 237, .45); }
+.asis-tl__seg--ignored { opacity: .55; box-shadow: inset 0 0 0 1px rgba(100, 116, 139, .5); }
+
+.asis-tl__seg-ind {
+    font-size: .6rem;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 0 2px rgba(0, 0, 0, .45);
+    line-height: 1;
+}
+
+.asis-tl__pin {
+    position: absolute;
+    top: 50%;
+    width: .55rem;
+    height: .55rem;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, .35);
+    z-index: 4;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    line-height: 1;
+}
+
+.asis-tl__pin:focus-visible {
+    outline: 2px solid #1d4ed8;
+    outline-offset: 1px;
+}
+
+.asis-tl__pin--real { background: #0f172a; }
+.asis-tl__pin--manual { background: #6d28d9; }
+.asis-tl__pin--anulada { background: #cbd5e1; opacity: .6; }
+
+.asis-tl__markers {
+    position: relative;
+    height: 1.15rem;
+    font-size: .68rem;
+}
+
+.asis-tl__marker {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-weight: 700;
+    color: #166534;
+    background: #dcfce7;
+    border-radius: 999px;
+    padding: .1rem .45rem;
+    white-space: nowrap;
+}
+
+.asis-tl__marker--end {
+    color: #b91c1c;
+    background: #fee2e2;
+    transform: translateX(-100%);
+}
+
+.asis-tl__legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .3rem .5rem;
+}
+
+.asis-tl__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .7rem;
+    color: #475569;
+}
+
+.asis-tl__legend-sep {
+    width: 1px;
+    align-self: stretch;
+    background: #e2e8f0;
+    margin: .1rem .2rem;
+}
+
+.asis-tl__dot {
+    width: .7rem;
+    height: .7rem;
+    border-radius: .2rem;
+    display: inline-block;
+}
+
+.asis-tl__ind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    font-size: .62rem;
+    font-weight: 800;
+    background: #f1f5f9;
+    color: #475569;
+    line-height: 1;
+}
+
+.asis-tl__ind--sm {
+    width: .9rem;
+    height: .9rem;
+    font-size: .58rem;
+    margin-left: .3rem;
+    vertical-align: middle;
+}
+
+.asis-tl__ind--real { background: #0f172a; color: #fff; }
+.asis-tl__ind--manual { background: #ede9fe; color: #6d28d9; }
+.asis-tl__ind--ok { background: #dcfce7; color: #166534; }
+.asis-tl__ind--warn { background: #fef3c7; color: #92400e; }
+.asis-tl__ind--draft { background: #ede9fe; color: #6d28d9; }
+.asis-tl__ind--ignored { background: #e2e8f0; color: #475569; }
+
+@media (max-width: 767.98px) {
+    .asis-tl__tick {
+        font-size: .55rem;
+    }
+    .asis-tl__marker {
+        font-size: .6rem;
+        padding: .08rem .35rem;
+    }
+}
+
+/* ===== Timeline-first: overlay de turno, huecos, ficha de edición ===== */
+
+.asis-tl__turno {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border: 1px dashed rgba(37, 99, 235, .4);
+    background: rgba(37, 99, 235, .06);
+    border-radius: .25rem;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.asis-tl__seg--clickable {
+    cursor: pointer;
+}
+
+.asis-tl__seg--clickable:hover {
+    filter: brightness(1.06);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .35);
+}
+
+.asis-tl__pin--active {
+    transform: translate(-50%, -50%) scale(1.2);
+    box-shadow: 0 0 0 2px #1d4ed8, 0 0 0 1px rgba(15, 23, 42, .35);
+    z-index: 5;
+}
+
+.asis-tl__pin--sm {
+    width: .5rem;
+    height: .5rem;
+    border-width: 1px;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, .25);
+}
+
+.asis-tl__ficha {
+    border: 1px solid #e2e8f0;
+    border-radius: .5rem;
+    background: #fff;
+    padding: .6rem .75rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.asis-tl__ficha-head {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+}
+
+.asis-tl__ficha-title {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-weight: 700;
+    color: #0f172a;
+    flex: 1;
+}
+
+.asis-tl__ficha-meta {
+    font-size: .72rem;
+    color: #64748b;
+    align-self: center;
+}
+
+.asis-tl__ficha-close {
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 .15rem;
+    cursor: pointer;
+}
+
+.asis-tl__ficha-close:hover {
+    color: #0f172a;
+}
+
+.asis-tl__ficha-impacto {
+    font-size: .74rem;
+    color: #334155;
+    margin-top: .35rem;
+}
+
+.asis-tl__ficha-casos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem;
+    margin-top: .35rem;
+}
+
+.asis-tl__ficha-metrics {
+    font-size: .74rem;
+    color: #475569;
+    margin-top: .35rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+}
+
+.asis-tl__ficha-formula {
+    font-size: .7rem;
+    color: #64748b;
+    font-style: italic;
+    margin-top: .2rem;
+}
+
+.asis-tl__ficha-origen {
+    margin-top: .4rem;
+    padding-top: .4rem;
+    border-top: 1px dashed #e2e8f0;
+}
+
+.asis-tl__ficha-origen-title {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #94a3b8;
+    margin-bottom: .2rem;
+}
+
+.asis-tl__ficha-marca {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .74rem;
+    color: #334155;
+    margin-top: .15rem;
+}
+
+.asis-tl__ficha-marca .asis-tl__pin {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+}
+
+.asis-tl__ficha-edit {
+    margin-top: .5rem;
+    padding-top: .4rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.asis-tl__ficha-select {
+    width: auto;
+    min-width: 9rem;
+}
+
+.asis-tl__ficha-help {
+    font-size: .7rem;
+    color: #64748b;
+    margin-top: .35rem;
+}
+
+.asis-tl__ficha-loading {
+    font-size: .72rem;
+    color: #1d4ed8;
+    margin-top: .3rem;
+}
+
+.asis-tl__hint {
+    font-size: .78rem;
+    color: #64748b;
+    background: #f8fafc;
+    border: 1px dashed #e2e8f0;
+    border-radius: .4rem;
+    padding: .5rem .65rem;
+}
+
+/* ===== Acordeón "Corregir" (acciones rápidas agrupadas) ===== */
+
+.asis-corregir {
+    border: 1px solid #e2e8f0;
+    border-radius: .5rem;
+    background: #fff;
+    overflow: hidden;
+}
+
+.asis-corregir__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: none;
+    background: #f8fafc;
+    padding: .5rem .75rem;
+    font-weight: 700;
+    color: #0f172a;
+    cursor: pointer;
+}
+
+.asis-corregir__head:hover {
+    background: #f1f5f9;
+}
+
+.asis-corregir__head:focus-visible {
+    outline: 2px solid #1d4ed8;
+    outline-offset: -2px;
+}
+
+.asis-corregir__chev {
+    transition: transform .15s ease;
+    color: #64748b;
+}
+
+.asis-corregir--open .asis-corregir__chev {
+    transform: rotate(90deg);
+}
+
+.asis-corregir__body {
+    padding: .6rem .75rem;
+    border-top: 1px solid #e2e8f0;
+    animation: asis-corregir-fade .15s ease;
+}
+
+@keyframes asis-corregir-fade {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ===== Plan del turno (planeado vs real) ===== */
+
+.asis-plan {
+    border: 1px solid #e2e8f0;
+    border-radius: .4rem;
+    background: #f8fafc;
+    padding: .5rem .6rem;
+}
+
+.asis-plan__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .4rem;
+}
+
+.asis-plan__title {
+    font-weight: 700;
+    font-size: .82rem;
+    color: #0f172a;
+}
+
+.asis-plan__jornada {
+    font-size: .72rem;
+    color: #64748b;
+}
+
+.asis-plan__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .4rem .6rem;
+}
+
+.asis-plan__cell {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .25rem .35rem;
+    font-size: .76rem;
+}
+
+.asis-plan__cell--descansos {
+    grid-column: 1 / -1;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: .4rem;
+}
+
+.asis-plan__label {
+    font-size: .66rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #94a3b8;
+    flex: 0 0 auto;
+}
+
+.asis-plan__planeado {
+    font-weight: 700;
+    color: #1d4ed8;
+    font-variant-numeric: tabular-nums;
+}
+
+.asis-plan__real {
+    color: #334155;
+    font-variant-numeric: tabular-nums;
+}
+
+.asis-plan__real--none {
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.asis-plan__descansos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+}
+
+.asis-plan__descanso {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    font-size: .72rem;
+    padding: .12rem .4rem;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    font-variant-numeric: tabular-nums;
+}
+
+.asis-plan__descanso--ok {
+    color: #166534;
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+
+.asis-plan__descanso--miss {
+    color: #b91c1c;
+    border-color: #fecaca;
+    background: #fef2f2;
+}
+
+.asis-plan__pagado {
+    font-size: .62rem;
+    text-transform: uppercase;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+    border-radius: 999px;
+    padding: 0 .3rem;
+}
+
+/* Banda fantasma de descanso planificado sobre el eje */
+.asis-tl__descanso-plan {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border: 1px dashed rgba(180, 83, 9, .4);
+    background: repeating-linear-gradient(45deg, rgba(180, 83, 9, .06), rgba(180, 83, 9, .06) 4px, transparent 4px, transparent 8px);
+    border-radius: .2rem;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.asis-tl__descanso-plan--miss {
+    border-color: rgba(185, 28, 28, .4);
+    background: repeating-linear-gradient(45deg, rgba(185, 28, 28, .07), rgba(185, 28, 28, .07) 4px, transparent 4px, transparent 8px);
+}
+
+.asis-tl__descanso-plan--ok {
+    border-color: rgba(22, 102, 52, .35);
+    background: repeating-linear-gradient(45deg, rgba(22, 102, 52, .06), rgba(22, 102, 52, .06) 4px, transparent 4px, transparent 8px);
+}
+
+/* Swatch estático para la leyenda (sin estilos inline en el markup) */
+.asis-tl__legend-swatch {
+    position: static;
+    display: inline-block;
+    width: .8rem;
+    height: .7rem;
+    border-radius: .2rem;
+}
+
+@media (max-width: 767.98px) {
+    .asis-plan__grid {
+        grid-template-columns: 1fr;
+    }
+}

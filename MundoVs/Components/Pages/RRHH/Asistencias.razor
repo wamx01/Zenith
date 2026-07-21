@@ -35,7 +35,7 @@
                         <div class="asis-page-hero__summary">
                             <span class="asis-top-pill"><i class="bi bi-list-check"></i>@lista.Count registro(s)</span>
                             <span class="asis-top-pill"><i class="bi bi-exclamation-triangle"></i>@lista.Count(a => a.RequiereRevision) por revisar</span>
-                            <span class="asis-top-pill"><i class="bi bi-eye"></i>Visible @FormatearMinutos(lista.Sum(a => ObtenerMinutosTrabajadosVisibles(a)))</span>
+                            <span class="asis-top-pill"><i class="bi bi-eye"></i>Visible @FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoVisible(a)))</span>
                         </div>
                     </div>
                     <div class="asis-toolbar-actions">
@@ -179,7 +179,7 @@
                         <span class="asis-stat-card__icon"><i class="bi bi-stopwatch"></i></span>
                         <div>
                             <div class="asis-stat-card__label">Trabajo neto</div>
-                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => a.MinutosTrabajadosNetos))</div>
+                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => ObtenerMinutosNetoEfectivo(a)))</div>
                             <div class="asis-stat-card__hint">Sin contar extra ni aprobaciones.</div>
                         </div>
                     </div>
@@ -189,10 +189,22 @@
                         <span class="asis-stat-card__icon"><i class="bi bi-eye"></i></span>
                         <div>
                             <div class="asis-stat-card__label">Trabajo visible</div>
-                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => ObtenerMinutosTrabajadosVisibles(a)))</div>
+                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoVisible(a)))</div>
                             <div class="asis-stat-card__hint">Base trabajada + compensación aprobada + extra aprobada.</div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="alert alert-info d-flex align-items-center gap-2" role="alert">
+                <i class="bi bi-info-circle-fill"></i>
+                <div class="small">
+                    Esta vista muestra la <strong>detección diaria</strong> de tiempo extra, retardos y faltantes.
+                    La <strong>liquidación y autorización</strong> del tiempo extra ahora se hace por <strong>periodo de nómina</strong> en la vista semanal.
+                    @if (_puedeAprobarTiempoExtra)
+                    {
+                        <span class="ms-1">Ve a <em>Asistencias · Semanal</em> para aprobar el periodo.</span>
+                    }
                 </div>
             </div>
 
@@ -345,7 +357,7 @@
                                         
                                         <td>
                                             <div class="asis-stack">
-                                                <div class="asis-cell-title">@FormatearMinutos(ObtenerMinutosTrabajadosVisibles(item))</div>
+                                                <div class="asis-cell-title">@FormatearMinutos(ObtenerMinutosTiempoVisible(item))</div>
                                                 <div class="asis-cell-subtitle" title="Bruto detectado"><i class="bi bi-hourglass me-1"></i>@FormatearMinutos(item.MinutosTrabajadosBrutos)</div>
                                                 @if (item.MinutosJornadaNetaProgramada > 0)
                                                 {
@@ -360,6 +372,10 @@
                                         
                                         <td>
                                             <div class="asis-incidencias-group">
+                                                @if (item.EsPorHoras)
+                                                {
+                                                    <span class="asis-chip asis-chip--info asis-chip--xs" title="Esquema por horas: se paga el tiempo trabajado, sin jornada esperada"><i class="bi bi-clock-history me-1"></i>Por horas</span>
+                                                }
                                                 @if (item.MinutosRetardo > 0)
                                                 {
                                                     <span class="asis-chip asis-chip--warn" title="Retardo"><i class="bi bi-alarm me-1"></i>@FormatearMinutosCortos(item.MinutosRetardo)</span>
@@ -372,7 +388,7 @@
                                                 {
                                                     <span class="asis-chip asis-chip--success" title="Tiempo extra detectado"><i class="bi bi-lightning-charge me-1"></i>@FormatearMinutosCortos(item.MinutosExtra)</span>
                                                 }
-                                                @if (item.MinutosRetardo == 0 && item.MinutosSalidaAnticipada == 0 && item.MinutosExtra == 0)
+                                                @if (!item.EsPorHoras && item.MinutosRetardo == 0 && item.MinutosSalidaAnticipada == 0 && item.MinutosExtra == 0)
                                                 {
                                                     <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-check2"></i> ok</span>
                                                 }

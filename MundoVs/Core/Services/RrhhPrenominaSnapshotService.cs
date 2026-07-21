@@ -66,6 +66,20 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
 
         var resumenAsistencias = await ObtenerResumenAsistenciasPeriodoAsync(db, inicio, fin, ids, configuracion, cancellationToken);
         var saldosBancoActuales = new Dictionary<Guid, decimal>();
+
+        // Fase 7 — resoluciones de tiempo extra Autorizadas del periodo (lookup por FechaInicio/Fin;
+        // la entidad acota la empresa vía el global filter de CrmDbContext). Cuando existe, la
+        // prenómina muestra los valores del periodo (override del resumen diario) vía el mismo
+        // helper que consume la nómina → display coherente, sin divergencia.
+        var resolucionesPeriodo = await db.RrhhResolucionesTiempoExtraPeriodo
+            .AsNoTracking()
+            .Include(r => r.Lineas)
+            .Where(r => r.FechaInicio == DateOnly.FromDateTime(inicio)
+                && r.FechaFin == DateOnly.FromDateTime(fin)
+                && r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada
+                && r.IsActive)
+            .ToDictionaryAsync(r => r.EmpleadoId, cancellationToken);
+
         var snapshots = new List<RrhhPrenominaSnapshotItem>(empleadosPeriodo.Count);
 
         foreach (var empleado in empleadosPeriodo)
@@ -89,7 +103,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 diasPeriodo,
                 inicio,
                 configuracion,
-                vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? []));
+                vacacionesHistoricasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [],
+                resolucionesPeriodo.GetValueOrDefault(empleado.Id)));
         }
 
         return snapshots;
@@ -105,7 +120,8 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         int diasPeriodo,
         DateTime inicioPeriodo,
         NominaConfiguracion configuracion,
-        IReadOnlyList<RrhhAusencia> vacacionesHistoricas)
+        IReadOnlyList<RrhhAusencia> vacacionesHistoricas,
+        RrhhResolucionTiempoExtraPeriodo? resolucion)
     {
         var clasificacion = ClasificarAusenciasEmpleado(ausenciasEmpleado);
         var diasTrabajados = resumen.TieneAsistencias
@@ -122,6 +138,32 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var factorOverride = resumen.FactorTiempoExtraOverride;
         var notaAusencias = ConstruirNotaAusencias(ausenciasEmpleado);
 
+        // Fase 7 — si hay resolución Autorizada del periodo, el extra y las deducciones aliviadas
+        // vienen de la resolución (mismo helper que la nómina) para que el display de la prenómina
+        // cuadre con el cálculo de nómina. Sin resolución, se usa el resumen diario (comportamiento
+        // histórico). El banco del periodo reemplaza el tope diario del snapshot (la resolución ya
+        // aplicó su propio tope al autorizar). Salida anticipada y descuento manual no participan
+        // en el neteo y se dejan del resumen diario. Dobles/triples se ignoran aquí (PrenominaDetalle
+        // no los tiene; se derivan en la nómina).
+        var sourcing = NominaTiempoExtraSourcing.Source(
+            new NominaOvertimeSourcingInput
+            {
+                HorasExtra = resumen.HorasExtra,
+                HorasExtraBase = resumen.HorasExtraBase,
+                HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
+                MinutosRetardo = resumen.MinutosRetardo,
+                MinutosSalidaAnticipada = resumen.MinutosSalidaAnticipada,
+                MinutosPerdonadosManual = resumen.MinutosPerdonadosManual,
+                MinutosFaltanteDescontable = resumen.MinutosFaltanteDescontable,
+                MinutosDescuentoManual = 0
+            },
+            resolucion,
+            configuracion,
+            factorOverride);
+        var factorSourcing = sourcing.FactorPagoTiempoExtra > 0m
+            ? sourcing.FactorPagoTiempoExtra
+            : (factorOverride > 0m ? factorOverride : configuracion.FactorHoraExtra);
+
         return new RrhhPrenominaSnapshotItem
         {
             Empleado = empleado,
@@ -136,20 +178,24 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             DiasConMarcacion = resumen.DiasConMarcacion,
             DiasDomingoTrabajado = resumen.DiasDomingoTrabajado,
             DiasFestivoTrabajado = resumen.DiasFestivoTrabajado,
+            DiasPorHorasTrabajados = resumen.DiasPorHorasTrabajados,
+            MinutosPorHorasNetos = resumen.MinutosPorHorasNetos,
+            MinutosPorHorasFestivoNetos = resumen.MinutosPorHorasFestivoNetos,
+            DiasFestivoTrabajadoFija = resumen.DiasFestivoTrabajadoFija,
             HorasTrabajadasNetas = resumen.HorasTrabajadasNetas,
-            HorasExtraBase = resumen.HorasExtraBase,
-            HorasExtra = resumen.HorasExtra,
-            HorasBancoAcumuladas = resumen.HorasBancoAcumuladas,
+            HorasExtraBase = sourcing.HorasExtraBase,
+            HorasExtra = sourcing.HorasExtra,
+            HorasBancoAcumuladas = sourcing.HorasExtraBanco,
             HorasBancoConsumidas = resumen.HorasBancoConsumidas,
             HorasBancoSaldoActual = saldoBancoActual,
             HorasDescansoTomado = resumen.HorasDescansoTomado,
             HorasDescansoPagado = resumen.HorasDescansoPagado,
             HorasDescansoNoPagado = resumen.HorasDescansoNoPagado,
-            MinutosRetardo = resumen.MinutosRetardo,
-            MinutosSalidaAnticipada = resumen.MinutosSalidaAnticipada,
-            MinutosFaltanteDescontable = resumen.MinutosFaltanteDescontable,
+            MinutosRetardo = sourcing.MinutosRetardo,
+            MinutosSalidaAnticipada = sourcing.MinutosSalidaAnticipada,
+            MinutosFaltanteDescontable = sourcing.MinutosFaltanteDescontable,
             MinutosDescuentoManual = 0,
-            FactorPagoTiempoExtra = factorOverride > 0m ? factorOverride : configuracion.FactorHoraExtra,
+            FactorPagoTiempoExtra = factorSourcing,
             MontoDestajoInformativo = montoDestajoEmpleado,
             DiasVacacionesDisponibles = diasVacacionesDisponibles,
             DiasVacacionesRestantes = Math.Max(0, diasVacacionesDisponibles - clasificacion.Vacaciones),
@@ -284,7 +330,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             return new ResumenAsistenciaPrenominaSnapshot();
         }
 
-        var trabajadas = asistencias.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).ToList();
+        var trabajadas = asistencias.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado or RrhhAsistenciaEstatus.TrabajadoPorHoras).ToList();
         var faltas = asistencias.Where(a => a.Estatus == RrhhAsistenciaEstatus.Falta).ToList();
         var notas = asistencias
             .Where(a => a.RequiereRevision || a.Estatus is RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.TurnoNoAsignado or RrhhAsistenciaEstatus.MarcaNoReconocida)
@@ -306,8 +352,19 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var minutosSalidaAnticipadaOriginales = asistencias.Sum(a => Math.Max(0, a.MinutosSalidaAnticipada));
         var minutosPerdonadosManual = asistencias.Sum(a => Math.Max(0, a.MinutosPerdonadosManual));
         var minutosRetardo = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a)));
-        var minutosSalidaAnticipada = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a)));
-        var minutosFaltanteDescontable = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a), 0));
+        var minutosSalidaAnticipada = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a));
+        var minutosFaltanteDescontable = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a), Math.Max(0, a.MinutosCompensacionPermisoAprobados)));
+        // F4b: agregados PorHoras para pago por minutos. El neto efectivo (neto + perdón)
+        // es la base que se paga; en festivo va al factor festivo (lo aplica el service de sueldo).
+        var asistenciasPorHoras = asistencias.Where(a => a.EsPorHoras).ToList();
+        var minutosPorHorasNetos = asistenciasPorHoras
+            .Where(a => !festivosPeriodo.Contains(a.Fecha))
+            .Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
+        var minutosPorHorasFestivoNetos = asistenciasPorHoras
+            .Where(a => festivosPeriodo.Contains(a.Fecha))
+            .Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
+        var diasPorHorasTrabajados = asistenciasPorHoras.Select(a => a.Fecha).Distinct().Count();
+        var diasFestivoTrabajadoFija = trabajadas.Count(a => festivosPeriodo.Contains(a.Fecha) && !a.EsPorHoras);
         var diasCubiertosBanco = asistencias.Count(a => a.MinutosCubiertosBancoHoras > 0);
         if (diasCubiertosBanco > 0)
         {
@@ -334,7 +391,11 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             DiasConMarcacion = asistencias.Count(a => a.TotalMarcaciones > 0),
             DiasDomingoTrabajado = trabajadas.Count(a => a.Fecha.ToDateTime(TimeOnly.MinValue).DayOfWeek == DayOfWeek.Sunday),
             DiasFestivoTrabajado = trabajadas.Count(a => festivosPeriodo.Contains(a.Fecha)),
-            HorasTrabajadasNetas = Math.Round(asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosNetosEfectivos(a)) / 60m, 2),
+            DiasPorHorasTrabajados = diasPorHorasTrabajados,
+            MinutosPorHorasNetos = minutosPorHorasNetos,
+            MinutosPorHorasFestivoNetos = minutosPorHorasFestivoNetos,
+            DiasFestivoTrabajadoFija = diasFestivoTrabajadoFija,
+            HorasTrabajadasNetas = Math.Round(asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a)) / 60m, 2),
             HorasExtraBase = Math.Round(minutosExtraBase / 60m, 2),
             HorasExtra = Math.Round(minutosExtraPago / 60m, 2),
             HorasBancoAcumuladas = Math.Round(minutosBancoAcumulados / 60m, 2),
@@ -442,6 +503,12 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         public int DiasConMarcacion { get; set; }
         public int DiasDomingoTrabajado { get; set; }
         public int DiasFestivoTrabajado { get; set; }
+        // F4b: desglose PorHoras (esquema de jornada por horas — pago por minutos trabajados).
+        public int DiasPorHorasTrabajados { get; set; }
+        public int MinutosPorHorasNetos { get; set; }
+        public int MinutosPorHorasFestivoNetos { get; set; }
+        // Festivo trabajado Fija (excluye días PorHoras, cuyo festivo va al base por minutos).
+        public int DiasFestivoTrabajadoFija { get; set; }
         public decimal HorasTrabajadasNetas { get; set; }
         public decimal HorasExtraBase { get; set; }
         public decimal HorasExtra { get; set; }

@@ -372,6 +372,12 @@
                                         <label class="form-check-label">Requerir prenómina cerrada para generar nómina</label>
                                     </div>
                                 </div>
+                                <div class="col-xl-4 col-md-6">
+                                    <div class="form-check form-switch">
+                                        <InputCheckbox class="form-check-input" @bind-Value="reglasPrenomina.RequiereResolucionAutorizadaParaNomina" />
+                                        <label class="form-check-label">Requerir resolución de tiempo extra autorizada para generar prenómina y nómina</label>
+                                    </div>
+                                </div>
                                 <div class="col-12">
                                     <label class="form-label">Vista JSON</label>
                                     <textarea class="form-control font-monospace nom-json-preview" rows="5" readonly>@ObtenerReglasPrenominaJsonPreview()</textarea>
@@ -432,7 +438,12 @@
                                 <label class="form-label">Factor extra triple</label>
                                 <InputNumber class="form-control" @bind-Value="configuracion.FactorHoraExtraTriple" />
                             </div>
-                            <div class="nom-help-text text-muted">Primeras 9 horas extra semanales = doble; excedente = triple.</div>
+                            <div class="mb-3">
+                                <label class="form-label">Horas extra dobles por semana</label>
+                                <InputNumber class="form-control" @bind-Value="configuracion.HorasExtraDoblesPorSemana" />
+                                <div class="form-text">Techo de horas extra pagadas como dobles por periodo de resolución (LFT: 9). El excedente del pago sobre este techo se paga como triple. Solo aplica al pago; el banco acumula en crudo.</div>
+                            </div>
+                            <div class="nom-help-text text-muted">Primeras @configuracion.HorasExtraDoblesPorSemana horas extra del periodo = doble; excedente = triple.</div>
                         </div>
                     </div>
                 </div>
@@ -1140,6 +1151,7 @@
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorHoraExtra, configuracion.FactorHoraExtra.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para calcular horas extra.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorHoraExtraTriple, configuracion.FactorHoraExtraTriple.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para calcular horas extra triples conforme al límite legal semanal.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, Math.Max(0, configuracion.MinutosMinimosTiempoExtra).ToString(), "Minutos mínimos antes o después del turno para contar tiempo laboral y tiempo extra.");
+            await AppConfig.SetValueAsync(ClavesConfiguracionNomina.HorasExtraDoblesPorSemana, Math.Max(0, configuracion.HorasExtraDoblesPorSemana).ToString(), "Techo de horas extra pagadas como dobles por periodo de resolución (LFT: 9). El excedente del pago se paga como triple.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorFestivoTrabajado, configuracion.FactorFestivoTrabajado.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor general usado para pagar festivos trabajados cuando la fecha no define uno específico.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.FactorDescansoTrabajado, configuracion.FactorDescansoTrabajado.ToString(System.Globalization.CultureInfo.InvariantCulture), "Factor usado para pagar días de descanso trabajado.");
             await AppConfig.SetValueAsync(ClavesConfiguracionNomina.BancoHorasHabilitado, configuracion.BancoHorasHabilitado.ToString(), "Indica si la empresa usa banco de horas a partir de horas extra.");

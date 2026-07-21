@@ -9,303 +9,15 @@
 @using MundoVs.Core.Models
 @using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
+@using MundoVs.Core.Interfaces
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
+@inject IRrhhResolucionPeriodoService ResolucionPeriodo
 @rendermode InteractiveServer
 
 <PageTitle>Resumen semanal de asistencias</PageTitle>
 
-<style>
-    .asis-week-table th {
-        font-size: .74rem;
-        white-space: nowrap;
-        vertical-align: middle;
-    }
-
-    .asis-week-table-wrap {
-        max-height: calc(100vh - 260px);
-        overflow: auto;
-        position: relative;
-        isolation: isolate;
-        border-radius: .5rem;
-    }
-
-    .asis-week-table {
-        min-width: max-content;
-        border-collapse: separate;
-        border-spacing: 0;
-        table-layout: fixed;
-    }
-
-    .asis-week-table thead {
-        position: sticky;
-        top: 0;
-        z-index: 6;
-    }
-
-    .asis-week-table thead tr {
-        position: sticky;
-        top: 0;
-        z-index: 6;
-    }
-
-    .asis-week-table thead th {
-        position: sticky;
-        top: 0;
-        z-index: 7;
-        background: #212529;
-        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .08);
-    }
-
-    .asis-week-sticky-col {
-        position: sticky;
-        z-index: 2;
-        background-clip: padding-box;
-    }
-
-    .asis-week-sticky-col--employee {
-        left: 0;
-        min-width: 210px;
-        width: 210px;
-    }
-
-    .asis-week-sticky-col--number {
-        left: 210px;
-        min-width: 72px;
-        width: 72px;
-    }
-
-    .asis-week-sticky-col--worked {
-        left: 282px;
-        min-width: 110px;
-        width: 110px;
-    }
-
-    .asis-week-table thead .asis-week-sticky-col {
-        z-index: 9;
-        background: #212529;
-        box-shadow: inset -1px 0 0 rgba(255, 255, 255, .08), inset 0 -1px 0 rgba(255, 255, 255, .08);
-    }
-
-    .asis-week-table tbody .asis-week-sticky-col {
-        background: #fff;
-        box-shadow: inset -1px 0 0 #e2e8f0;
-    }
-
-    .asis-week-table tbody tr.table-light .asis-week-sticky-col {
-        background: #f8f9fa;
-    }
-
-    .asis-week-table .asis-week-sticky-col--worked {
-        box-shadow: inset -2px 0 0 #cbd5e1, inset -1px 0 0 #e2e8f0;
-    }
-
-    .asis-week-table td {
-        font-size: .82rem;
-        vertical-align: middle;
-    }
-
-    .asis-week-date {
-        min-width: 84px;
-    }
-
-    .asis-week-date-label {
-        font-size: .7rem;
-        color: #64748b;
-    }
-
-    .asis-week-cell {
-        text-align: center;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .asis-week-cell__button {
-        width: 100%;
-        border: 1px solid #e2e8f0;
-        border-radius: .75rem;
-        background: #fff;
-        padding: .45rem .4rem;
-        display: flex;
-        flex-direction: column;
-        gap: .15rem;
-        align-items: center;
-        transition: all .15s ease;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .asis-week-cell__button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 .4rem 1rem rgba(15, 23, 42, .08);
-    }
-
-    .asis-week-cell__main {
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .asis-week-cell__sub {
-        font-size: .68rem;
-        color: #64748b;
-    }
-
-    .asis-week-cell__delta {
-        font-size: .67rem;
-        font-weight: 700;
-    }
-
-    .asis-week-cell__button--ok {
-        background: #dcfce7;
-        border-color: #4ade80;
-    }
-
-    .asis-week-cell__button--warn {
-        background: #fefce8;
-        border-color: #fde68a;
-    }
-
-    .asis-week-cell__button--danger {
-        background: #fef2f2;
-        border-color: #fca5a5;
-    }
-
-    .asis-week-cell__button--extra-pending {
-        background: #f3e8ff;
-        border-color: #a855f7;
-    }
-
-    .asis-week-cell__button--extra-reviewed {
-        background: #dcfce7;
-        border-color: #166534;
-    }
-
-    .asis-week-cell__button--muted {
-        background: #f8fafc;
-        border-color: #e2e8f0;
-    }
-
-    .asis-week-cell--weekend {
-        background: #f8fafc;
-    }
-
-    .asis-week-total {
-        min-width: 96px;
-        text-align: right;
-        font-weight: 700;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .asis-week-metric {
-        min-width: 92px;
-        padding: .4rem !important;
-        vertical-align: middle;
-        font-variant-numeric: tabular-nums;
-        background: #fff;
-    }
-
-    .asis-week-metric--primary {
-        min-width: 108px;
-        background: #fff;
-    }
-
-    .asis-week-metric--group-start {
-        border-left: 2px solid #dbe4f0;
-    }
-
-    .asis-week-metric--retardo {
-        background: #fff8e1;
-    }
-
-    .asis-week-metric--salida {
-        background: #fee2e2;
-    }
-
-    .asis-week-metric--descuento {
-        background: #fff7ed;
-    }
-
-    .asis-week-metric__card {
-        width: 100%;
-        min-height: 4.5rem;
-        border: 1px solid #e2e8f0;
-        border-radius: .85rem;
-        background: #f8fafc;
-        padding: .45rem .5rem;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: .15rem;
-        text-align: center;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
-    }
-
-    .asis-week-metric--primary .asis-week-metric__card {
-        background: #eef6ff;
-        border-color: #93c5fd;
-    }
-
-    .asis-week-metric--retardo .asis-week-metric__card {
-        background: #fef3c7;
-        border-color: #f59e0b;
-    }
-
-    .asis-week-metric--salida .asis-week-metric__card {
-        background: #fee2e2;
-        border-color: #ef4444;
-    }
-
-    .asis-week-metric--descuento .asis-week-metric__card {
-        background: #ffedd5;
-        border-color: #fb923c;
-    }
-
-    .asis-week-metric__label {
-        display: block;
-        font-size: .66rem;
-        color: #64748b;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: .03em;
-    }
-
-    .asis-week-metric__value {
-        display: block;
-        font-size: .88rem;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
-    .asis-week-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .75rem;
-        padding: .85rem 1rem;
-        border-bottom: 1px solid #e2e8f0;
-        background: #f8fafc;
-    }
-
-    .asis-week-legend__item {
-        display: inline-flex;
-        align-items: center;
-        gap: .45rem;
-        font-size: .74rem;
-        color: #334155;
-    }
-
-    .asis-week-legend__dot {
-        width: .9rem;
-        height: .9rem;
-        border-radius: 999px;
-        border: 1px solid rgba(15, 23, 42, .08);
-    }
-
-    .asis-week-legend__dot--ok { background: #4ade80; }
-    .asis-week-legend__dot--warn { background: #fde68a; }
-    .asis-week-legend__dot--danger { background: #fca5a5; }
-    .asis-week-legend__dot--muted { background: #e2e8f0; }
-    .asis-week-legend__dot--extra-pending { background: #a855f7; }
-    .asis-week-legend__dot--extra-reviewed { background: #166534; }
-</style>
 
 <div class="container-fluid px-4">
     @if (!_puedeVer)
@@ -337,7 +49,7 @@
 
         <div class="row g-3 mb-4">
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Empleados</div><div class="fs-4 fw-bold">@resumenes.Count</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Días en rango</div><div class="fs-4 fw-bold">@diasPeriodo.Count</div></div></div></div>
+            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Días del periodo</div><div class="fs-4 fw-bold">@diasPeriodo.Count</div></div></div></div>
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Horas pagadas</div><div class="fs-4 fw-bold">@FormatearMinutos(totalMinutosPagadosPeriodo)</div></div></div></div>
             <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Promedio pagado</div><div class="fs-4 fw-bold">@FormatearMinutos(promedioMinutosPagadosEmpleado)</div></div></div></div>
         </div>
@@ -347,12 +59,22 @@
             <div class="card-body">
                 <div class="row g-3 align-items-end">
                     <div class="col-md-2">
-                        <label class="form-label">Desde</label>
-                        <InputDate class="form-control" @bind-Value="filtroDesde" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
+                        <label class="form-label">Periodicidad de nómina</label>
+                        <InputSelect class="form-select" @bind-Value="periodicidadSeleccionada" @bind-Value:after="AlCambiarPeriodicidadAsync">
+                            <option value="@((int)PeriodicidadPago.Semanal)">Semanal</option>
+                            <option value="@((int)PeriodicidadPago.Quincenal)">Quincenal</option>
+                            <option value="@((int)PeriodicidadPago.Mensual)">Mensual</option>
+                        </InputSelect>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Hasta</label>
-                        <InputDate class="form-control" @bind-Value="filtroHasta" @bind-Value:after="GuardarFiltrosPersistidosAsync" />
+                    <div class="col-md-4">
+                        <label class="form-label">Periodo de nómina</label>
+                        <div class="input-group">
+                            <button class="btn btn-outline-secondary" @onclick="() => MoverPeriodoAsync(-1)" disabled="@cargando" title="Periodo anterior"><i class="bi bi-chevron-left"></i></button>
+                            <input type="text" class="form-control text-center fw-semibold" readonly value="@periodoEtiquetaActual" />
+                            <button class="btn btn-outline-secondary" @onclick="() => MoverPeriodoAsync(1)" disabled="@cargando" title="Periodo siguiente"><i class="bi bi-chevron-right"></i></button>
+                            <button class="btn btn-outline-secondary" @onclick="IrAPeriodoActualAsync" disabled="@cargando" title="Ir al periodo que contiene hoy"><i class="bi bi-calendar3"></i></button>
+                        </div>
+                        <small class="text-muted d-block mt-1">Ventana: @periodoFechaInicio.ToString("dd/MM/yyyy") – @periodoFechaFin.ToString("dd/MM/yyyy")</small>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Empleado</label>
@@ -400,7 +122,7 @@
                         <button class="btn btn-outline-success" @onclick="ExportarCsvAsync" disabled="@(cargando || exportandoCsv || resumenes.Count == 0)"><i class="bi bi-filetype-csv me-1"></i>@(exportandoCsv ? "Exportando..." : "Exportar CSV")</button>
                     </div>
                     <div class="col-12">
-                        <small class="text-muted">Rango máximo: 31 días. La información se obtiene de `RrhhAsistencias`, es decir, de las asistencias ya procesadas.</small>
+                        <small class="text-muted">La ventana se alinea al ciclo de nómina configurado (DiaCorteSemana/DiaCorteMes). Solo se muestran empleados con la periodicidad seleccionada; los de destajo se excluyen. La información viene de `RrhhAsistencias` ya procesadas.</small>
                     </div>
                 </div>
             </div>
@@ -416,100 +138,127 @@
                     <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--extra-reviewed"></span>Tiempo extra revisado</span>
                     <span class="asis-week-legend__item"><span class="asis-week-legend__dot asis-week-legend__dot--muted"></span>Sin tiempo registrado</span>
                 </div>
+                @if (_puedeAprobarTiempoExtra && EmpleadosConExtraCount > 0)
+                {
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-bottom bg-light">
+                        <div class="small">
+                            @if (PendientesAceptacionCount == 0)
+                            {
+                                <span class="text-success"><i class="bi bi-check2-circle me-1"></i>Tiempo del periodo aceptado — puedes generar la prenómina.</span>
+                            }
+                            else
+                            {
+                                <span class="text-warning-emphasis"><i class="bi bi-stopwatch me-1"></i>@AceptadosCount de @EmpleadosConExtraCount con tiempo aceptado — faltan @PendientesAceptacionCount para habilitar la prenómina.</span>
+                            }
+                        </div>
+                        @if (PendientesAceptacionCount > 0)
+                        {
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-success" @onclick="() => AbrirConfirmacionLote(true)" disabled="@cargando"><i class="bi bi-check2-all me-1"></i>Aceptar y pagar todo</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AbrirConfirmacionLote(false)" disabled="@cargando"><i class="bi bi-check2 me-1"></i>Aceptar sin pagar</button>
+                            </div>
+                        }
+                    </div>
+                }
                 <div class="asis-week-table-wrap">
-                    <table class="table table-hover table-sm mb-0 align-middle asis-week-table">
+                    <table class="table table-hover table-sm mb-0 align-middle asis-week-table asis-week-table--compact">
+                        <colgroup>
+                            <col class="asis-week-col--employee" />
+                            <col class="asis-week-col--days" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--action" />
+                        </colgroup>
                         <thead class="table-dark">
                             <tr>
                                 <th class="asis-week-sticky-col asis-week-sticky-col--employee">Empleado</th>
-                                <th class="asis-week-sticky-col asis-week-sticky-col--number">No.</th>
-                                <th class="text-end asis-week-sticky-col asis-week-sticky-col--worked">Pagadas</th>
-                                @foreach (var dia in diasPeriodo)
-                                {
-                                    <th class="asis-week-date text-center @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">
-                                        <div>@ObtenerAbreviaturaDia(dia)</div>
-                                        <div class="asis-week-date-label">@dia.ToString("dd/MM")</div>
-                                    </th>
-                                }
-                                  <th class="text-end">Normales</th>
-                                 <th class="text-end">Permisos</th>
-                                 <th class="text-end">Comp.</th>
-                                  <th class="text-end">Banco apl.</th>
-                                  <th class="text-end">Extra pag.</th>
-                                 <th class="text-end" title="Minutos reales acumulados al banco por movimientos de horas extra">A banco acum.</th>
-                                   <th class="text-end">Descuento</th>
-                                   <th class="text-end">Retardo</th>
-                                  <th class="text-end">Salida ant.</th>
-                                 <th class="text-end">Días trab.</th>
-                                 <th class="text-end">Festivo trab.</th>
+                                <th class="asis-week-col-days__head">Días del periodo (@diasPeriodo.Count)</th>
+                                <th class="text-end">Pagadas</th>
                                 <th class="text-end">Visible</th>
+                                <th class="text-center">Detalle</th>
                             </tr>
                         </thead>
                         <tbody>
                             @if (resumenes.Count == 0)
                             {
                                 <tr>
-                                      <td colspan="@ObtenerTotalColumnasTabla()" class="text-center text-muted py-4">No hay asistencias procesadas para el rango seleccionado.</td>
+                                    <td colspan="@ObtenerTotalColumnasTabla()" class="text-center text-muted py-4">No hay asistencias procesadas para el rango seleccionado.</td>
                                 </tr>
                             }
                             else
                             {
                                 @foreach (var resumen in resumenes)
                                 {
-                                    <tr>
+                                    var resolucionEmpleado = resolucionPorEmpleado.GetValueOrDefault(resumen.EmpleadoId);
+                                    var autorizadaEmpleado = resolucionEmpleado is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+                                    <tr class="@(_detalleVisible && _detalleEmpleadoId == resumen.EmpleadoId ? "asis-week-row--active" : string.Empty)">
                                         <td class="asis-week-sticky-col asis-week-sticky-col--employee">
                                             <div class="fw-semibold">@resumen.NombreCompleto</div>
-                                            <div class="small text-muted">@(string.IsNullOrWhiteSpace(resumen.CodigoChecador) ? "Sin código" : resumen.CodigoChecador)</div>
+                                            <div class="small text-muted">
+                                                @(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)
+                                                @(string.IsNullOrWhiteSpace(resumen.CodigoChecador) ? string.Empty : $" · {resumen.CodigoChecador}")
+                                            </div>
+                                            @if (resumen.EsPorHoras)
+                                            {
+                                                <div class="mt-1">
+                                                    <span class="badge bg-info-subtle text-info-emphasis" title="Esquema por horas: se paga el tiempo trabajado"><i class="bi bi-clock-history me-1"></i>Por horas</span>
+                                                </div>
+                                            }
+                                            @if (_puedeAprobarTiempoExtra && (resumen.TotalMinutosExtra > 0 || resolucionPorEmpleado.ContainsKey(resumen.EmpleadoId)))
+                                            {
+                                                <div class="d-flex flex-wrap gap-1 align-items-center mt-1">
+                                                    <span class="badge @ObtenerClaseEstatusResolucion(resolucionEmpleado)">@ObtenerEtiquetaEstatusResolucion(resolucionEmpleado)</span>
+                                                </div>
+                                            }
                                         </td>
-                                        <td class="asis-week-sticky-col asis-week-sticky-col--number">@(string.IsNullOrWhiteSpace(resumen.NumeroEmpleado) ? "—" : resumen.NumeroEmpleado)</td>
-                                    <td class="asis-week-metric asis-week-metric--primary asis-week-sticky-col asis-week-sticky-col--worked"><span class="asis-week-metric__label">Pagadas</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPagados)</span></td>
-                                        @foreach (var dia in diasPeriodo)
-                                        {
-                                             var presentacionDia = ObtenerPresentacionDia(resumen, dia);
-                                             <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">
-                                                 <button type="button" class="asis-week-cell__button @presentacionDia.CssClass" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(resumen.EmpleadoId, dia)">
-                                                     <span class="asis-week-cell__main">@presentacionDia.Visible</span>
-                                                     <span class="asis-week-cell__sub">Debe @presentacionDia.Debido</span>
-                                                     <span class="asis-week-cell__delta">@presentacionDia.Delta</span>
-                                                 </button>
-                                             </td>
-                                        }
-                                      <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Normales</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosNormales)</span></div></td>
-                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. c/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermisoConGoce)</span></div></td>
-                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. s/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosPermisoSinGoce)</span></div></td>
-                                     <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosCompensacion)</span></div></td>
-                                      <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosBancoAplicado)</span></div></td>
-                                      <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)</span></div></td>
-                                       <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco acum.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)</span></div></td>
-                                        <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumen.TotalMinutosDescuento)" title="@ObtenerTooltipDescuento(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosDescuento)</span></div></td>
-                                        <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumen.TotalMinutosRetardo)" title="@ObtenerTooltipRetardo(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosRetardo)</span></div></td>
-                                       <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumen.TotalMinutosSalidaAnticipada)" title="@ObtenerTooltipSalidaAnticipada(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@FormatearMinutos(resumen.TotalMinutosSalidaAnticipada)</span></div></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipDiasTrabajados(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumen.TotalDiasTrabajados día(s)</span></div></td>
-                                      <td class="asis-week-metric" title="@ObtenerTooltipFestivoTrabajado(resumen)"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumen.TotalDiasFestivoTrabajado día(s)</span></div></td>
-                                        <td class="asis-week-total">@FormatearMinutos(resumen.TotalMinutos)</td>
+                                        <td class="asis-week-col-days__cell">
+                                            <div class="asis-strip">
+                                                @foreach (var dia in diasPeriodo)
+                                                {
+                                                    var presentacionDia = ObtenerPresentacionDia(resumen, dia);
+                                                    <button type="button" class="asis-strip__cell @presentacionDia.CssClass @(EsFinSemana(dia) ? "asis-strip__cell--weekend" : string.Empty)" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(resumen.EmpleadoId, dia)">
+                                                        <span class="asis-strip__dow">@ObtenerAbreviaturaDia(dia)</span>
+                                                        <span class="asis-strip__day">@dia.ToString("dd")</span>
+                                                        <span class="asis-strip__value">@presentacionDia.Visible</span>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td class="text-end asis-week-num">@FormatearMinutos(resumen.TotalMinutosPagados)</td>
+                                        <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(resumen.TotalMinutos)</td>
+                                        <td class="asis-week-col-action__cell">
+                                            <div class="d-flex flex-column gap-1 align-items-stretch">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AbrirDetalleAsync(resumen.EmpleadoId)">
+                                                    <i class="bi bi-eye me-1"></i>Ver detalle
+                                                </button>
+                                                @if (_puedeAprobarTiempoExtra && (resumen.TotalMinutosExtra > 0 || resolucionPorEmpleado.ContainsKey(resumen.EmpleadoId)))
+                                                {
+                                                    <button type="button" class="btn btn-sm @(autorizadaEmpleado ? "btn-outline-success" : "btn-outline-primary")" @onclick="() => AbrirResolucionAsync(resumen)">
+                                                        <i class="bi @(autorizadaEmpleado ? "bi-check2-circle" : "bi-stopwatch") me-1"></i>@(autorizadaEmpleado ? "Aceptado" : "Aceptar tiempo")
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
                                     </tr>
                                 }
 
                                 <tr class="table-light fw-semibold">
                                     <td class="asis-week-sticky-col asis-week-sticky-col--employee">Totales</td>
-                                    <td class="asis-week-sticky-col asis-week-sticky-col--number">—</td>
-                                <td class="asis-week-metric asis-week-metric--primary asis-week-sticky-col asis-week-sticky-col--worked"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Pagadas</span><span class="asis-week-metric__value">@FormatearMinutos(totalMinutosPagadosPeriodo)</span></div></td>
-                                    @foreach (var dia in diasPeriodo)
-                                    {
-                                        <td class="asis-week-cell @(EsFinSemana(dia) ? "asis-week-cell--weekend" : string.Empty)">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</td>
-                                    }
-                                  <td class="asis-week-metric asis-week-metric--group-start"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Normales</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosNormales))</span></div></td>
-                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. c/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoConGoce))</span></div></td>
-                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Perm. s/goce</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce))</span></div></td>
-                                 <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Comp.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))</span></div></td>
-                                  <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Banco apl.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosBancoAplicado))</span></div></td>
-                                  <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Extra pag.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))</span></div></td>
-                                   <td class="asis-week-metric"><div class="asis-week-metric__card"><span class="asis-week-metric__label">A banco acum.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))</span></div></td>
-                                    <td class="asis-week-metric asis-week-metric--descuento @ObtenerClaseMetricaDescuento(resumenes.Sum(x => x.TotalMinutosDescuento))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Descuento</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosDescuento))</span></div></td>
-                                    <td class="asis-week-metric @ObtenerClaseMetricaRetardo(resumenes.Sum(x => x.TotalMinutosRetardo))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Retardo</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosRetardo))</span></div></td>
-                                   <td class="asis-week-metric @ObtenerClaseMetricaSalidaAnticipada(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))"><div class="asis-week-metric__card"><span class="asis-week-metric__label">Salida ant.</span><span class="asis-week-metric__value">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosSalidaAnticipada))</span></div></td>
-                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Trabajados</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasTrabajados) día(s)</span></td>
-                                  <td class="asis-week-metric"><span class="asis-week-metric__label">Festivo trab.</span><span class="asis-week-metric__value">@resumenes.Sum(x => x.TotalDiasFestivoTrabajado) día(s)</span></td>
-                                    <td class="asis-week-total">@FormatearMinutos(totalMinutosPeriodo)</td>
+                                    <td class="asis-week-col-days__cell">
+                                        <div class="asis-strip asis-strip--totals">
+                                            @foreach (var dia in diasPeriodo)
+                                            {
+                                                <div class="asis-strip__cell asis-strip__cell--total @(EsFinSemana(dia) ? "asis-strip__cell--weekend" : string.Empty)" title="@dia.ToString("dddd, dd/MM/yyyy", CulturaEsMx)">
+                                                    <span class="asis-strip__dow">@ObtenerAbreviaturaDia(dia)</span>
+                                                    <span class="asis-strip__day">@dia.ToString("dd")</span>
+                                                    <span class="asis-strip__value">@FormatearMinutos(totalesPorDia.GetValueOrDefault(dia))</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(totalMinutosPagadosPeriodo)</td>
+                                    <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(totalMinutosPeriodo)</td>
+                                    <td class="asis-week-col-action__cell"></td>
                                 </tr>
                             }
                         </tbody>
@@ -527,870 +276,147 @@
     PuedeReprocesar="_puedeReprocesar"
     PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
     OnClose="CerrarCorreccionDia"
+    OnUpdated="RecargarResumenSemanalAsync"
+    OnCambioDiaSolicitado="CambiarDiaCorreccionAsync"
+    FechaMinimaPeriodo="@(diasPeriodo.Count > 0 ? diasPeriodo[0] : (DateOnly?)null)"
+    FechaMaximaPeriodo="@(diasPeriodo.Count > 0 ? diasPeriodo[^1] : (DateOnly?)null)" />
+
+<AsistenciasResolucionModal
+    Visible="_resolucionVisible"
+    EmpleadoId="_resolucionEmpleadoId"
+    NombreEmpleado="_resolucionNombre"
+    FechaReferencia="@(DateOnly.FromDateTime(fechaReferenciaPeriodo))"
+    MinutosExtraDetectado="_resolucionMinutosExtra"
+    SaldoBancoHoras="_resolucionSaldoBanco"
+    PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
+    OnClose="CerrarResolucion"
     OnUpdated="RecargarResumenSemanalAsync" />
 
-@code {
-    private static readonly CultureInfo CulturaEsMx = new("es-MX");
-    private static readonly List<RrhhAsistenciaEstatus> estatusDisponibles = Enum.GetValues<RrhhAsistenciaEstatus>().ToList();
-    private List<DateOnly> diasPeriodo = [];
-    private List<ResumenSemanalEmpleado> resumenes = [];
-    private List<TurnoBase> turnos = [];
-    private Dictionary<DateOnly, int> totalesPorDia = new();
-    private Dictionary<string, int> permisosPorEmpleado = new();
-    private Dictionary<string, int> permisosSinGocePorEmpleado = new();
-    private bool _puedeVer;
-    private bool _puedeReprocesar;
-    private bool _puedeAprobarTiempoExtra;
-    private bool _filtrosInicialesCargados;
-    private bool mostrarCorreccionDia;
-    private Guid _empresaId;
-    private bool cargando;
-    private bool exportandoCsv;
-    private string? error;
-    private string? ok;
-    private RrhhAsistencia? asistenciaSeleccionada;
-    private DateTime? filtroDesde = DateTime.Today.AddDays(-15);
-    private DateTime? filtroHasta = DateTime.Today;
-    private string filtroTurnoIdTexto = string.Empty;
-    private string filtroEstatus = "todos";
-    private string filtroRevision = "todos";
-    private string filtroOrden = "nombre";
-    private string? filtroEmpleado;
-    private int totalMinutosPeriodo;
-    private int promedioMinutosEmpleado;
-    private int totalMinutosPagadosPeriodo;
-    private int promedioMinutosPagadosEmpleado;
-    private Dictionary<string, int> compensacionesPorDia = new();
-    private Dictionary<string, int> permisosPorDia = new();
-    private Dictionary<string, RrhhAsistencia> asistenciasPorEmpleadoDia = new();
-    private HashSet<DateOnly> festivosPeriodo = [];
-
-    protected override async Task OnInitializedAsync()
-    {
-        await CargarAccesoAsync();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!_puedeVer || _filtrosInicialesCargados)
-        {
-            return;
-        }
-
-        try
-        {
-            await CargarFiltrosPersistidosAsync();
-            _filtrosInicialesCargados = true;
-            await CargarAsync();
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
-
-    private async Task CargarAccesoAsync()
-    {
-        var state = await AuthStateProvider.GetAuthenticationStateAsync();
-        _puedeVer = state.User.HasClaim("Capacidad", "rrhh.asistencias.ver")
-            || state.User.HasClaim("Capacidad", "empleados.ver")
-            || state.User.HasClaim("Capacidad", "nominas.ver");
-        _puedeReprocesar = state.User.HasClaim("Capacidad", "rrhh.asistencias.editar")
-            || state.User.HasClaim("Capacidad", "empleados.editar")
-            || state.User.HasClaim("Capacidad", "nominas.editar");
-        _puedeAprobarTiempoExtra = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar") || state.User.HasClaim("Capacidad", "nominas.editar");
-        _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
-    }
-
-    private async Task CargarAsync()
-    {
-        cargando = true;
-        error = null;
-        ok = null;
-
-        try
-        {
-            if (_empresaId == Guid.Empty)
-            {
-                error = "No hay empresa activa.";
-                return;
-            }
-
-            var (desde, hasta) = ObtenerRangoValidado();
-            diasPeriodo = Enumerable.Range(0, hasta.DayNumber - desde.DayNumber + 1)
-                .Select(desde.AddDays)
-                .ToList();
-
-            await using var db = await DbFactory.CreateDbContextAsync();
-            turnos = await db.TurnosBase
-                .Include(t => t.Detalles)
-                .AsNoTracking()
-                .Where(t => t.EmpresaId == _empresaId && t.IsActive)
-                .OrderBy(t => t.Nombre)
-                .ToListAsync();
-
-            var asistencias = await ConstruirConsulta(db, desde, hasta)
-                .OrderBy(a => a.Empleado.Nombre)
-                .ThenBy(a => a.Empleado.ApellidoPaterno)
-                .ThenBy(a => a.Empleado.ApellidoMaterno)
-                .ThenBy(a => a.Fecha)
-                .ToListAsync();
-
-            festivosPeriodo = await db.FestivosRrhh
-                .AsNoTracking()
-                .Where(f => f.IsActive && f.Fecha >= desde.ToDateTime(TimeOnly.MinValue) && f.Fecha <= hasta.ToDateTime(TimeOnly.MinValue))
-                .Select(f => DateOnly.FromDateTime(f.Fecha.Date))
-                .ToHashSetAsync();
-
-            asistenciasPorEmpleadoDia = asistencias.ToDictionary(a => CrearClaveAsistencia(a.EmpleadoId, a.Fecha));
-
-            compensacionesPorDia = await ConstruirCompensacionesPorDiaAsync(db, asistencias);
-            permisosPorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta);
-            permisosSinGocePorEmpleado = await ConstruirPermisosPorEmpleadoAsync(db, asistencias, desde, hasta, conGoce: false);
-            permisosPorDia = await ConstruirPermisosPorDiaAsync(db, asistencias, desde, hasta);
-
-            resumenes = asistencias
-                .GroupBy(a => new
-                {
-                    a.EmpleadoId,
-                    Nombre = a.Empleado.NombreCompleto,
-                    a.Empleado.NumeroEmpleado,
-                    a.Empleado.CodigoChecador
-                })
-                .Select(grupo => new ResumenSemanalEmpleado
-                {
-                    EmpleadoId = grupo.Key.EmpleadoId,
-                    NombreCompleto = grupo.Key.Nombre,
-                    NumeroEmpleado = grupo.Key.NumeroEmpleado,
-                    CodigoChecador = grupo.Key.CodigoChecador,
-                    TotalMinutosNormales = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(a)),
-                    TotalMinutosExtra = grupo.Sum(a => Math.Max(0, a.MinutosExtra)),
-                    TotalMinutosExtraAprobadoPago = grupo.Sum(a => Math.Max(0, a.MinutosExtraAutorizadosPago)),
-                    TotalMinutosExtraAprobadoBanco = grupo.Sum(a => 0),
-                    TotalMinutosBancoAplicado = grupo.Sum(a => Math.Max(0, a.MinutosCubiertosBancoHoras)),
-                     TotalMinutosDescuento = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(a), ObtenerMinutosCompensados(a))),
-                    TotalMinutosRetardo = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a, ObtenerMinutosPermisoAplicados(a))),
-                    TotalMinutosSalidaAnticipada = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a, ObtenerMinutosPermisoAplicados(a))),
-                     MinutosDescuentoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(x, ObtenerMinutosPermisoAplicados(x), ObtenerMinutosCompensados(x)))),
-                    TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
-                    TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
-                    TotalDiasAusentismo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Falta),
-                    TotalDiasRetardo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Retardo),
-                    TotalDiasIncompleto = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Incompleta),
-                    MinutosRetardoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(x, ObtenerMinutosPermisoAplicados(x)))),
-                    MinutosSalidaAnticipadaPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(x, ObtenerMinutosPermisoAplicados(x)))),
-                    DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
-                    DiasFestivoTrabajadoDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Where(EsFestivoTrabajado).Distinct().ToList(),
-                    TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
-                    TotalMinutosPermisoConGoce = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
-                    TotalMinutosPermisoSinGoce = permisosSinGocePorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
-                    MinutosPorDia = grupo
-                        .GroupBy(a => a.Fecha)
-                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTrabajadosVisibles(x))),
-                    MinutosDebidosPorDia = grupo
-                        .GroupBy(a => a.Fecha)
-                        .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
-                })
-                .ToList();
-
-            var referenciasBancoExtraPeriodo = asistencias
-                .Select(a => RrhhTiempoExtraPolicy.ConstruirReferenciaResolucion(a.Id, "extra-banco"))
-                .Distinct()
-                .ToList();
-
-            var bancoExtraPorAsistencia = await db.RrhhBancoHorasMovimientos
-                .AsNoTracking()
-                .Where(m => m.EmpresaId == _empresaId
-                    && m.IsActive
-                    && m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra
-                    && referenciasBancoExtraPeriodo.Contains(m.ReferenciaTipo))
-                .Select(m => new
-                {
-                    m.EmpleadoId,
-                    m.ReferenciaTipo,
-                    Minutos = (int)Math.Round(m.Horas * 60m, MidpointRounding.AwayFromZero)
-                })
-                .ToListAsync();
-
-            var bancoExtraMinutosPorEmpleado = bancoExtraPorAsistencia
-                .GroupBy(m => m.EmpleadoId)
-                .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.Minutos)));
-
-            resumenes = resumenes.Select(r => r with
-            {
-                TotalMinutosExtraAprobadoBanco = bancoExtraMinutosPorEmpleado.GetValueOrDefault(r.EmpleadoId)
-            }).ToList();
-
-            // Saldo banco de horas por empleado (acumulado histórico hasta fecha de corte)
-            var empIds = resumenes.Select(r => r.EmpleadoId).ToHashSet();
-            var bancoMovs = await db.RrhhBancoHorasMovimientos
-                .AsNoTracking()
-                .Where(m => m.EmpresaId == _empresaId && empIds.Contains(m.EmpleadoId))
-                .GroupBy(m => m.EmpleadoId)
-                .Select(g => new
-                {
-                    EmpleadoId = g.Key,
-                    SaldoHoras = g.Sum(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo ? -m.Horas : m.Horas)
-                })
-                .ToDictionaryAsync(x => x.EmpleadoId, x => (int)(x.SaldoHoras * 60));
-
-            resumenes = resumenes.Select(r => r with { SaldoBancoHoras = bancoMovs.GetValueOrDefault(r.EmpleadoId) }).ToList();
-
-            resumenes = filtroOrden switch
-            {
-                "numero" => resumenes.OrderBy(x => x.NumeroEmpleado).ThenBy(x => x.NombreCompleto).ToList(),
-                "checador" => resumenes.OrderBy(x => x.CodigoChecador).ThenBy(x => x.NombreCompleto).ToList(),
-                _ => resumenes.OrderBy(x => x.NombreCompleto).ThenBy(x => x.NumeroEmpleado).ToList()
-            };
-
-            totalMinutosPeriodo = resumenes.Sum(x => x.TotalMinutos);
-            promedioMinutosEmpleado = resumenes.Count == 0 ? 0 : totalMinutosPeriodo / resumenes.Count;
-            totalMinutosPagadosPeriodo = resumenes.Sum(x => x.TotalMinutosPagados);
-            promedioMinutosPagadosEmpleado = resumenes.Count == 0 ? 0 : totalMinutosPagadosPeriodo / resumenes.Count;
-            totalesPorDia = diasPeriodo.ToDictionary(dia => dia, dia => resumenes.Sum(x => x.MinutosPorDia.GetValueOrDefault(dia)));
-            await GuardarFiltrosPersistidosAsync();
-        }
-        catch (Exception ex)
-        {
-            error = ex.InnerException?.Message ?? ex.Message;
-            diasPeriodo = [];
-            resumenes = [];
-            turnos = [];
-            totalesPorDia = new();
-            compensacionesPorDia = new();
-            permisosPorEmpleado = new();
-            permisosSinGocePorEmpleado = new();
-            permisosPorDia = new();
-            asistenciasPorEmpleadoDia = new();
-            festivosPeriodo = [];
-            totalMinutosPeriodo = 0;
-            promedioMinutosEmpleado = 0;
-            totalMinutosPagadosPeriodo = 0;
-            promedioMinutosPagadosEmpleado = 0;
-        }
-        finally
-        {
-            cargando = false;
-        }
-    }
-
-    private IQueryable<RrhhAsistencia> ConstruirConsulta(CrmDbContext db, DateOnly desde, DateOnly hasta)
-    {
-        var query = db.RrhhAsistencias
-            .AsNoTracking()
-            .Include(a => a.Empleado)
-            .Include(a => a.TurnoBase)
-            .Where(a => a.EmpresaId == _empresaId && a.Fecha >= desde && a.Fecha <= hasta);
-
-        if (Guid.TryParse(filtroTurnoIdTexto, out var turnoId) && turnoId != Guid.Empty)
-        {
-            query = query.Where(a => a.TurnoBaseId == turnoId);
-        }
-
-        if (int.TryParse(filtroEstatus, out var estatusValor) && Enum.IsDefined(typeof(RrhhAsistenciaEstatus), estatusValor))
-        {
-            var estatus = (RrhhAsistenciaEstatus)estatusValor;
-            query = query.Where(a => a.Estatus == estatus);
-        }
-
-        query = filtroRevision switch
-        {
-            "si" => query.Where(a => a.RequiereRevision),
-            "no" => query.Where(a => !a.RequiereRevision),
-            _ => query
-        };
-
-        if (!string.IsNullOrWhiteSpace(filtroEmpleado))
-        {
-            var texto = filtroEmpleado.Trim();
-            query = query.Where(a =>
-                a.Empleado.Nombre.Contains(texto) ||
-                (a.Empleado.ApellidoPaterno != null && a.Empleado.ApellidoPaterno.Contains(texto)) ||
-                (a.Empleado.ApellidoMaterno != null && a.Empleado.ApellidoMaterno.Contains(texto)) ||
-                (a.Empleado.NumeroEmpleado != null && a.Empleado.NumeroEmpleado.Contains(texto)) ||
-                (a.Empleado.CodigoChecador != null && a.Empleado.CodigoChecador.Contains(texto)));
-        }
-
-        return query;
-    }
-
-    private (DateOnly Desde, DateOnly Hasta) ObtenerRangoValidado()
-    {
-        if (!filtroDesde.HasValue || !filtroHasta.HasValue)
-        {
-            throw new InvalidOperationException("Selecciona un rango de fechas.");
-        }
-
-        var desde = DateOnly.FromDateTime(filtroDesde.Value.Date);
-        var hasta = DateOnly.FromDateTime(filtroHasta.Value.Date);
-        if (desde > hasta)
-        {
-            throw new InvalidOperationException("La fecha inicial no puede ser mayor a la final.");
-        }
-
-        if (hasta.DayNumber - desde.DayNumber > 30)
-        {
-            throw new InvalidOperationException("El resumen semanal permite consultar un máximo de 31 días.");
-        }
-
-        return (desde, hasta);
-    }
-
-    private async Task LimpiarFiltrosAsync()
-    {
-        AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
-        await LimpiarFiltrosPersistidosAsync();
-        await CargarAsync();
-    }
-
-    private async Task CargarFiltrosPersistidosAsync()
-    {
-        try
-        {
-            var filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey);
-            if (string.IsNullOrWhiteSpace(filtrosJson))
-            {
-                filtrosJson = await JS.InvokeAsync<string?>("mundoVsAuth.getLocal", RrhhAsistenciasFiltroState.StorageKey);
-                if (!string.IsNullOrWhiteSpace(filtrosJson))
-                {
-                    var filtrosHeredados = JsonSerializer.Deserialize<RrhhAsistenciasFiltroState>(filtrosJson);
-                    var filtrosIniciales = filtrosHeredados ?? RrhhAsistenciasFiltroState.CreateDefault();
-                    AplicarFiltros(filtrosIniciales);
-                    await GuardarFiltrosPersistidosAsync();
-                    return;
-                }
-
-                AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
-                return;
-            }
-
-            var filtros = JsonSerializer.Deserialize<RrhhAsistenciasFiltroState>(filtrosJson);
-            AplicarFiltros(filtros ?? RrhhAsistenciasFiltroState.CreateDefault());
-        }
-        catch
-        {
-            AplicarFiltros(RrhhAsistenciasFiltroState.CreateDefault());
-        }
-    }
-
-    private async Task GuardarFiltrosPersistidosAsync()
-    {
-        var filtros = CrearEstadoFiltros();
-        var filtrosJson = JsonSerializer.Serialize(filtros);
-        await JS.InvokeVoidAsync("mundoVsAuth.setLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey, filtrosJson);
-    }
-
-    private async Task LimpiarFiltrosPersistidosAsync()
-        => await JS.InvokeVoidAsync("mundoVsAuth.removeLocal", RrhhAsistenciasFiltroState.WeeklyStorageKey);
-
-    private RrhhAsistenciasFiltroState CrearEstadoFiltros()
-        => new()
-        {
-            Desde = filtroDesde,
-            Hasta = filtroHasta,
-            TurnoIdTexto = filtroTurnoIdTexto,
-            Estatus = filtroEstatus,
-            Revision = filtroRevision,
-            Orden = filtroOrden,
-            Empleado = string.IsNullOrWhiteSpace(filtroEmpleado) ? null : filtroEmpleado.Trim()
-        };
-
-    private void AplicarFiltros(RrhhAsistenciasFiltroState filtros)
-    {
-        filtroDesde = filtros.Desde;
-        filtroHasta = filtros.Hasta;
-        filtroTurnoIdTexto = filtros.TurnoIdTexto ?? string.Empty;
-        filtroEstatus = string.IsNullOrWhiteSpace(filtros.Estatus) ? "todos" : filtros.Estatus;
-        filtroRevision = string.IsNullOrWhiteSpace(filtros.Revision) ? "todos" : filtros.Revision;
-        filtroOrden = string.IsNullOrWhiteSpace(filtros.Orden) ? "nombre" : filtros.Orden;
-        filtroEmpleado = string.IsNullOrWhiteSpace(filtros.Empleado) ? null : filtros.Empleado.Trim();
-    }
-
-    private static string ObtenerTextoEstatus(RrhhAsistenciaEstatus estatus)
-        => estatus switch
-        {
-            RrhhAsistenciaEstatus.AsistenciaNormal => "Normal",
-            RrhhAsistenciaEstatus.Retardo => "Retardo",
-            RrhhAsistenciaEstatus.Falta => "Falta",
-            RrhhAsistenciaEstatus.Descanso => "Descanso",
-            RrhhAsistenciaEstatus.DescansoTrabajado => "Descanso trabajado",
-            RrhhAsistenciaEstatus.Incompleta => "Incompleta",
-            RrhhAsistenciaEstatus.TurnoNoAsignado => "Sin turno",
-            RrhhAsistenciaEstatus.MarcaNoReconocida => "Marca no reconocida",
-            _ => "Pendiente"
-        };
-
-    private async Task ExportarCsvAsync()
-    {
-        if (resumenes.Count == 0)
-        {
-            error = "No hay información para exportar.";
-            return;
-        }
-
-        exportandoCsv = true;
-        error = null;
-        ok = null;
-
-        try
-        {
-            var builder = new StringBuilder();
-            var encabezados = new List<string> { "Empleado", "NumeroEmpleado", "CodigoChecador" };
-            encabezados.AddRange(diasPeriodo.Select(d => d.ToString("yyyy-MM-dd")));
-            encabezados.Add("HorasPagadasSemanal");
-            encabezados.Add("HorasPagadasSemanalMin");
-            encabezados.Add("HorasNormalesSemanal");
-            encabezados.Add("HorasNormalesSemanalMin");
-            encabezados.Add("HorasBancoAplicadoSemanal");
-            encabezados.Add("HorasBancoAplicadoSemanalMin");
-            encabezados.Add("TiempoExtraSemanal");
-            encabezados.Add("TiempoExtraSemanalMin");
-            encabezados.Add("TiempoExtraAprobadoPagoSemanal");
-            encabezados.Add("TiempoExtraAprobadoPagoSemanalMin");
-            encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanal");
-            encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanalMin");
-            encabezados.Add("PermisosConGoceSemanal");
-            encabezados.Add("PermisosConGoceSemanalMin");
-            encabezados.Add("PermisosSinGoceSemanal");
-            encabezados.Add("PermisosSinGoceSemanalMin");
-            encabezados.Add("CompensacionesSemanal");
-            encabezados.Add("CompensacionesSemanalMin");
-            encabezados.Add("DescuentoSemanal");
-            encabezados.Add("DescuentoSemanalMin");
-            encabezados.Add("RetardoSemanal");
-            encabezados.Add("RetardoSemanalMin");
-            encabezados.Add("DiasAusentismo");
-            encabezados.Add("DiasRetardo");
-            encabezados.Add("DiasIncompleto");
-            encabezados.Add("TotalIncidencias");
-            encabezados.Add("SaldoBancoHoras");
-            encabezados.Add("SaldoBancoHorasMin");
-            encabezados.Add("TotalHoras");
-            encabezados.Add("TotalMinutos");
-            builder.AppendLine(string.Join(",", encabezados.Select(EscapeCsv)));
-
-            foreach (var resumen in resumenes)
-            {
-                var columnas = new List<string>
-                {
-                    EscapeCsv(resumen.NombreCompleto),
-                    EscapeCsv(resumen.NumeroEmpleado),
-                    EscapeCsv(resumen.CodigoChecador)
-                };
-
-                columnas.AddRange(diasPeriodo.Select(dia => EscapeCsv(FormatearMinutos(resumen.MinutosPorDia.GetValueOrDefault(dia)))));
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPagados)));
-                columnas.Add(resumen.TotalMinutosPagados.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosNormales)));
-                columnas.Add(resumen.TotalMinutosNormales.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosBancoAplicado)));
-                columnas.Add(resumen.TotalMinutosBancoAplicado.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtra)));
-                columnas.Add(resumen.TotalMinutosExtra.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)));
-                columnas.Add(resumen.TotalMinutosExtraAprobadoPago.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)));
-                columnas.Add(resumen.TotalMinutosExtraAprobadoBanco.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermisoConGoce)));
-                columnas.Add(resumen.TotalMinutosPermisoConGoce.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosPermisoSinGoce)));
-                columnas.Add(resumen.TotalMinutosPermisoSinGoce.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosCompensacion)));
-                columnas.Add(resumen.TotalMinutosCompensacion.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosDescuento)));
-                columnas.Add(resumen.TotalMinutosDescuento.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosRetardo)));
-                columnas.Add(resumen.TotalMinutosRetardo.ToString());
-                columnas.Add(resumen.TotalDiasAusentismo.ToString());
-                columnas.Add(resumen.TotalDiasRetardo.ToString());
-                columnas.Add(resumen.TotalDiasIncompleto.ToString());
-                columnas.Add(resumen.TotalIncidencias.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.SaldoBancoHoras)));
-                columnas.Add(resumen.SaldoBancoHoras.ToString());
-                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutos)));
-                columnas.Add(resumen.TotalMinutos.ToString());
-                builder.AppendLine(string.Join(",", columnas));
-            }
-
-            var totales = new List<string>
-            {
-                EscapeCsv("Totales"),
-                EscapeCsv(null),
-                EscapeCsv(null)
-            };
-
-            totales.AddRange(diasPeriodo.Select(dia => EscapeCsv(FormatearMinutos(totalesPorDia.GetValueOrDefault(dia)))));
-            totales.Add(EscapeCsv(FormatearMinutos(totalMinutosPagadosPeriodo)));
-            totales.Add(totalMinutosPagadosPeriodo.ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosNormales))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosNormales).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosBancoAplicado))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosBancoAplicado).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtra))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosExtra).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoPago).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosExtraAprobadoBanco).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoConGoce))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosPermisoConGoce).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosPermisoSinGoce).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosCompensacion))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosCompensacion).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosDescuento))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosDescuento).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.TotalMinutosRetardo))));
-            totales.Add(resumenes.Sum(x => x.TotalMinutosRetardo).ToString());
-            totales.Add(resumenes.Sum(x => x.TotalDiasAusentismo).ToString());
-            totales.Add(resumenes.Sum(x => x.TotalDiasRetardo).ToString());
-            totales.Add(resumenes.Sum(x => x.TotalDiasIncompleto).ToString());
-            totales.Add(resumenes.Sum(x => x.TotalIncidencias).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(resumenes.Sum(x => x.SaldoBancoHoras))));
-            totales.Add(resumenes.Sum(x => x.SaldoBancoHoras).ToString());
-            totales.Add(EscapeCsv(FormatearMinutos(totalMinutosPeriodo)));
-            totales.Add(totalMinutosPeriodo.ToString());
-            builder.AppendLine(string.Join(",", totales));
-
-            var nombreArchivo = $"asistencias-semanal-{DateTime.Now:yyyyMMdd-HHmmss}.csv";
-            await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", nombreArchivo, builder.ToString());
-            ok = $"CSV generado correctamente con {resumenes.Count} empleado(s).";
-        }
-        catch (Exception ex)
-        {
-            error = ex.InnerException?.Message ?? ex.Message;
-        }
-        finally
-        {
-            exportandoCsv = false;
-        }
-    }
-
-    private static string ObtenerAbreviaturaDia(DateOnly fecha)
-    {
-        var texto = fecha.ToString("ddd", CulturaEsMx);
-        return string.IsNullOrWhiteSpace(texto)
-            ? fecha.DayOfWeek.ToString()
-            : char.ToUpperInvariant(texto[0]) + texto[1..].TrimEnd('.');
-    }
-
-    private static bool EsFinSemana(DateOnly fecha)
-        => fecha.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-
-    private static string FormatearMinutos(int minutos)
-    {
-        if (minutos <= 0)
-        {
-            return "—";
-        }
-
-        var horas = minutos / 60;
-        var resto = minutos % 60;
-        return $"{horas:D2}:{resto:D2}";
-    }
-
-    private static string EscapeCsv(string? valor)
-    {
-        if (string.IsNullOrWhiteSpace(valor))
-        {
-            return "\"\"";
-        }
-
-        return $"\"{valor.Replace("\"", "\"\"")}\"";
-    }
-
-    private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, ObtenerMinutosPermisoAplicados(asistencia), ObtenerMinutosCompensados(asistencia));
-
-    private int ObtenerMinutosCompensados(RrhhAsistencia asistencia)
-        => compensacionesPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
-            ? Math.Max(0, minutos)
-            : 0;
-
-    private int ObtenerMinutosPermisoAplicados(RrhhAsistencia asistencia)
-        => permisosPorDia.TryGetValue(CrearClaveCompensacion(asistencia.EmpleadoId, asistencia.Fecha), out var minutos)
-            ? Math.Max(0, minutos)
-            : Math.Max(0, asistencia.MinutosCubiertosBancoHoras);
-
-    private static string CrearClaveCompensacion(Guid empleadoId, DateOnly fecha)
-        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
-
-    private static string CrearClaveAsistencia(Guid empleadoId, DateOnly fecha)
-        => $"{empleadoId:N}:{fecha:yyyyMMdd}";
-
-    private int ObtenerTotalColumnasTabla()
-        => diasPeriodo.Count + 15;
-
-    private PresentacionCeldaSemanal ObtenerPresentacionDia(ResumenSemanalEmpleado resumen, DateOnly dia)
-    {
-        var visible = resumen.MinutosPorDia.GetValueOrDefault(dia);
-        var debido = resumen.MinutosDebidosPorDia.GetValueOrDefault(dia);
-        var delta = visible - debido;
-        asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(resumen.EmpleadoId, dia), out var asistencia);
-        var minutosExtra = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtra);
-        var minutosExtraAprobados = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtraAutorizadosPago + asistencia.MinutosExtraAutorizadosBanco);
-        var extraResuelto = asistencia != null && (minutosExtraAprobados > 0 || !string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra) || !asistencia.RequiereRevision);
-
-        var cssClass = minutosExtra > 0 && !extraResuelto
-            ? "asis-week-cell__button--extra-pending"
-            : minutosExtra > 0 && extraResuelto
-                ? "asis-week-cell__button--extra-reviewed"
-                : visible <= 0 && debido <= 0
-                    ? "asis-week-cell__button--muted"
-                    : delta >= 0
-                        ? "asis-week-cell__button--ok"
-                        : Math.Abs(delta) <= 30
-                            ? "asis-week-cell__button--warn"
-                            : "asis-week-cell__button--danger";
-
-        var deltaTexto = delta == 0
-            ? "En objetivo"
-            : delta > 0
-                ? $"+{FormatearMinutos(delta)}"
-                : $"-{FormatearMinutos(Math.Abs(delta))}";
-
-        if (minutosExtra > 0)
-        {
-            deltaTexto = extraResuelto
-                ? $"Extra rev. {FormatearMinutos(minutosExtraAprobados)}"
-                : $"Extra pend. {FormatearMinutos(minutosExtra)}";
-        }
-
-        var visibleTexto = visible > 0 ? FormatearMinutos(visible) : "—";
-        var debidoTexto = debido > 0 ? FormatearMinutos(debido) : "—";
-        var diferenciaTexto = delta == 0
-            ? "En objetivo"
-            : delta > 0
-                ? $"+{FormatearMinutos(delta)}"
-                : $"-{FormatearMinutos(Math.Abs(delta))}";
-
-        var tooltipExtra = minutosExtra > 0
-            ? $" | Extra detectado: {FormatearMinutos(minutosExtra)} | Extra aprobado: {FormatearMinutos(minutosExtraAprobados)}"
-            : string.Empty;
-
-        var fechaTexto = dia.ToString("dddd, dd/MM/yyyy", CulturaEsMx);
-        var tooltip = $"{fechaTexto} | Visible: {visibleTexto} | Debe: {debidoTexto} | Diferencia: {diferenciaTexto}{tooltipExtra}";
-
-        return new PresentacionCeldaSemanal(
-            visibleTexto,
-            debidoTexto,
-            deltaTexto,
-            cssClass,
-            tooltip);
-    }
-
-    private Task AbrirCorreccionDiaAsync(Guid empleadoId, DateOnly fecha)
-    {
-        if (asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(empleadoId, fecha), out var asistencia))
-        {
-            asistenciaSeleccionada = asistencia;
-            mostrarCorreccionDia = true;
-        }
-
-        return Task.CompletedTask;
-    }
-
-    private void CerrarCorreccionDia()
-    {
-        mostrarCorreccionDia = false;
-        asistenciaSeleccionada = null;
-    }
-
-    private Task RecargarResumenSemanalAsync()
-        => CargarAsync();
-
-    private async Task<Dictionary<string, int>> ConstruirCompensacionesPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias)
-    {
-        if (asistencias.Count == 0)
-        {
-            return new Dictionary<string, int>();
-        }
-
-        var logs = await db.RrhhLogsChecador
-            .AsNoTracking()
-            .Where(l => l.EmpresaId == _empresaId
-                && l.Detalle != null
-                && l.Mensaje.Contains("compensación aprobada de permiso"))
-            .OrderByDescending(l => l.FechaUtc)
-            .ToListAsync();
-
-        return asistencias.ToDictionary(
-            a => CrearClaveCompensacion(a.EmpleadoId, a.Fecha),
-            a => RrhhTiempoExtraPolicy.ObtenerMinutosPermisoCompensadosAprobados(logs, a.EmpleadoId, a.Fecha));
-    }
-
-    private async Task<Dictionary<string, int>> ConstruirPermisosPorEmpleadoAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta, bool conGoce = true)
-    {
-        if (asistencias.Count == 0)
-        {
-            return new Dictionary<string, int>();
-        }
-
-        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
-        var query = db.RrhhAusencias
-            .AsNoTracking()
-            .Where(a => a.EmpresaId == _empresaId
-                && empleadoIds.Contains(a.EmpleadoId)
-                && a.IsActive
-                && a.ConGocePago == conGoce
-                && a.Tipo == TipoAusenciaRrhh.Permiso
-                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
-                && a.FechaInicio <= hasta
-                && a.FechaFin >= desde);
-
-        var permisos = await query.ToListAsync();
-
-        return permisos
-            .GroupBy(a => a.EmpleadoId.ToString("N"))
-            .ToDictionary(
-                g => g.Key,
-                g => g.Sum(a => (int)Math.Round(Math.Max(0m, a.Horas) * 60m, MidpointRounding.AwayFromZero)));
-    }
-
-    private async Task<Dictionary<string, int>> ConstruirPermisosPorDiaAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta)
-    {
-        if (asistencias.Count == 0)
-        {
-            return new Dictionary<string, int>();
-        }
-
-        var empleadoIds = asistencias.Select(a => a.EmpleadoId).Distinct().ToList();
-        var permisos = await db.RrhhAusencias
-            .AsNoTracking()
-            .Where(a => a.EmpresaId == _empresaId
-                && empleadoIds.Contains(a.EmpleadoId)
-                && a.IsActive
-                && a.ConGocePago // cualquier ausencia con goce y horas compensa tiempo esperado
-                && a.Horas > 0
-                && (a.Estatus == EstatusAusenciaRrhh.Aprobada || a.Estatus == EstatusAusenciaRrhh.Aplicada)
-                && a.FechaInicio <= hasta
-                && a.FechaFin >= desde)
-            .ToListAsync();
-
-        var resultado = new Dictionary<string, int>();
-        foreach (var permiso in permisos)
-        {
-            var inicio = permiso.FechaInicio < desde ? desde : permiso.FechaInicio;
-            var fin = permiso.FechaFin > hasta ? hasta : permiso.FechaFin;
-            var minutosPorDia = (int)Math.Round(Math.Max(0m, permiso.Horas) * 60m, MidpointRounding.AwayFromZero);
-            for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(1))
-            {
-                resultado[CrearClaveCompensacion(permiso.EmpleadoId, fecha)] = minutosPorDia;
-            }
-        }
-
-        return resultado;
-    }
-
-    private bool EsFestivoTrabajado(DateOnly fecha)
-        => festivosPeriodo.Contains(fecha);
-
-    private string ObtenerTooltipRetardo(ResumenSemanalEmpleado resumen)
-    {
-        var dias = resumen.MinutosRetardoPorDia
-            .Where(x => x.Value > 0)
-            .OrderBy(x => x.Key)
-            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
-            .ToList();
-
-        return dias.Count == 0
-            ? "Sin retardo en el período."
-            : $"Retardo calculado con: {string.Join(" | ", dias)}";
-    }
-
-    private string ObtenerTooltipDescuento(ResumenSemanalEmpleado resumen)
-    {
-        var dias = resumen.MinutosDescuentoPorDia
-            .Where(x => x.Value > 0)
-            .OrderBy(x => x.Key)
-            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
-            .ToList();
-
-        return dias.Count == 0
-            ? "Sin descuento efectivo en el período."
-            : $"Descuento efectivo calculado con: {string.Join(" | ", dias)}";
-    }
-
-    private string ObtenerTooltipSalidaAnticipada(ResumenSemanalEmpleado resumen)
-    {
-        var dias = resumen.MinutosSalidaAnticipadaPorDia
-            .Where(x => x.Value > 0)
-            .OrderBy(x => x.Key)
-            .Select(x => $"{x.Key:dd/MM}: {x.Value} min")
-            .ToList();
-
-        return dias.Count == 0
-            ? "Sin salida anticipada en el período."
-            : $"Salida anticipada calculada con: {string.Join(" | ", dias)}";
-    }
-
-    private string ObtenerTooltipDiasTrabajados(ResumenSemanalEmpleado resumen)
-    {
-        var dias = resumen.DiasTrabajadosDetalle
-            .OrderBy(x => x)
-            .Select(x => x.ToString("dd/MM"))
-            .ToList();
-
-        return dias.Count == 0
-            ? "Sin días trabajados en el período."
-            : $"Días trabajados: {string.Join(", ", dias)}";
-    }
-
-    private string ObtenerTooltipFestivoTrabajado(ResumenSemanalEmpleado resumen)
-    {
-        var dias = resumen.DiasFestivoTrabajadoDetalle
-            .OrderBy(x => x)
-            .Select(x => x.ToString("dd/MM"))
-            .ToList();
-
-        return dias.Count == 0
-            ? "Sin festivos trabajados en el período."
-            : $"Festivos trabajados: {string.Join(", ", dias)}";
-    }
-
-    private static string ObtenerClaseMetricaRetardo(int minutos)
-        => minutos > 0 ? "asis-week-metric--retardo" : string.Empty;
-
-    private static string ObtenerClaseMetricaDescuento(int minutos)
-        => minutos > 0 ? "asis-week-metric--retardo" : string.Empty;
-
-    private static string ObtenerClaseMetricaSalidaAnticipada(int minutos)
-        => minutos > 0 ? "asis-week-metric--salida" : string.Empty;
-
-    private sealed record ResumenSemanalEmpleado
-    {
-        public Guid EmpleadoId { get; init; }
-        public string NombreCompleto { get; init; } = string.Empty;
-        public string? NumeroEmpleado { get; init; }
-        public string? CodigoChecador { get; init; }
-        public int TotalMinutosNormales { get; init; }
-        public int TotalMinutosExtra { get; init; }
-        public int TotalMinutosExtraAprobadoPago { get; init; }
-        public int TotalMinutosExtraAprobadoBanco { get; init; }
-        public int TotalMinutosBancoAplicado { get; init; }
-        public int TotalMinutosDescuento { get; init; }
-        public int TotalMinutosRetardo { get; init; }
-        public int TotalMinutosSalidaAnticipada { get; init; }
-        public int TotalDiasTrabajados { get; init; }
-        public int TotalDiasFestivoTrabajado { get; init; }
-        public int TotalMinutosPermisoConGoce { get; init; }
-        public int TotalMinutosPermisoSinGoce { get; init; }
-        public int TotalMinutosCompensacion { get; init; }
-        public int TotalDiasAusentismo { get; init; }
-        public int TotalDiasRetardo { get; init; }
-        public int TotalDiasIncompleto { get; init; }
-        public int TotalIncidencias => TotalDiasAusentismo + TotalDiasRetardo + TotalDiasIncompleto;
-        public int SaldoBancoHoras { get; init; }
-        public Dictionary<DateOnly, int> MinutosDescuentoPorDia { get; init; } = new();
-        public Dictionary<DateOnly, int> MinutosRetardoPorDia { get; init; } = new();
-        public Dictionary<DateOnly, int> MinutosSalidaAnticipadaPorDia { get; init; } = new();
-        public List<DateOnly> DiasTrabajadosDetalle { get; init; } = [];
-        public List<DateOnly> DiasFestivoTrabajadoDetalle { get; init; } = [];
-        public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
-        public Dictionary<DateOnly, int> MinutosDebidosPorDia { get; init; } = new();
-        public int TotalMinutosPagados => TotalMinutosNormales + TotalMinutosPermisoConGoce + TotalMinutosCompensacion + TotalMinutosBancoAplicado + TotalMinutosExtraAprobadoPago;
-        public int TotalMinutos => MinutosPorDia.Values.Sum();
-    }
-
-    private sealed record PresentacionCeldaSemanal(string Visible, string Debido, string Delta, string CssClass, string Tooltip);
+@if (_mostrarConfirmacionLote)
+{
+    <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@( _lotePagarTodo ? "Aceptar y pagar todo el tiempo" : "Aceptar sin pagar el tiempo")</h5>
+                    <button type="button" class="btn-close" @onclick="CancelarLote" disabled="@cargando" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Se aceptará el tiempo extra de <strong>@PendientesAceptacionCount</strong> empleado(s) del periodo.</p>
+                    @if (_lotePagarTodo)
+                    {
+                        <p class="text-muted small mb-0">Cada empleado se autoriza con <em>PagarTodo</em> al factor de configuración (nada al banco). Si alguien necesita parte al banco o distintos factores, edítalo uno a uno con <strong>Aceptar tiempo</strong>.</p>
+                    }
+                    else
+                    {
+                        <p class="text-muted small mb-0">El tiempo detectado se acepta <strong>sin pago ni compensación</strong>: el extra se descarta y el faltante/retardo del periodo se descuenta <strong>completo</strong> en la nómina. Úsalo cuando no vas a autorizar el extra — el periodo sí queda autorizado y desbloquea la prenómina.</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelarLote" disabled="@cargando">Cancelar</button>
+                    <button type="button" class="btn @(_lotePagarTodo ? "btn-success" : "btn-primary")" @onclick="ConfirmarLoteAsync" disabled="@cargando">
+                        @(cargando ? "Procesando..." : (_lotePagarTodo ? "Aceptar y pagar todo" : "Aceptar sin pagar"))
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
 }
+
+@if (_detalleVisible && DetalleResumen is { } detalle)
+{
+    var resolucionDetalle = resolucionPorEmpleado.GetValueOrDefault(detalle.EmpleadoId);
+    var autorizadaDetalle = resolucionDetalle is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+    <div class="asis-drawer-backdrop" @onclick="CerrarDetalle"></div>
+    <aside class="asis-drawer">
+        <header class="asis-drawer__header">
+            <div>
+                <h5 class="mb-0 fw-bold">@detalle.NombreCompleto</h5>
+                <div class="small text-muted">
+                    @(string.IsNullOrWhiteSpace(detalle.NumeroEmpleado) ? "Sin número" : detalle.NumeroEmpleado)
+                    @(string.IsNullOrWhiteSpace(detalle.CodigoChecador) ? string.Empty : $" · {detalle.CodigoChecador}")
+                    · @periodoEtiquetaActual
+                </div>
+            </div>
+            <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CerrarDetalle"></button>
+        </header>
+
+        <div class="asis-drawer__body">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <span class="badge @ObtenerClaseEstatusResolucion(resolucionDetalle)">@ObtenerEtiquetaEstatusResolucion(resolucionDetalle)</span>
+                @if (detalle.TotalIncidencias > 0)
+                {
+                    <span class="badge bg-danger-subtle text-danger-emphasis" title="Ausentismo / Retardo / Incompleto">@detalle.TotalIncidencias incidencia(s)</span>
+                }
+                @if (_puedeAprobarTiempoExtra && (detalle.TotalMinutosExtra > 0 || resolucionPorEmpleado.ContainsKey(detalle.EmpleadoId)))
+                {
+                    <button type="button" class="btn btn-sm @(autorizadaDetalle ? "btn-outline-success" : "btn-primary")" @onclick="() => AbrirResolucionAsync(detalle)">
+                        <i class="bi @(autorizadaDetalle ? "bi-check2-circle" : "bi-stopwatch") me-1"></i>@(autorizadaDetalle ? "Aceptado" : "Aceptar tiempo")
+                    </button>
+                }
+            </div>
+
+            @if (detalle.TotalIncidencias > 0)
+            {
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @if (detalle.TotalDiasAusentismo > 0)
+                    {
+                        <span class="badge bg-danger-subtle text-danger-emphasis"><i class="bi bi-person-x me-1"></i>Ausentismo: @detalle.TotalDiasAusentismo</span>
+                    }
+                    @if (detalle.TotalDiasRetardo > 0)
+                    {
+                        <span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-clock me-1"></i>Retardo: @detalle.TotalDiasRetardo</span>
+                    }
+                    @if (detalle.TotalDiasIncompleto > 0)
+                    {
+                        <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-hourglass-split me-1"></i>Incompleto: @detalle.TotalDiasIncompleto</span>
+                    }
+                </div>
+            }
+
+            <h6 class="asis-drawer__section">Días del periodo</h6>
+            <div class="asis-strip asis-strip--detail">
+                @foreach (var dia in diasPeriodo)
+                {
+                    var presentacionDia = ObtenerPresentacionDia(detalle, dia, _detalleBrutoPorDia);
+                    <button type="button" class="asis-strip__cell @presentacionDia.CssClass @(EsFinSemana(dia) ? "asis-strip__cell--weekend" : string.Empty)" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(detalle.EmpleadoId, dia)">
+                        <span class="asis-strip__dow">@ObtenerAbreviaturaDia(dia)</span>
+                        <span class="asis-strip__day">@dia.ToString("dd")</span>
+                        <span class="asis-strip__value">@presentacionDia.Visible</span>
+                        <span class="asis-strip__delta">@presentacionDia.Delta</span>
+                    </button>
+                }
+            </div>
+
+            <h6 class="asis-drawer__section mt-3">Bruto vs visible</h6>
+            <div class="asis-detail-grid">
+                <div class="asis-detail-card asis-detail-card--info" title="Tiempo bruto = span(primera → última marca) menos los pares del medio (descansos), calculado bajo demanda desde las marcaciones del empleado. Sin reglas (neteo, umbral). Los descansos no tomados no se descuentan."><span class="asis-detail-card__label">Bruto</span><span class="asis-detail-card__value">@FormatearMinutos(_detalleTotalBruto)</span></div>
+                <div class="asis-detail-card asis-detail-card--primary" title="Visible = base pagada + permiso con goce + compensación + extra aprobado. Es el tiempo que muestra la tabla."><span class="asis-detail-card__label">Visible</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutos)</span></div>
+                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Bruto − visible."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
+            </div>
+
+            <h6 class="asis-drawer__section mt-3">Métricas del periodo</h6>
+            <div class="asis-detail-grid">
+                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Normales</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosNormales)</span></div>
+                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. c/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoConGoce)</span></div>
+                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. s/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoSinGoce)</span></div>
+                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Compensación</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosCompensacion)</span></div>
+                <div class="asis-detail-card asis-detail-card--good"><span class="asis-detail-card__label">Banco aplicado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosBancoAplicado)</span></div>
+                <div class="asis-detail-card asis-detail-card--good"><span class="asis-detail-card__label">Extra pagado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraAprobadoPago)</span></div>
+                <div class="asis-detail-card asis-detail-card--good" title="Minutos reales acumulados al banco por movimientos de horas extra"><span class="asis-detail-card__label">A banco acum.</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraAprobadoBanco)</span></div>
+                <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipDescuento(detalle)"><span class="asis-detail-card__label">Descuento</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosDescuento)</span></div>
+                <div class="asis-detail-card asis-detail-card--warn" title="@ObtenerTooltipRetardo(detalle)"><span class="asis-detail-card__label">Retardo</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosRetardo)</span></div>
+                <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipSalidaAnticipada(detalle)"><span class="asis-detail-card__label">Salida anticipada</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosSalidaAnticipada)</span></div>
+                <div class="asis-detail-card asis-detail-card--info" title="@ObtenerTooltipDiasTrabajados(detalle)"><span class="asis-detail-card__label">Días trabajados</span><span class="asis-detail-card__value">@detalle.TotalDiasTrabajados día(s)</span></div>
+                <div class="asis-detail-card asis-detail-card--info" title="@ObtenerTooltipFestivoTrabajado(detalle)"><span class="asis-detail-card__label">Festivo trab.</span><span class="asis-detail-card__value">@detalle.TotalDiasFestivoTrabajado día(s)</span></div>
+                <div class="asis-detail-card asis-detail-card--good" title="Saldo del banco de horas acumulado hasta el corte"><span class="asis-detail-card__label">Saldo banco</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.SaldoBancoHoras)</span></div>
+            </div>
+        </div>
+
+        <footer class="asis-drawer__footer">
+            <button type="button" class="btn btn-outline-secondary" @onclick="CerrarDetalle"><i class="bi bi-x-lg me-1"></i>Cerrar</button>
+        </footer>
+    </aside>
+}
+

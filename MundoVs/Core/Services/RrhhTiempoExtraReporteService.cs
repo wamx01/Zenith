@@ -103,6 +103,27 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
             filas = filas.Where(f => f.MinutosExtra > minimo).ToList();
         }
 
+        // Fase 8 — resoluciones de tiempo extra Autorizadas que tocan el rango, con sus líneas.
+        // Lo APROBADO (pago/banco/factor/monto) viene de aquí; las asistencias above son solo
+        // detección diaria (contexto). Un empleado puede tener varios periodos en el rango.
+        var empleadoIdsRango = filas.Select(f => f.EmpleadoId).Distinct().ToHashSet();
+        var resolucionesQuery = db.RrhhResolucionesTiempoExtraPeriodo
+            .AsNoTracking()
+            .Include(r => r.Lineas)
+            .Where(r => r.EmpresaId == request.EmpresaId
+                && r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada
+                && r.FechaInicio <= request.FechaHasta
+                && r.FechaFin >= request.FechaDesde
+                && r.IsActive);
+        if (empleadoIdsRango.Count > 0)
+        {
+            resolucionesQuery = resolucionesQuery.Where(r => empleadoIdsRango.Contains(r.EmpleadoId));
+        }
+        var resoluciones = await resolucionesQuery.ToListAsync(cancellationToken);
+        var resolucionesPorEmpleado = resoluciones
+            .GroupBy(r => r.EmpleadoId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.FechaInicio).ToList());
+
         var empleados = filas
             .GroupBy(f => f.EmpleadoId)
             .OrderBy(g => g.First().EmpleadoNombreCompleto, StringComparer.CurrentCultureIgnoreCase)
@@ -118,41 +139,16 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                 };
                 var sueldoHora = horasBaseEmpleado > 0m ? sueldoReferencia / horasBaseEmpleado : 0m;
 
-                // Calcular horas dobles/triples por semana (igual que NominaCalculator.ObtenerHorasExtraLegales).
-                // Agrupar por semana ISO para aplicar el tope de 9h dobles por semana.
-                var semanas = g.GroupBy(f => CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(
-                    f.Fecha.ToDateTime(TimeOnly.MinValue),
-                    CalendarWeekRule.FirstDay,
-                    DayOfWeek.Sunday));
-                decimal totalHorasDobles = 0m;
-                decimal totalHorasTriples = 0m;
-
-                foreach (var semana in semanas)
-                {
-                    var minutosBase = semana.Sum(f => f.MinutosExtraAutorizadosPago);
-                    if (minutosBase <= 0) continue;
-                    var horasBase = minutosBase / 60m;
-                    var horasDobles = Math.Min(9m, horasBase);
-                    var horasTriples = Math.Max(0m, horasBase - horasDobles);
-                    totalHorasDobles += horasDobles;
-                    totalHorasTriples += horasTriples;
-                }
-
+                // Detección diaria (contexto). Los campos "aprobados" del día vienen de las
+                // columnas diarias legadas (0 en el flujo por periodo); lo aprobado real está
+                // en los Periodos abajo. El día muestra lo detectado + retardos + marcaciones.
                 var dias = g
                     .OrderBy(f => f.Fecha)
                     .Select(f =>
                     {
-                        var minutosBaseDia = f.MinutosExtraAutorizadosPago;
-                        var horasBaseDia = minutosBaseDia / 60m;
-                        var horasDoblesDia = Math.Min(9m, horasBaseDia);
-                        var horasTriplesDia = Math.Max(0m, horasBaseDia - horasDoblesDia);
-                        // Usar el override persistido si existe; si no, el factor de configuración
                         var factorDia = f.FactorTiempoExtraAplicado.HasValue && f.FactorTiempoExtraAplicado.Value > 0m
                             ? f.FactorTiempoExtraAplicado.Value
                             : factorTiempoExtra;
-                        var factorTripleDia = factorDia; // el override aplica a ambos: dobles y triples
-                        var montoDoblesDia = horasDoblesDia * sueldoHora * factorDia;
-                        var montoTriplesDia = horasTriplesDia * sueldoHora * factorTripleDia;
                         return new RrhhTiempoExtraReporteDiaDto
                         {
                             Fecha = f.Fecha,
@@ -164,10 +160,10 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                             FactorTiempoExtra = factorDia,
                             MinutosPagoFactorado = (int)Math.Round(f.MinutosExtraAutorizadosPago * factorDia, MidpointRounding.AwayFromZero),
                             MinutosBancoFactorado = (int)Math.Round(f.MinutosExtraAutorizadosBanco * factorAcumulacionBanco, MidpointRounding.AwayFromZero),
-                            HorasExtraDobles = Math.Round(horasDoblesDia, 2),
-                            HorasExtraTriples = Math.Round(horasTriplesDia, 2),
+                            HorasExtraDobles = 0m,
+                            HorasExtraTriples = 0m,
                             SueldoHora = Math.Round(sueldoHora, 4),
-                            MontoHorasExtraEstimado = Math.Round(montoDoblesDia + montoTriplesDia, 2),
+                            MontoHorasExtraEstimado = 0m,
                             MinutosRetardo = f.MinutosRetardo,
                             MinutosSalidaAnticipada = f.MinutosSalidaAnticipada,
                             MinutosTrabajadosBrutos = f.MinutosTrabajadosBrutos,
@@ -184,31 +180,85 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                     })
                     .ToList();
 
-                // El monto total se calcula sumando el monto de cada día (que ya respeta el override)
-                var montoTotalEstimado = dias.Sum(d => d.MontoHorasExtraEstimado);
+                // Fase 8 — periodos autorizados con sus líneas. Dobles/triples/simples se derivan
+                // del factor de cada línea (==2 dobles, ==3 triples, resto simples), ya no del
+                // techo semanal. El monto estimado de una línea de PAGO = Minutos/60 × Factor × sueldoHora.
+                var periodos = (resolucionesPorEmpleado.TryGetValue(primero.EmpleadoId, out var resEmpleado)
+                        ? resEmpleado
+                        : new List<RrhhResolucionTiempoExtraPeriodo>())
+                    .Select(r =>
+                    {
+                        var lineasDto = (r.Lineas is null
+                            ? new List<RrhhResolucionTiempoExtraLinea>()
+                            : r.Lineas.OrderBy(l => l.Orden).ToList())
+                            .Select(l =>
+                            {
+                                var minutosFactorados = (int)Math.Round(Math.Max(0, l.Minutos) * Math.Max(0m, l.Factor), MidpointRounding.AwayFromZero);
+                                var monto = l.Destino == RrhhDestinoTiempoExtraLinea.Pago
+                                    ? Math.Round(Math.Max(0, l.Minutos) / 60m * Math.Max(0m, l.Factor) * sueldoHora, 2)
+                                    : 0m;
+                                return new RrhhTiempoExtraReporteLineaDto
+                                {
+                                    Destino = l.Destino == RrhhDestinoTiempoExtraLinea.Banco ? "Banco" : "Pago",
+                                    Minutos = Math.Max(0, l.Minutos),
+                                    Factor = l.Factor,
+                                    MinutosFactorados = minutosFactorados,
+                                    MontoEstimado = monto,
+                                    Observaciones = l.Observaciones
+                                };
+                            })
+                            .ToList();
+                        return new RrhhTiempoExtraReportePeriodoDto
+                        {
+                            PeriodoEtiqueta = r.PeriodoEtiqueta,
+                            PeriodoKey = r.PeriodoKey,
+                            FechaInicio = r.FechaInicio,
+                            FechaFin = r.FechaFin,
+                            Estatus = r.Estatus.ToString(),
+                            AutorizadoPor = r.AutorizadoPor,
+                            FechaAutorizacion = r.FechaAutorizacion,
+                            Lineas = lineasDto,
+                            MinutosPago = lineasDto.Where(l => l.Destino == "Pago").Sum(l => l.Minutos),
+                            MinutosBanco = lineasDto.Where(l => l.Destino == "Banco").Sum(l => l.Minutos),
+                            MontoEstimado = Math.Round(lineasDto.Sum(l => l.MontoEstimado), 2)
+                        };
+                    })
+                    .ToList();
+
+                var todasLineasPago = periodos.SelectMany(p => p.Lineas).Where(l => l.Destino == "Pago").ToList();
+                var todasLineasBanco = periodos.SelectMany(p => p.Lineas).Where(l => l.Destino == "Banco").ToList();
+                // Para dobles/triples resumimos por factor de línea (consistente con la resolución por líneas).
+                var totalHorasDobles = todasLineasPago
+                    .Where(l => l.Factor == 2m)
+                    .Sum(l => l.Minutos / 60m);
+                var totalHorasTriples = todasLineasPago
+                    .Where(l => l.Factor == 3m)
+                    .Sum(l => l.Minutos / 60m);
 
                 var totales = new RrhhTiempoExtraReporteTotalesDto
                 {
                     TotalDias = dias.Count,
-                    DiasConExtra = dias.Count(d => d.MinutosExtra > 0
-                        || d.MinutosExtraAutorizadosPago > 0
-                        || d.MinutosExtraAutorizadosBanco > 0),
+                    DiasConExtra = dias.Count(d => d.MinutosExtra > 0),
                     TotalMinutosExtra = dias.Sum(d => d.MinutosExtra),
-                    TotalMinutosExtraAutorizadosPago = dias.Sum(d => d.MinutosExtraAutorizadosPago),
-                    TotalMinutosExtraAutorizadosBanco = dias.Sum(d => d.MinutosExtraAutorizadosBanco),
+                    TotalMinutosExtraAutorizadosPago = todasLineasPago.Sum(l => l.Minutos),
+                    TotalMinutosExtraAutorizadosBanco = todasLineasBanco.Sum(l => l.Minutos),
                     TotalMinutosCubiertosBancoHoras = dias.Sum(d => d.MinutosCubiertosBancoHoras),
-                    TotalMinutosPagoFactorado = dias.Sum(d => d.MinutosPagoFactorado),
-                    TotalMinutosBancoFactorado = dias.Sum(d => d.MinutosBancoFactorado),
+                    TotalMinutosPagoFactorado = todasLineasPago.Sum(l => l.MinutosFactorados),
+                    TotalMinutosBancoFactorado = todasLineasBanco.Sum(l => l.MinutosFactorados),
                     TotalHorasExtraDobles = Math.Round(totalHorasDobles, 2),
                     TotalHorasExtraTriples = Math.Round(totalHorasTriples, 2),
-                    TotalMontoHorasExtraEstimado = montoTotalEstimado,
+                    TotalMontoHorasExtraEstimado = periodos.Sum(p => p.MontoEstimado),
                     TotalMinutosRetardo = dias.Sum(d => d.MinutosRetardo),
                     TotalMinutosSalidaAnticipada = dias.Sum(d => d.MinutosSalidaAnticipada),
                     TotalMinutosTrabajadosNetos = dias.Sum(d => d.MinutosTrabajadosNetos)
                 };
 
+                // Fase 8 — sin autorizar: hay detección diaria de extra pero ninguna resolución Autorizada.
+                var tieneDeteccionExtra = dias.Any(d => d.MinutosExtra > 0);
+                var sinAutorizar = periodos.Count == 0 && tieneDeteccionExtra;
+
                 // Si el cliente pidió agrupadoPor="empleado", colapsamos los días en un resumen
-                // y exponemos sólo los totales (consistente con la UI semanal).
+                // y exponemos sólo los totales + periodos (consistente con la UI semanal).
                 if (agrupadoPor == "empleado")
                 {
                     dias = [];
@@ -225,6 +275,8 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                     SueldoSemanal = primero.EmpleadoSueldoSemanal,
                     PeriodicidadPago = primero.EmpleadoPeriodicidadPago.ToString(),
                     Dias = dias,
+                    Periodos = periodos,
+                    SinAutorizar = sinAutorizar,
                     Totales = totales
                 };
             })

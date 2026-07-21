@@ -4,7 +4,7 @@ namespace MundoVs.Core.Services;
 
 public static class RrhhTiempoExtraPolicy
 {
-    public static int ObtenerMinutosTrabajadosNetosEfectivos(RrhhAsistencia asistencia)
+    public static int ObtenerMinutosNetoEfectivo(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, asistencia.MinutosPerdonadosManual));
 
     public static int ObtenerMinutosRetardoEfectivos(RrhhAsistencia asistencia)
@@ -19,44 +19,18 @@ public static class RrhhTiempoExtraPolicy
     }
 
     public static int ObtenerMinutosSalidaAnticipadaEfectivos(RrhhAsistencia asistencia)
-        => ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, 0);
-
-    public static int ObtenerMinutosSalidaAnticipadaEfectivos(RrhhAsistencia asistencia, int minutosPermisoAplicados)
     {
         var perdonRestante = Math.Max(0, asistencia.MinutosPerdonadosManual);
         var retardo = Math.Max(0, asistencia.MinutosRetardo);
-        var permisoRestante = Math.Max(0, minutosPermisoAplicados);
 
         var retardoCubiertoPorPerdon = Math.Min(retardo, perdonRestante);
         perdonRestante = Math.Max(0, perdonRestante - retardoCubiertoPorPerdon);
 
-        var retardoDespuesPerdon = Math.Max(0, retardo - retardoCubiertoPorPerdon);
-        permisoRestante = Math.Max(0, permisoRestante - Math.Min(retardoDespuesPerdon, permisoRestante));
-
         var salidaAnticipada = Math.Max(0, asistencia.MinutosSalidaAnticipada);
-        var salidaDespuesPerdon = Math.Max(0, salidaAnticipada - Math.Min(salidaAnticipada, perdonRestante));
-        var minutosDescansoNoPagadoProgramado = ObtenerMinutosDescansoNoPagadoProgramado(asistencia);
-        var resumenDescansos = asistencia.ResumenDescansos ?? string.Empty;
-        var salidaTempranaCompensaDescanso = asistencia.Observaciones?.Contains("salida anticipada sugiere permiso o descanso no tomado", StringComparison.OrdinalIgnoreCase) == true
-            || resumenDescansos.Contains("confirmar permiso o descuento", StringComparison.OrdinalIgnoreCase);
-
-        if (!salidaTempranaCompensaDescanso || minutosDescansoNoPagadoProgramado <= 0)
-        {
-            return salidaDespuesPerdon;
-        }
-
-        var descansoMarcado = Math.Max(0, asistencia.MinutosDescansoNoPagado);
-        var descansoNoMarcadoPendiente = Math.Max(0, minutosDescansoNoPagadoProgramado - descansoMarcado);
-        if (descansoNoMarcadoPendiente <= 0)
-        {
-            return salidaDespuesPerdon;
-        }
-
-        var salidaDespuesDescanso = Math.Max(0, salidaDespuesPerdon - Math.Min(salidaDespuesPerdon, descansoNoMarcadoPendiente));
-        return Math.Max(0, salidaDespuesDescanso - Math.Min(salidaDespuesDescanso, permisoRestante));
+        return Math.Max(0, salidaAnticipada - Math.Min(salidaAnticipada, perdonRestante));
     }
 
-    public static int ObtenerMinutosDescuentoEfectivos(RrhhAsistencia asistencia, int minutosDescuentoManual = 0)
+    public static int ObtenerMinutosDescuentoOperacional(RrhhAsistencia asistencia, int minutosDescuentoManual = 0)
         => Math.Max(0, ObtenerMinutosRetardoEfectivos(asistencia) + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia) + Math.Max(0, minutosDescuentoManual));
 
     public static int ObtenerMinutosDescuentoTotal(RrhhAsistencia asistencia, int minutosDescuentoManual = 0)
@@ -72,13 +46,15 @@ public static class RrhhTiempoExtraPolicy
     public static int ObtenerMinutosDescuentoTotal(RrhhAsistencia asistencia, int minutosDescuentoManual, int minutosPermisoAplicados, int minutosCompensadosAprobados)
         => Math.Max(0,
             ObtenerMinutosRetardoEfectivos(asistencia, minutosPermisoAplicados)
-            + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, minutosPermisoAplicados)
+            + ObtenerMinutosSalidaAnticipadaEfectivos(asistencia)
             + ObtenerMinutosFaltanteDescontable(asistencia, minutosPermisoAplicados, minutosCompensadosAprobados)
             + Math.Max(0, minutosDescuentoManual));
 
     public static int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosJornadaNetaProgramada);
 
+    [Obsolete("Usar RrhhAsistencia.MinutosCompensacionPermisoAprobados (columna autoritativa). "
+        + "Este parser de bitácora se conserva sólo para el backfill one-shot de la Fase 6.")]
     public static int ObtenerMinutosPermisoCompensadosAprobados(IEnumerable<RrhhLogChecador> bitacora, Guid empleadoId, DateOnly fecha)
     {
         const string prefijo = "minutosCompensados=";
@@ -109,15 +85,27 @@ public static class RrhhTiempoExtraPolicy
         return 0;
     }
 
-    public static int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
+    // Un día se trata como "sin referencia de jornada" cuando no hay jornada neta
+    // esperada contra la que comparar. Cubre los 3 casos que antes colapsaban en el
+    // modo "SinTurno": (1) día no laborable con turno asignado (jornada neta 0),
+    // (2) empleado sin turno asignado (jornada neta 0), y (3) esquema PorHoras
+    // (EsPorHoras, sin jornada fija aunque el turno exista). El procesador ya no
+    // persiste ModoSugerenciaExtra="SinTurno" (refactor I11); la derivación es
+    // puramente por EsPorHoras o jornada neta <= 0.
+    private static bool EsSinReferenciaJornada(RrhhAsistencia asistencia)
+        => asistencia.EsPorHoras
+           || asistencia.MinutosJornadaNetaProgramada <= 0;
+
+    public static int ObtenerMinutosBasePagada(RrhhAsistencia asistencia)
     {
-        // Empleado sin turno fijo (TurnoBaseId == null): todo el tiempo trabajado es visible.
-        // El usuario decide cuánto es extra mediante la resolución de tiempo extra.
-        // El extra aprobado se resta del base para no duplicar: si el usuario aprueba
-        // 2h de extra sobre 10h trabajadas, el base visible = 8h y el visible total = 8h + 2h = 10h.
-        if (asistencia.MinutosJornadaNetaProgramada <= 0 && asistencia.TurnoBaseId is null)
+        // Empleado sin turno fijo (o día no laborable con turno asignado): todo el
+        // tiempo trabajado es visible. El usuario decide cuánto es extra mediante la
+        // resolución de tiempo extra. El extra aprobado se resta del base para no
+        // duplicar: si el usuario aprueba 2h de extra sobre 10h trabajadas, el base
+        // visible = 8h y el visible total = 8h + 2h = 10h.
+        if (EsSinReferenciaJornada(asistencia))
         {
-            var netoEfectivoSinTurno = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+            var netoEfectivoSinTurno = ObtenerMinutosNetoEfectivo(asistencia);
             var extraAprobadoSinTurno = ObtenerMinutosExtraAprobados(asistencia);
             return Math.Max(0, netoEfectivoSinTurno - extraAprobadoSinTurno);
         }
@@ -127,7 +115,7 @@ public static class RrhhTiempoExtraPolicy
             return 0;
         }
 
-        var netoEfectivo = ObtenerMinutosTrabajadosNetosEfectivos(asistencia);
+        var netoEfectivo = ObtenerMinutosNetoEfectivo(asistencia);
         var extraDetectado = Math.Max(0, asistencia.MinutosExtra);
         var baseNeta = Math.Max(0, netoEfectivo - extraDetectado);
         return Math.Min(baseNeta, asistencia.MinutosJornadaNetaProgramada);
@@ -141,7 +129,7 @@ public static class RrhhTiempoExtraPolicy
         // Sin turno: el procesador no auto-detecta extra (MinutosExtra = 0).
         // El usuario aprueba manualmente cuánto del tiempo trabajado es extra,
         // así que no se limita por detectados.
-        if (asistencia.TurnoBaseId is null)
+        if (EsSinReferenciaJornada(asistencia))
         {
             return aprobados;
         }
@@ -154,17 +142,46 @@ public static class RrhhTiempoExtraPolicy
     public static int ObtenerMinutosExtraPagoFactorados(RrhhAsistencia asistencia, decimal factorTiempoExtra)
         => (int)Math.Round(Math.Max(0, asistencia.MinutosExtraAutorizadosPago) * Math.Max(1m, factorTiempoExtra), MidpointRounding.AwayFromZero);
 
-    public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
-        => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
+    // Prorratea las horas de un permiso con goce entre los días que cubre.
+    // El campo Horas de la ausencia es el total del permiso; repartirlo entre los
+    // días evita sumar el total a cada día (sobre-conteo en permisos multi-día).
+    // Si Dias no está poblado, se infiere del rango FechaInicio..FechaFin.
+    public static int ObtenerMinutosPermisoConGocePorDia(RrhhAusencia ausencia)
+    {
+        var minutosTotales = (int)Math.Round(Math.Max(0m, ausencia.Horas) * 60m, MidpointRounding.AwayFromZero);
+        var dias = Math.Max(1, Math.Max(0, ausencia.Dias));
+        if (dias <= 1 && ausencia.FechaFin >= ausencia.FechaInicio)
+        {
+            dias = Math.Max(1, ausencia.FechaFin.DayNumber - ausencia.FechaInicio.DayNumber + 1);
+        }
 
-    public static int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia, int minutosPermisoAplicados, int minutosCompensadosAprobados)
-        => Math.Max(0, ObtenerMinutosTrabajadosBaseVisibles(asistencia) + Math.Max(0, minutosPermisoAplicados) + Math.Max(0, minutosCompensadosAprobados) + ObtenerMinutosExtraAprobados(asistencia));
+        return (int)Math.Round((decimal)minutosTotales / dias, MidpointRounding.AwayFromZero);
+    }
+
+    // Permiso visible canónico = permiso con goce prorrateado al día + banco-cobertura
+    // (faltante cubierto consumiendo banco de horas). Es la única definición que
+    // deben usar todas las vistas (lista diaria, semanal, modal) para no divergir.
+    public static int ObtenerMinutosPermisoVisible(RrhhAsistencia asistencia, int minutosPermisoConGoceDia)
+        => Math.Max(0, minutosPermisoConGoceDia) + Math.Max(0, asistencia.MinutosCubiertosBancoHoras);
+
+    // Visible con permiso con goce prorrateado al día: el banco-cobertura lo añade
+    // el policy vía ObtenerMinutosPermisoVisible, así el caller no lo duplica.
+    public static int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia, int minutosPermisoConGoceDia, int minutosCompensadosAprobados)
+        => Math.Max(0, ObtenerMinutosBasePagada(asistencia)
+            + ObtenerMinutosPermisoVisible(asistencia, minutosPermisoConGoceDia)
+            + Math.Max(0, minutosCompensadosAprobados)
+            + ObtenerMinutosExtraAprobados(asistencia));
+
+    // Sobrecarga conservada para callers que no pasan permiso con goce explícito
+    // (el banco-cobertura sigue sumándose internamente). Redirige a la canonical.
+    public static int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia, int minutosCompensadosAprobados)
+        => ObtenerMinutosTiempoVisible(asistencia, 0, minutosCompensadosAprobados);
 
     public static int ObtenerMinutosAusenciaBrutaSugerida(RrhhAsistencia asistencia)
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);
 
-    public static int ObtenerMinutosFaltanteBanco(RrhhAsistencia asistencia)
-        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - ObtenerMinutosTrabajadosNetosEfectivos(asistencia));
+    public static int ObtenerMinutosFaltanteNeto(RrhhAsistencia asistencia)
+        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - ObtenerMinutosNetoEfectivo(asistencia));
 
     public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia)
         => ObtenerMinutosFaltanteDescontable(asistencia, 0, 0);
@@ -174,12 +191,12 @@ public static class RrhhTiempoExtraPolicy
 
     public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia, int minutosPermisoAplicados, int minutosCompensadosAprobados)
     {
-        var faltante = ObtenerMinutosFaltanteBanco(asistencia);
+        var faltante = ObtenerMinutosFaltanteNeto(asistencia);
         return Math.Max(0, faltante - Math.Max(0, minutosPermisoAplicados) - Math.Max(0, minutosCompensadosAprobados));
     }
 
     public static int ObtenerMinutosPermisoSugeridos(RrhhAsistencia asistencia, int minutosCompensadosAprobados = 0)
-        => Math.Max(0, ObtenerMinutosFaltanteBanco(asistencia) - Math.Max(0, minutosCompensadosAprobados));
+        => Math.Max(0, ObtenerMinutosFaltanteNeto(asistencia) - Math.Max(0, minutosCompensadosAprobados));
 
     public static int ObtenerMinutosDescansoNoPagadoExcluidosDelPermiso(RrhhAsistencia asistencia)
     {
@@ -191,18 +208,11 @@ public static class RrhhTiempoExtraPolicy
 
     public static int ObtenerMinutosExtraResolubles(RrhhAsistencia asistencia, decimal factorTiempoExtra)
     {
-        // Sin turno: el máximo resoluble es el tiempo total trabajado, ya que
-        // el usuario decide manualmente cuánto de ese tiempo es extra.
-        if (asistencia.TurnoBaseId is null)
-        {
-            return Math.Max(0, asistencia.MinutosTrabajadosNetos);
-        }
-
-        // Día de descanso con turno asignado pero jornada neta programada = 0:
-        // permitir que el tiempo trabajado se apruebe como extra manualmente,
-        // porque la jornada programada no detectó extra automático.
-        if (asistencia.MinutosJornadaNetaProgramada <= 0
-            && Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0)
+        // Sin turno (incluye día no laborable con turno asignado, donde la jornada
+        // neta programada es 0 y el procesador no detecta extra automático): el
+        // máximo resoluble es el tiempo total trabajado, ya que el usuario decide
+        // manualmente cuánto de ese tiempo es extra.
+        if (EsSinReferenciaJornada(asistencia))
         {
             return Math.Max(0, asistencia.MinutosTrabajadosNetos);
         }
@@ -252,14 +262,14 @@ public static class RrhhTiempoExtraPolicy
 
         // Sin turno: siempre se muestra el apartado de tiempo extra para que el usuario
         // pueda decidir cuánto del tiempo trabajado es extra.
-        if (asistencia.TurnoBaseId is null)
+        if (EsSinReferenciaJornada(asistencia))
         {
             return asistencia.RequiereRevision
                 || Math.Max(0, asistencia.MinutosTrabajadosNetos) > 0;
         }
 
         return asistencia.RequiereRevision
-            || ObtenerMinutosFaltanteBanco(asistencia) > 0
+            || ObtenerMinutosFaltanteNeto(asistencia) > 0
             || Math.Max(0, asistencia.MinutosExtra) > 0;
     }
 

@@ -259,6 +259,42 @@
                             </div>
                         }
 
+                        <div class="col-12"><hr /><h6 class="text-muted">Esquema de Jornada</h6></div>
+                        <div class="col-6 col-md-4">
+                            <label class="form-label">Tipo de jornada</label>
+                            <InputSelect class="form-select" @bind-Value="jornadaSeleccionada">
+                                <option value="@TipoJornada.Fija">Fija (horario programado)</option>
+                                <option value="@TipoJornada.PorHoras">Por horas (sin horario fijo)</option>
+                            </InputSelect>
+                            <small class="text-muted">Por horas: se paga el tiempo trabajado, sin retardo/faltante; extra sólo manual y no en festivo.</small>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label">Vigente desde</label>
+                            <InputDate class="form-control" @bind-Value="jornadaVigenteDesde" />
+                        </div>
+
+                        @if (historialJornadas.Count > 0)
+                        {
+                            <div class="col-12">
+                                <details class="mt-2">
+                                    <summary class="text-muted small">Historial de jornadas (@historialJornadas.Count)</summary>
+                                    <table class="table table-sm table-bordered mt-1 mb-0">
+                                        <thead class="table-light"><tr><th>Tipo</th><th>Desde</th><th>Hasta</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var h in historialJornadas)
+                                            {
+                                                <tr>
+                                                    <td>@ObtenerEtiquetaJornada(h.TipoJornada)</td>
+                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </details>
+                            </div>
+                        }
+
                         <div class="col-12"><hr /><h6 class="text-muted">Conceptos recurrentes de nómina</h6></div>
                         <div class="col-12">
                             <div class="alert alert-light border small py-2 mb-3">
@@ -488,7 +524,13 @@
                             <td><span class="badge @(e.AplicaImss ? "bg-success" : "bg-secondary")">@(e.AplicaImss ? "Sí" : "No")</span></td>
                             <td><span class="badge @(e.AplicaIsr ? "bg-success" : "bg-secondary")">@(e.AplicaIsr ? "Sí" : "No")</span></td>
                             <td><span class="badge @(e.AplicaInfonavit ? "bg-warning text-dark" : "bg-secondary")">@(e.AplicaInfonavit ? "Sí" : "No")</span></td>
-                            <td><span class="badge bg-secondary">@ObtenerEsquemaActivo(e.Id)</span></td>
+                            <td>
+                                <span class="badge bg-secondary">@ObtenerEsquemaActivo(e.Id)</span>
+                                @if (EsJornadaPorHoras(e.Id))
+                                {
+                                    <span class="badge bg-info text-dark" title="Esquema de jornada por horas">Por horas</span>
+                                }
+                            </td>
                             <td><span class="badge bg-light text-dark">@(e.TurnoBase?.Nombre ?? "—")</span></td>
                             <td class="text-muted small">@(e.FechaContratacion?.ToString("dd/MM/yyyy") ?? "—")</td>
                             <td class="text-center"><span class="badge @(e.IsActive ? "bg-success" : "bg-secondary")">@(e.IsActive ? "Sí" : "No")</span></td>
@@ -524,6 +566,7 @@
                                 <span class="badge @(e.IsActive ? "bg-success" : "bg-secondary")">@(e.IsActive ? "Activo" : "Inactivo")</span>
                                 <span class="badge bg-light text-dark">@(e.TurnoBase?.Nombre ?? "—")</span>
                                 <span class="badge bg-secondary">@ObtenerEsquemaActivo(e.Id)</span>
+                                @if (EsJornadaPorHoras(e.Id)) { <span class="badge bg-info text-dark">Por horas</span> }
                                 @if (e.AplicaImss) { <span class="badge bg-info text-dark">IMSS</span> }
                                 @if (e.AplicaIsr) { <span class="badge bg-warning text-dark">ISR</span> }
                                 @if (e.AplicaInfonavit) { <span class="badge bg-danger">Infonavit</span> }

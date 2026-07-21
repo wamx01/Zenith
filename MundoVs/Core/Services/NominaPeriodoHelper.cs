@@ -12,6 +12,11 @@ public sealed class NominaPeriodoCalendario
     public required int NumeroPeriodo { get; init; }
     public required string Periodo { get; init; }
     public required string NumeroNomina { get; init; }
+
+    // Fecha de referencia para el periodo siguiente/anterior (mueve exactamente
+    // un periodo, sin importar la periodicidad). Útil para navegación prev/next.
+    public DateTime FechaReferenciaSiguiente() => Fin.AddDays(1);
+    public DateTime FechaReferenciaAnterior() => Inicio.AddDays(-1);
 }
 
 public static class NominaPeriodoHelper

@@ -148,7 +148,7 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator, INominaLeg
             DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
             DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
             DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
-            MinutosDescuento = RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoEfectivos(new RrhhAsistencia
+            MinutosDescuento = RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoOperacional(new RrhhAsistencia
             {
                 MinutosRetardo = detalle.MinutosRetardo,
                 MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada,
@@ -163,6 +163,7 @@ public class NominaResumenBuilder(INominaCalculator nominaCalculator, INominaLeg
             AplicaImss = detalle.AplicaImss,
             AplicaIsr = detalle.Empleado.AplicaIsr,
             HorasExtra = detalle.HorasExtra,
+            FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra,
             MontoDestajo = detalle.MontoDestajo,
             MontoBono = detalle.MontoBono,
             MontoPercepcionesManuales = detalle.Bonos,

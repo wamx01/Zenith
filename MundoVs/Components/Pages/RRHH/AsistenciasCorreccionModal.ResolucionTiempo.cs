@@ -10,45 +10,6 @@ namespace MundoVs.Components.Pages.RRHH;
 
 public partial class AsistenciasCorreccionModal
 {
-    private int ObtenerMaximoMinutosBaseDisponibles()
-    {
-        if (AsistenciaActual == null)
-        {
-            return 0;
-        }
-
-        // Sin turno: como el procesador no auto-detecta extra, el máximo disponible
-        // es el tiempo total trabajado (neto), para que el usuario pueda decidir
-        // cuánto de ese tiempo es extra.
-        if (AsistenciaActual.TurnoBaseId is null)
-        {
-            return Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos);
-        }
-
-        // Día de descanso con turno asignado (jornada neta = 0) y trabajo real:
-        // el máximo disponible es el tiempo trabajado porque no se detectó extra
-        // automático pero el usuario puede aprobar el tiempo como extra.
-        if (AsistenciaActual.MinutosJornadaNetaProgramada <= 0
-            && Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos) > 0)
-        {
-            return Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos);
-        }
-
-        return Math.Max(0, AsistenciaActual.MinutosExtra);
-    }
-
-    private string ObtenerResumenAprobacionBaseTiempo()
-    {
-        if (AsistenciaActual == null)
-        {
-            return "Sin datos de tiempo extra.";
-        }
-
-        var disponibles = ObtenerMaximoMinutosBaseDisponibles();
-        var capturados = Math.Max(0, minutosExtraPagoCaptura) + Math.Max(0, minutosExtraBancoCaptura);
-        return $"Disponible base: {FormatearMinutos(disponibles)} · Capturado: {FormatearMinutos(capturados)}";
-    }
-
     private string ObtenerResumenDestinoTiempoActual()
     {
         if (AsistenciaActual == null)
@@ -93,42 +54,6 @@ public partial class AsistenciasCorreccionModal
     private string ObtenerResumenSaldoBancoHoras()
         => $"Saldo banco de horas: {FormatearMinutos(Math.Max(0, saldoBancoHorasSeleccionado))} de {FormatearMinutos(Math.Max(0, topeBancoHorasConfigurado))}.";
 
-    private string ObtenerResumenFactorTiempoExtra()
-    {
-        var factorActivo = usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
-            ? factorTiempoExtraOverrideCaptura
-            : factorTiempoExtraConfigurado;
-
-        return usarFactorTiempoExtraOverride && factorTiempoExtraOverrideCaptura > 0m
-            ? $"Override activo x{factorActivo:0.##} · aplica a pago y banco de horas"
-            : $"Factor configurado: x{factorActivo:0.##} (pago) · banco: x{(factorAcumulacionBancoHorasConfigurado > 0m ? factorAcumulacionBancoHorasConfigurado : 1m):0.##}";
-    }
-
-    private string ObtenerResumenBancoAcumuladoActual()
-    {
-        if (AsistenciaActual == null)
-        {
-            return "Sin datos de banco.";
-        }
-
-        var bancoBase = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
-        var bancoAcumulado = ObtenerMinutosBancoAcumuladosActual();
-
-        if (bancoBase <= 0)
-        {
-            return bancoAcumulado > 0
-                ? $"Banco acumulado real: {FormatearMinutos(bancoAcumulado)}."
-                : "Sin envío acumulado al banco en este día.";
-        }
-
-        if (bancoAcumulado > 0 && bancoAcumulado != bancoBase)
-        {
-            return $"Banco base: {FormatearMinutos(bancoBase)} · acumulado real: {FormatearMinutos(bancoAcumulado)}.";
-        }
-
-        return $"Banco aprobado: {FormatearMinutos(bancoBase)}.";
-    }
-
     private int ObtenerMinutosBancoAcumuladosActual()
         => Math.Max(0, minutosExtraBancoAcumuladosActual);
 
@@ -163,8 +88,8 @@ public partial class AsistenciasCorreccionModal
     private int ObtenerMinutosResolubles(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosExtraResolubles(asistencia, factorTiempoExtraConfigurado);
 
-    private int ObtenerMinutosFaltanteBanco(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia);
+    private int ObtenerMinutosFaltanteNeto(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia);
 
     /// <summary>
     /// Sugerencia "neto vs neto": neto trabajado − neto esperado del turno.
@@ -285,6 +210,12 @@ public partial class AsistenciasCorreccionModal
     private bool PuedeMostrarResolucionTiempo()
         => asesorCorreccionActual?.ResolucionesDisponibles.Count > 0;
 
+    /// <summary>Fase 8 — la captura de tiempo extra del modal diario solo aplica cuando el flujo
+    /// por periodo está apagado (legacy). Con el gate Fase 7 on, el extra se autoriza por periodo
+    /// en Asistencias Semanal; aquí solo se muestra un aviso.</summary>
+    private bool PuedeCapturarResolucionTiempoDiaria()
+        => !requiereResolucionAutorizadaParaNomina && PuedeMostrarResolucionTiempo();
+
     private string ObtenerEstadoTiempoSeccion()
     {
         if (AsistenciaActual == null)
@@ -326,12 +257,17 @@ public partial class AsistenciasCorreccionModal
             return "Sin datos para resolver.";
         }
 
+        if (requiereResolucionAutorizadaParaNomina)
+        {
+            return "El tiempo extra se autoriza por periodo en Asistencias Semanal. Aquí solo revisa marcaciones, permisos, turno y perdón manual del día.";
+        }
+
         if (AsistenciaActual.MinutosExtra > 0)
         {
             return "Cuando el permiso y las marcaciones ya están claros, aquí decides si el extra se paga o se envía a banco.";
         }
 
-        if (ObtenerMinutosFaltanteBanco(AsistenciaActual) > 0)
+        if (ObtenerMinutosFaltanteNeto(AsistenciaActual) > 0)
         {
             return "Si después de revisar permiso y compensación aún queda faltante real, aquí puedes cubrirlo con banco si hay saldo.";
         }
@@ -358,7 +294,7 @@ public partial class AsistenciasCorreccionModal
     }
 
     private int ObtenerMaximoMinutosCubrirBancoResumen()
-        => AsistenciaActual == null ? 0 : ObtenerMinutosFaltanteBanco(AsistenciaActual);
+        => AsistenciaActual == null ? 0 : ObtenerMinutosFaltanteNeto(AsistenciaActual);
 
     private string ObtenerTituloCapturaTiempoResumen()
         => tipoResolucionTiempoExtra switch
@@ -378,7 +314,7 @@ public partial class AsistenciasCorreccionModal
         }
 
         var resoluble = ObtenerMinutosResolubles(AsistenciaActual);
-        var faltante = ObtenerMinutosFaltanteBanco(AsistenciaActual);
+        var faltante = ObtenerMinutosFaltanteNeto(AsistenciaActual);
 
         return tipoResolucionTiempoExtra switch
         {
@@ -390,34 +326,11 @@ public partial class AsistenciasCorreccionModal
         };
     }
 
-    private void CambiarTipoResolucionTiempoExtra(string tipo)
-    {
-        tipoResolucionTiempoExtra = tipo;
-        AjustarResolucionTiempoSugerida();
-        minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
-        minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
-    }
-
     private static string FormatearMinutosCaptura(int minutos)
     {
         var horas = Math.Max(0, minutos) / 60;
         var restantes = Math.Max(0, minutos) % 60;
         return $"{horas}:{restantes:00}";
-    }
-
-    private static int ParsearMinutosCaptura(string? texto)
-    {
-        if (string.IsNullOrWhiteSpace(texto))
-        {
-            return 0;
-        }
-
-        if (TimeSpan.TryParse(texto, out var hora))
-        {
-            return Math.Max(0, (int)Math.Round(hora.TotalMinutes, MidpointRounding.AwayFromZero));
-        }
-
-        return 0;
     }
 
     private void AjustarResolucionTiempoSugerida()
@@ -442,7 +355,7 @@ public partial class AsistenciasCorreccionModal
             : ObtenerMinutosExtraSugeridosModo(AsistenciaActual);
 
         var baseCaptura = Math.Min(sugerido, resoluble);
-        var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(AsistenciaActual);
+        var faltante = RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(AsistenciaActual);
         minutosExtraPagoCaptura = 0;
         minutosExtraBancoCaptura = 0;
         minutosCubrirBancoCaptura = 0;
@@ -462,82 +375,6 @@ public partial class AsistenciasCorreccionModal
             case "CubrirFaltanteConBanco":
                 minutosCubrirBancoCaptura = faltante;
                 break;
-        }
-    }
-
-    private async Task AplicarResolucionTiempoAsync()
-    {
-        if (AsistenciaActual == null || !PuedeAprobarTiempoExtra)
-        {
-            return;
-        }
-
-        error = null;
-        ok = null;
-
-        var usuarioActual = await ObtenerUsuarioActualAsync();
-        await using var db = await DbFactory.CreateDbContextAsync();
-        try
-        {
-            var resultado = await TiempoExtraResolutionService.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
-            {
-                EmpresaId = _empresaId,
-                AsistenciaId = AsistenciaActual.Id,
-                Resolucion = tipoResolucionTiempoExtra,
-                FactorTiempoExtraOverride = usarFactorTiempoExtraOverride ? factorTiempoExtraOverrideCaptura : null,
-                MinutosBasePago = minutosExtraPagoCaptura,
-                MinutosBaseBanco = minutosExtraBancoCaptura,
-                MinutosPago = minutosExtraPagoCaptura,
-                MinutosBanco = minutosExtraBancoCaptura,
-                MinutosCubrirBanco = minutosCubrirBancoCaptura,
-                Observaciones = resolucionTiempoExtraObservaciones,
-                UsuarioActual = usuarioActual
-            });
-
-            await RegistrarBitacoraCorreccionAsync(db, "Se aplicó corrección de asistencia: resolución de tiempo extra/banco.", resultado.BitacoraDetalle);
-            await db.SaveChangesAsync();
-
-            saldoBancoHorasSeleccionado = resultado.SaldoBancoActualMinutos;
-            topeBancoHorasConfigurado = resultado.TopeBancoMinutos;
-            factorTiempoExtraConfigurado = resultado.FactorTiempoExtra;
-            bancoHorasHabilitadoConfigurado = resultado.BancoHorasHabilitado;
-            factorAcumulacionBancoHorasConfigurado = resultado.FactorAcumulacionBancoHoras;
-
-            await RefrescarDiaAsync(db, AsistenciaActual.Fecha, "Resolución de tiempo aplicada correctamente.", recargarResolucion: true);
-            RegistrarCambioPendiente("Resolución de tiempo aplicada localmente. Guarda cambios para reflejarla en otros reportes.");
-        }
-        catch (InvalidOperationException ex)
-        {
-            error = ex.Message;
-        }
-    }
-
-    private async Task QuitarResolucionTiempoAsync()
-    {
-        if (AsistenciaActual == null || !PuedeAprobarTiempoExtra)
-        {
-            return;
-        }
-
-        error = null;
-        ok = null;
-
-        var resolucionAnterior = AsistenciaActual.ResolucionTiempoExtra;
-        tipoResolucionTiempoExtra = string.IsNullOrWhiteSpace(resolucionAnterior) ? "SinAccion" : resolucionAnterior;
-        minutosExtraPagoCaptura = 0;
-        minutosExtraBancoCaptura = 0;
-        minutosCubrirBancoCaptura = 0;
-        minutosExtraPagoTexto = "0:00";
-        minutosExtraBancoTexto = "0:00";
-        usarFactorTiempoExtraOverride = false;
-        factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
-        resolucionTiempoExtraObservaciones = "Resolución revertida desde el wizard de asistencias.";
-
-        await AplicarResolucionTiempoAsync();
-
-        if (string.IsNullOrWhiteSpace(error))
-        {
-            ok = "Se quitó la resolución de tiempo extra / banco de horas del día.";
         }
     }
 
@@ -600,25 +437,6 @@ public partial class AsistenciasCorreccionModal
         factorTiempoExtraOverrideCaptura = factorTiempoExtraConfigurado;
     }
 
-    private void OnResumenTipoResolucionChanged(ChangeEventArgs args)
-        => CambiarTipoResolucionTiempoExtra(args.Value?.ToString() ?? "SinAccion");
-
-    private void AlternarAccionesRapidasTiempo()
-    {
-        var nuevoEstado = !_mostrarAccionesRapidasTiempo;
-        _mostrarAccionesRapidasTiempo = nuevoEstado;
-        if (nuevoEstado)
-        {
-            error = null;
-            _mostrarAccionesRapidasPermiso = false;
-            _mostrarAccionesRapidasTurno = false;
-            _mostrarAccionesRapidasModoExtra = false;
-            AjustarResolucionTiempoSugerida();
-            minutosExtraPagoTexto = FormatearMinutosCaptura(minutosExtraPagoCaptura);
-            minutosExtraBancoTexto = FormatearMinutosCaptura(minutosExtraBancoCaptura);
-        }
-    }
-
     private void CambiarModoSugerenciaExtra(string nuevoModo)
     {
         if (AsistenciaActual == null || nuevoModo == modoSugerenciaExtra)
@@ -639,14 +457,10 @@ public partial class AsistenciasCorreccionModal
         _mostrarAccionesRapidasModoExtra = nuevoEstado;
         if (nuevoEstado)
         {
-            _mostrarAccionesRapidasTiempo = false;
             _mostrarAccionesRapidasPermiso = false;
             _mostrarAccionesRapidasTurno = false;
         }
     }
-
-    private void AbrirTiempoDesdeResumen()
-        => AlternarAccionesRapidasTiempo();
 
     private async Task CargarContextoTiempoExtraAsync(CrmDbContext db)
     {
@@ -666,8 +480,9 @@ public partial class AsistenciasCorreccionModal
         factorTiempoExtraConfigurado = contexto.Configuracion.FactorTiempoExtra;
         bancoHorasHabilitadoConfigurado = contexto.Configuracion.BancoHorasHabilitado;
         factorAcumulacionBancoHorasConfigurado = contexto.Configuracion.FactorAcumulacionBancoHoras;
+        requiereResolucionAutorizadaParaNomina = contexto.Configuracion.RequiereResolucionAutorizadaParaNomina;
     }
 
     private static bool DebeMostrarResolucionTiempo(RrhhAsistencia asistencia)
-        => asistencia.MinutosExtra > 0 || RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia) > 0 || asistencia.MinutosCubiertosBancoHoras > 0;
+        => asistencia.MinutosExtra > 0 || RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia) > 0 || asistencia.MinutosCubiertosBancoHoras > 0;
 }

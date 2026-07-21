@@ -32,6 +32,14 @@ public class RrhhAsistencia : BaseEntity
     public int MinutosExtraAutorizadosPago { get; set; }
     public int MinutosExtraAutorizadosBanco { get; set; }
     public int MinutosCubiertosBancoHoras { get; set; }
+    /// <summary>
+    /// Minutos de compensación de permiso aprobados por el operador para este día (overlay
+    /// post-procesamiento). Se suman al tiempo visible y se restan del faltante descontable /
+    /// permiso sugerido. Fuente autoritativa del read-back (antes se re-parseaba del
+    /// RrhhLogChecador.Detalle). El bitácora se sigue escribiendo como auditoría; el movimiento
+    /// de banco (ReferenciaTipo "permiso-compensacion-banco:...") sigue como efecto.
+    /// </summary>
+    public int MinutosCompensacionPermisoAprobados { get; set; }
     public string? ResolucionTiempoExtra { get; set; }
     /// <summary>
     /// Factor aplicado al autorizar tiempo extra. Si es null o 0, se usa el factor de configuración.
@@ -44,6 +52,14 @@ public class RrhhAsistencia : BaseEntity
     /// "NetoVsNeto" = neto trabajado vs neto esperado del turno.
     /// </summary>
     public string? ModoSugerenciaExtra { get; set; }
+    /// <summary>
+    /// True si el empleado estaba en esquema de jornada PorHoras vigente a la fecha de
+    /// esta asistencia. Lo setea el procesador al analizar el día (según
+    /// EmpleadoEsquemaJornada vigente). En PorHoras no hay jornada/hora esperada: se paga
+    /// el tiempo trabajado, sin faltante/retardo/salida anticipada, extra sólo manual, y
+    /// en festivo el tiempo trabajado va al factor festivo (sin extra manual ese día).
+    /// </summary>
+    public bool EsPorHoras { get; set; }
     public RrhhAsistenciaEstatus Estatus { get; set; } = RrhhAsistenciaEstatus.Pendiente;
     public bool RequiereRevision { get; set; }
     public string? Observaciones { get; set; }
@@ -67,5 +83,7 @@ public enum RrhhAsistenciaEstatus
     DescansoTrabajado = 6,
     Incompleta = 7,
     TurnoNoAsignado = 8,
-    MarcaNoReconocida = 9
+    MarcaNoReconocida = 9,
+    /// <summary>Día trabajado por un empleado en esquema PorHoras (sin jornada fija).</summary>
+    TrabajadoPorHoras = 10
 }

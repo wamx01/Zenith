@@ -15,8 +15,7 @@ namespace MundoVs.Workers;
 /// </summary>
 public sealed class RrhhProcesarPendientesWorker(
     RrhhMarcacionesPendientesQueue queue,
-    IDbContextFactory<CrmDbContext> dbContextFactory,
-    IRrhhAsistenciaProcessor rrhhAsistenciaProcessor,
+    IServiceScopeFactory scopeFactory,
     ILogger<RrhhProcesarPendientesWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,6 +37,9 @@ public sealed class RrhhProcesarPendientesWorker(
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
+                using var scope = scopeFactory.CreateScope();
+                var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<CrmDbContext>>();
+                var rrhhAsistenciaProcessor = scope.ServiceProvider.GetRequiredService<IRrhhAsistenciaProcessor>();
                 await using var db = await dbContextFactory.CreateDbContextAsync(stoppingToken);
                 await rrhhAsistenciaProcessor.ProcesarMarcacionesPendientesAsync(
                     db,

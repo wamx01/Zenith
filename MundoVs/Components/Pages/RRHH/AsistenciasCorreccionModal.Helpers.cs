@@ -282,33 +282,28 @@ public partial class AsistenciasCorreccionModal
 
     #region Métricas de tiempo
 
-    private int ObtenerMinutosTrabajadosBaseVisibles(RrhhAsistencia asistencia)
-        => RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosBaseVisibles(asistencia);
+    private int ObtenerMinutosBasePagada(RrhhAsistencia asistencia)
+        => RrhhTiempoExtraPolicy.ObtenerMinutosBasePagada(asistencia);
 
     private int ObtenerMinutosRetardoVisible(RrhhAsistencia asistencia)
     {
         var permisoAplicadoActual = permisoDiaSeleccionado == null
             ? 0
-            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
+            : RrhhTiempoExtraPolicy.ObtenerMinutosPermisoConGocePorDia(permisoDiaSeleccionado);
         return RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(asistencia, permisoAplicadoActual);
     }
 
     private int ObtenerMinutosSalidaAnticipadaVisible(RrhhAsistencia asistencia)
-    {
-        var permisoAplicadoActual = permisoDiaSeleccionado == null
-            ? 0
-            : (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero);
-        return RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(asistencia, permisoAplicadoActual);
-    }
+        => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(asistencia);
 
-    private int ObtenerMinutosTrabajadosVisibles(RrhhAsistencia asistencia)
+    private int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia)
     {
         var permisoAplicadoActual = permisoDiaSeleccionado == null
             ? 0
             : permisoDiaSeleccionado.ConGocePago
-                ? (int)Math.Round(Math.Max(0m, permisoDiaSeleccionado.Horas) * 60m, MidpointRounding.AwayFromZero)
+                ? RrhhTiempoExtraPolicy.ObtenerMinutosPermisoConGocePorDia(permisoDiaSeleccionado)
                 : 0;
-        return RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, permisoAplicadoActual, minutosCompensadosPermisoAprobados);
+        return RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, permisoAplicadoActual, minutosCompensadosPermisoAprobados);
     }
 
     private int ObtenerMinutosDescansoNoPagadoProgramado(RrhhAsistencia asistencia)
@@ -364,7 +359,7 @@ public partial class AsistenciasCorreccionModal
                 "Tiempo trabajado",
                 "bi bi-stopwatch",
                 "asis-time-bar__fill--base",
-                ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual),
+                ObtenerMinutosBasePagada(AsistenciaActual),
                 "Base trabajada sin extra no aprobada.",
                 null),
             new ResumenVisualBarra(
@@ -404,7 +399,7 @@ public partial class AsistenciasCorreccionModal
                 "Faltante neto",
                 "bi bi-exclamation-circle",
                 "asis-time-bar__fill--faltante",
-                ObtenerMinutosFaltanteBanco(AsistenciaActual),
+                ObtenerMinutosFaltanteNeto(AsistenciaActual),
                 "Solo debe cubrirse si sigue existiendo después de revisar marcaciones, permiso y compensación.",
                 null)
         ];
@@ -420,14 +415,14 @@ public partial class AsistenciasCorreccionModal
         var referencia = new[]
         {
             AsistenciaActual.MinutosJornadaNetaProgramada,
-            ObtenerMinutosTrabajadosVisibles(AsistenciaActual),
-            ObtenerMinutosTrabajadosBaseVisibles(AsistenciaActual),
+            ObtenerMinutosTiempoVisible(AsistenciaActual),
+            ObtenerMinutosBasePagada(AsistenciaActual),
             AsistenciaActual.MinutosExtra,
             ObtenerMinutosPermisoSugeridos(AsistenciaActual),
             ObtenerMinutosPermisoCapturados(),
             minutosCompensadosPermisoAprobados,
             ObtenerMinutosCompensacionPermisoSugeridosAprobacion(),
-            ObtenerMinutosFaltanteBanco(AsistenciaActual),
+            ObtenerMinutosFaltanteNeto(AsistenciaActual),
             1
         }.Max();
 
@@ -439,6 +434,139 @@ public partial class AsistenciasCorreccionModal
         => AsistenciaActual == null
             ? string.Empty
             : $"Base {FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}{(AsistenciaActual.MinutosPerdonadosManual > 0 ? $" · perdón manual {FormatearMinutos(AsistenciaActual.MinutosPerdonadosManual)}" : string.Empty)}.";
+
+    // Cifras centrales del día (display only). Bruto y neto vienen de campos
+    // persistidos por el procesador; visible del helper que ya alinea
+    // permisoDiaSeleccionado + compensación aprobada; pagado = visible menos el
+    // extra autorizado al banco de horas (parte que no se paga, se acumula).
+    private DesgloseDiaCifras? ObtenerDesgloseBrutoNetoVisiblePagado()
+    {
+        if (AsistenciaActual == null)
+        {
+            return null;
+        }
+
+        var bruto = Math.Max(0, AsistenciaActual.MinutosTrabajadosBrutos);
+        var neto = RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(AsistenciaActual);
+        var visible = ObtenerMinutosTiempoVisible(AsistenciaActual);
+        var extraAlBanco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
+        var pagado = Math.Max(0, visible - extraAlBanco);
+        return new DesgloseDiaCifras(bruto, neto, visible, pagado);
+    }
+
+    // Deltas legibles bruto→neto→visible. Bruto→neto: lo que el procesador descontó
+    // (descansos no pagados, salidas temporales, no considerados) ya viene reflejado
+    // en MinutosTrabajadosNetos; se muestra como una sola resta. Neto→visible: lo
+    // que el policy suma sobre la base (permiso visible, compensación aprobada,
+    // extra aprobado). Sólo se incluyen los deltas no nulos.
+    private IReadOnlyList<DeltaDiaLegible> ObtenerDeltasDiaLegibles()
+    {
+        if (AsistenciaActual == null)
+        {
+            return [];
+        }
+
+        var bruto = Math.Max(0, AsistenciaActual.MinutosTrabajadosBrutos);
+        var neto = RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(AsistenciaActual);
+        var deltas = new List<DeltaDiaLegible>();
+
+        var descansosReduccion = Math.Max(0, bruto - neto);
+        if (descansosReduccion > 0)
+        {
+            deltas.Add(new DeltaDiaLegible("descansos / no considerados", descansosReduccion, EsSuma: false));
+        }
+
+        var permisoConGoceDia = permisoDiaSeleccionado == null
+            ? 0
+            : permisoDiaSeleccionado.ConGocePago
+                ? RrhhTiempoExtraPolicy.ObtenerMinutosPermisoConGocePorDia(permisoDiaSeleccionado)
+                : 0;
+        var permisoVisible = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoVisible(AsistenciaActual, permisoConGoceDia);
+        if (permisoVisible > 0)
+        {
+            deltas.Add(new DeltaDiaLegible("permiso visible", permisoVisible, EsSuma: true));
+        }
+
+        var compensacion = ObtenerMinutosCompensadosAprobadosActual();
+        if (compensacion > 0)
+        {
+            deltas.Add(new DeltaDiaLegible("compensación", compensacion, EsSuma: true));
+        }
+
+        var extra = ObtenerMinutosExtraAprobados(AsistenciaActual);
+        if (extra > 0)
+        {
+            deltas.Add(new DeltaDiaLegible("extra aprobado", extra, EsSuma: true));
+        }
+
+        return deltas;
+    }
+
+    // Barra de fórmula legible del día: Bruto − descansos = Neto + permiso + compensación + extra
+    // = Visible − banco = Pagado. Reusa los mismos valores que ObtenerDeltasDiaLegibles y
+    // ObtenerDesgloseBrutoNetoVisiblePagado para no duplicar lógica. Sólo incluye términos no
+    // nulos; el primer término (Bruto) lleva signo vacío. Visible→Pagado resta el extra
+    // autorizado al banco (MinutosExtraAutorizadosBanco), que no se paga como dinero.
+    private IReadOnlyList<FormulaTermino> ObtenerFormulaDiaLegible()
+    {
+        if (AsistenciaActual == null)
+        {
+            return [];
+        }
+
+        var cifras = ObtenerDesgloseBrutoNetoVisiblePagado();
+        if (cifras == null)
+        {
+            return [];
+        }
+
+        var terminos = new List<FormulaTermino>
+        {
+            new("Bruto", cifras.Bruto, string.Empty)
+        };
+
+        var descansosReduccion = Math.Max(0, cifras.Bruto - cifras.Neto);
+        if (descansosReduccion > 0)
+        {
+            terminos.Add(new FormulaTermino("descansos", descansosReduccion, "−"));
+        }
+
+        terminos.Add(new FormulaTermino("Neto", cifras.Neto, "="));
+
+        var permisoConGoceDia = permisoDiaSeleccionado == null
+            ? 0
+            : permisoDiaSeleccionado.ConGocePago
+                ? RrhhTiempoExtraPolicy.ObtenerMinutosPermisoConGocePorDia(permisoDiaSeleccionado)
+                : 0;
+        var permisoVisible = RrhhTiempoExtraPolicy.ObtenerMinutosPermisoVisible(AsistenciaActual, permisoConGoceDia);
+        if (permisoVisible > 0)
+        {
+            terminos.Add(new FormulaTermino("permiso", permisoVisible, "+"));
+        }
+
+        var compensacion = ObtenerMinutosCompensadosAprobadosActual();
+        if (compensacion > 0)
+        {
+            terminos.Add(new FormulaTermino("compensación", compensacion, "+"));
+        }
+
+        var extra = ObtenerMinutosExtraAprobados(AsistenciaActual);
+        if (extra > 0)
+        {
+            terminos.Add(new FormulaTermino("extra", extra, "+"));
+        }
+
+        terminos.Add(new FormulaTermino("Visible", cifras.Visible, "="));
+
+        var extraAlBanco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
+        if (extraAlBanco > 0)
+        {
+            terminos.Add(new FormulaTermino("banco", extraAlBanco, "−"));
+        }
+
+        terminos.Add(new FormulaTermino("Pagado", cifras.Pagado, "="));
+        return terminos;
+    }
 
     private IReadOnlyList<ResumenCalculoItem> ObtenerResumenCalculoDia()
     {
@@ -464,7 +592,7 @@ public partial class AsistenciasCorreccionModal
                 AsistenciaActual.MinutosDescansoTomado > 0 ? "asis-calculation-grid__item--warn" : null),
             new(
                 "Tiempo visible",
-                FormatearMinutos(ObtenerMinutosTrabajadosVisibles(AsistenciaActual)),
+                FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual)),
                 ObtenerResumenVisibleExplicado(),
                 "asis-calculation-grid__item--info")
         };
@@ -812,14 +940,13 @@ public partial class AsistenciasCorreccionModal
             return;
         }
 
-        if (asesorCorreccionActual.PriorizarTiempo)
-        {
-            _mostrarAccionesRapidasTiempo = true;
-        }
-        else if (asesorCorreccionActual.PriorizarPermiso)
+        if (asesorCorreccionActual.PriorizarPermiso)
         {
             _mostrarAccionesRapidasPermiso = true;
         }
+
+        // PriorizarTiempo ya no abre panel local: el tiempo extra se autoriza por periodo en
+        // Asistencias Semanal. El diagnóstico sigue visible en el asesor lateral como lectura.
 
         if (!string.IsNullOrWhiteSpace(asesorCorreccionActual.ResolucionSugerida))
         {
@@ -882,7 +1009,7 @@ public partial class AsistenciasCorreccionModal
         {
             reglas.Add("Cuando no se marca un descanso pero la salida anticipada cubre ese tramo, el sistema pide confirmación y no recomienda consumir banco ni registrar permiso de inmediato.");
         }
-        else if (ObtenerMinutosFaltanteBanco(AsistenciaActual) > 0)
+        else if (ObtenerMinutosFaltanteNeto(AsistenciaActual) > 0)
         {
             reglas.Add("El banco de horas solo debe usarse para cubrir faltante neto real; no para compensar un descanso que ya fue absorbido por una salida anticipada o por un permiso parcial válido.");
         }

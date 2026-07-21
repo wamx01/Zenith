@@ -50,7 +50,8 @@ public static class NominaConfiguracionLoader
         {
             FactorHoraExtra = ObtenerDecimal(config, ClavesConfiguracionNomina.FactorHoraExtra, 2m),
             FactorHoraExtraTriple = ObtenerDecimal(config, ClavesConfiguracionNomina.FactorHoraExtraTriple, 3m),
-            MinutosMinimosTiempoExtra = Math.Max(0, ObtenerEntero(config, ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, 30)),
+            MinutosMinimosTiempoExtra = Math.Max(0, ObtenerEntero(config, ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, 15)),
+            HorasExtraDoblesPorSemana = Math.Max(0, ObtenerEntero(config, ClavesConfiguracionNomina.HorasExtraDoblesPorSemana, 9)),
             FactorFestivoTrabajado = ObtenerDecimal(config, ClavesConfiguracionNomina.FactorFestivoTrabajado, 2m),
             FactorDescansoTrabajado = ObtenerDecimal(config, ClavesConfiguracionNomina.FactorDescansoTrabajado, 2m),
             BancoHorasHabilitado = ObtenerBooleano(config, ClavesConfiguracionNomina.BancoHorasHabilitado, false),

@@ -164,11 +164,14 @@ public class CrmDbContext : DbContext
     public DbSet<EmpleadoConceptoRrhh> EmpleadosConceptosRrhh => Set<EmpleadoConceptoRrhh>();
     public DbSet<NominaProvisionDetalleRrhh> NominasProvisionesDetalleRrhh => Set<NominaProvisionDetalleRrhh>();
     public DbSet<RrhhBancoHorasMovimiento> RrhhBancoHorasMovimientos => Set<RrhhBancoHorasMovimiento>();
+    public DbSet<RrhhResolucionTiempoExtraPeriodo> RrhhResolucionesTiempoExtraPeriodo => Set<RrhhResolucionTiempoExtraPeriodo>();
+    public DbSet<RrhhResolucionTiempoExtraLinea> RrhhResolucionesTiempoExtraLinea => Set<RrhhResolucionTiempoExtraLinea>();
 
     // Esquemas de Pago / Destajo
     public DbSet<EsquemaPago> EsquemasPago => Set<EsquemaPago>();
     public DbSet<EsquemaPagoTarifa> EsquemasPagoTarifa => Set<EsquemaPagoTarifa>();
     public DbSet<EmpleadoEsquemaPago> EmpleadosEsquemaPago => Set<EmpleadoEsquemaPago>();
+    public DbSet<EmpleadoEsquemaJornada> EmpleadosEsquemaJornada => Set<EmpleadoEsquemaJornada>();
     public DbSet<ValeDestajo> ValesDestajo => Set<ValeDestajo>();
     public DbSet<ValeDestajoDetalle> ValesDestajoDetalle => Set<ValeDestajoDetalle>();
 
@@ -3090,6 +3093,59 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.Fecha });
             entity.HasIndex(e => new { e.EmpresaId, e.NominaDetalleId, e.TipoMovimiento });
         });
+
+        modelBuilder.Entity<RrhhResolucionTiempoExtraPeriodo>(entity =>
+        {
+            entity.ToTable("rrhh_resolucion_tiempo_extra_periodo");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.PeriodicidadPago).HasConversion<int>();
+            entity.Property(e => e.Estatus).HasConversion<int>();
+            entity.Property(e => e.FechaInicio).HasColumnType("date");
+            entity.Property(e => e.FechaFin).HasColumnType("date");
+            entity.Property(e => e.PeriodoKey).HasMaxLength(60);
+            entity.Property(e => e.PeriodoEtiqueta).HasMaxLength(120);
+            entity.Property(e => e.FactorTiempoExtraAplicado).HasPrecision(18, 4);
+            entity.Property(e => e.FactorAcumulacionBancoHorasAplicado).HasPrecision(18, 4);
+            entity.Property(e => e.Resolucion).HasMaxLength(60);
+            entity.Property(e => e.AutorizadoPor).HasMaxLength(100);
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.Empresa)
+                .WithMany()
+                .HasForeignKey(e => e.EmpresaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Empleado)
+                .WithMany()
+                .HasForeignKey(e => e.EmpleadoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Un periodo único por (empresa, empleado, periodicidad, año, número).
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId, e.PeriodicidadPago, e.AnioPeriodo, e.NumeroPeriodo })
+                .IsUnique();
+            entity.HasIndex(e => new { e.EmpresaId, e.Estatus });
+            entity.HasIndex(e => new { e.EmpresaId, e.FechaInicio, e.FechaFin });
+        });
+
+        // Fase 8 — líneas de resolución de tiempo extra por periodo (un segmento por
+        // factor/destino). Hijas de la resolución: cascade delete (borrar/re-autorizar
+        // el periodo borra sus líneas).
+        modelBuilder.Entity<RrhhResolucionTiempoExtraLinea>(entity =>
+        {
+            entity.ToTable("rrhh_resolucion_tiempo_extra_linea");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Destino).HasConversion<int>();
+            entity.Property(e => e.Factor).HasPrecision(18, 4);
+            entity.Property(e => e.Observaciones).HasMaxLength(500);
+
+            entity.HasOne(e => e.ResolucionPeriodo)
+                .WithMany(r => r.Lineas)
+                .HasForeignKey(e => e.ResolucionPeriodoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.ResolucionPeriodoId);
+            entity.HasIndex(e => new { e.EmpresaId, e.EmpleadoId });
+        });
     }
 
     private void ConfigurarEsquemasPago(ModelBuilder modelBuilder)
@@ -3155,6 +3211,20 @@ public class CrmDbContext : DbContext
 
             entity.HasIndex(e => e.EmpleadoId);
             entity.HasIndex(e => e.EsquemaPagoId);
+            entity.HasIndex(e => new { e.EmpleadoId, e.VigenteDesde });
+        });
+
+        modelBuilder.Entity<EmpleadoEsquemaJornada>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TipoJornada).HasConversion<int>();
+
+            entity.HasOne(e => e.Empleado)
+                .WithMany(emp => emp.EsquemasJornada)
+                .HasForeignKey(e => e.EmpleadoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.EmpleadoId);
             entity.HasIndex(e => new { e.EmpleadoId, e.VigenteDesde });
         });
 
@@ -3434,6 +3504,8 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<Empleado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhAusencia>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
         modelBuilder.Entity<RrhhBancoHorasMovimiento>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
+        modelBuilder.Entity<RrhhResolucionTiempoExtraPeriodo>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId));
+        modelBuilder.Entity<RrhhResolucionTiempoExtraLinea>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhEmpleadoTurno>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId && e.TurnoBase.EmpresaId == _empresaId));
         modelBuilder.Entity<RrhhEstadoAgente>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<Prenomina>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
@@ -3445,6 +3517,7 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<EsquemaPago>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<EsquemaPagoTarifa>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EsquemaPago.EmpresaId == _empresaId);
         modelBuilder.Entity<EmpleadoEsquemaPago>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Empleado.EmpresaId == _empresaId);
+        modelBuilder.Entity<EmpleadoEsquemaJornada>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Empleado.EmpresaId == _empresaId);
         modelBuilder.Entity<ValeDestajo>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<ValeDestajoDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.ValeDestajo.EmpresaId == _empresaId);
         modelBuilder.Entity<CatalogoTallaCalzado>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);

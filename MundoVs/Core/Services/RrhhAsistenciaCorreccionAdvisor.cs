@@ -16,7 +16,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         decimal factorTiempoExtra,
         int saldoBancoHorasMinutos)
     {
-        var faltanteMinutos = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteBanco(asistencia));
+        var faltanteMinutos = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia));
         var permisoSugeridoMinutos = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosPermisoSugeridos(asistencia, minutosCompensadosAprobados));
         var descansoNoPagadoProgramadoMinutos = Math.Max(0, RrhhTiempoExtraPolicy.ObtenerMinutosDescansoNoPagadoProgramado(asistencia));
         var extraMinutos = Math.Max(0, asistencia.MinutosExtra);
@@ -342,7 +342,7 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
 
     private static IReadOnlyList<RrhhAsistenciaCorreccionSegmento> ConstruirSegmentos(RrhhAsistencia asistencia, int permisoMinutos, int faltanteMinutos, int extraMinutos, int extraAprobadaMinutos, int compensadoMinutos)
     {
-        var trabajoMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, compensadoMinutos);
+        var trabajoMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, compensadoMinutos);
         var descansoMinutos = Math.Max(0, asistencia.MinutosDescansoTomado);
         var extraPendienteMinutos = Math.Max(0, extraMinutos - extraAprobadaMinutos);
         var baseVisual = Math.Max(1, trabajoMinutos + descansoMinutos + permisoMinutos + faltanteMinutos + extraPendienteMinutos);

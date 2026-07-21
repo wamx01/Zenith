@@ -34,5 +34,5 @@ public static class RrhhPermisoCompensationPolicy
     }
 
     private static int ObtenerMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
-        => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 30;
+        => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 15;
 }

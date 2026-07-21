@@ -247,7 +247,7 @@ Pero el usuario puede capturar cualquier valor hasta el total trabajado.
 
 ## Prevención de duplicación de tiempo visible
 
-El tiempo visible (`ObtenerMinutosTrabajadosVisibles`) se calcula así:
+El tiempo visible (`ObtenerMinutosTiempoVisible`) se calcula así:
 
 ```
 visible = BaseVisibles + permiso + compensacion + ExtraAprobado

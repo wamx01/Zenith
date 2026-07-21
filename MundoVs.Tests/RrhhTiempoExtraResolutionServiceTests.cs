@@ -214,7 +214,7 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         Assert.Equal(120, result.MinutosPagoAplicados);
         Assert.Equal(60, asistencia.MinutosExtraAutorizadosPago);
         // Base = neto(540) − extra(64) = 476, cap programado(540) = 476 + extraAprobada(60) = 536
-        Assert.Equal(536, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(asistencia, 0));
+        Assert.Equal(536, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, 0));
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
 
         Assert.Equal(64, RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(asistencia));
         // Base = neto(540) − extra(64) = 476, cap programado(540) = 476 + extraAprobada(64) = 540
-        Assert.Equal(540, RrhhTiempoExtraPolicy.ObtenerMinutosTrabajadosVisibles(new RrhhAsistencia
+        Assert.Equal(540, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(new RrhhAsistencia
         {
             MinutosTrabajadosNetos = 540,
             MinutosJornadaNetaProgramada = 540,
@@ -425,6 +425,130 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         Assert.Equal(90, result.MinutosBancoAplicados);
     }
 
+    // ── F4a: decisión 5 (opción 1) — sin extra manual en festivo para PorHoras ──
+
+    [Fact]
+    public async Task AplicarResolucionAsync_PorHorasEnFestivo_RechazaExtraManual()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            EsPorHoras = true,
+            MinutosJornadaNetaProgramada = 0,
+            MinutosTrabajadosNetos = 540,
+            MinutosExtra = 0,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        db.FestivosRrhh.Add(CreateFestivo(empresa.Id, new DateTime(2026, 1, 5), "Festivo test"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.FactorHoraExtra, "2"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "PagarTodo",
+            MinutosBasePago = 60,
+            UsuarioActual = "tester"
+        }));
+    }
+
+    [Fact]
+    public async Task AplicarResolucionAsync_PorHorasNoFestivo_AceptaExtraManual()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            EsPorHoras = true,
+            MinutosJornadaNetaProgramada = 0,
+            MinutosTrabajadosNetos = 540,
+            MinutosExtra = 0,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        // Sin festivo este día.
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.FactorHoraExtra, "2"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+        var result = await service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "PagarTodo",
+            MinutosBasePago = 60,
+            UsuarioActual = "tester"
+        });
+
+        Assert.Equal(60, asistencia.MinutosExtraAutorizadosPago);
+        Assert.Equal(60, result.MinutosBasePagoAplicados);
+    }
+
+    [Fact]
+    public async Task AplicarResolucionAsync_FijaEnFestivo_AceptaExtraManual()
+    {
+        // El gate sólo aplica a PorHoras; un Fija en festivo puede autorizar extra normalmente.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var empleado = CreateEmpleado(empresa.Id);
+        var asistencia = new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            EsPorHoras = false,
+            MinutosJornadaNetaProgramada = 480,
+            MinutosTrabajadosNetos = 540,
+            MinutosExtra = 64,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        db.Empresas.Add(empresa);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(asistencia);
+        db.FestivosRrhh.Add(CreateFestivo(empresa.Id, new DateTime(2026, 1, 5), "Festivo test"));
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.FactorHoraExtra, "2"));
+        await db.SaveChangesAsync();
+
+        var service = new RrhhTiempoExtraResolutionService();
+        var result = await service.AplicarResolucionAsync(db, new RrhhTiempoExtraResolutionCommand
+        {
+            EmpresaId = empresa.Id,
+            AsistenciaId = asistencia.Id,
+            Resolucion = "PagarTodo",
+            MinutosBasePago = 60,
+            UsuarioActual = "tester"
+        });
+
+        Assert.Equal(60, asistencia.MinutosExtraAutorizadosPago);
+        Assert.Equal(60, result.MinutosBasePagoAplicados);
+    }
+
     private static CrmDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<CrmDbContext>()
@@ -459,6 +583,19 @@ public sealed class RrhhTiempoExtraResolutionServiceTests
         EmpresaId = empresaId,
         Clave = clave,
         Valor = valor,
+        CreatedAt = DateTime.UtcNow
+    };
+
+    private static FestivoRrhh CreateFestivo(Guid empresaId, DateTime fecha, string nombre) => new()
+    {
+        Id = Guid.NewGuid(),
+        EmpresaId = empresaId,
+        Fecha = fecha,
+        Nombre = nombre,
+        Tipo = FestivoTipoRrhh.Oficial,
+        FactorPago = 2m,
+        EsOficial = true,
+        IsActive = true,
         CreatedAt = DateTime.UtcNow
     };
 

@@ -22,6 +22,12 @@ public class NominaCalculationInput
     public decimal HorasExtraBanco { get; init; }
     public decimal HorasExtra { get; init; }
     public decimal FactorPagoTiempoExtra { get; init; }
+    /// <summary>
+    /// Fase 8 — horas ponderadas a pago = Σ pago.Minutos/60 × Factor (de las líneas de la
+    /// resolución). Si &gt; 0, el calculador usa monto = HorasExtraFactoradas × sueldoHora e
+    /// ignora el path dobles/triples×factor. 0 → path legado.
+    /// </summary>
+    public decimal HorasExtraFactoradas { get; init; }
     public decimal MontoDestajo { get; init; }
     public decimal MontoBono { get; init; }
     public decimal MontoPercepcionesManuales { get; init; }
@@ -48,6 +54,8 @@ public class NominaCalculationResult
     public decimal HorasExtraDobles { get; init; }
     public decimal HorasExtraTriples { get; init; }
     public decimal HorasExtraBanco { get; init; }
+    /// <summary>Fase 8 — horas ponderadas a pago (eco del input para recibo/recompute).</summary>
+    public decimal HorasExtraFactoradas { get; init; }
     public decimal MontoHorasExtra { get; init; }
     public decimal MontoPercepcionesManuales { get; init; }
     public decimal MontoDeducciones { get; init; }

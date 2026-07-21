@@ -19,6 +19,14 @@ public class PrenominaDetalle : BaseEntity
     public int DiasFestivoTrabajado { get; set; }
     public bool AplicaImss { get; set; }
 
+    // F4b: desglose PorHoras (pago por minutos trabajados). DiasFestivoTrabajadoFija = festivos
+    // trabajados no-PorHoras (los PorHoras festivos van al sueldo base por minutos × factor, no al
+    // monto flat de festivo). Los otros tres agregados alimentan NominaSueldoBasePolicy.
+    public int DiasPorHorasTrabajados { get; set; }
+    public int MinutosPorHorasNetos { get; set; }
+    public int MinutosPorHorasFestivoNetos { get; set; }
+    public int DiasFestivoTrabajadoFija { get; set; }
+
     public decimal HorasTrabajadasNetas { get; set; }
     public decimal HorasExtraBase { get; set; }
     public decimal HorasExtra { get; set; }
