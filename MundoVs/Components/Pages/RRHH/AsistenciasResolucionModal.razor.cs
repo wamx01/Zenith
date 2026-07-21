@@ -305,7 +305,7 @@ public partial class AsistenciasResolucionModal : ComponentBase
     private static string ObtenerEtiquetaEstatus(RrhhResolucionTiempoExtraPeriodo? resolucion)
         => resolucion switch
         {
-            null => "Sin resolución",
+            null => "Pendiente de autorizar",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada, ExtraDescartado: true } => "Autorizada (descartado)",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada } => "Autorizada",
             { Estatus: RrhhResolucionPeriodoEstatus.Reabierta } => "Reabierta",
@@ -315,10 +315,10 @@ public partial class AsistenciasResolucionModal : ComponentBase
     private static string ObtenerClaseEstatus(RrhhResolucionTiempoExtraPeriodo? resolucion)
         => resolucion switch
         {
-            null => "bg-light text-dark",
+            null => "bg-warning text-dark",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada } => "bg-success",
             { Estatus: RrhhResolucionPeriodoEstatus.Reabierta } => "bg-warning text-dark",
-            _ => "bg-secondary"
+            _ => "bg-warning text-dark"
         };
 
     private static EdicionResolucionPeriodo CrearEdicionInicial(

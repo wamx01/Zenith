@@ -4,7 +4,9 @@
    --warn (ámbar)  : Retardo
    --bad  (rojo)   : Descuento / Salida anticipada
    --primary (azul): Visible (total del periodo)
-   Morado reservado SÓLO a la celda "extra pendiente". */
+   Morado reservado SÓLO a la celda "extra pendiente".
+   Teal reservado a la celda "extra revisado" (autorizado/aplicado) para
+   distinguirla del verde "ok / en objetivo" (fondo idéntico antes). */
 
 /* ---------- Tabla compacta ---------- */
 
@@ -195,14 +197,14 @@
 .asis-week-cell__button--warn { background: #fffbeb; border-color: #fcd34d; }
 .asis-week-cell__button--danger { background: #fef2f2; border-color: #fecaca; }
 .asis-week-cell__button--extra-pending { background: #f5f3ff; border-color: #a855f7; }
-.asis-week-cell__button--extra-reviewed { background: #f0fdf4; border-color: #4ade80; }
+.asis-week-cell__button--extra-reviewed { background: #ccfbf1; border-color: #14b8a6; }
 .asis-week-cell__button--muted { background: #f8fafc; border-color: #e2e8f0; }
 
 .asis-strip__cell.asis-week-cell__button--ok .asis-strip__value { color: #166534; }
 .asis-strip__cell.asis-week-cell__button--warn .asis-strip__value { color: #92400e; }
 .asis-strip__cell.asis-week-cell__button--danger .asis-strip__value { color: #991b1b; }
 .asis-strip__cell.asis-week-cell__button--extra-pending .asis-strip__value { color: #6b21a8; }
-.asis-strip__cell.asis-week-cell__button--extra-reviewed .asis-strip__value { color: #166534; }
+.asis-strip__cell.asis-week-cell__button--extra-reviewed .asis-strip__value { color: #0f766e; }
 
 /* Strip del drawer: celdas más grandes con delta, wrap en pantallas angostas. */
 .asis-strip--detail {
@@ -251,7 +253,7 @@
 .asis-week-legend__dot--danger { background: #fecaca; }
 .asis-week-legend__dot--muted { background: #e2e8f0; }
 .asis-week-legend__dot--extra-pending { background: #a855f7; }
-.asis-week-legend__dot--extra-reviewed { background: #4ade80; }
+.asis-week-legend__dot--extra-reviewed { background: #14b8a6; }
 
 /* ---------- Drawer de detalle ---------- */
 

@@ -1015,7 +1015,11 @@ public partial class Asistencias : ComponentBase
 
     private static DateOnly ObtenerInicioSemanaExportacion(DateOnly fecha, DayOfWeek diaCorteSemana)
     {
-        var (inicio, _) = NominaPeriodoHelper.ObtenerPeriodoSemanal(fecha.ToDateTime(TimeOnly.MinValue), diaCorteSemana);
+        // Variante contenedor: agrupa por el periodo de nómina que CONTIENE el día
+        // (Wed–Tue, p.ej.), no por el último corte cerrado. Así el tope de horas
+        // dobles por semana se aplica al periodo real, no a un grupo mezclado entre
+        // dos periodos (Wed-Mon a la semana previa, sólo Tue a la en curso).
+        var (inicio, _) = NominaPeriodoHelper.ObtenerPeriodoSemanalContenedor(fecha.ToDateTime(TimeOnly.MinValue), diaCorteSemana);
         return DateOnly.FromDateTime(inicio);
     }
 

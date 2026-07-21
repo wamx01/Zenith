@@ -56,6 +56,52 @@ public static class NominaPeriodoHelper
         };
     }
 
+    // Periodo semanal que CONTIENE la fecha-referencia: `fin` es el próximo día de
+    // corte ON OR AFTER la fecha (diferencia hacia adelante). A diferencia de
+    // `ObtenerPeriodoSemanal` (que devuelve el último corte cerrado, usado por la
+    // resolución de nómina que opera sobre un periodo ya cerrado), éste sirve a
+    // vistas que muestran el periodo en curso (p.ej. hoy dentro de un Wed-Tue que
+    // aún no cierra). Con corte=Tuesday y ref=Saturday → [Wed, Tue] que contiene
+    // el sábado; `ObtenerPeriodoSemanal` devolvería el [Wed, Tue] anterior ya
+    // cerrado.
+    public static (DateTime Inicio, DateTime Fin) ObtenerPeriodoSemanalContenedor(DateTime fechaReferencia, DayOfWeek diaCorteSemana)
+    {
+        var fecha = fechaReferencia.Date;
+        var diferencia = ((int)diaCorteSemana - (int)fecha.DayOfWeek + 7) % 7; // 0 si fecha es día de corte
+        var fin = fecha.AddDays(diferencia);   // próximo día de corte ON OR AFTER fecha
+        var inicio = fin.AddDays(-6);
+        return (inicio, fin);
+    }
+
+    public static NominaPeriodoCalendario ObtenerPeriodoSemanalContenedorCalendario(DateTime fechaReferencia, DayOfWeek diaCorteSemana)
+    {
+        var (inicio, fin) = ObtenerPeriodoSemanalContenedor(fechaReferencia, diaCorteSemana);
+        var anioPeriodo = fin.Year;
+        var numeroPeriodo = ObtenerNumeroPeriodoSemanal(fin, diaCorteSemana);
+
+        return new NominaPeriodoCalendario
+        {
+            PeriodicidadPago = PeriodicidadPago.Semanal,
+            Inicio = inicio,
+            Fin = fin,
+            AnioPeriodo = anioPeriodo,
+            NumeroPeriodo = numeroPeriodo,
+            Periodo = ConstruirEtiquetaSemanal(inicio, fin),
+            NumeroNomina = $"Sem{numeroPeriodo:00}"
+        };
+    }
+
+    // Dispatch "contenedor": el semanal usa la variante contenedor; quincenal y
+    // mensual YA devuelven el periodo que contiene la fecha (iguales a
+    // `ObtenerPeriodo`), así que se reutilizan tal cual.
+    public static NominaPeriodoCalendario ObtenerPeriodoContenedor(PeriodicidadPago periodicidad, DateTime fechaReferencia, NominaCorteRrhh? corte = null)
+        => periodicidad switch
+        {
+            PeriodicidadPago.Quincenal => ObtenerPeriodoQuincenal(fechaReferencia, corte?.DiaCorteMes ?? 15),
+            PeriodicidadPago.Mensual => ObtenerPeriodoMensual(fechaReferencia, corte?.DiaCorteMes ?? 31),
+            _ => ObtenerPeriodoSemanalContenedorCalendario(fechaReferencia, corte?.DiaCorteSemana ?? DayOfWeek.Sunday)
+        };
+
     public static NominaPeriodoCalendario ObtenerPeriodoQuincenal(DateTime fechaReferencia, int diaCorteMes)
     {
         var fecha = fechaReferencia.Date;

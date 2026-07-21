@@ -58,6 +58,14 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                 && a.Empleado.Departamento.ToLower() == departamento.ToLower());
         }
 
+        // Filtro por periodicidad de pago: acota las asistencias (y por tanto los
+        // empleadoIdsRango que filtran las resoluciones) a esa periodicidad.
+        if (request.Periodicidad.HasValue)
+        {
+            var periodicidad = request.Periodicidad.Value;
+            query = query.Where(a => a.Empleado.PeriodicidadPago == periodicidad);
+        }
+
         // Proyectamos a un tipo anónimo para no cargar toda la entidad ni el grafo de navegaciones.
         // El JOIN a TurnoBase es opcional: si el empleado no tiene turno, simplemente no traeremos su nombre.
         var filas = await query
@@ -281,6 +289,14 @@ public sealed class RrhhTiempoExtraReporteService : IRrhhTiempoExtraReporteServi
                 };
             })
             .ToList();
+
+        // F9 — "solo sin autorizar": deja únicamente los empleados con extra detectado y
+        // sin resolución Autorizada. Los totales generales se calculan después sobre este
+        // subconjunto, por lo que reflejan sólo lo filtrado (consistente con la UI).
+        if (request.SoloSinAutorizar)
+        {
+            empleados = empleados.Where(e => e.SinAutorizar).ToList();
+        }
 
         var totalesGenerales = new RrhhTiempoExtraReporteTotalesDto
         {

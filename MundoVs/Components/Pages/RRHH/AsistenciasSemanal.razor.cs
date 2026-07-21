@@ -257,7 +257,9 @@ public partial class AsistenciasSemanal
 
             // Resoluciones de tiempo extra del periodo: una sola query para todos los
             // empleados mostrados (comparten periodicidad → mismo periodo de nómina).
-            var calendarioPeriodo = NominaPeriodoHelper.ObtenerPeriodo(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
+            // Variante contenedor: el viewer muestra el periodo que contiene la
+            // fecha-referencia (incluye el en curso), no el último cerrado.
+            var calendarioPeriodo = NominaPeriodoHelper.ObtenerPeriodoContenedor(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
             var resoluciones = await db.RrhhResolucionesTiempoExtraPeriodo
                 .AsNoTracking()
                 .Include(r => r.Lineas)
@@ -356,7 +358,7 @@ public partial class AsistenciasSemanal
             throw new InvalidOperationException("No hay empresa activa.");
         }
 
-        var calendario = NominaPeriodoHelper.ObtenerPeriodo(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
+        var calendario = NominaPeriodoHelper.ObtenerPeriodoContenedor(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
         periodoEtiquetaActual = calendario.Periodo;
         return (DateOnly.FromDateTime(calendario.Inicio), DateOnly.FromDateTime(calendario.Fin));
     }
@@ -370,7 +372,7 @@ public partial class AsistenciasSemanal
 
     private async Task MoverPeriodoAsync(int direccionPeriodos)
     {
-        var calendario = NominaPeriodoHelper.ObtenerPeriodo(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
+        var calendario = NominaPeriodoHelper.ObtenerPeriodoContenedor(periodicidadSeleccionada, fechaReferenciaPeriodo, cortePeriodo);
         fechaReferenciaPeriodo = direccionPeriodos > 0
             ? calendario.FechaReferenciaSiguiente()
             : calendario.FechaReferenciaAnterior();
@@ -809,7 +811,12 @@ public partial class AsistenciasSemanal
         asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(resumen.EmpleadoId, dia), out var asistencia);
         var minutosExtra = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtra);
         var minutosExtraAprobados = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtraAutorizadosPago + asistencia.MinutosExtraAutorizadosBanco);
-        var extraResuelto = asistencia != null && (minutosExtraAprobados > 0 || !string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra) || !asistencia.RequiereRevision);
+        // "Resuelto" = el extra ya fue autorizado/aplicado (pago, banco, cobertura o
+        // resolución manual). Antes la condición incluía "|| !asistencia.RequiereRevision",
+        // que marca como REVISADO (verde) al extra aún PENDIENTE de autorizar en un día
+        // limpio (sin banderas de revisión) → la celda nunca se pintaba de morado.
+        // Usar el helper canónico para alinearlo con el resto del sistema.
+        var extraResuelto = asistencia != null && RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(asistencia);
 
         var cssClass = ObtenerClaseCelda(ObtenerEstadoCelda(
             minutosExtra, extraResuelto, visible, debido, delta, descuentoDia));
@@ -840,7 +847,7 @@ public partial class AsistenciasSemanal
         var brutoDia = brutoPorDia is null ? 0 : brutoPorDia.GetValueOrDefault(dia);
         var brutoTexto = brutoDia > 0 ? FormatearMinutos(brutoDia) : "—";
         var tooltipBruto = brutoDia > 0
-            ? $" | Bruto (marcaciones): {brutoTexto}"
+            ? $" | Tiempo reloj (marcaciones): {brutoTexto}"
             : string.Empty;
 
         var tooltipExtra = minutosExtra > 0
@@ -1117,7 +1124,7 @@ public partial class AsistenciasSemanal
     private static string ObtenerEtiquetaEstatusResolucion(RrhhResolucionTiempoExtraPeriodo? resolucion)
         => resolucion switch
         {
-            null => "Sin resolución",
+            null => "Pendiente de autorizar",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada, ExtraDescartado: true } => "Autorizada (descartado)",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada } => "Autorizada",
             { Estatus: RrhhResolucionPeriodoEstatus.Reabierta } => "Reabierta",
@@ -1127,10 +1134,10 @@ public partial class AsistenciasSemanal
     private static string ObtenerClaseEstatusResolucion(RrhhResolucionTiempoExtraPeriodo? resolucion)
         => resolucion switch
         {
-            null => "bg-light text-dark",
+            null => "bg-warning text-dark",
             { Estatus: RrhhResolucionPeriodoEstatus.Autorizada } => "bg-success",
             { Estatus: RrhhResolucionPeriodoEstatus.Reabierta } => "bg-warning text-dark",
-            _ => "bg-secondary"
+            _ => "bg-warning text-dark"
         };
 
     private async Task<Dictionary<string, int>> ConstruirPermisosPorEmpleadoAsync(CrmDbContext db, IReadOnlyCollection<RrhhAsistencia> asistencias, DateOnly desde, DateOnly hasta, bool conGoce = true)

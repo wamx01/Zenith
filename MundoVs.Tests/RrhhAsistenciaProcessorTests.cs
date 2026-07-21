@@ -78,6 +78,65 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
+    public async Task CasoReal82725_144044_152725_190031_Salida31sTarde_NoRecortaBase_Da540()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "9a19",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Lunes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(9, 0, 0),
+            HoraSalida = new TimeSpan(19, 0, 0),
+            CantidadDescansos = 1,
+            Descanso1Inicio = new TimeSpan(13, 0, 0),
+            Descanso1Fin = new TimeSpan(14, 0, 0),
+            Descanso1EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 27, 25), "in-1", TipoClasificacionMarcacionRrhh.Entrada),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 14, 40, 44), "break-out", TipoClasificacionMarcacionRrhh.InicioDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 15, 27, 25), "break-in", TipoClasificacionMarcacionRrhh.FinDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 19, 0, 31), "out-1", TipoClasificacionMarcacionRrhh.SinClasificar));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        // Caso real del 2026-07-09: salida 19:00:31 (31 s tarde). El margen sub-umbral se trunca
+        // (no redondea): 0.52 min → 0 min descontados → no recorta el trabajado. Entrada anticipada
+        // 32:35 pasa el umbral → extra 33. Descanso tomado 47 min con window 13-14 (60 programados,
+        // no pagado) → banda de tolerancia descuenta 60. Neto = 633 - 60 = 573.
+        // base = min(573 - 33, 540) = 540 = 9:00. El empleado ya no pierde 1 min por salir 31 s tarde.
+        Assert.Equal(633, asistencia.MinutosTrabajadosBrutos);
+        Assert.Equal(60, asistencia.MinutosDescansoNoPagado);
+        Assert.Equal(573, asistencia.MinutosTrabajadosNetos);
+        Assert.Equal(33, asistencia.MinutosExtra);
+        Assert.Equal(540, RrhhTiempoExtraPolicy.ObtenerMinutosBasePagada(asistencia));
+    }
+
+    [Fact]
     public async Task ProcesarMarcacionesPendientesAsync_NoMarcaRetardoDentroDeToleranciaConfigurada()
     {
         await using var db = CreateDbContext();
@@ -2283,5 +2342,152 @@ public sealed class RrhhAsistenciaProcessorTests
 
         Assert.Null(asistencia.ModoSugerenciaExtra);
         Assert.Equal(turno.Id, asistencia.TurnoBaseId);
+    }
+
+    // ── Repro del caso reportado 2026-07-21 (Aralim Minerva Tenorio Lozano) ──
+    // Turno 08:00–18:15, dos descansos: 10:00–10:30 (0:30) y 14:00–14:45 (0:45).
+    // Marcaciones: 07:09 Entrada, 11:03 InicioDescanso, 11:30 FinDescanso,
+    // 14:00 SinClasificar, 14:44 SinClasificar, 18:18 SinClasificar.
+    // Regla documentada (modo EntradaSalida default, umbral 15):
+    //   entradaAnticipada = 08:00 − 07:09 = 51  (≥ umbral => cuenta)
+    //   salidaPosterior    = 18:18 − 18:15 = 3   (< umbral => se zeroa)
+    //   extra = 51 + 0 = 51  (NO 54)
+    // Si esta prueba falla, el valor actual revela dónde se desvía el código de la regla.
+    [Fact]
+    public async Task Repro_Aralim_21Jul2026_Entrada0709_Salida1818_Turno0800_1815_DosDescansos_ReglaDa51No54()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "Aralim 08-1815",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Martes, // 2026-07-21 es martes
+            Labora = true,
+            HoraEntrada = new TimeSpan(8, 0, 0),
+            HoraSalida = new TimeSpan(18, 15, 0),
+            CantidadDescansos = 2,
+            Descanso1Inicio = new TimeSpan(10, 0, 0),
+            Descanso1Fin = new TimeSpan(10, 30, 0),
+            Descanso1EsPagado = false,
+            Descanso2Inicio = new TimeSpan(14, 0, 0),
+            Descanso2Fin = new TimeSpan(14, 45, 0),
+            Descanso2EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 7, 9, 0), "in-1", TipoClasificacionMarcacionRrhh.Entrada),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 11, 3, 0), "break-1-out", TipoClasificacionMarcacionRrhh.InicioDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 11, 30, 0), "break-1-in", TipoClasificacionMarcacionRrhh.FinDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 14, 0, 0), "unc-1", TipoClasificacionMarcacionRrhh.SinClasificar),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 14, 44, 0), "unc-2", TipoClasificacionMarcacionRrhh.SinClasificar),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 18, 18, 0), "unc-3", TipoClasificacionMarcacionRrhh.SinClasificar));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // Hechos objetivos de las marcas vs el turno:
+        Assert.Equal(new TimeSpan(7, 9, 0), asistencia.HoraEntradaReal);
+        Assert.Equal(new TimeSpan(18, 18, 0), asistencia.HoraSalidaReal);
+        Assert.Equal(540, asistencia.MinutosJornadaNetaProgramada); // 615 − 75 descansos
+
+        // Regla documentada modo EntradaSalida con umbral 15:
+        //   entrada anticipada 51 min (≥ umbral) => cuenta
+        //   salida posterior 3 min (< umbral)    => se zeroa
+        //   => 51 min extra (NO 54).
+        Assert.Equal(51, asistencia.MinutosExtra);
+    }
+
+    // Mismo caso Aralim, pero el día tiene ModoSugerenciaExtra="NetoVsNeto"
+    // (se selecciona por día en el modal de corrección de asistencias).
+    // Comprobación: NetoVsNeto TAMBIÉN da 51 aquí (neto 591 − jornadaNeta 540 = 51,
+    // ≥ umbral 15 => no se zeroa). Es decir, cambiar de modo NO produce 54:
+    // el 54 observado en prod no viene del modo NetoVsNeto.
+    [Fact]
+    public async Task Repro_Aralim_21Jul2026_ModoNetoVsNeto_TambienDa51_NoEsLaCausaDel54()
+    {
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "Aralim 08-1815",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Martes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(8, 0, 0),
+            HoraSalida = new TimeSpan(18, 15, 0),
+            CantidadDescansos = 2,
+            Descanso1Inicio = new TimeSpan(10, 0, 0),
+            Descanso1Fin = new TimeSpan(10, 30, 0),
+            Descanso1EsPagado = false,
+            Descanso2Inicio = new TimeSpan(14, 0, 0),
+            Descanso2Fin = new TimeSpan(14, 45, 0),
+            Descanso2EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 7, 21),
+            ModoSugerenciaExtra = "NetoVsNeto",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 7, 9, 0), "in-1", TipoClasificacionMarcacionRrhh.Entrada),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 11, 3, 0), "break-1-out", TipoClasificacionMarcacionRrhh.InicioDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 11, 30, 0), "break-1-in", TipoClasificacionMarcacionRrhh.FinDescanso),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 14, 0, 0), "unc-1", TipoClasificacionMarcacionRrhh.SinClasificar),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 14, 44, 0), "unc-2", TipoClasificacionMarcacionRrhh.SinClasificar),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 7, 21, 18, 18, 0), "unc-3", TipoClasificacionMarcacionRrhh.SinClasificar));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 7, 21), new DateOnly(2026, 7, 21), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+
+        // NetoVsNeto aquí también da 51 (neto 591 − 540 = 51, ≥ umbral 15).
+        // Descarta al modo como causa del 54 observado en prod.
+        Assert.Equal(51, asistencia.MinutosExtra);
     }
 }

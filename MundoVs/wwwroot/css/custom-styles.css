@@ -179,3 +179,135 @@
 ::-webkit-scrollbar-thumb:hover {
     background: linear-gradient(135deg, #ec4899 0%, #7c3aed 100%);
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Reportes RRHH (Tiempo Extra + Banco de Horas) — estilo unificado
+   "Limpio y plano": tarjetas sin sombra, bordes finos, header de
+   tabla claro, badges suaves, mucho aire. Usa los tokens de marca.
+   ════════════════════════════════════════════════════════════════ */
+
+.rrhh-rpt .rrhh-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    flex-wrap: wrap;
+    padding-bottom: .9rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--bs-border-color, #e5e7eb);
+}
+.rrhh-rpt .rrhh-header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--vs-dark, #111827);
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+}
+.rrhh-rpt .rrhh-header h1 i { color: var(--vs-violet, #D4AF37); }
+.rrhh-rpt .rrhh-header .rrhh-subtitle {
+    font-size: .85rem;
+    color: #6b7280;
+    margin: .2rem 0 0;
+}
+
+/* Tarjeta de filtros */
+.rrhh-rpt .rrhh-filtros {
+    border: 1px solid var(--bs-border-color, #e5e7eb);
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 1.25rem;
+}
+.rrhh-rpt .rrhh-filtros .card-body { padding: 1rem 1.1rem; }
+.rrhh-rpt .rrhh-filtros .form-label,
+.rrhh-rpt .rrhh-filtros .rrhh-presets-label {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #6b7280;
+    margin-bottom: .25rem;
+    display: block;
+}
+.rrhh-rpt .rrhh-filtros .form-check-label { font-size: .85rem; color: var(--vs-dark, #111827); }
+
+/* KPIs */
+.rrhh-rpt .rrhh-kpis { margin-bottom: 1.25rem; }
+.rrhh-rpt .rrhh-kpi { background: transparent; border: none; }
+.rrhh-rpt .rrhh-kpi .card-body { padding: .15rem 0; }
+.rrhh-rpt .rrhh-kpi .kpi-etiqueta {
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #6b7280;
+    margin-bottom: .15rem;
+}
+.rrhh-rpt .rrhh-kpi .kpi-valor {
+    font-size: 1.7rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--vs-dark, #111827);
+    letter-spacing: -0.01em;
+}
+.rrhh-rpt .rrhh-kpi .kpi-sub { font-size: .72rem; color: #9ca3af; margin-top: .2rem; }
+
+/* Tabla de resultados */
+.rrhh-rpt .rrhh-tabla-card {
+    border: 1px solid var(--bs-border-color, #e5e7eb);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+}
+.rrhh-rpt .rrhh-tabla-wrap { overflow: auto; }
+.rrhh-rpt .rrhh-tabla { margin-bottom: 0; font-size: .85rem; color: var(--vs-dark, #111827); }
+.rrhh-rpt .rrhh-tabla thead th {
+    background: #faf7ef;
+    color: #6b7280;
+    font-weight: 700;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom: 1px solid var(--bs-border-color, #e5e7eb);
+    border-top: none;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.rrhh-rpt .rrhh-tabla tbody td {
+    border-bottom: 1px solid #f1f1f1;
+    vertical-align: middle;
+}
+.rrhh-rpt .rrhh-tabla tbody tr:last-child td { border-bottom: none; }
+.rrhh-rpt .rrhh-tabla tbody tr:hover { background: #fafafa; }
+.rrhh-rpt .rrhh-tabla tfoot td {
+    background: #faf7ef;
+    font-weight: 700;
+    border-top: 2px solid var(--bs-border-color, #e5e7eb);
+    border-bottom: none;
+}
+.rrhh-rpt .rrhh-tabla .rrhh-row-toggle { cursor: pointer; }
+.rrhh-rpt .rrhh-tabla .rrhh-row-toggle:hover { background: #faf7ef; }
+.rrhh-rpt .rrhh-detalle { background: #fbfaf7; }
+.rrhh-rpt .rrhh-tabla .table-light thead th { background: #f3f0e8; }
+
+/* Empty state */
+.rrhh-rpt .rrhh-empty {
+    border: 1px dashed var(--bs-border-color, #e5e7eb);
+    border-radius: 10px;
+    text-align: center;
+    color: #9ca3af;
+    padding: 2.5rem 1rem;
+    background: #fff;
+    font-size: .9rem;
+}
+
+/* Badges suaves de marca */
+.rrhh-rpt .badge { font-weight: 600; }
+.rrhh-rpt .rrhh-badge-gold {
+    background: var(--vs-violet-soft, #fdebaf);
+    color: var(--vs-pink, #B8832F);
+    border: 1px solid #f0d98a;
+}

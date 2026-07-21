@@ -3,35 +3,25 @@
 @if (Visible && AsistenciaActual != null)
 {
     <div class="modal fade show d-block asis-modal-backdrop" tabindex="-1">
-        <div class="modal-dialog modal-xxl modal-dialog-scrollable asis-modal-dialog-wide">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable asis-modal-dialog-wide">
             <div class="modal-content border-0 shadow-lg asis-modal-shell">
 
-                @* 1. Header sticky: flechas de día + nombre/fecha + "Qué sigue" + estatus/ayuda/cerrar *@
-                <div class="asis-modal-header d-flex align-items-center justify-content-between px-3 py-2">
-                    <div class="d-flex align-items-center gap-2 min-w-0">
+                @* 1. Header sticky: avatar + nombre/id + fecha/turno + flechas + incidencias + reglas/cerrar *@
+                <div class="asis-modal-header">
+                    <div class="asis-modal-header__left">
                         @if (OnCambioDiaSolicitado.HasDelegate)
                         {
                             <button type="button" class="asis-day-arrow" @onclick="() => SolicitarCambioDiaAsync(-1)" disabled="@(!FlechaDiaHabilitada(-1))" title="Día anterior del periodo" aria-label="Día anterior del periodo">
                                 <i class="bi bi-chevron-left"></i>
                             </button>
                         }
-                        <span class="asis-modal-header__icon"><i class="bi bi-calendar-check"></i></span>
-                        <div class="min-w-0">
-                            <div class="asis-modal-header__name text-truncate">@AsistenciaActual.Empleado.NombreCompleto</div>
-                            <div class="asis-modal-header__date">@AsistenciaActual.Fecha.ToString("dddd dd/MM/yyyy", new System.Globalization.CultureInfo("es-MX"))</div>
-                            <div class="asis-modal-header__chips d-flex flex-wrap gap-1 mt-1">
-                                @if (ObtenerMinutosRetardoVisible(AsistenciaActual) > 0)
-                                {
-                                    <span class="asis-chip asis-chip--warn asis-chip--xs"><i class="bi bi-alarm me-1"></i>Retardo @FormatearMinutosCortos(ObtenerMinutosRetardoVisible(AsistenciaActual))</span>
-                                }
-                                @if (ObtenerMinutosSalidaAnticipadaVisible(AsistenciaActual) > 0)
-                                {
-                                    <span class="asis-chip asis-chip--danger asis-chip--xs"><i class="bi bi-box-arrow-left me-1"></i>Salida anticipada @FormatearMinutosCortos(ObtenerMinutosSalidaAnticipadaVisible(AsistenciaActual))</span>
-                                }
-                                @if (_esFestivoActual)
-                                {
-                                    <span class="asis-chip asis-chip--info asis-chip--xs"><i class="bi bi-calendar-event me-1"></i>Festivo</span>
-                                }
+                        <span class="asis-avatar"><i class="bi bi-person-fill"></i></span>
+                        <div class="asis-modal-header__meta min-w-0">
+                            <div class="asis-modal-header__name text-truncate">@AsistenciaActual.Empleado.NombreCompleto · @AsistenciaActual.Empleado.NumeroEmpleado</div>
+                            <div class="asis-modal-header__sub">
+                                <span><i class="bi bi-calendar3 me-1"></i>@AsistenciaActual.Fecha.ToString("dddd d 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-MX"))</span>
+                                <span class="asis-modal-header__sep"></span>
+                                <span><i class="bi bi-clock me-1"></i>@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</span>
                             </div>
                         </div>
                         @if (OnCambioDiaSolicitado.HasDelegate)
@@ -41,128 +31,396 @@
                             </button>
                         }
                     </div>
-                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                        <span class="badge @ObtenerClaseEstatus(AsistenciaActual) asis-status-badge">@ObtenerTextoEstatus(AsistenciaActual.Estatus)</span>
+                    <div class="asis-modal-header__right">
+                        @if (ObtenerMinutosRetardoVisible(AsistenciaActual) > 0)
+                        {
+                            <span class="asis-header-badge asis-header-badge--warn"><i class="bi bi-alarm me-1"></i>Retardo</span>
+                        }
+                        @if (ObtenerMinutosSalidaAnticipadaVisible(AsistenciaActual) > 0)
+                        {
+                            <span class="asis-header-badge asis-header-badge--danger"><i class="bi bi-box-arrow-left me-1"></i>Salida temprana</span>
+                        }
                         @if (_tieneCambiosPendientes)
                         {
-                            <span class="badge text-bg-warning">Cambios pendientes</span>
+                            <span class="asis-header-badge asis-header-badge--info"><i class="bi bi-pencil-square me-1"></i>Cambios pendientes</span>
                         }
-                        <button type="button" class="asis-help-button" @onclick="AbrirAyudaReglas" title="Ver reglas aplicadas">
-                            <i class="bi bi-question-lg"></i>
+                        <button type="button" class="asis-header-btn" @onclick="AbrirAyudaReglas" title="Ver reglas aplicadas">
+                            <i class="bi bi-journal-text me-1"></i>Reglas
                         </button>
-                        <button type="button" class="btn-close btn-close-white" @onclick="CerrarAsync" aria-label="Cerrar"></button>
+                        <button type="button" class="asis-close-btn" @onclick="CerrarAsync" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>
                     </div>
                 </div>
 
                 @{
                     var _cifras = ObtenerDesgloseBrutoNetoVisiblePagado();
                     var _formula = ObtenerFormulaDiaLegible();
-                }
-
-                @* 2. Cifras del día: la cifra central, con desglose bruto→neto→visible→pagado y deltas legibles *@
-                <div class="asis-cifras border-bottom px-3 py-3">
-                    @if (_tieneCambiosPendientes)
-                    {
-                        <div class="asis-local-preview-banner mb-2">
-                            <i class="bi bi-info-circle me-1"></i>Vista previa local del empleado. Los cambios se guardan al cerrar o al usar el botón Guardar cambios.
-                        </div>
-                    }
-                    @if (_cifras != null)
-                    {
-                        <div class="asis-cifras__row">
-                            <div class="asis-cifra asis-cifra--accent">
-                                <div class="asis-cifra__label">Visible</div>
-                                <div class="asis-cifra__value">@FormatearMinutos(_cifras.Visible)</div>
-                                <div class="asis-cifra__hint">Cuenta para la jornada</div>
-                            </div>
-                            <div class="asis-cifra asis-cifra--paid">
-                                <div class="asis-cifra__label">Pagado</div>
-                                <div class="asis-cifra__value">@FormatearMinutos(_cifras.Pagado)</div>
-                                <div class="asis-cifra__hint">Visible sin extra al banco</div>
-                            </div>
-                            <div class="asis-cifra">
-                                <div class="asis-cifra__label">Bruto</div>
-                                <div class="asis-cifra__value">@FormatearMinutos(_cifras.Bruto)</div>
-                                <div class="asis-cifra__hint">Entrada→salida sin reglas</div>
-                            </div>
-                            <div class="asis-cifra">
-                                <div class="asis-cifra__label">Neto</div>
-                                <div class="asis-cifra__value">@FormatearMinutos(_cifras.Neto)</div>
-                                <div class="asis-cifra__hint">Trabajado efectivo</div>
-                            </div>
-                        </div>
-                        <div class="asis-formula-bar">
-                            @foreach (var t in _formula)
-                            {
-                                @if (!string.IsNullOrEmpty(t.Signo))
-                                {
-                                    <span class="asis-formula-bar__op">@t.Signo</span>
-                                }
-                                <span class="asis-formula-bar__term">
-                                    <span class="asis-formula-bar__label">@t.Etiqueta</span>
-                                    <span class="asis-formula-bar__value">@FormatearMinutos(t.Minutos)</span>
-                                </span>
-                            }
-                        </div>
-                    }
-                    @if (TieneAusenciaActual() || TieneSenalRevisionOperativa(AsistenciaActual))
-                    {
-                        <div class="d-flex flex-wrap gap-1 mt-2">
-                            @if (TieneAusenciaActual())
-                            {
-                                <div class="asis-banner asis-banner--info"><i class="bi bi-calendar-x me-1"></i>@ObtenerResumenAusenciaActual()</div>
-                            }
-                            @if (TieneSenalRevisionOperativa(AsistenciaActual))
-                            {
-                                <div class="asis-banner asis-banner--warn"><i class="bi bi-exclamation-triangle me-1"></i>@ObtenerSenalRevisionOperativa(AsistenciaActual): @(string.IsNullOrWhiteSpace(AsistenciaActual.Observaciones) ? "Jornada no coincide con el turno." : AsistenciaActual.Observaciones)</div>
-                            }
-                        </div>
-                    }
-                </div>
-
-                @* 3. Barra de acciones "Corregir": abre cada panel colapsable *@
-                @{
                     var _descansosConfigBarra = ObtenerDescansosConfiguradosDia();
                 }
-                <div class="asis-corregir mx-3 mt-3 @(_mostrarCorrecciones ? "asis-corregir--open" : "")">
-                    <button type="button" class="asis-corregir__head" @onclick="() => _mostrarCorrecciones = !_mostrarCorrecciones" aria-expanded="@_mostrarCorrecciones">
-                        <span><i class="bi bi-pencil-square me-1"></i>Corregir</span>
-                        <i class="bi bi-chevron-right asis-corregir__chev"></i>
-                    </button>
-                    @if (_mostrarCorrecciones)
+
+                @* 2. Zona FIJA (siempre visible, no scrollea): resultado + siguiente paso + línea de tiempo *@
+                <div class="asis-timeline-fixed">
+                    @* Tira delgada de resultado: Visible · Pagado (feedback de cada edición) *@
+                    @if (_cifras != null)
                     {
-                        <div class="asis-corregir__body">
-                            <div class="asis-actions-bar">
-                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="AlternarAccionesRapidasPermiso">
-                                    <i class="bi bi-shield-check me-1"></i>Permiso
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarAccionesRapidasTurno">
-                                    <i class="bi bi-arrow-left-right me-1"></i>Turno
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AlternarAccionesRapidasModoExtra">
-                                    <i class="bi bi-calculator me-1"></i>Método
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarMarcacionesDia">
-                                    <i class="bi bi-card-list me-1"></i>Marcaciones
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _mostrarDescansosNoDescontar = !_mostrarDescansosNoDescontar" disabled="@(_descansosConfigBarra.Count == 0 || !PuedeReprocesar)">
-                                    <i class="bi bi-cup-hot me-1"></i>No descontar
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AlternarBitacora">
-                                    <i class="bi bi-clock-history me-1"></i>Bitácora
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _mostrarAyudaDia = !_mostrarAyudaDia" aria-expanded="@_mostrarAyudaDia">
-                                    <i class="bi bi-question-circle me-1"></i>Ayuda del día
+                        <div class="asis-result-strip">
+                            <span class="asis-result-strip__item asis-result-strip__item--visible">
+                                <span class="asis-result-strip__label">Visible</span>
+                                <strong class="asis-result-strip__value">@FormatearMinutos(_cifras.Visible)</strong>
+                            </span>
+                            <span class="asis-result-strip__sep"></span>
+                            <span class="asis-result-strip__item asis-result-strip__item--paid">
+                                <span class="asis-result-strip__label">Pagado</span>
+                                <strong class="asis-result-strip__value">@FormatearMinutos(_cifras.Pagado)</strong>
+                            </span>
+                            @if (_tieneCambiosPendientes)
+                            {
+                                <span class="asis-result-strip__item asis-result-strip__item--pending"><i class="bi bi-pencil-square me-1"></i>Cambios sin guardar</span>
+                            }
+                            @if (TieneAusenciaActual())
+                            {
+                                <span class="asis-result-strip__item asis-result-strip__item--muted"><i class="bi bi-calendar-x me-1"></i>@ObtenerResumenAusenciaActual()</span>
+                            }
+                        </div>
+                    }
+
+                    @* Banner de siguiente paso sugerido (siempre visible: “qué debo corregir”) *@
+                    @if (asesorCorreccionActual != null)
+                    {
+                        <button type="button" class="asis-banner-card asis-banner-card--info asis-banner-card--inline" @onclick="IrATabSugerida">
+                            <i class="bi bi-info-circle asis-banner-card__icon"></i>
+                            <div class="asis-banner-card__body">
+                                <strong>Siguiente paso sugerido:</strong> @asesorCorreccionActual.Titulo — @asesorCorreccionActual.Descripcion
+                            </div>
+                            <i class="bi bi-chevron-right asis-banner-card__chev"></i>
+                        </button>
+                    }
+
+                    @* Línea de tiempo del día (timeline-first): eje de reloj + bloques clicables + pines + overlay de turno *@
+                    @if (ObtenerTimelineSegmentosDia().Count > 0)
+                    {
+                        <div class="asis-dayline-card asis-dayline-card--compact asis-dayline-card--fixed">
+                            <div class="asis-dayline-card__head">
+                                <div>
+                                    <div class="asis-dayline-card__title">Línea de tiempo del día</div>
+                                    <div class="asis-dayline-card__text">Clic en un bloque para editarlo, en un pin para ver la marcación, o en los extremos para agregar una marca.</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary asis-btn-xs" @onclick="AlternarMarcacionesDia">
+                                    <i class="bi bi-pencil me-1"></i>Editar
                                 </button>
                             </div>
+                            @{
+                                var _ventana = ObtenerTimelineVentanaDia();
+                                var _bloques = ObtenerTimelineBloquesVista();
+                                var _pines = ObtenerTimelinePinesDia();
+                                var _horas = _ventana != null ? ObtenerTimelineHorasAxis(_ventana) : new List<(string Etiqueta, double PosPercent)>();
+                                var _alertas = ObtenerTimelineAlertasDia();
+                                var _turnoOverlay = ObtenerTimelineTurnoOverlay();
+                                var _segmentoSel = ObtenerSegmentoSeleccionadoActual();
+                                var _pinSel = ObtenerPinSeleccionadoActual();
+                                var _casosDia = ObtenerCasosEspecialesDia();
+                                var _plan = ObtenerPlanTurnoDia();
+                            }
+                            @if (_ventana != null && _bloques.Count > 0)
+                            {
+                                @if (_plan != null)
+                                {
+                                    <div class="asis-plan mt-2">
+                                        <div class="asis-plan__head">
+                                            <span class="asis-plan__title"><i class="bi bi-calendar2-check me-1"></i>Plan del turno</span>
+                                            <span class="asis-plan__jornada">Jornada neta planeada @FormatearMinutos(_plan.MinutosJornadaNeta)@if (_plan.CruzaMedianoche) { <span class="badge text-bg-secondary ms-1">cruza medianoche</span> }</span>
+                                        </div>
+                                        <div class="asis-plan__grid">
+                                            <div class="asis-plan__cell">
+                                                <span class="asis-plan__label">Entrada</span>
+                                                <span class="asis-plan__planeado">@_plan.EntradaPlaneada!.Value.ToString("hh\\:mm")</span>
+                                                @if (_plan.EntradaReal.HasValue)
+                                                {
+                                                    <span class="asis-plan__real">real @_plan.EntradaReal.Value.ToString("HH:mm")</span>
+                                                    @if (_plan.DeltaEntradaMin.HasValue)
+                                                    {
+                                                        <span class="badge @ObtenerClaseDeltaEntrada(_plan.DeltaEntradaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaEntradaMin.Value)</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="asis-plan__real asis-plan__real--none">sin marca</span>
+                                                }
+                                            </div>
+                                            <div class="asis-plan__cell">
+                                                <span class="asis-plan__label">Salida</span>
+                                                <span class="asis-plan__planeado">@_plan.SalidaPlaneada!.Value.ToString("hh\\:mm")</span>
+                                                @if (_plan.SalidaReal.HasValue)
+                                                {
+                                                    <span class="asis-plan__real">real @_plan.SalidaReal.Value.ToString("HH:mm")</span>
+                                                    @if (_plan.DeltaSalidaMin.HasValue)
+                                                    {
+                                                        <span class="badge @ObtenerClaseDeltaSalida(_plan.DeltaSalidaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaSalidaMin.Value)</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="asis-plan__real asis-plan__real--none">sin marca</span>
+                                                }
+                                            </div>
+                                            <div class="asis-plan__cell asis-plan__cell--descansos">
+                                                <span class="asis-plan__label">Descansos plan</span>
+                                                @if (_plan.Descansos.Count == 0)
+                                                {
+                                                    <span class="asis-plan__real asis-plan__real--none">sin descansos</span>
+                                                }
+                                                else
+                                                {
+                                                    <div class="asis-plan__descansos">
+                                                        @foreach (var d in _plan.Descansos)
+                                                        {
+                                                            <span class="asis-plan__descanso @(d.Tomado ? "asis-plan__descanso--ok" : "asis-plan__descanso--miss")" title="D@d.Numero · @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @FormatearMinutos(d.Minutos) · @(d.Tomado ? "tomado" : "no tomado")">
+                                                                <i class="bi @(d.Tomado ? "bi-check-circle-fill" : "bi-circle")"></i>
+                                                                D@d.Numero @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm")
+                                                                @if (d.EsPagado) { <span class="asis-plan__pagado">pagado</span> }
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                @if (_alertas.Count > 0 || _casosDia.Count > 0)
+                                {
+                                    <div class="asis-tl__alerts mt-2">
+                                        @foreach (var a in _alertas)
+                                        {
+                                            <span class="asis-tl__alert @a.Clase"><i class="bi @a.Icono me-1"></i>@a.Texto</span>
+                                        }
+                                        @foreach (var c in _casosDia)
+                                        {
+                                            <span class="asis-tl__alert asis-tl__alert--warn"><i class="bi @c.Icono me-1"></i>@c.Texto <span class="opacity-75">· @c.Sugerencia</span></span>
+                                        }
+                                    </div>
+                                }
+                                <div class="asis-tl mt-2">
+                                    <div class="asis-tl__axis">
+                                        @foreach (var h in _horas)
+                                        {
+                                            <span class="asis-tl__tick" style="left:@($"{h.PosPercent}%")">@h.Etiqueta</span>
+                                        }
+                                    </div>
+                                    <div class="asis-tl__track">
+                                        @if (_turnoOverlay != null)
+                                        {
+                                            <span class="asis-tl__turno" style="left:@($"{_turnoOverlay.LeftPercent}%");width:@($"{_turnoOverlay.WidthPercent}%")" title="Turno esperado @_turnoOverlay.Etiqueta"></span>
+                                        }
+                                        @if (_plan != null)
+                                        {
+                                            @foreach (var d in _plan.Descansos)
+                                            {
+                                                if (d.WidthPercent > 0.5)
+                                                {
+                                                    <span class="asis-tl__descanso-plan @(d.Tomado ? "asis-tl__descanso-plan--ok" : "asis-tl__descanso-plan--miss")"
+                                                          style="left:@($"{d.LeftPercent}%");width:@($"{d.WidthPercent}%")"
+                                                          title="Descanso D@d.Numero planificado @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @(d.Tomado ? "tomado" : "no tomado")"></span>
+                                                }
+                                            }
+                                        }
+                                        @foreach (var b in _bloques)
+                                        {
+                                            var _editable = PuedeEditarSegmento(b.Segmento);
+                                            <span class="asis-tl__seg @b.Segmento.CssClass @b.EstadoClase @(EsSegmentoEnEdicion(b.Segmento) ? "asis-tl__seg--active" : "") @(_editable ? "asis-tl__seg--clickable" : "")"
+                                                  style="left:@($"{b.LeftPercent}%");width:@($"{b.WidthPercent}%")"
+                                                  title="@($"{b.Segmento.Titulo} · {b.Segmento.Rango} · {FormatearMinutos(b.Segmento.Minutos)} — {ObtenerImpactoBloque(b.Segmento)}")"
+                                                  @onclick="() => SeleccionarSegmentoTimeline(b.Segmento)"
+                                                  @onclick:stopPropagation="true">
+                                                @if (!string.IsNullOrEmpty(b.Indicador))
+                                                {
+                                                    <span class="asis-tl__seg-ind">@b.Indicador</span>
+                                                }
+                                            </span>
+                                        }
+                                        @foreach (var p in _pines)
+                                        {
+                                            <button type="button" class="asis-tl__pin @(p.EsAnulada ? "asis-tl__pin--anulada" : p.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real") @(p.MarcacionId == _pinSeleccionadoId ? "asis-tl__pin--active" : "")"
+                                                  style="left:@($"{p.PosPercent}%")"
+                                                  title="@($"{p.Etiqueta} {p.HoraLocal:HH:mm} · Origen: {p.Origen} · {(p.EsAnulada ? "Anulada" : "Activa")}")"
+                                                  aria-label="@($"{p.Etiqueta} {p.HoraLocal:HH:mm}")"
+                                                  @onclick="() => SeleccionarPinTimeline(p)"
+                                                  @onclick:stopPropagation="true"></button>
+                                        }
+                                    </div>
+                                    @if (_pines.Count > 0)
+                                    {
+                                        var _pinEntrada = _pines[0];
+                                        var _pinSalida = _pines[^1];
+                                        <div class="asis-tl__markers">
+                                            <div class="asis-tl__marker-box" style="left:@($"{_pinEntrada.PosPercent}%")">
+                                                <div class="asis-tl__marker-label asis-tl__marker-label--start">
+                                                    <i class="bi bi-box-arrow-in-right"></i>
+                                                    <span>Entrada</span>
+                                                    <strong>@_pinEntrada.HoraLocal.ToString("HH:mm")</strong>
+                                                </div>
+                                            </div>
+                                            <div class="asis-tl__marker-box asis-tl__marker-box--end" style="left:@($"{_pinSalida.PosPercent}%")">
+                                                <div class="asis-tl__marker-label asis-tl__marker-label--end">
+                                                    <i class="bi bi-box-arrow-right"></i>
+                                                    <span>Salida</span>
+                                                    <strong>@_pinSalida.HoraLocal.ToString("HH:mm")</strong>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+
+                                @* Ficha del bloque seleccionado *@
+                                @if (_segmentoSel != null)
+                                {
+                                    var _casosBloque = ObtenerCasosEspecialesBloque(_segmentoSel);
+                                    var _marcaInicio = _segmentoSel.MarcacionInicioId.HasValue ? ObtenerMarcacionPorId(_segmentoSel.MarcacionInicioId.Value) : null;
+                                    var _marcaFin = _segmentoSel.MarcacionFinId.HasValue ? ObtenerMarcacionPorId(_segmentoSel.MarcacionFinId.Value) : null;
+                                    <div class="asis-tl__ficha mt-2">
+                                        <div class="asis-tl__ficha-head">
+                                            <div class="asis-tl__ficha-title">
+                                                <span class="asis-tl__ind asis-tl__ind--sm @ObtenerClaseIndicadorBloque(_segmentoSel)">@ObtenerIndicadorEstadoBloque(_segmentoSel)</span>
+                                                @_segmentoSel.Titulo
+                                            </div>
+                                            <div class="asis-tl__ficha-meta">@_segmentoSel.Rango · @FormatearMinutos(_segmentoSel.Minutos) · @ObtenerEstadoVisualSegmento(_segmentoSel)</div>
+                                            <button type="button" class="asis-tl__ficha-close" @onclick="CerrarSeleccionTimeline" aria-label="Cerrar"><i class="bi bi-x"></i></button>
+                                        </div>
+                                        <div class="asis-tl__ficha-impacto"><i class="bi bi-info-circle me-1"></i>@ObtenerImpactoBloque(_segmentoSel)</div>
+                                        @if (_casosBloque.Count > 0)
+                                        {
+                                            <div class="asis-tl__ficha-casos">
+                                                @foreach (var c in _casosBloque)
+                                                {
+                                                    <span class="asis-tl__alert asis-tl__alert--warn"><i class="bi @c.Icono me-1"></i>@c.Texto <span class="opacity-75">· @c.Sugerencia</span></span>
+                                                }
+                                            </div>
+                                        }
+                                        @if (_segmentoSel.Accion == "descanso" || _segmentoSel.Accion == "descansoNoDescontar")
+                                        {
+                                            <div class="asis-tl__ficha-metrics">
+                                                @if (_segmentoSel.NumeroDescanso.HasValue)
+                                                {
+                                                    <span>D@_segmentoSel.NumeroDescanso.Value ·</span>
+                                                }
+                                                <span>Detectado: @FormatearMinutos(_segmentoSel.Minutos)</span>
+                                                @if (_segmentoSel.MinutosProgramados.HasValue)
+                                                {
+                                                    <span>· Programado: @FormatearMinutos(_segmentoSel.MinutosProgramados.Value)</span>
+                                                }
+                                                @if (_segmentoSel.MinutosAplicados.HasValue)
+                                                {
+                                                    <span>· Aplicado: @FormatearMinutos(_segmentoSel.MinutosAplicados.Value)</span>
+                                                    @if (!string.IsNullOrWhiteSpace(_segmentoSel.OrigenAplicado))
+                                                    {
+                                                        <span>(@_segmentoSel.OrigenAplicado)</span>
+                                                    }
+                                                }
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(ObtenerFormulaDescanso(_segmentoSel)))
+                                            {
+                                                <div class="asis-tl__ficha-formula">@ObtenerFormulaDescanso(_segmentoSel)</div>
+                                            }
+                                        }
+                                        @if (_marcaInicio != null || _marcaFin != null)
+                                        {
+                                            <div class="asis-tl__ficha-origen">
+                                                <div class="asis-tl__ficha-origen-title">Marcaciones que originan el bloque</div>
+                                                @if (_marcaInicio != null)
+                                                {
+                                                    <div class="asis-tl__ficha-marca"><span class="asis-tl__pin asis-tl__pin--sm @(_marcaInicio.EsAnulada ? "asis-tl__pin--anulada" : _marcaInicio.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>@ObtenerEtiquetaPin(_marcaInicio) @ObtenerFechaHoraLocalMarcacion(_marcaInicio).ToString("HH:mm") · @ObtenerOrigenPin(_marcaInicio)@if (_marcaInicio.EsAnulada) { <span class="badge text-bg-secondary ms-1">Anulada</span> }</div>
+                                                }
+                                                @if (_marcaFin != null)
+                                                {
+                                                    <div class="asis-tl__ficha-marca"><span class="asis-tl__pin asis-tl__pin--sm @(_marcaFin.EsAnulada ? "asis-tl__pin--anulada" : _marcaFin.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>@ObtenerEtiquetaPin(_marcaFin) @ObtenerFechaHoraLocalMarcacion(_marcaFin).ToString("HH:mm") · @ObtenerOrigenPin(_marcaFin)@if (_marcaFin.EsAnulada) { <span class="badge text-bg-secondary ms-1">Anulada</span> }</div>
+                                                }
+                                            </div>
+                                        }
+                                        @if (PuedeEditarSegmento(_segmentoSel))
+                                        {
+                                            <div class="asis-tl__ficha-edit">
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-12 col-md-5">
+                                                        <label class="asis-field-label">Tipo de bloque</label>
+                                                        <select class="form-select form-select-sm" @bind="segmentoAccionSeleccionada" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">
+                                                            @foreach (var opcion in ObtenerOpcionesAccionSegmento(_segmentoSel))
+                                                            {
+                                                                <option value="@opcion.Clave">@opcion.Etiqueta</option>
+                                                            }
+                                                        </select>
+                                                    </div>
+                                                    @if (segmentoAccionSeleccionada == "descanso")
+                                                    {
+                                                        <div class="col-12 col-md-3">
+                                                            <label class="asis-field-label">Minutos aplicados</label>
+                                                            <InputNumber class="form-control form-control-sm" @bind-Value="segmentoMinutosAplicadosCaptura" min="0" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))" />
+                                                        </div>
+                                                    }
+                                                    <div class="col-12 col-md-@(segmentoAccionSeleccionada == "descanso" ? 4 : 7) d-flex gap-2 justify-content-end">
+                                                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => AplicarEdicionSegmentoAsync(_segmentoSel)" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">@(EsSegmentoGuardando(_segmentoSel) ? "Aplicando..." : "Aplicar")</button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicionSegmento" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">Cancelar</button>
+                                                    </div>
+                                                </div>
+                                                <div class="asis-tl__ficha-help">@ObtenerAyudaAccionSegmentoSeleccionada(_segmentoSel)</div>
+                                                @if (EsSegmentoGuardando(_segmentoSel))
+                                                {
+                                                    <div class="asis-tl__ficha-loading">Reprocesando el día…</div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                @* Ficha de la marcación seleccionada (pin) *@
+                                else if (_pinSel != null)
+                                {
+                                    <div class="asis-tl__ficha mt-2">
+                                        <div class="asis-tl__ficha-head">
+                                            <div class="asis-tl__ficha-title">
+                                                <span class="asis-tl__pin asis-tl__pin--sm @(_pinSel.EsAnulada ? "asis-tl__pin--anulada" : _pinSel.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>
+                                                @ObtenerEtiquetaPin(_pinSel)
+                                            </div>
+                                            <div class="asis-tl__ficha-meta">@ObtenerFechaHoraLocalMarcacion(_pinSel).ToString("HH:mm") · @ObtenerOrigenPin(_pinSel) · @(_pinSel.EsAnulada ? "Anulada" : "Activa")</div>
+                                            <button type="button" class="asis-tl__ficha-close" @onclick="CerrarSeleccionTimeline" aria-label="Cerrar"><i class="bi bi-x"></i></button>
+                                        </div>
+                                        <div class="asis-tl__ficha-edit">
+                                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                                @if (_pinSel.EsManual)
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="EditarPinSeleccionado"><i class="bi bi-pencil me-1"></i>Editar</button>
+                                                }
+                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="AnularPinSeleccionadoAsync" disabled="@cargando"><i class="bi bi-slash-circle me-1"></i>@(_pinSel.EsAnulada ? "Restaurar" : "Anular")</button>
+                                                <div class="d-flex align-items-center gap-1">
+                                                    <span class="asis-field-label mb-0">Reclasificar:</span>
+                                                    <select class="form-select form-select-sm asis-tl__ficha-select" @onchange="ReclasificarPinSeleccionadoAsync" disabled="@cargando">
+                                                        <option value="">— cambiar a —</option>
+                                                        <option value="Entrada">Entrada</option>
+                                                        <option value="Salida">Salida</option>
+                                                        <option value="InicioDescanso">Inicio descanso</option>
+                                                        <option value="FinDescanso">Fin descanso</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="asis-tl__hint mt-2"><i class="bi bi-hand-index me-1"></i>Clic en un bloque para editarlo o en un pin para ver la marcación. Para agregar marcas usa el botón <strong>Marcaciones</strong> del acordeón Corregir.</div>
+                                }
+
+                                <div class="asis-tl__legend mt-2">
+                                    <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--trabajo"></span>Trabajo</span>
+                                    <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--descanso"></span>Descanso (descontable)</span>
+                                    <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--permiso"></span>Permiso con goce</span>
+                                    <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--temporal"></span>Permiso sin goce</span>
+                                    <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--ignorado"></span>No laborado</span>
+                                </div>
+                            }
                         </div>
                     }
                 </div>
 
-                @* 4. Body en 2 columnas: contenido principal + asesor lateral fijo *@
+                @* 3. Body scrollable: cifras, fórmula, alertas, acordeones, ayuda y asesor *@
                 <div class="modal-body p-0">
-                    <div class="p-3 asis-layout">
-                        <div class="asis-layout__main">
+                    <div class="p-3 asis-body-stack">
                         @if (!string.IsNullOrWhiteSpace(error))
                         {
                             <div class="alert alert-danger py-2 mb-2 small"><i class="bi bi-x-circle me-1"></i>@error</div>
@@ -172,596 +430,350 @@
                             <div class="alert alert-success py-2 mb-2 small"><i class="bi bi-check-circle me-1"></i>@ok</div>
                         }
 
-                        @if (requiereResolucionAutorizadaParaNomina && PuedeAprobarTiempoExtra && PuedeMostrarResolucionTiempo())
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mb-2 border-info">
-                                <div class="asis-quick-card__head">
-                                    <strong><i class="bi bi-info-circle me-1"></i>Tiempo extra (autorización por periodo)</strong>
+                        @* Cifras del día (detalle): Bruto / Neto / Visible / Pagado + fórmula *@
+                        <div class="asis-cifras">
+                            @if (_tieneCambiosPendientes)
+                            {
+                                <div class="asis-local-preview-banner mb-2">
+                                    <i class="bi bi-info-circle me-1"></i>Vista previa local del empleado. Los cambios se guardan al cerrar o al usar el botón Guardar cambios.
                                 </div>
-                                <div class="asis-quick-card__body">
-                                    <div class="asis-quick-hint mb-0">El tiempo extra se autoriza <strong>por periodo de nómina</strong> en <strong>Asistencias Semanal</strong>, con varias líneas (cada una con su factor x1/x2/x3 y su destino pago/banco). Aquí solo revisa <strong>marcaciones, permisos, turno y perdón manual</strong> del día; lo que capturas en este modal ya no mueve la nómina.</div>
+                            }
+                            @if (_cifras != null)
+                            {
+                                <div class="asis-cifras__row">
+                                    <div class="asis-cifra">
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Entrada→salida sin reglas"></i> Bruto</div>
+                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Bruto)</div>
+                                    </div>
+                                    <div class="asis-cifra">
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Trabajado efectivo"></i> Neto</div>
+                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Neto)</div>
+                                    </div>
+                                    <div class="asis-cifra asis-cifra--accent">
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Cuenta para la jornada"></i> Visible</div>
+                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Visible)</div>
+                                    </div>
+                                    <div class="asis-cifra asis-cifra--paid">
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Visible sin extra al banco"></i> Pagado</div>
+                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Pagado)</div>
+                                    </div>
                                 </div>
-                            </div>
-                        }
 
-                        @* Panel: Permiso rápido + Perdón manual *@
-                        @if (_mostrarAccionesRapidasPermiso)
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mb-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>Permiso rápido</strong>
-                                    <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasPermiso"></button>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    <div class="row g-2 align-items-end">
-                                        <div class="col-md-3">
-                                            <label class="asis-field-label">Horas</label>
-                                            <InputNumber class="form-control form-control-sm" @bind-Value="horasPermisoDiaCaptura" min="0" step="0.25" />
-                                        </div>
-                                        <div class="col-md-2">
-                                            <div class="form-check mt-4">
-                                                <InputCheckbox class="form-check-input" @bind-Value="permisoDiaConGoceCaptura" id="chkQuickGoce" />
-                                                <label class="form-check-label" for="chkQuickGoce">Con goce</label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-5">
-                                            <label class="asis-field-label">Motivo</label>
-                                            <InputText class="form-control form-control-sm" @bind-Value="permisoDiaMotivo" />
-                                        </div>
-                                        <div class="col-md-2 d-grid">
-                                            <button type="button" class="btn btn-sm btn-info" @onclick="GuardarPermisoDiaAsync">Aplicar</button>
-                                        </div>
-                                        @if (permisoDiaSeleccionado != null)
+                                @* Barra de fórmula como tarjetas conectadas *@
+                                <div class="asis-formula-cards">
+                                    @foreach (var t in _formula)
+                                    {
+                                        @if (!string.IsNullOrEmpty(t.Signo))
                                         {
-                                            <div class="col-md-12 d-flex justify-content-end mt-1">
-                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="QuitarPermisoDiaAsync">Quitar permiso</button>
-                                            </div>
+                                            <span class="asis-formula-cards__op">@t.Signo</span>
                                         }
-                                    </div>
+                                        <span class='asis-formula-cards__term @(t.Signo == "=" ? "asis-formula-cards__term--result" : "")'>
+                                            <span class="asis-formula-cards__value">@FormatearMinutos(t.Minutos)</span>
+                                            <span class="asis-formula-cards__label">@t.Etiqueta</span>
+                                        </span>
+                                    }
                                 </div>
+                            }
+
+                            @* Alerta de jornada/turno *@
+                            @if (TieneSenalRevisionOperativa(AsistenciaActual) || !string.IsNullOrWhiteSpace(AsistenciaActual.Observaciones))
+                            {
+                                <button type="button" class="asis-alert-card asis-alert-card--warn mt-3" @onclick="() => _mostrarAyudaDia = !_mostrarAyudaDia">
+                                    <div class="asis-alert-card__icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                                    <div class="asis-alert-card__body">
+                                        <div class="asis-alert-card__title">Jornada no coincide con el turno</div>
+                                        <div class="asis-alert-card__text">@(string.IsNullOrWhiteSpace(AsistenciaActual.Observaciones) ? "La entrada o salida real difiere del horario programado." : AsistenciaActual.Observaciones)</div>
+                                    </div>
+                                    <i class="bi bi-chevron-right asis-alert-card__chev"></i>
+                                </button>
+                            }
+                        </div>
+
+                        @* Acordeones de acciones (cada uno se abre/colapsa individualmente) *@
+                        <div class="asis-accordion-list mt-3">
+                            @* Tiempo extra / banco — informativo: aquí es solo lectura, se autoriza en Asistencias Semanal *@
+                            <div class="asis-te-info">
+                                <div class="asis-te-info__head">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    <strong>Tiempo extra / banco</strong>
+                                    <span class="asis-te-info__hint">se autoriza en Asistencias Semanal</span>
+                                </div>
+                                <div class="asis-te-info__chips">
+                                    <span class="asis-chip asis-chip--muted asis-chip--xs"><i class="bi bi-stopwatch me-1"></i>Detectada @FormatearMinutos(AsistenciaActual.MinutosExtra)</span>
+                                    <span class="asis-chip asis-chip--info asis-chip--xs"><i class="bi bi-lightbulb me-1"></i>Sugerida @FormatearMinutos(ObtenerMinutosExtraSugeridosModo(AsistenciaActual))</span>
+                                    <span class="asis-chip asis-chip--success asis-chip--xs"><i class="bi bi-check2-circle me-1"></i>Aprobada @FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</span>
+                                </div>
+                                <div class="asis-te-info__note">@ObtenerResumenDestinoTiempoActual()</div>
                             </div>
 
-                            <div class="asis-quick-card asis-quick-card--compact mb-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>Perdón manual de minutos</strong>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    <div class="row g-2 align-items-end">
-                                        <div class="col-md-4">
-                                            <label class="asis-field-label">Minutos perdonados</label>
-                                            <InputNumber class="form-control form-control-sm" @bind-Value="minutosPerdonManualCaptura" min="0" />
+                            @* Permiso rápido *@
+                            <div class="asis-accordion @(_mostrarAccionesRapidasPermiso ? "asis-accordion--open" : "")">
+                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasPermiso" aria-expanded="@_mostrarAccionesRapidasPermiso">
+                                    <span class="asis-accordion__icon"><i class="bi bi-shield-check"></i></span>
+                                    <span class="asis-accordion__title">Permiso rápido</span>
+                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                </button>
+                                @if (_mostrarAccionesRapidasPermiso)
+                                {
+                                    <div class="asis-accordion__body">
+                                        <div class="asis-quick-card asis-quick-card--compact mb-2">
+                                            <div class="asis-quick-card__head">
+                                                <strong>Permiso rápido</strong>
+                                            </div>
+                                            <div class="asis-quick-card__body">
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-12 col-md-3">
+                                                        <label class="asis-field-label">Horas</label>
+                                                        <InputNumber class="form-control form-control-sm" @bind-Value="horasPermisoDiaCaptura" min="0" step="0.25" />
+                                                    </div>
+                                                    <div class="col-12 col-md-2">
+                                                        <div class="form-check mt-4">
+                                                            <InputCheckbox class="form-check-input" @bind-Value="permisoDiaConGoceCaptura" id="chkQuickGoce" />
+                                                            <label class="form-check-label" for="chkQuickGoce">Con goce</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-12 col-md-5">
+                                                        <label class="asis-field-label">Motivo</label>
+                                                        <InputText class="form-control form-control-sm" @bind-Value="permisoDiaMotivo" />
+                                                    </div>
+                                                    <div class="col-12 col-md-2 d-grid">
+                                                        <button type="button" class="btn btn-sm btn-info" @onclick="GuardarPermisoDiaAsync">Aplicar</button>
+                                                    </div>
+                                                    @if (permisoDiaSeleccionado != null)
+                                                    {
+                                                        <div class="col-12 d-flex justify-content-end mt-1">
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="QuitarPermisoDiaAsync">Quitar permiso</button>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div class="col-md-6">
-                                            <div class="asis-quick-hint">Úsalo cuando quieras perdonar minutos pequeños del día, por ejemplo 7:58 contra 8:00.</div>
-                                        </div>
-                                        <div class="col-md-2 d-grid">
-                                            <button type="button" class="btn btn-sm btn-outline-success" @onclick="GuardarPerdonManualAsync">Aplicar</button>
+                                        <div class="asis-quick-card asis-quick-card--compact mb-0">
+                                            <div class="asis-quick-card__head">
+                                                <strong>Perdón manual de minutos</strong>
+                                            </div>
+                                            <div class="asis-quick-card__body">
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-12 col-md-4">
+                                                        <label class="asis-field-label">Minutos perdonados</label>
+                                                        <InputNumber class="form-control form-control-sm" @bind-Value="minutosPerdonManualCaptura" min="0" />
+                                                    </div>
+                                                    <div class="col-12 col-md-6">
+                                                        <div class="asis-quick-hint">Úsalo cuando quieras perdonar minutos pequeños del día, por ejemplo 7:58 contra 8:00.</div>
+                                                    </div>
+                                                    <div class="col-12 col-md-2 d-grid">
+                                                        <button type="button" class="btn btn-sm btn-outline-success" @onclick="GuardarPerdonManualAsync">Aplicar</button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                }
                             </div>
-                        }
 
-                        @* Panel: Cambio rápido de turno *@
-                        @if (_mostrarAccionesRapidasTurno)
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mb-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>Cambio rápido de turno</strong>
-                                    <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasTurno"></button>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    <div class="row g-2 align-items-end">
-                                        <div class="col-md-7">
-                                            <label class="asis-field-label">Turno</label>
-                                            <InputSelect class="form-select form-select-sm" @bind-Value="turnoDiaSeleccionadoIdTexto">
-                                                <option value="">(sin turno)</option>
-                                                @foreach (var turno in Turnos)
-                                                {
-                                                    <option value="@turno.Id.ToString()">@turno.Nombre</option>
-                                                }
-                                            </InputSelect>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label class="asis-field-label">Nota</label>
-                                            <InputText class="form-control form-control-sm" @bind-Value="turnoDiaObservaciones" />
-                                        </div>
-                                        <div class="col-md-2 d-grid">
-                                            <button type="button" class="btn btn-sm btn-secondary" @onclick="GuardarTurnoDiaAsync">Aplicar</button>
+                            @* Turno *@
+                            <div class="asis-accordion @(_mostrarAccionesRapidasTurno ? "asis-accordion--open" : "")">
+                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasTurno" aria-expanded="@_mostrarAccionesRapidasTurno">
+                                    <span class="asis-accordion__icon"><i class="bi bi-arrow-left-right"></i></span>
+                                    <span class="asis-accordion__title">Turno</span>
+                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                </button>
+                                @if (_mostrarAccionesRapidasTurno)
+                                {
+                                    <div class="asis-accordion__body">
+                                        <div class="asis-quick-card asis-quick-card--compact mb-0">
+                                            <div class="asis-quick-card__head">
+                                                <strong>Cambio rápido de turno</strong>
+                                            </div>
+                                            <div class="asis-quick-card__body">
+                                                <div class="row g-2 align-items-end">
+                                                    <div class="col-12 col-md-7">
+                                                        <label class="asis-field-label">Turno</label>
+                                                        <InputSelect class="form-select form-select-sm" @bind-Value="turnoDiaSeleccionadoIdTexto">
+                                                            <option value="">(sin turno)</option>
+                                                            @foreach (var turno in Turnos)
+                                                            {
+                                                                <option value="@turno.Id.ToString()">@turno.Nombre</option>
+                                                            }
+                                                        </InputSelect>
+                                                    </div>
+                                                    <div class="col-12 col-md-3">
+                                                        <label class="asis-field-label">Nota</label>
+                                                        <InputText class="form-control form-control-sm" @bind-Value="turnoDiaObservaciones" />
+                                                    </div>
+                                                    <div class="col-12 col-md-2 d-grid">
+                                                        <button type="button" class="btn btn-sm btn-secondary" @onclick="GuardarTurnoDiaAsync">Aplicar</button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                }
                             </div>
-                        }
 
-                        @* Panel: Método de cálculo *@
-                        @if (_mostrarAccionesRapidasModoExtra && AsistenciaActual != null)
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mb-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>Método de cálculo</strong>
-                                    <button type="button" class="btn-close" @onclick="AlternarAccionesRapidasModoExtra"></button>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    <div class="asis-quick-grid asis-quick-grid--compact mb-2">
-                                        <div><span>Detectada</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
-                                        <div><span>Sugerida</span><strong>@FormatearMinutos(ObtenerMinutosExtraSugeridosModo(AsistenciaActual))</strong></div>
-                                        <div><span>Aprobable</span><strong>@FormatearMinutos(ObtenerMinutosResolubles(AsistenciaActual))</strong></div>
-                                        <div><span>Aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
-                                    </div>
-                                    <div class="row g-2 align-items-center mb-2">
-                                        <div class="col-md-5">
-                                            <label class="asis-field-label">Modo de cálculo</label>
-                                            <select class="form-select form-select-sm" @onchange="@((ChangeEventArgs e) => CambiarModoSugerenciaExtra(e.Value?.ToString() ?? "EntradaSalida"))" disabled="@(modoSugerenciaExtra == "SinTurno")">
-                                                @if (modoSugerenciaExtra == "SinTurno")
-                                                {
-                                                    <option value="SinTurno" selected>Sin turno: el usuario decide el extra</option>
-                                                }
-                                                else
-                                                {
-                                                    <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
-                                                    <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
-                                                }
-                                            </select>
-                                        </div>
-                                        <div class="col-md-4 d-grid">
-                                            <button type="button" class="btn btn-sm btn-primary" @onclick="GuardarModoSugerenciaYReprocesarAsync" disabled="@cargando">
-                                                <i class="bi bi-arrow-repeat me-1"></i>Recalcular este día
-                                            </button>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="asis-quick-hint mt-1">@ObtenerDescripcionModoSugerencia(AsistenciaActual)</div>
+                            @* Método de cálculo *@
+                            <div class="asis-accordion @(_mostrarAccionesRapidasModoExtra ? "asis-accordion--open" : "")">
+                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasModoExtra" aria-expanded="@_mostrarAccionesRapidasModoExtra">
+                                    <span class="asis-accordion__icon"><i class="bi bi-calculator"></i></span>
+                                    <span class="asis-accordion__title">Método de cálculo</span>
+                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                </button>
+                                @if (_mostrarAccionesRapidasModoExtra)
+                                {
+                                    <div class="asis-accordion__body">
+                                        <div class="asis-quick-card asis-quick-card--compact mb-0">
+                                            <div class="asis-quick-card__body">
+                                                <label class="asis-field-label">Modo de cálculo</label>
+                                                <select class="form-select form-select-sm mb-2" @onchange="@((ChangeEventArgs e) => CambiarModoSugerenciaExtra(e.Value?.ToString() ?? "EntradaSalida"))" disabled="@(modoSugerenciaExtra == "SinTurno")">
+                                                    @if (modoSugerenciaExtra == "SinTurno")
+                                                    {
+                                                        <option value="SinTurno" selected>Sin turno: el usuario decide el extra</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
+                                                        <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
+                                                    }
+                                                </select>
+                                                <button type="button" class="btn btn-sm btn-primary" @onclick="GuardarModoSugerenciaYReprocesarAsync" disabled="@cargando">
+                                                    <i class="bi bi-arrow-repeat me-1"></i>Recalcular este día
+                                                </button>
+                                                <div class="asis-quick-hint mt-2">@ObtenerDescripcionModoSugerencia(AsistenciaActual)</div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="asis-quick-hint">El modo <strong>entrada/salida</strong> detecta extra por diferencia de horario real vs programado. El modo <strong>neto vs neto</strong> compara el tiempo neto trabajado contra el neto esperado del turno. Selecciona y recalcula para que el día use ese criterio.</div>
-                                </div>
+                                }
                             </div>
-                        }
 
-                        @* Panel: Checadas del día (marcaciones) *@
-                        @if (_mostrarMarcacionesDia)
-                        {
-                            <div class="asis-marcaciones-quick mb-2">
-                                <div class="asis-marcaciones-quick__head">
-                                    <div>
-                                        <div class="asis-dayline-card__title">Checadas del día</div>
-                                        <div class="asis-dayline-card__text">Corrige marcajes, anula marcas duplicadas o cambia la clasificación (entrada/salida/descanso).</div>
+                            @* Marcaciones *@
+                            <div class="asis-accordion @(_mostrarMarcacionesDia ? "asis-accordion--open" : "")">
+                                <button type="button" class="asis-accordion__head" @onclick="AlternarMarcacionesDia" aria-expanded="@_mostrarMarcacionesDia">
+                                    <span class="asis-accordion__icon"><i class="bi bi-card-list"></i></span>
+                                    <span class="asis-accordion__title">Marcaciones</span>
+                                    <span class="asis-accordion__badge">@marcacionesDia.Count</span>
+                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                </button>
+                                @if (_mostrarMarcacionesDia)
+                                {
+                                    <div class="asis-accordion__body">
+                                        <div class="asis-marcaciones-quick mb-0">
+                                            <div class="asis-marcaciones-quick__head">
+                                                <div>
+                                                    <div class="asis-dayline-card__title">Checadas del día</div>
+                                                    <div class="asis-dayline-card__text">Corrige marcajes, anula marcas duplicadas o cambia la clasificación.</div>
+                                                </div>
+                                            </div>
+                                            <AsistenciasCorreccionMarcacionesTab
+                                                MarcacionesDia="marcacionesDia"
+                                                ManualHoraTexto="manualHoraTexto"
+                                                OnManualHoraTextoChanged="@(value => manualHoraTexto = value)"
+                                                ManualClasificacion="manualClasificacion"
+                                                OnManualClasificacionChanged="@(value => manualClasificacion = value)"
+                                                ManualObservacion="manualObservacion"
+                                                OnManualObservacionChanged="@(value => manualObservacion = value)"
+                                                Cargando="cargando"
+                                                OnGuardarMarcacionManual="GuardarMarcacionManualDiaAsync"
+                                                ObtenerHoraMarcacion="ObtenerHoraMarcacion"
+                                                ObtenerAuditoriaMarcacion="ObtenerAuditoriaMarcacionPresentacion"
+                                                MarcacionManualEditandoId="marcacionManualEditandoId"
+                                                MarcacionManualEditandoHoraTexto="marcacionManualEditandoHoraTexto"
+                                                OnMarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
+                                                MarcacionManualEditandoObservacion="marcacionManualEditandoObservacion"
+                                                OnMarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
+                                                OnIniciarEdicionMarcacionManual="IniciarEdicionMarcacionManual"
+                                                OnGuardarEdicionMarcacionManual="GuardarEdicionMarcacionManualAsync"
+                                                OnCancelarEdicionMarcacionManual="@(() => CancelarEdicionMarcacionManual())"
+                                                OnAlternarAnulacionMarcacion="AlternarAnulacionMarcacionAsync"
+                                                OnCambiarClasificacion="CambiarClasificacionMarcacionDesdeUiAsync" />
+                                        </div>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary asis-btn-xs" @onclick="AlternarMarcacionesDia">
-                                        <i class="bi bi-chevron-up me-1"></i>Ocultar
-                                    </button>
-                                </div>
-                                <AsistenciasCorreccionMarcacionesTab
-                                    MarcacionesDia="marcacionesDia"
-                                    ManualHoraTexto="manualHoraTexto"
-                                    OnManualHoraTextoChanged="@(value => manualHoraTexto = value)"
-                                    ManualClasificacion="manualClasificacion"
-                                    OnManualClasificacionChanged="@(value => manualClasificacion = value)"
-                                    ManualObservacion="manualObservacion"
-                                    OnManualObservacionChanged="@(value => manualObservacion = value)"
-                                    Cargando="cargando"
-                                    OnGuardarMarcacionManual="GuardarMarcacionManualDiaAsync"
-                                    ObtenerHoraMarcacion="ObtenerHoraMarcacion"
-                                    ObtenerAuditoriaMarcacion="ObtenerAuditoriaMarcacionPresentacion"
-                                    MarcacionManualEditandoId="marcacionManualEditandoId"
-                                    MarcacionManualEditandoHoraTexto="marcacionManualEditandoHoraTexto"
-                                    OnMarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
-                                    MarcacionManualEditandoObservacion="marcacionManualEditandoObservacion"
-                                    OnMarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
-                                    OnIniciarEdicionMarcacionManual="IniciarEdicionMarcacionManual"
-                                    OnGuardarEdicionMarcacionManual="GuardarEdicionMarcacionManualAsync"
-                                    OnCancelarEdicionMarcacionManual="@(() => CancelarEdicionMarcacionManual())"
-                                    OnAlternarAnulacionMarcacion="AlternarAnulacionMarcacionAsync"
-                                    OnCambiarClasificacion="CambiarClasificacionMarcacionDesdeUiAsync" />
+                                }
                             </div>
-                        }
 
-                        @* Panel: Descansos / no descontar *@
-                        @{
-                            var _descansosConfig = ObtenerDescansosConfiguradosDia();
-                            var _detalleTurno = ObtenerDetalleTurnoSeleccionadoDia();
-                        }
-                        @if (_mostrarDescansosNoDescontar && _detalleTurno != null)
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mb-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>
-                                        Descansos
-                                        @if (_descansosConfig.Count > 0)
+                            @* Descansos / no descontar (solo si el turno tiene descansos configurados) *@
+                            @if (_descansosConfigBarra.Count > 0)
+                            {
+                                <div class="asis-accordion @(_mostrarDescansosNoDescontar ? "asis-accordion--open" : "")">
+                                    <button type="button" class="asis-accordion__head" @onclick="() => _mostrarDescansosNoDescontar = !_mostrarDescansosNoDescontar" disabled="@(!PuedeReprocesar)" aria-expanded="@_mostrarDescansosNoDescontar">
+                                        <span class="asis-accordion__icon"><i class="bi bi-cup-hot"></i></span>
+                                        <span class="asis-accordion__title">Descansos / no descontar</span>
+                                        @if (_descansosNoDescontarSeleccionados.Count > 0)
                                         {
-                                            <span class="badge text-bg-secondary ms-1">@(_descansosConfig.Count) en plan</span>
+                                            <span class="asis-accordion__badge asis-accordion__badge--warn">@_descansosNoDescontarSeleccionados.Count</span>
                                         }
                                         else
                                         {
-                                            <span class="badge text-bg-light border ms-1">Sin descansos</span>
+                                            <span class="asis-accordion__badge">@_descansosConfigBarra.Count</span>
                                         }
-                                        @if (_descansosNoDescontarSeleccionados.Count > 0)
-                                        {
-                                            <span class="badge text-bg-warning ms-1">@(_descansosNoDescontarSeleccionados.Count) no descontado(s)</span>
-                                        }
-                                    </strong>
-                                    <button type="button" class="btn-close" @onclick="() => _mostrarDescansosNoDescontar = false"></button>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    @if (_descansosConfig.Count == 0)
+                                        <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                    </button>
+                                    @if (_mostrarDescansosNoDescontar)
                                     {
-                                        <div class="asis-wizard-side__note">El turno de este día no tiene descansos configurados. Si el empleado no tomó un descanso que sí está en el plan, verifica que el turno tenga descansos con hora de inicio y fin definidos.</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="asis-wizard-side__note mb-2">Marca los descansos que el empleado <strong>no tomó</strong> y no deben descontarse del tiempo trabajado. El tiempo se contará como trabajo efectivo.</div>
-                                        @foreach (var descanso in _descansosConfig)
-                                        {
-                                            <div class="form-check mt-1">
-                                                <input class="form-check-input" type="checkbox" id="descansoNd_@descanso.Numero" checked="@EsDescansoNoDescontar(descanso.Numero)" @onchange="() => ToggleDescansoNoDescontar(descanso.Numero)" disabled="@(!PuedeReprocesar)" />
-                                                <label class="form-check-label" for="descansoNd_@descanso.Numero">
-                                                    D@descanso.Numero: @descanso.Inicio.ToString("hh\\:mm")–@descanso.Fin.ToString("hh\\:mm")
-                                                    <span class="text-muted">( @FormatearMinutos(descanso.Minutos)@if (descanso.EsPagado) { <span>, pagado</span> } )</span>
-                                                    @if (EsDescansoNoDescontar(descanso.Numero))
-                                                    {
-                                                        <span class="badge text-bg-warning ms-1">No descontado</span>
-                                                    }
-                                                </label>
-                                            </div>
-                                        }
-                                        <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="GuardarDescansosNoDescontarAsync" disabled="@(!PuedeReprocesar || cargando)">
-                                            @if (cargando)
-                                            {
-                                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                            }
-                                            Guardar y reprocesar
-                                        </button>
-                                    }
-                                </div>
-                            </div>
-                        }
-
-                        @* Timeline central del día (timeline-first): eje de reloj + bloques
-                           clicables + pines + overlay de turno. La edición se hace desde aquí. *@
-                        @if (ObtenerTimelineSegmentosDia().Count > 0)
-                        {
-                            <div class="asis-dayline-card asis-dayline-card--compact">
-                                <div class="asis-dayline-card__head">
-                                    <div>
-                                        <div class="asis-dayline-card__title">Línea de tiempo del día</div>
-                                        <div class="asis-dayline-card__text">Clic en un bloque para editarlo, en un pin para ver la marcación, o en los extremos para agregar una marca.</div>
-                                    </div>
-                                    <div class="asis-dayline-card__meta">Bloque principal @FormatearMinutos(ObtenerDuracionBloquePrincipal())</div>
-                                </div>
-                                @{
-                                    var _ventana = ObtenerTimelineVentanaDia();
-                                    var _bloques = ObtenerTimelineBloquesVista();
-                                    var _pines = ObtenerTimelinePinesDia();
-                                    var _horas = _ventana != null ? ObtenerTimelineHorasAxis(_ventana) : new List<(string Etiqueta, double PosPercent)>();
-                                    var _alertas = ObtenerTimelineAlertasDia();
-                                    var _turnoOverlay = ObtenerTimelineTurnoOverlay();
-                                    var _segmentoSel = ObtenerSegmentoSeleccionadoActual();
-                                    var _pinSel = ObtenerPinSeleccionadoActual();
-                                    var _casosDia = ObtenerCasosEspecialesDia();
-                                    var _plan = ObtenerPlanTurnoDia();
-                                }
-                                @if (_ventana != null && _bloques.Count > 0)
-                                {
-                                    @if (_plan != null)
-                                    {
-                                        <div class="asis-plan mt-2">
-                                            <div class="asis-plan__head">
-                                                <span class="asis-plan__title"><i class="bi bi-calendar2-check me-1"></i>Plan del turno</span>
-                                                <span class="asis-plan__jornada">Jornada neta planeada @FormatearMinutos(_plan.MinutosJornadaNeta)@if (_plan.CruzaMedianoche) { <span class="badge text-bg-secondary ms-1">cruza medianoche</span> }</span>
-                                            </div>
-                                            <div class="asis-plan__grid">
-                                                <div class="asis-plan__cell">
-                                                    <span class="asis-plan__label">Entrada</span>
-                                                    <span class="asis-plan__planeado">@_plan.EntradaPlaneada!.Value.ToString("hh\\:mm")</span>
-                                                    @if (_plan.EntradaReal.HasValue)
-                                                    {
-                                                        <span class="asis-plan__real">real @_plan.EntradaReal.Value.ToString("HH:mm")</span>
-                                                        @if (_plan.DeltaEntradaMin.HasValue)
-                                                        {
-                                                            <span class="badge @ObtenerClaseDeltaEntrada(_plan.DeltaEntradaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaEntradaMin.Value)</span>
-                                                        }
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="asis-plan__real asis-plan__real--none">sin marca</span>
-                                                    }
+                                        <div class="asis-accordion__body">
+                                            <div class="asis-quick-card asis-quick-card--compact mb-0">
+                                                <div class="asis-quick-card__head">
+                                                    <strong>Descansos</strong>
                                                 </div>
-                                                <div class="asis-plan__cell">
-                                                    <span class="asis-plan__label">Salida</span>
-                                                    <span class="asis-plan__planeado">@_plan.SalidaPlaneada!.Value.ToString("hh\\:mm")</span>
-                                                    @if (_plan.SalidaReal.HasValue)
+                                                <div class="asis-quick-card__body">
+                                                    <div class="asis-wizard-side__note mb-2">Marca los descansos que el empleado <strong>no tomó</strong> y no deben descontarse.</div>
+                                                    @foreach (var descanso in _descansosConfigBarra)
                                                     {
-                                                        <span class="asis-plan__real">real @_plan.SalidaReal.Value.ToString("HH:mm")</span>
-                                                        @if (_plan.DeltaSalidaMin.HasValue)
-                                                        {
-                                                            <span class="badge @ObtenerClaseDeltaSalida(_plan.DeltaSalidaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaSalidaMin.Value)</span>
-                                                        }
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="asis-plan__real asis-plan__real--none">sin marca</span>
-                                                    }
-                                                </div>
-                                                <div class="asis-plan__cell asis-plan__cell--descansos">
-                                                    <span class="asis-plan__label">Descansos plan</span>
-                                                    @if (_plan.Descansos.Count == 0)
-                                                    {
-                                                        <span class="asis-plan__real asis-plan__real--none">sin descansos</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="asis-plan__descansos">
-                                                            @foreach (var d in _plan.Descansos)
-                                                            {
-                                                                <span class="asis-plan__descanso @(d.Tomado ? "asis-plan__descanso--ok" : "asis-plan__descanso--miss")" title="D@d.Numero · @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @FormatearMinutos(d.Minutos) · @(d.Tomado ? "tomado" : "no tomado")">
-                                                                    <i class="bi @(d.Tomado ? "bi-check-circle-fill" : "bi-circle")"></i>
-                                                                    D@d.Numero @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm")
-                                                                    @if (d.EsPagado) { <span class="asis-plan__pagado">pagado</span> }
-                                                                </span>
-                                                            }
-                                                        </div>
-                                                    }
-                                                </div>
-                                            </div>
-                                        </div>
-                                    }
-                                    @if (_alertas.Count > 0 || _casosDia.Count > 0)
-                                    {
-                                        <div class="asis-tl__alerts mt-2">
-                                            @foreach (var a in _alertas)
-                                            {
-                                                <span class="asis-tl__alert @a.Clase"><i class="bi @a.Icono me-1"></i>@a.Texto</span>
-                                            }
-                                            @foreach (var c in _casosDia)
-                                            {
-                                                <span class="asis-tl__alert asis-tl__alert--warn"><i class="bi @c.Icono me-1"></i>@c.Texto <span class="opacity-75">· @c.Sugerencia</span></span>
-                                            }
-                                        </div>
-                                    }
-                                    <div class="asis-tl mt-2">
-                                        <div class="asis-tl__axis">
-                                            @foreach (var h in _horas)
-                                            {
-                                                <span class="asis-tl__tick" style="left:@($"{h.PosPercent}%")">@h.Etiqueta</span>
-                                            }
-                                        </div>
-                                        <div class="asis-tl__track">
-                                            @if (_turnoOverlay != null)
-                                            {
-                                                <span class="asis-tl__turno" style="left:@($"{_turnoOverlay.LeftPercent}%");width:@($"{_turnoOverlay.WidthPercent}%")" title="Turno esperado @_turnoOverlay.Etiqueta"></span>
-                                            }
-                                            @if (_plan != null)
-                                            {
-                                                @foreach (var d in _plan.Descansos)
-                                                {
-                                                    if (d.WidthPercent > 0.5)
-                                                    {
-                                                        <span class="asis-tl__descanso-plan @(d.Tomado ? "asis-tl__descanso-plan--ok" : "asis-tl__descanso-plan--miss")"
-                                                              style="left:@($"{d.LeftPercent}%");width:@($"{d.WidthPercent}%")"
-                                                              title="Descanso D@d.Numero planificado @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @(d.Tomado ? "tomado" : "no tomado")"></span>
-                                                    }
-                                                }
-                                            }
-                                            @foreach (var b in _bloques)
-                                            {
-                                                var _editable = PuedeEditarSegmento(b.Segmento);
-                                                <span class="asis-tl__seg @b.Segmento.CssClass @b.EstadoClase @(EsSegmentoEnEdicion(b.Segmento) ? "asis-tl__seg--active" : "") @(_editable ? "asis-tl__seg--clickable" : "")"
-                                                      style="left:@($"{b.LeftPercent}%");width:@($"{b.WidthPercent}%")"
-                                                      title="@($"{b.Segmento.Titulo} · {b.Segmento.Rango} · {FormatearMinutos(b.Segmento.Minutos)} — {ObtenerImpactoBloque(b.Segmento)}")"
-                                                      @onclick="() => SeleccionarSegmentoTimeline(b.Segmento)"
-                                                      @onclick:stopPropagation="true">
-                                                    @if (!string.IsNullOrEmpty(b.Indicador))
-                                                    {
-                                                        <span class="asis-tl__seg-ind">@b.Indicador</span>
-                                                    }
-                                                </span>
-                                            }
-                                            @foreach (var p in _pines)
-                                            {
-                                                <button type="button" class="asis-tl__pin @(p.EsAnulada ? "asis-tl__pin--anulada" : p.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real") @(p.MarcacionId == _pinSeleccionadoId ? "asis-tl__pin--active" : "")"
-                                                      style="left:@($"{p.PosPercent}%")"
-                                                      title="@($"{p.Etiqueta} {p.HoraLocal:HH:mm} · Origen: {p.Origen} · {(p.EsAnulada ? "Anulada" : "Activa")}")"
-                                                      aria-label="@($"{p.Etiqueta} {p.HoraLocal:HH:mm}")"
-                                                      @onclick="() => SeleccionarPinTimeline(p)"
-                                                      @onclick:stopPropagation="true"></button>
-                                            }
-                                        </div>
-                                        @if (_pines.Count > 0)
-                                        {
-                                            var _pinEntrada = _pines[0];
-                                            var _pinSalida = _pines[^1];
-                                            <div class="asis-tl__markers">
-                                                <span class="asis-tl__marker" style="left:@($"{_pinEntrada.PosPercent}%")">
-                                                    <i class="bi bi-box-arrow-in-right me-1"></i>Entrada @_pinEntrada.HoraLocal.ToString("HH:mm")
-                                                </span>
-                                                <span class="asis-tl__marker asis-tl__marker--end" style="left:@($"{_pinSalida.PosPercent}%")">
-                                                    <i class="bi bi-box-arrow-right me-1"></i>Salida @_pinSalida.HoraLocal.ToString("HH:mm")
-                                                </span>
-                                            </div>
-                                        }
-                                    </div>
-
-                                    @* Ficha del bloque seleccionado *@
-                                    @if (_segmentoSel != null)
-                                    {
-                                        var _casosBloque = ObtenerCasosEspecialesBloque(_segmentoSel);
-                                        var _marcaInicio = _segmentoSel.MarcacionInicioId.HasValue ? ObtenerMarcacionPorId(_segmentoSel.MarcacionInicioId.Value) : null;
-                                        var _marcaFin = _segmentoSel.MarcacionFinId.HasValue ? ObtenerMarcacionPorId(_segmentoSel.MarcacionFinId.Value) : null;
-                                        <div class="asis-tl__ficha mt-2">
-                                            <div class="asis-tl__ficha-head">
-                                                <div class="asis-tl__ficha-title">
-                                                    <span class="asis-tl__ind asis-tl__ind--sm @ObtenerClaseIndicadorBloque(_segmentoSel)">@ObtenerIndicadorEstadoBloque(_segmentoSel)</span>
-                                                    @_segmentoSel.Titulo
-                                                </div>
-                                                <div class="asis-tl__ficha-meta">@_segmentoSel.Rango · @FormatearMinutos(_segmentoSel.Minutos) · @ObtenerEstadoVisualSegmento(_segmentoSel)</div>
-                                                <button type="button" class="asis-tl__ficha-close" @onclick="CerrarSeleccionTimeline" aria-label="Cerrar"><i class="bi bi-x"></i></button>
-                                            </div>
-                                            <div class="asis-tl__ficha-impacto"><i class="bi bi-info-circle me-1"></i>@ObtenerImpactoBloque(_segmentoSel)</div>
-                                            @if (_casosBloque.Count > 0)
-                                            {
-                                                <div class="asis-tl__ficha-casos">
-                                                    @foreach (var c in _casosBloque)
-                                                    {
-                                                        <span class="asis-tl__alert asis-tl__alert--warn"><i class="bi @c.Icono me-1"></i>@c.Texto <span class="opacity-75">· @c.Sugerencia</span></span>
-                                                    }
-                                                </div>
-                                            }
-                                            @if (_segmentoSel.Accion == "descanso" || _segmentoSel.Accion == "descansoNoDescontar")
-                                            {
-                                                <div class="asis-tl__ficha-metrics">
-                                                    @if (_segmentoSel.NumeroDescanso.HasValue)
-                                                    {
-                                                        <span>D@_segmentoSel.NumeroDescanso.Value ·</span>
-                                                    }
-                                                    <span>Detectado: @FormatearMinutos(_segmentoSel.Minutos)</span>
-                                                    @if (_segmentoSel.MinutosProgramados.HasValue)
-                                                    {
-                                                        <span>· Programado: @FormatearMinutos(_segmentoSel.MinutosProgramados.Value)</span>
-                                                    }
-                                                    @if (_segmentoSel.MinutosAplicados.HasValue)
-                                                    {
-                                                        <span>· Aplicado: @FormatearMinutos(_segmentoSel.MinutosAplicados.Value)</span>
-                                                        @if (!string.IsNullOrWhiteSpace(_segmentoSel.OrigenAplicado))
-                                                        {
-                                                            <span>(@_segmentoSel.OrigenAplicado)</span>
-                                                        }
-                                                    }
-                                                </div>
-                                                @if (!string.IsNullOrWhiteSpace(ObtenerFormulaDescanso(_segmentoSel)))
-                                                {
-                                                    <div class="asis-tl__ficha-formula">@ObtenerFormulaDescanso(_segmentoSel)</div>
-                                                }
-                                            }
-                                            @if (_marcaInicio != null || _marcaFin != null)
-                                            {
-                                                <div class="asis-tl__ficha-origen">
-                                                    <div class="asis-tl__ficha-origen-title">Marcaciones que originan el bloque</div>
-                                                    @if (_marcaInicio != null)
-                                                    {
-                                                        <div class="asis-tl__ficha-marca"><span class="asis-tl__pin asis-tl__pin--sm @(_marcaInicio.EsAnulada ? "asis-tl__pin--anulada" : _marcaInicio.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>@ObtenerEtiquetaPin(_marcaInicio) @ObtenerFechaHoraLocalMarcacion(_marcaInicio).ToString("HH:mm") · @ObtenerOrigenPin(_marcaInicio)@if (_marcaInicio.EsAnulada) { <span class="badge text-bg-secondary ms-1">Anulada</span> }</div>
-                                                    }
-                                                    @if (_marcaFin != null)
-                                                    {
-                                                        <div class="asis-tl__ficha-marca"><span class="asis-tl__pin asis-tl__pin--sm @(_marcaFin.EsAnulada ? "asis-tl__pin--anulada" : _marcaFin.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>@ObtenerEtiquetaPin(_marcaFin) @ObtenerFechaHoraLocalMarcacion(_marcaFin).ToString("HH:mm") · @ObtenerOrigenPin(_marcaFin)@if (_marcaFin.EsAnulada) { <span class="badge text-bg-secondary ms-1">Anulada</span> }</div>
-                                                    }
-                                                </div>
-                                            }
-                                            @if (PuedeEditarSegmento(_segmentoSel))
-                                            {
-                                                <div class="asis-tl__ficha-edit">
-                                                    <div class="row g-2 align-items-end">
-                                                        <div class="col-md-5">
-                                                            <label class="asis-field-label">Tipo de bloque</label>
-                                                            <select class="form-select form-select-sm" @bind="segmentoAccionSeleccionada" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">
-                                                                @foreach (var opcion in ObtenerOpcionesAccionSegmento(_segmentoSel))
+                                                        <div class="form-check mt-1">
+                                                            <input class="form-check-input" type="checkbox" id="descansoNd_@descanso.Numero" checked="@EsDescansoNoDescontar(descanso.Numero)" @onchange="() => ToggleDescansoNoDescontar(descanso.Numero)" disabled="@(!PuedeReprocesar)" />
+                                                            <label class="form-check-label" for="descansoNd_@descanso.Numero">
+                                                                D@descanso.Numero: @descanso.Inicio.ToString("hh\\:mm")–@descanso.Fin.ToString("hh\\:mm")
+                                                                <span class="text-muted">( @FormatearMinutos(descanso.Minutos)@if (descanso.EsPagado) { <span>, pagado</span> } )</span>
+                                                                @if (EsDescansoNoDescontar(descanso.Numero))
                                                                 {
-                                                                    <option value="@opcion.Clave">@opcion.Etiqueta</option>
+                                                                    <span class="badge text-bg-warning ms-1">No descontado</span>
                                                                 }
-                                                            </select>
+                                                            </label>
                                                         </div>
-                                                        @if (segmentoAccionSeleccionada == "descanso")
+                                                    }
+                                                    <button type="button" class="btn btn-sm btn-primary mt-2" @onclick="GuardarDescansosNoDescontarAsync" disabled="@(!PuedeReprocesar || cargando)">
+                                                        @if (cargando)
                                                         {
-                                                            <div class="col-md-3">
-                                                                <label class="asis-field-label">Minutos aplicados</label>
-                                                                <InputNumber class="form-control form-control-sm" @bind-Value="segmentoMinutosAplicadosCaptura" min="0" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))" />
-                                                            </div>
+                                                            <span class="spinner-border spinner-border-sm me-1"></span>
                                                         }
-                                                        <div class="col-md-@(segmentoAccionSeleccionada == "descanso" ? 4 : 7) d-flex gap-2 justify-content-end">
-                                                            <button type="button" class="btn btn-sm btn-primary" @onclick="() => AplicarEdicionSegmentoAsync(_segmentoSel)" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">@(EsSegmentoGuardando(_segmentoSel) ? "Aplicando..." : "Aplicar")</button>
-                                                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicionSegmento" disabled="@(cargando || EsSegmentoGuardando(_segmentoSel))">Cancelar</button>
-                                                        </div>
-                                                    </div>
-                                                    <div class="asis-tl__ficha-help">@ObtenerAyudaAccionSegmentoSeleccionada(_segmentoSel)</div>
-                                                    @if (EsSegmentoGuardando(_segmentoSel))
-                                                    {
-                                                        <div class="asis-tl__ficha-loading">Reprocesando el día…</div>
-                                                    }
-                                                </div>
-                                            }
-                                        </div>
-                                    }
-                                    @* Ficha de la marcación seleccionada (pin) *@
-                                    else if (_pinSel != null)
-                                    {
-                                        <div class="asis-tl__ficha mt-2">
-                                            <div class="asis-tl__ficha-head">
-                                                <div class="asis-tl__ficha-title">
-                                                    <span class="asis-tl__pin asis-tl__pin--sm @(_pinSel.EsAnulada ? "asis-tl__pin--anulada" : _pinSel.EsManual ? "asis-tl__pin--manual" : "asis-tl__pin--real")"></span>
-                                                    @ObtenerEtiquetaPin(_pinSel)
-                                                </div>
-                                                <div class="asis-tl__ficha-meta">@ObtenerFechaHoraLocalMarcacion(_pinSel).ToString("HH:mm") · @ObtenerOrigenPin(_pinSel) · @(_pinSel.EsAnulada ? "Anulada" : "Activa")</div>
-                                                <button type="button" class="asis-tl__ficha-close" @onclick="CerrarSeleccionTimeline" aria-label="Cerrar"><i class="bi bi-x"></i></button>
-                                            </div>
-                                            <div class="asis-tl__ficha-edit">
-                                                <div class="d-flex flex-wrap gap-2 align-items-center">
-                                                    @if (_pinSel.EsManual)
-                                                    {
-                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="EditarPinSeleccionado"><i class="bi bi-pencil me-1"></i>Editar</button>
-                                                    }
-                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="AnularPinSeleccionadoAsync" disabled="@cargando"><i class="bi bi-slash-circle me-1"></i>@(_pinSel.EsAnulada ? "Restaurar" : "Anular")</button>
-                                                    <div class="d-flex align-items-center gap-1">
-                                                        <span class="asis-field-label mb-0">Reclasificar:</span>
-                                                        <select class="form-select form-select-sm asis-tl__ficha-select" @onchange="ReclasificarPinSeleccionadoAsync" disabled="@cargando">
-                                                            <option value="">— cambiar a —</option>
-                                                            <option value="Entrada">Entrada</option>
-                                                            <option value="Salida">Salida</option>
-                                                            <option value="InicioDescanso">Inicio descanso</option>
-                                                            <option value="FinDescanso">Fin descanso</option>
-                                                        </select>
-                                                    </div>
+                                                        Guardar y reprocesar
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
                                     }
-                                    else
-                                    {
-                                        <div class="asis-tl__hint mt-2"><i class="bi bi-hand-index me-1"></i>Clic en un bloque para editarlo o en un pin para ver la marcación. Para agregar marcas usa el botón <strong>Marcaciones</strong> del acordeón Corregir.</div>
-                                    }
+                                </div>
+                            }
 
-                                    <div class="asis-tl__legend mt-2">
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--trabajo"></span>Trabajo</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--descanso"></span>Descanso</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--descanso-no-descontado"></span>Descanso no descontado</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--extra"></span>Extra</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--permiso"></span>Permiso</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--temporal"></span>Salida temporal</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__dot asis-dayline__segment--ignorado"></span>No considerado</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__legend-swatch asis-tl__descanso-plan asis-tl__descanso-plan--ok"></span>Descanso plan</span>
-                                        <span class="asis-tl__legend-sep"></span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--real">●</span>Real</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--manual">○</span>Manual</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--draft">✎</span>Inferido</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--warn">⚠</span>Revisar</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--ok">✓</span>Fijo</span>
-                                        <span class="asis-tl__legend-item"><span class="asis-tl__ind asis-tl__ind--ignored">✕</span>No considerado</span>
+                            @* Bitácora *@
+                            <div class="asis-accordion @(_mostrarBitacora ? "asis-accordion--open" : "")">
+                                <button type="button" class="asis-accordion__head" @onclick="AlternarBitacora" aria-expanded="@_mostrarBitacora">
+                                    <span class="asis-accordion__icon"><i class="bi bi-clock-history"></i></span>
+                                    <span class="asis-accordion__title">Bitácora</span>
+                                    <span class="asis-accordion__badge">@bitacoraCorreccionDia.Count</span>
+                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
+                                </button>
+                                @if (_mostrarBitacora)
+                                {
+                                    <div class="asis-accordion__body">
+                                        <div class="asis-quick-card asis-quick-card--compact mb-0">
+                                            <div class="asis-quick-card__body">
+                                                @if (bitacoraCorreccionDia.Count == 0)
+                                                {
+                                                    <div class="asis-wizard-side__note">Sin movimientos todavía.</div>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var log in bitacoraCorreccionDia.Take(6))
+                                                    {
+                                                        <div class="asis-wizard-side__text mt-1"><strong>@FormatearFechaBitacora(log)</strong> · @FormatearMensajeBitacora(log)</div>
+                                                    }
+                                                }
+                                            </div>
+                                        </div>
                                     </div>
                                 }
                             </div>
-                        }
-
-                        @* Panel: Bitácora *@
-                        @if (_mostrarBitacora)
-                        {
-                            <div class="asis-quick-card asis-quick-card--compact mt-2">
-                                <div class="asis-quick-card__head">
-                                    <strong>Bitácora</strong>
-                                    <button type="button" class="btn-close" @onclick="AlternarBitacora"></button>
-                                </div>
-                                <div class="asis-quick-card__body">
-                                    @if (bitacoraCorreccionDia.Count == 0)
-                                    {
-                                        <div class="asis-wizard-side__note">Sin movimientos todavía.</div>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var log in bitacoraCorreccionDia.Take(6))
-                                        {
-                                            <div class="asis-wizard-side__text mt-1"><strong>@FormatearFechaBitacora(log)</strong> · @FormatearMensajeBitacora(log)</div>
-                                        }
-                                    }
-                                </div>
-                            </div>
-                        }
+                        </div>
 
                         @* Ayuda del día (colapsable): reúne el wizard, la decisión, cómo se calcula, el resumen lateral, el grid de cálculo y los chips *@
                         @if (_mostrarAyudaDia)
@@ -769,10 +781,10 @@
                             <div class="asis-ayuda-dia mt-3">
                                 @if (asesorCorreccionActual != null)
                                 {
-                                    <div class="asis-ayuda-dia__section">
-                                        <div class="asis-wizard-banner__eyebrow">Qué debes hacer ahora</div>
-                                        <div class="asis-wizard-banner__title">@asesorCorreccionActual.Titulo</div>
-                                        <div class="asis-wizard-banner__text">@asesorCorreccionActual.Descripcion</div>
+                                    <div class="asis-ayuda-dia__section asis-ayuda-dia__section--hero">
+                                        <div class="asis-advisor__eyebrow">Qué debes hacer ahora</div>
+                                        <div class="asis-advisor__banner-title">@asesorCorreccionActual.Titulo</div>
+                                        <div class="asis-advisor__banner-text">@asesorCorreccionActual.Descripcion</div>
                                         <div class="asis-timeline asis-timeline--compact mt-2 mb-2">
                                             @foreach (var segmento in ObtenerSegmentosBaseTimeline())
                                             {
@@ -896,21 +908,31 @@
                                 </div>
                             </div>
                         }
-                        </div>
 
-                        <aside class="asis-layout__side">
-                            <div class="asis-asesor-lateral">
+                        @* Asesor de corrección (plegable) *@
+                        <details class="asis-advisor-collapse">
+                            <summary class="asis-advisor-collapse__head">
+                                <i class="bi bi-life-preserver me-1"></i>
+                                <span>Asesor de corrección</span>
                                 @if (asesorCorreccionActual != null)
                                 {
-                                    <div class="asis-asesor-lateral__head">
-                                        <div class="asis-wizard-banner__eyebrow">Siguiente paso recomendado</div>
-                                        <div class="asis-wizard-banner__title">@asesorCorreccionActual.Titulo</div>
-                                        <div class="asis-wizard-banner__text">@asesorCorreccionActual.Descripcion</div>
+                                    <span class="asis-advisor-collapse__badge">@asesorCorreccionActual.Titulo</span>
+                                }
+                            </summary>
+                            <div class="asis-advisor">
+                                <div class="asis-advisor__eyebrow">Siguiente paso sugerido</div>
+
+                                @if (asesorCorreccionActual != null)
+                                {
+                                    <div class="asis-advisor__banner">
+                                        <div class="asis-advisor__banner-title">@asesorCorreccionActual.Titulo</div>
+                                        <div class="asis-advisor__banner-text">@asesorCorreccionActual.Descripcion</div>
                                     </div>
-                                    <div class="asis-asesor-lateral__actions">
+
+                                    <div class="asis-advisor__actions">
                                         @if (asesorCorreccionActual.PriorizarTiempo)
                                         {
-                                            <div class="asis-asesor-lateral__note"><i class="bi bi-info-circle me-1"></i>El tiempo extra se resuelve en Asistencias Semanal.</div>
+                                            <div class="asis-advisor__tip"><i class="bi bi-info-circle me-1"></i>El tiempo extra se resuelve en Asistencias Semanal.</div>
                                         }
                                         else
                                         {
@@ -925,33 +947,62 @@
                                             </button>
                                         }
                                     </div>
-                                    <div class="asis-asesor-lateral__summary">
-                                        <div class="asis-summary-side__title">Resumen del día</div>
-                                        <div class="asis-summary-side__item asis-summary-side__item--muted"><span>Turno</span><strong>@(AsistenciaActual.TurnoBase?.Nombre ?? "Sin turno")</strong></div>
-                                        <div class="asis-summary-side__item asis-summary-side__item--primary"><span>Base</span><strong>@FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)</strong></div>
-                                        @if (ObtenerMinutosRetardoVisible(AsistenciaActual) > 0)
-                                        {
-                                            <div class="asis-summary-side__item asis-summary-side__item--warn"><span>Retardo</span><strong>@FormatearMinutos(ObtenerMinutosRetardoVisible(AsistenciaActual))</strong></div>
-                                        }
-                                        @if (AsistenciaActual.MinutosExtra > 0)
-                                        {
-                                            <div class="asis-summary-side__item asis-summary-side__item--accent"><span>Extra detectada</span><strong>@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong></div>
-                                        }
-                                        @if (ObtenerMinutosExtraAprobados(AsistenciaActual) > 0)
-                                        {
-                                            <div class="asis-summary-side__item asis-summary-side__item--success"><span>Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
-                                        }
-                                    </div>
-                                    <div class="asis-asesor-lateral__state @ObtenerClaseEstadoCorreccionActual()">
-                                        <span>Estado</span><strong>@ObtenerEstadoCorreccionActual()</strong>
-                                    </div>
                                 }
                                 else
                                 {
-                                    <div class="asis-asesor-lateral__note">Sin diagnóstico para este día.</div>
+                                    <div class="asis-advisor__banner asis-advisor__banner--empty">
+                                        <div class="asis-advisor__banner-text">Sin diagnóstico para este día.</div>
+                                    </div>
                                 }
+
+                                <div class="asis-advisor__section">
+                                    <div class="asis-advisor__section-title">Resumen del día</div>
+                                    <div class="asis-advisor__grid">
+                                        <div class="asis-advisor__grid-cell">
+                                            <span class="asis-advisor__grid-label">Trabajadas</span>
+                                            <strong class="asis-advisor__grid-value">@FormatearMinutos(AsistenciaActual.MinutosTrabajadosNetos)</strong>
+                                        </div>
+                                        <div class="asis-advisor__grid-cell">
+                                            <span class="asis-advisor__grid-label">Pagadas</span>
+                                            <strong class="asis-advisor__grid-value">@FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual))</strong>
+                                        </div>
+                                        <div class="asis-advisor__grid-cell">
+                                            <span class="asis-advisor__grid-label">Descanso</span>
+                                            <strong class="asis-advisor__grid-value">@FormatearMinutos(AsistenciaActual.MinutosDescansoTomado)</strong>
+                                        </div>
+                                        <div class="asis-advisor__grid-cell">
+                                            <span class="asis-advisor__grid-label">Extra</span>
+                                            <strong class="asis-advisor__grid-value @ObtenerClaseMetricaExtra(AsistenciaActual.MinutosExtra)">@FormatearMinutos(AsistenciaActual.MinutosExtra)</strong>
+                                        </div>
+                                    </div>
+                                    <div class="asis-advisor__state @ObtenerClaseEstadoCorreccionActual()">
+                                        <span>Estado</span><strong>@ObtenerEstadoCorreccionActual()</strong>
+                                    </div>
+                                </div>
+
+                                <div class="asis-advisor__section">
+                                    <div class="asis-advisor__section-title">Turno programado</div>
+                                    <div class="asis-advisor__turno">
+                                        <div class="asis-advisor__turno-row">
+                                            <span><i class="bi bi-box-arrow-in-right me-1"></i>Entrada</span>
+                                            <strong>@FormatearHora(AsistenciaActual.HoraEntradaProgramada)</strong>
+                                        </div>
+                                        <div class="asis-advisor__turno-row">
+                                            <span><i class="bi bi-box-arrow-right me-1"></i>Salida</span>
+                                            <strong>@FormatearHora(AsistenciaActual.HoraSalidaProgramada)</strong>
+                                        </div>
+                                        <div class="asis-advisor__turno-row">
+                                            <span><i class="bi bi-clock-history me-1"></i>Jornada neta</span>
+                                            <strong>@FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)</strong>
+                                        </div>
+                                        <div class="asis-advisor__turno-row">
+                                            <span><i class="bi bi-cup-hot me-1"></i>Descanso</span>
+                                            <strong>@FormatearMinutos(AsistenciaActual.MinutosDescansoProgramado)</strong>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        </aside>
+                        </details>
                     </div>
                 </div>
 

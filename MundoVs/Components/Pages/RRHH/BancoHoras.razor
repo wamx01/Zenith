@@ -1,8 +1,10 @@
 @page "/rrhh/banco-horas"
+@using System.Text
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
@@ -11,17 +13,30 @@
 
 <PageTitle>Banco de Horas</PageTitle>
 
-<div class="container-fluid px-4">
+<div class="container-fluid px-4 rrhh-rpt">
     @if (!_puedeVer)
     {
         <div class="alert alert-warning mt-3">No tienes permisos para ver banco de horas.</div>
     }
     else
     {
-        <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="rrhh-header">
             <div>
-                <h1 class="display-6 fw-bold"><i class="bi bi-hourglass-split me-2"></i>Banco de Horas</h1>
-                <p class="text-muted mb-0">Consulta saldo por empleado y registra ajustes o consumos manuales.</p>
+                <h1><i class="bi bi-hourglass-split"></i>Banco de Horas</h1>
+                <p class="rrhh-subtitle">Consulta saldo por empleado y registra ajustes o consumos manuales.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ExportarResumenCsvAsync" disabled="@(exportandoCsv || resumenes.Count == 0)">
+                    @if (exportandoCsv)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-filetype-csv me-1"></i>
+                    }
+                    Exportar CSV
+                </button>
             </div>
         </div>
 
@@ -34,28 +49,29 @@
             <div class="alert alert-success">@ok</div>
         }
 
-        <div class="row g-3 mb-3">
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Saldo total</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.SaldoActual))</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Con saldo</div><div class="fs-4 fw-bold">@resumenes.Count(r => r.SaldoActual > 0)</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Acumulado automático</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.AcumuladoAutomatico))</div></div></div></div>
-            <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Consumido</div><div class="fs-4 fw-bold">@FormatearHoras(resumenes.Sum(r => r.Consumido))</div></div></div></div>
+        <div class="row g-3 rrhh-kpis">
+            <div class="col-6 col-md"><div class="rrhh-kpi"><div class="card-body"><div class="kpi-etiqueta">Saldo total</div><div class="kpi-valor">@FormatearHoras(resumenes.Sum(r => r.SaldoActual))</div></div></div></div>
+            <div class="col-6 col-md"><div class="rrhh-kpi"><div class="card-body"><div class="kpi-etiqueta">Con saldo</div><div class="kpi-valor">@resumenes.Count(r => r.SaldoActual > 0)</div></div></div></div>
+            <div class="col-6 col-md"><div class="rrhh-kpi"><div class="card-body"><div class="kpi-etiqueta">Acumulado automático</div><div class="kpi-valor">@FormatearHoras(resumenes.Sum(r => r.AcumuladoAutomatico))</div></div></div></div>
+            <div class="col-6 col-md"><div class="rrhh-kpi"><div class="card-body"><div class="kpi-etiqueta">Consumido</div><div class="kpi-valor">@FormatearHoras(resumenes.Sum(r => r.Consumido))</div></div></div></div>
+            <div class="col-6 col-md"><div class="rrhh-kpi"><div class="card-body"><div class="kpi-etiqueta">Tope por empleado</div><div class="kpi-valor">@FormatearHoras(_bancoTopeHoras)</div><div class="kpi-sub">Configurado en nómina</div></div></div></div>
         </div>
 
         @if (_puedeEditar)
         {
-            <div class="card mb-4 border-primary">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center gap-2">
-                    <strong>@(movimientoEditandoId.HasValue ? "Editar movimiento manual" : "Registrar movimiento manual")</strong>
-                    @if (movimientoEditandoId.HasValue)
-                    {
-                        <button type="button" class="btn btn-sm btn-outline-light" @onclick="CancelarEdicion" disabled="@guardando">Cancelar edición</button>
-                    }
-                </div>
+            <div class="rrhh-filtros mb-4">
                 <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <span class="rrhh-presets-label">@(movimientoEditandoId.HasValue ? "Editar movimiento manual" : "Registrar movimiento manual")</span>
+                        @if (movimientoEditandoId.HasValue)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelarEdicion" disabled="@guardando">Cancelar edición</button>
+                        }
+                    </div>
                     <div class="row g-3 align-items-end">
                         <div class="col-md-4">
                             <label class="form-label">Empleado</label>
-                            <InputSelect class="form-select" @bind-Value="empleadoCapturaId">
+                            <InputSelect class="form-select form-select-sm" @bind-Value="empleadoCapturaId">
                                 <option value="">Seleccione...</option>
                                 @foreach (var empleado in empleados)
                                 {
@@ -65,39 +81,39 @@
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Movimiento</label>
-                            <InputSelect class="form-select" @bind-Value="tipoMovimientoCaptura">
+                            <InputSelect class="form-select form-select-sm" @bind-Value="tipoMovimientoCaptura">
                                 <option value="@TipoMovimientoBancoHorasRrhh.AjusteManual">Ajuste</option>
                                 <option value="@TipoMovimientoBancoHorasRrhh.Consumo">Consumo</option>
                             </InputSelect>
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Fecha</label>
-                            <InputDate class="form-control" @bind-Value="fechaCaptura" />
+                            <InputDate class="form-control form-control-sm" @bind-Value="fechaCaptura" />
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">Horas</label>
-                            <InputNumber class="form-control" @bind-Value="horasCaptura" />
+                            <InputNumber class="form-control form-control-sm" @bind-Value="horasCaptura" />
                         </div>
                         <div class="col-md-2">
-                            <button class="btn btn-success w-100" @onclick="GuardarMovimientoManual" disabled="@guardando">
+                            <button class="btn btn-accent btn-sm w-100" @onclick="GuardarMovimientoManual" disabled="@guardando">
                                 <i class="bi @(movimientoEditandoId.HasValue ? "bi-check2-square" : "bi-save") me-1"></i>@(movimientoEditandoId.HasValue ? "Actualizar" : "Guardar")
                             </button>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Notas</label>
-                            <InputText class="form-control" @bind-Value="observacionesCaptura" />
-                            <div class="form-text">En ajustes puedes capturar horas positivas o negativas. En consumo, el sistema las registra como salida del saldo.</div>
+                            <InputText class="form-control form-control-sm" @bind-Value="observacionesCaptura" />
+                            <div class="form-text small text-muted">En ajustes puedes capturar horas positivas o negativas. En consumo, el sistema las registra como salida del saldo.</div>
                         </div>
                     </div>
                 </div>
             </div>
         }
 
-        <div class="card mb-3">
-            <div class="card-body py-2">
-                <div class="row g-2 align-items-end">
+        <div class="rrhh-filtros mb-3">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
                     <div class="col-12 col-md-4">
-                        <label class="form-label mb-0 small">Buscar empleado</label>
+                        <label class="form-label">Buscar empleado</label>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
                             <input type="text" class="form-control" placeholder="Nombre del empleado..." @bind="filtroTexto" @bind:event="oninput" />
@@ -108,7 +124,7 @@
                         </div>
                     </div>
                     <div class="col-6 col-md-3">
-                        <label class="form-label mb-0 small">Saldo</label>
+                        <label class="form-label">Saldo</label>
                         <select class="form-select form-select-sm" value="@filtroSaldoSigno" @onchange="e => filtroSaldoSigno = (string?)e.Value">
                             <option value="">(todos)</option>
                             <option value="positivo">Con saldo positivo</option>
@@ -119,7 +135,7 @@
                     @if (empleadoHistorialId.HasValue)
                     {
                         <div class="col-6 col-md-2">
-                            <label class="form-label mb-0 small">Tipo mov.</label>
+                            <label class="form-label">Tipo mov.</label>
                             <select class="form-select form-select-sm" value="@filtroTipoHistorial" @onchange="e => filtroTipoHistorial = (string?)e.Value">
                                 <option value="">(todos)</option>
                                 <option value="auto">Automático</option>
@@ -127,11 +143,11 @@
                             </select>
                         </div>
                         <div class="col-4 col-md-2">
-                            <label class="form-label mb-0 small">Desde</label>
+                            <label class="form-label">Desde</label>
                             <InputDate class="form-control form-control-sm" @bind-Value="filtroFechaDesde" />
                         </div>
                         <div class="col-4 col-md-2">
-                            <label class="form-label mb-0 small">Hasta</label>
+                            <label class="form-label">Hasta</label>
                             <InputDate class="form-control form-control-sm" @bind-Value="filtroFechaHasta" />
                         </div>
                     }
@@ -139,16 +155,19 @@
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-body p-0">
-                <table class="table table-hover mb-0 align-middle">
-                    <thead class="table-dark">
+        <div class="rrhh-tabla-card mb-4">
+            <div class="rrhh-tabla-wrap">
+                <table class="table table-sm align-middle mb-0 rrhh-tabla">
+                    <thead>
                         <tr>
                             <th style="cursor:pointer" @onclick="OrdenarResumenEmpleado">Empleado <i class="@IconoResumenEmpleado"></i></th>
                             <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenSaldo">Saldo <i class="@IconoResumenSaldo"></i></th>
+                            <th class="text-end">% tope</th>
                             <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenAutomatico">Automático <i class="@IconoResumenAutomatico"></i></th>
                             <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenManual">Manual <i class="@IconoResumenManual"></i></th>
-                            <th style="cursor:pointer" class="text-end" @onclick="OrdenarResumenConsumido">Consumido <i class="@IconoResumenConsumido"></i></th>
+                            <th class="text-end">Cobertura</th>
+                            <th class="text-end">Permiso</th>
+                            <th class="text-end">Cons. manual</th>
                             <th style="cursor:pointer" class="text-center" @onclick="OrdenarResumenMovs">Movs. <i class="@IconoResumenMovs"></i></th>
                             <th></th>
                         </tr>
@@ -156,7 +175,7 @@
                     <tbody>
                         @if (!ResumenesFiltrados.Any())
                         {
-                            <tr><td colspan="7" class="text-center text-muted py-4">@(!string.IsNullOrWhiteSpace(filtroTexto) ? "No se encontraron empleados con ese filtro." : "No hay movimientos de banco de horas todavía.")</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-4">@(!string.IsNullOrWhiteSpace(filtroTexto) ? "No se encontraron empleados con ese filtro." : "No hay movimientos de banco de horas todavía.")</td></tr>
                         }
                         else
                         {
@@ -165,9 +184,24 @@
                                 <tr class="@(empleadoHistorialId == item.EmpleadoId ? "table-active" : string.Empty)">
                                     <td class="fw-semibold">@item.NombreEmpleado</td>
                                     <td class="text-end fw-bold">@FormatearHoras(item.SaldoActual)</td>
+                                    <td class="text-end">
+                                        @{
+                                            var pct = CalcularPorcentajeTope(item.SaldoActual);
+                                        }
+                                        @if (pct.HasValue)
+                                        {
+                                            <span class="badge @ObtenerClasePorcentajeTope(pct.Value)">@pct.Value.ToString("0.#")%</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
                                     <td class="text-end">@FormatearHoras(item.AcumuladoAutomatico)</td>
                                     <td class="text-end">@FormatearHoras(item.AjustesManuales)</td>
-                                    <td class="text-end">@FormatearHoras(item.Consumido)</td>
+                                    <td class="text-end">@FormatearHoras(item.CoberturaBanco)</td>
+                                    <td class="text-end">@FormatearHoras(item.PermisoBanco)</td>
+                                    <td class="text-end">@FormatearHoras(item.ConsumoManual)</td>
                                     <td class="text-center">@item.TotalMovimientos</td>
                                     <td class="text-end">
                                         <button class="btn btn-sm btn-outline-primary" @onclick="() => SeleccionarHistorial(item.EmpleadoId)"><i class="bi bi-clock-history"></i></button>
@@ -182,15 +216,32 @@
 
         @if (empleadoHistorialId.HasValue)
         {
-            <div class="card shadow-sm border-0">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong>Historial de movimientos</strong>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => empleadoHistorialId = null">Cerrar</button>
+            <div class="rrhh-tabla-card">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-2 border-bottom">
+                    <div>
+                        <span class="rrhh-presets-label">Historial de movimientos</span>
+                        <div class="small text-muted">
+                            Saldo actual: @FormatearHoras(SaldoActualEmpleado) · Saldo en el periodo: @FormatearHoras(SaldoPeriodoEmpleado)
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ExportarHistorialCsvAsync" disabled="@(exportandoCsv || !HistorialOrdenado.Any())">
+                            @if (exportandoCsv)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-filetype-csv me-1"></i>
+                            }
+                            Exportar historial CSV
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => empleadoHistorialId = null">Cerrar</button>
+                    </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0 align-middle">
-                        <thead class="table-light">
+                <div class="rrhh-tabla-wrap">
+                    <table class="table table-sm table-hover mb-0 align-middle rrhh-tabla">
+                        <thead>
                             <tr>
                                 <th class="ps-3" style="cursor:pointer" @onclick="OrdenarHistorialFecha">Fecha <i class="@IconoHistorialFecha"></i></th>
                                 <th style="cursor:pointer" @onclick="OrdenarHistorialTipo">Tipo <i class="@IconoHistorialTipo"></i></th>
@@ -213,7 +264,7 @@
                                     </td>
                                     <td class="text-end fw-semibold @(movimiento.Horas < 0 ? "text-danger" : "text-success") text-nowrap">@FormatearHoras(movimiento.Horas)</td>
                                     <td>
-                                        <div class="small text-truncate" style="max-width: 320px;" title="@movimiento.ReferenciaTipo">@ObtenerReferenciaCorta(movimiento.ReferenciaTipo)</div>
+                                        <div class="small" title="@movimiento.ReferenciaTipo">@ObtenerEtiquetaReferencia(movimiento.ReferenciaTipo)</div>
                                     </td>
                                     <td>
                                         <div class="small">@(string.IsNullOrWhiteSpace(movimiento.Observaciones) ? "—" : movimiento.Observaciones)</div>
@@ -221,7 +272,7 @@
                                     @if (_puedeEditar)
                                     {
                                         <td class="text-end pe-3 text-nowrap">
-                                            @if (PuedeModificarMovimiento(movimiento))
+                                            @if (PuedeModificarMovimiento(movimiento) && !movimiento.EsAutomatico)
                                             {
                                                 <div class="btn-group btn-group-sm">
                                                     <button type="button" class="btn btn-outline-primary" @onclick="() => IniciarEdicionMovimiento(movimiento)" title="Editar movimiento">
@@ -231,6 +282,12 @@
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </div>
+                                            }
+                                            else if (PuedeModificarMovimiento(movimiento) && movimiento.EsAutomatico)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarMovimientoAsync(movimiento.Id)" title="Eliminar movimiento automático de resolución de periodo">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
                                             }
                                             else
                                             {
@@ -242,7 +299,6 @@
                             }
                         </tbody>
                     </table>
-                    </div>
                 </div>
             </div>
         }
@@ -263,7 +319,9 @@
     private bool _puedeVer;
     private bool _puedeEditar;
     private bool guardando;
+    private bool exportandoCsv;
     private Guid _empresaId;
+    private decimal _bancoTopeHoras;
     private string? error;
     private string? ok;
     private string filtroTexto = string.Empty;
@@ -465,6 +523,10 @@
             .ThenBy(e => e.ApellidoPaterno)
             .ToListAsync();
 
+        // Tope del banco de horas (configuración de nómina) para la columna "% tope".
+        var configuracion = await NominaConfiguracionLoader.LoadAsync(db, _empresaId);
+        _bancoTopeHoras = configuracion.BancoHorasTopeHoras;
+
         movimientos = await db.RrhhBancoHorasMovimientos
             .AsNoTracking()
             .Include(m => m.Empleado)
@@ -482,7 +544,18 @@
                 SaldoActual = g.Sum(x => x.Horas),
                 AcumuladoAutomatico = g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra).Sum(x => x.Horas),
                 AjustesManuales = g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.AjusteManual).Sum(x => x.Horas),
-                Consumido = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo).Sum(x => x.Horas)),
+                // Consumo se desglosa por ReferenciaTipo: cobertura de faltante, permiso pagado
+                // con banco, o consumo manual. Todas son salidas (Horas negativas) → abs.
+                CoberturaBanco = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+                    && (x.ReferenciaTipo ?? string.Empty).Contains("cobertura-banco", StringComparison.Ordinal)).Sum(x => x.Horas)),
+                PermisoBanco = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+                    && (x.ReferenciaTipo ?? string.Empty).StartsWith("permiso-banco:", StringComparison.Ordinal)).Sum(x => x.Horas)),
+                ConsumoManual = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+                    && (x.ReferenciaTipo ?? string.Empty) == "Consumo manual").Sum(x => x.Horas)),
+                ConsumoOtro = Math.Abs(g.Where(x => x.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+                    && (x.ReferenciaTipo ?? string.Empty) != "Consumo manual"
+                    && !(x.ReferenciaTipo ?? string.Empty).Contains("cobertura-banco", StringComparison.Ordinal)
+                    && !(x.ReferenciaTipo ?? string.Empty).StartsWith("permiso-banco:", StringComparison.Ordinal)).Sum(x => x.Horas)),
                 TotalMovimientos = g.Count()
             })
             .OrderByDescending(r => r.SaldoActual)
@@ -597,6 +670,14 @@
             return;
         }
 
+        // Los automáticos de resolución de periodo solo se pueden eliminar, no editar.
+        if (movimiento.EsAutomatico)
+        {
+            error = "Este movimiento es automático de resolución de periodo: solo se puede eliminar, no editar.";
+            ok = null;
+            return;
+        }
+
         error = null;
         ok = null;
         movimientoEditandoId = movimiento.Id;
@@ -620,7 +701,7 @@
             return;
         }
 
-        var confirmar = await JS.InvokeAsync<bool>("confirm", "¿Deseas eliminar este movimiento manual de banco de horas?");
+        var confirmar = await JS.InvokeAsync<bool>("confirm", "¿Deseas eliminar este movimiento de banco de horas? Si es automático de resolución de periodo, la resolución quedará inconsistente — reabre el periodo desde el Reporte de Tiempo Extra para revertirlo correctamente.");
         if (!confirmar)
         {
             return;
@@ -642,7 +723,7 @@
 
             if (!PuedeModificarMovimiento(movimiento))
             {
-                error = "Solo se pueden eliminar movimientos manuales.";
+                error = "Solo se pueden eliminar movimientos manuales o automáticos de resolución de periodo.";
                 return;
             }
 
@@ -688,7 +769,10 @@
     }
 
     private static bool PuedeModificarMovimiento(RrhhBancoHorasMovimiento movimiento)
-        => !movimiento.EsAutomatico && movimiento.TipoMovimiento != TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra;
+        => !movimiento.EsAutomatico
+            || (movimiento.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra
+                && !string.IsNullOrEmpty(movimiento.ReferenciaTipo)
+                && movimiento.ReferenciaTipo.Contains("Periodo:", StringComparison.Ordinal));
 
     private static string ObtenerEtiquetaTipoMovimiento(TipoMovimientoBancoHorasRrhh tipoMovimiento)
         => tipoMovimiento switch
@@ -708,16 +792,159 @@
             _ => "text-bg-secondary"
         };
 
-    private static string ObtenerReferenciaCorta(string? referencia)
+    // Etiqueta legible del origen del movimiento. El ReferenciaTipo crudo queda en el tooltip
+    // (title=) para trazabilidad. Orden: compensación antes que permiso-banco (aunque el sufijo
+    // "permiso-compensacion-banco" no contiene "permiso-banco", revisamos primero por seguridad).
+    private static string ObtenerEtiquetaReferencia(string? referencia)
     {
         if (string.IsNullOrWhiteSpace(referencia))
         {
             return "—";
         }
 
-        const int maximo = 44;
         var valor = referencia.Trim();
+        if (valor.Contains("extra-banco", StringComparison.Ordinal)) return "Extra al banco";
+        if (valor.Contains("restauracion-banco", StringComparison.Ordinal)) return "Restauración de banco";
+        if (valor.Contains("cobertura-banco", StringComparison.Ordinal)) return "Cobertura de faltante";
+        if (valor.StartsWith("permiso-compensacion-banco", StringComparison.Ordinal)) return "Compensación de permiso";
+        if (valor.StartsWith("permiso-banco", StringComparison.Ordinal)) return "Permiso c/banco";
+        if (valor == "Consumo manual") return "Consumo manual";
+        if (valor == "Ajuste manual") return "Ajuste manual";
+
+        const int maximo = 44;
         return valor.Length <= maximo ? valor : $"{valor[..maximo]}…";
+    }
+
+    // Clase de badge para el % de tope: verde <70%, amarillo <100%, rojo >=100%.
+    private static string ObtenerClasePorcentajeTope(decimal pct)
+        => pct < 70m ? "bg-success-subtle text-success-emphasis border border-success-subtle"
+            : pct < 100m ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+            : "bg-danger-subtle text-danger-emphasis border border-danger-subtle";
+
+    // % del tope que ocupa el saldo del empleado. Null si no hay tope o el saldo no es positivo
+    // (en ese caso la celda muestra "—").
+    private decimal? CalcularPorcentajeTope(decimal saldo)
+    {
+        if (_bancoTopeHoras <= 0m || saldo <= 0m)
+        {
+            return null;
+        }
+
+        return saldo / _bancoTopeHoras * 100m;
+    }
+
+    // Saldo total (histórico) del empleado cuyo historial está abierto.
+    private decimal SaldoActualEmpleado => empleadoHistorialId.HasValue
+        ? resumenes.FirstOrDefault(r => r.EmpleadoId == empleadoHistorialId.Value)?.SaldoActual ?? 0m
+        : 0m;
+
+    // Saldo neto dentro del periodo filtrado (suma de Horas del historial ya filtrado por
+    // fecha/tipo). Distinto del saldo total: aclara que la tabla resumen es histórica.
+    private decimal SaldoPeriodoEmpleado => empleadoHistorialId.HasValue
+        ? HistorialOrdenado.Sum(m => m.Horas)
+        : 0m;
+
+    private async Task ExportarResumenCsvAsync()
+    {
+        if (resumenes.Count == 0)
+        {
+            return;
+        }
+
+        exportandoCsv = true;
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Empleado,Saldo,PorcentajeTope,Automatico,Manual,Cobertura,Permiso,ConsumoManual,Otro,TotalConsumido,Movimientos");
+            foreach (var item in ResumenesFiltrados)
+            {
+                var pct = CalcularPorcentajeTope(item.SaldoActual);
+                sb.Append(Csv(item.NombreEmpleado)).Append(',')
+                  .Append(item.SaldoActual.ToString("0.##")).Append(',')
+                  .Append(pct.HasValue ? pct.Value.ToString("0.#") : string.Empty).Append(',')
+                  .Append(item.AcumuladoAutomatico.ToString("0.##")).Append(',')
+                  .Append(item.AjustesManuales.ToString("0.##")).Append(',')
+                  .Append(item.CoberturaBanco.ToString("0.##")).Append(',')
+                  .Append(item.PermisoBanco.ToString("0.##")).Append(',')
+                  .Append(item.ConsumoManual.ToString("0.##")).Append(',')
+                  .Append(item.ConsumoOtro.ToString("0.##")).Append(',')
+                  .Append(item.Consumido.ToString("0.##")).Append(',')
+                  .Append(item.TotalMovimientos);
+                sb.AppendLine();
+            }
+
+            var nombreArchivo = $"banco-horas-resumen-{DateTime.Today:yyyyMMdd}.csv";
+            await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", nombreArchivo, sb.ToString());
+            ok = "Resumen exportado correctamente.";
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo exportar el CSV: {ex.Message}";
+        }
+        finally
+        {
+            exportandoCsv = false;
+        }
+    }
+
+    private async Task ExportarHistorialCsvAsync()
+    {
+        if (!empleadoHistorialId.HasValue || !HistorialOrdenado.Any())
+        {
+            return;
+        }
+
+        exportandoCsv = true;
+        try
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Fecha,Tipo,Horas,Referencia,ReferenciaCruda,Notas");
+            foreach (var m in HistorialOrdenado)
+            {
+                sb.Append(m.Fecha.ToString("yyyy-MM-dd")).Append(',')
+                  .Append(Csv(ObtenerEtiquetaTipoMovimiento(m.TipoMovimiento))).Append(',')
+                  .Append(m.Horas.ToString("0.##")).Append(',')
+                  .Append(Csv(ObtenerEtiquetaReferencia(m.ReferenciaTipo))).Append(',')
+                  .Append(Csv(m.ReferenciaTipo)).Append(',')
+                  .Append(Csv(m.Observaciones));
+                sb.AppendLine();
+            }
+
+            var nombre = resumenes.FirstOrDefault(r => r.EmpleadoId == empleadoHistorialId.Value)?.NombreEmpleado ?? "empleado";
+            var nombreArchivo = $"banco-horas-historial-{SanitizarNombre(nombre)}-{DateTime.Today:yyyyMMdd}.csv";
+            await JS.InvokeVoidAsync("mundoVsAuth.downloadCsv", nombreArchivo, sb.ToString());
+            ok = "Historial exportado correctamente.";
+        }
+        catch (Exception ex)
+        {
+            error = $"No se pudo exportar el CSV: {ex.Message}";
+        }
+        finally
+        {
+            exportandoCsv = false;
+        }
+    }
+
+    private static string SanitizarNombre(string nombre)
+    {
+        var limpio = new StringBuilder();
+        foreach (var c in nombre)
+        {
+            limpio.Append(char.IsLetterOrDigit(c) ? c : '_');
+        }
+        return limpio.Length == 0 ? "empleado" : limpio.ToString();
+    }
+
+    private static string Csv(string? valor)
+    {
+        if (string.IsNullOrEmpty(valor))
+        {
+            return string.Empty;
+        }
+
+        var necesitaComillas = valor.Contains(',') || valor.Contains('"') || valor.Contains('\n') || valor.Contains('\r');
+        var escapado = valor.Replace("\"", "\"\"");
+        return necesitaComillas ? $"\"{escapado}\"" : escapado;
     }
 
     private static string FormatearHoras(decimal horas)
@@ -730,7 +957,14 @@
         public decimal SaldoActual { get; set; }
         public decimal AcumuladoAutomatico { get; set; }
         public decimal AjustesManuales { get; set; }
-        public decimal Consumido { get; set; }
+        // Consumo desglosado por ReferenciaTipo (cobertura de faltante / permiso / manual / otro).
+        public decimal CoberturaBanco { get; set; }
+        public decimal PermisoBanco { get; set; }
+        public decimal ConsumoManual { get; set; }
+        public decimal ConsumoOtro { get; set; }
+        // Total consumido = suma de los cuatro (para KPI y ordenamiento). Se mantiene para no
+        // romper el ordenamiento existente por "Consumido" ni el KPI "Consumido".
+        public decimal Consumido => CoberturaBanco + PermisoBanco + ConsumoManual + ConsumoOtro;
         public int TotalMovimientos { get; set; }
     }
 }

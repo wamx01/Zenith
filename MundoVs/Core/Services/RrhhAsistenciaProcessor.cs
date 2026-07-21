@@ -541,11 +541,14 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return 0;
         }
 
+        // Truncar (no redondear): el margen sub-umbral es un descuento al trabajador, así que sólo
+        // se restan minutos enteros realmente presentes. Redondear 0.52 min (31 s) a 1 min magnificaba
+        // el descuento y bajaba la base de 540 a 539 por salir 31 s tarde.
         var minutosEntradaAnticipada = analisisJornada.EntradaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes))
+            ? Math.Max(0, (int)(entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes)
             : 0;
         var minutosSalidaPosterior = analisisJornada.SalidaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes))
+            ? Math.Max(0, (int)(analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes)
             : 0;
 
         var minutosNoComputables = 0;
@@ -587,11 +590,13 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             partes.Add(observaciones);
         }
 
+        // Truncar (no redondear): el margen sub-umbral es un descuento al trabajador, así que sólo
+        // se reportan minutos enteros realmente presentes (coincide con CalcularMinutosMargenNoComputables).
         var minutosEntradaAnticipada = analisisJornada.EntradaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes))
+            ? Math.Max(0, (int)(entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes)
             : 0;
         var minutosSalidaPosterior = analisisJornada.SalidaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes))
+            ? Math.Max(0, (int)(analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes)
             : 0;
 
         if (minutosEntradaAnticipada > 0 && minutosEntradaAnticipada < minutosMinimosTiempoExtra)

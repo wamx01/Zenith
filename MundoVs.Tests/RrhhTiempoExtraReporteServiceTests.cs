@@ -99,6 +99,90 @@ public sealed class RrhhTiempoExtraReporteServiceTests
         Assert.Equal(0m, emp.Totales.TotalMontoHorasExtraEstimado);
     }
 
+    [Fact]
+    public async Task Periodicidad_FiltraSoloEmpleadosDeEsaPeriodicidad()
+    {
+        var (factory, connection) = await CreateFactoryAsync();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            var empresa = CreateEmpresa();
+            var semanal = CreateEmpleado(empresa.Id, 480m, PeriodicidadPago.Semanal);
+            var mensual = CreateEmpleado(empresa.Id, 480m, PeriodicidadPago.Mensual);
+            db.Empresas.Add(empresa);
+            db.Empleados.AddRange(semanal, mensual);
+            db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, semanal.Id, DiaUno, minutosExtra: 120));
+            db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, mensual.Id, DiaUno, minutosExtra: 180));
+            await db.SaveChangesAsync();
+        }
+
+        var service = new RrhhTiempoExtraReporteService();
+        var respuesta = await service.GenerarAsync(factory, new RrhhTiempoExtraReporteRequest
+        {
+            EmpresaId = EmpresaIdFijo,
+            FechaDesde = Inicio,
+            FechaHasta = Fin,
+            AgrupadoPor = "empleado",
+            Periodicidad = PeriodicidadPago.Mensual
+        });
+
+        // Sólo el empleado Mensual pasa el filtro de periodicidad.
+        var emp = Assert.Single(respuesta.Empleados);
+        Assert.Equal("Mensual", emp.PeriodicidadPago);
+        Assert.Equal(180, emp.Totales.TotalMinutosExtra);
+    }
+
+    [Fact]
+    public async Task SoloSinAutorizar_DejaSoloEmpleadosSinAutorizarYRecalculaTotales()
+    {
+        var (factory, connection) = await CreateFactoryAsync();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            var empresa = CreateEmpresa();
+            var autorizado = CreateEmpleado(empresa.Id, 480m); // con resolución Autorizada
+            var pendiente = CreateEmpleado(empresa.Id, 480m);  // sólo detección, sin resolución
+            db.Empresas.Add(empresa);
+            db.Empleados.AddRange(autorizado, pendiente);
+            db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, autorizado.Id, DiaUno, minutosExtra: 300));
+            db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, pendiente.Id, DiaUno, minutosExtra: 200));
+
+            var resolucion = CrearResolucion(empresa.Id, autorizado.Id, RrhhResolucionPeriodoEstatus.Autorizada);
+            resolucion.MinutosExtraPago = 300;
+            resolucion.Lineas.Add(NewLinea(resolucion.Id, empresa.Id, autorizado.Id, 0, RrhhDestinoTiempoExtraLinea.Pago, 300, 2m));
+            db.RrhhResolucionesTiempoExtraPeriodo.Add(resolucion);
+            await db.SaveChangesAsync();
+        }
+
+        var service = new RrhhTiempoExtraReporteService();
+
+        // Sin el filtro: aparecen ambos (uno autorizado, uno sin autorizar).
+        var sinFiltro = await service.GenerarAsync(factory, new RrhhTiempoExtraReporteRequest
+        {
+            EmpresaId = EmpresaIdFijo,
+            FechaDesde = Inicio,
+            FechaHasta = Fin,
+            AgrupadoPor = "empleado"
+        });
+        Assert.Equal(2, sinFiltro.Empleados.Count);
+
+        // Con SoloSinAutorizar: sólo el pendiente, y los totales generales se recalculan sobre él.
+        var conFiltro = await service.GenerarAsync(factory, new RrhhTiempoExtraReporteRequest
+        {
+            EmpresaId = EmpresaIdFijo,
+            FechaDesde = Inicio,
+            FechaHasta = Fin,
+            AgrupadoPor = "empleado",
+            SoloSinAutorizar = true
+        });
+
+        var emp = Assert.Single(conFiltro.Empleados);
+        Assert.True(emp.SinAutorizar);
+        Assert.Empty(emp.Periodos);
+        Assert.Equal(200, emp.Totales.TotalMinutosExtra);
+        Assert.Equal(1, conFiltro.TotalEmpleados);
+        Assert.Equal(200, conFiltro.Totales.TotalMinutosExtra);
+        Assert.Equal(0, conFiltro.Totales.TotalMinutosExtraAutorizadosPago);
+    }
+
     // ── helpers ──
 
     private static readonly Guid EmpresaIdFijo = Guid.NewGuid();
@@ -137,12 +221,12 @@ public sealed class RrhhTiempoExtraReporteServiceTests
     {
         Id = Guid.NewGuid(),
         EmpresaId = empresaId,
-        Codigo = "EMP-001",
-        NumeroEmpleado = "001",
+        Codigo = $"EMP-{Guid.NewGuid():N}"[..12],
+        NumeroEmpleado = Guid.NewGuid().ToString("N")[..8],
         Nombre = "Empleado",
         ApellidoPaterno = "Test",
         ApellidoMaterno = "Uno",
-        CodigoChecador = "3001",
+        CodigoChecador = Guid.NewGuid().ToString("N")[..6],
         TipoNomina = TipoNomina.Semanal,
         PeriodicidadPago = PeriodicidadPago.Semanal,
         SueldoSemanal = sueldoSemanal,
@@ -150,6 +234,14 @@ public sealed class RrhhTiempoExtraReporteServiceTests
         IsActive = true,
         CreatedAt = DateTime.UtcNow
     };
+
+    // Variante que sólo cambia la periodicidad de pago (el resto igual al base).
+    private static Empleado CreateEmpleado(Guid empresaId, decimal sueldoSemanal, PeriodicidadPago periodicidad)
+    {
+        var empleado = CreateEmpleado(empresaId, sueldoSemanal);
+        empleado.PeriodicidadPago = periodicidad;
+        return empleado;
+    }
 
     private static RrhhAsistencia CrearAsistencia(Guid empresaId, Guid empleadoId, DateOnly fecha, int minutosExtra)
         => new()

@@ -158,6 +158,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private bool _mostrarAccionesRapidasPermiso;
     private bool _mostrarAccionesRapidasTurno;
     private bool _mostrarAccionesRapidasModoExtra;
+    private bool _mostrarResumenTiempoExtraBanco;
     private bool _mostrarBitacora;
     private bool _mostrarMarcacionesDia;
     private bool _mostrarDescansosNoDescontar;
@@ -165,8 +166,6 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     // Timeline-first: pin seleccionado (popover de marcación). La selección de bloque
     // reutiliza segmentoEditandoInicioId/FinId (EditarSegmento).
     private Guid? _pinSeleccionadoId;
-    // Acordeón "Corregir" que agrupa los 6 botones de acciones rápidas.
-    private bool _mostrarCorrecciones;
     // F5b: cierto cuando el día cargado es festivo para la empresa. Usado para deshabilitar
     // la autorización manual de tiempo extra en PorHoras (decisión 5: el tiempo trabajado
     // en festivo va al factor festivo, no a extra). Complementa el gate de servicio F4a.
@@ -182,23 +181,36 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!Visible || Asistencia == null)
-        {
-            await DisposeDraftContextAsync();
-            _ultimaAsistenciaCargadaId = null;
-            AsistenciaActual = null;
-            asesorCorreccionActual = null;
-            return;
-        }
-
-        if (_ultimaAsistenciaCargadaId == Asistencia.Id && AsistenciaActual != null)
-        {
-            return;
-        }
-
+        // Serializar TODO el ciclo de vida del _draftDb (inicialización y disposal)
+        // bajo el mismo _initLock. Antes, la rama de cierre (!Visible) disponía
+        // _draftDb FUERA del lock mientras InicializarAsync aún corría el reproceso
+        // DENTRO del lock → ObjectDisposedException en ReprocesarRangoAsync al cerrar
+        // el modal durante el reproceso (query sobre un contexto ya dispuesto).
         await _initLock.WaitAsync();
         try
         {
+            if (!Visible || Asistencia == null)
+            {
+                await DisposeDraftContextLockedAsync();
+                _ultimaAsistenciaCargadaId = null;
+                AsistenciaActual = null;
+                asesorCorreccionActual = null;
+                return;
+            }
+
+            var asistenciaId = Asistencia.Id;
+            if (_ultimaAsistenciaCargadaId == asistenciaId && AsistenciaActual != null)
+            {
+                return;
+            }
+
+            // Tras el await, Blazor puede haber cambiado los parámetros (Asistencia
+            // podría ser null). Re-validar antes de usar.
+            if (Asistencia == null || Asistencia.Id != asistenciaId)
+            {
+                return;
+            }
+
             if (_ultimaAsistenciaCargadaId == Asistencia.Id && AsistenciaActual != null)
             {
                 return;
@@ -229,7 +241,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             return;
         }
 
-        await DisposeDraftContextAsync();
+        await DisposeDraftContextLockedAsync();
         _draftDb = await DbFactory.CreateDbContextAsync();
         AsistenciaActual = await _draftDb.RrhhAsistencias
             .Include(a => a.Empleado)
@@ -279,7 +291,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         await CargarContextoDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarAsistencia: false);
     }
 
-    private async Task DisposeDraftContextAsync()
+    // Disposición SIN adquirir el lock: se usa sólo donde el _initLock ya se
+    // mantiene (InicializarAsync y el early-return de OnParametersSetAsync). No
+    // se adquiere aquí para evitar self-deadlock (SemaphoreSlim no es reentrante).
+    private async Task DisposeDraftContextLockedAsync()
     {
         if (_draftDb == null)
         {
@@ -288,6 +303,22 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         await _draftDb.DisposeAsync();
         _draftDb = null;
+    }
+
+    // Disposición desde fuera del lock (Cerrar/Guardar): adquiere el lock para no
+    // disponer _draftDb mientras InicializarAsync lo usa en otro hilo (race que
+    // provocaba ObjectDisposedException en ReprocesarRangoAsync).
+    private async Task DisposeDraftContextAsync()
+    {
+        await _initLock.WaitAsync();
+        try
+        {
+            await DisposeDraftContextLockedAsync();
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
 
     private async Task CargarEmpresaAsync()
@@ -527,7 +558,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         _mostrarBitacora = false;
         _mostrarAyudaDia = false;
         _pinSeleccionadoId = null;
-        _mostrarCorrecciones = false;
+        _mostrarResumenTiempoExtraBanco = false;
         modoSugerenciaExtra = "EntradaSalida";
     }
 

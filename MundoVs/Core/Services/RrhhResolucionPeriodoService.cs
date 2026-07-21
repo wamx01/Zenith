@@ -603,9 +603,14 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
             cortesPorEmpresaPeriodicidad.TryGetValue((empleado.EmpresaId, empleado.PeriodicidadPago), out var corte);
 
             // Agrupa por periodo resuelto (clave: periodicidad + año + número).
+            // Variante contenedor: cada asistencia se asigna al periodo que la
+            // CONTIENE, no al último corte cerrado (que para semanal Wed–Tue manda
+            // Wed-Mon al periodo anterior y sólo Tue al actual → partía la semana
+            // y creaba registros cuya FechaInicio/FechaFin no contenían sus días).
+            // Así las claves coinciden con el flujo regular y con el viewer.
             foreach (var grupoPeriodo in grupoEmpleado.GroupBy(a =>
                 {
-                    var cal = NominaPeriodoHelper.ObtenerPeriodo(empleado.PeriodicidadPago, a.Fecha.ToDateTime(TimeOnly.MinValue), corte);
+                    var cal = NominaPeriodoHelper.ObtenerPeriodoContenedor(empleado.PeriodicidadPago, a.Fecha.ToDateTime(TimeOnly.MinValue), corte);
                     return (cal.PeriodicidadPago, cal.AnioPeriodo, cal.NumeroPeriodo);
                 }))
             {
@@ -616,7 +621,7 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
                     continue;
                 }
 
-                var calendario = NominaPeriodoHelper.ObtenerPeriodo(
+                var calendario = NominaPeriodoHelper.ObtenerPeriodoContenedor(
                     empleado.PeriodicidadPago,
                     grupoPeriodo.First().Fecha.ToDateTime(TimeOnly.MinValue),
                     corte);

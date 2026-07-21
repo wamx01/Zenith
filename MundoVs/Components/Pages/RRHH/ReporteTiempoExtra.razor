@@ -6,26 +6,29 @@
 @using Microsoft.JSInterop
 @using MundoVs.Core.Interfaces
 @using MundoVs.Core.Models
+@using MundoVs.Core.Entities
+@using MundoVs.Core.Services
 @using MundoVs.Infrastructure.Data
 @inject IDbContextFactory<CrmDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IRrhhTiempoExtraReporteService ReporteService
+@inject IRrhhResolucionPeriodoService ResolucionPeriodo
 @inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Reporte de tiempo extra</PageTitle>
 
-<div class="container-fluid px-4">
+<div class="container-fluid px-4 rrhh-rpt">
     @if (!_puedeVer)
     {
         <div class="alert alert-warning mt-3">No tienes permisos para ver el reporte de tiempo extra.</div>
     }
     else
     {
-        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div class="rrhh-header">
             <div>
-                <h1 class="display-6 fw-bold mb-1"><i class="bi bi-clock-history me-2"></i>Reporte de tiempo extra</h1>
-                <p class="text-muted mb-0">Compilado por persona y fecha. Considera sugerencia del motor, autorización a pago, autorización a banco y banco aplicado.</p>
+                <h1><i class="bi bi-clock-history"></i>Reporte de tiempo extra</h1>
+                <p class="rrhh-subtitle">Compilado por persona y fecha. Considera sugerencia del motor, autorización a pago, autorización a banco y banco aplicado.</p>
             </div>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ExportarCsvAsync" disabled="@(exportandoCsv || cargando || respuestaReporte is null)">
@@ -42,7 +45,7 @@
             </div>
         </div>
 
-        <div class="card border-0 shadow-sm mb-3">
+        <div class="rrhh-filtros">
             <div class="card-body">
                 <div class="row g-3 align-items-end">
                     <div class="col-md-2">
@@ -54,8 +57,33 @@
                         <InputDate @bind-Value="filtroFechaHasta" class="form-control form-control-sm" />
                     </div>
                     <div class="col-md-2">
+                        <label class="form-label">Periodicidad</label>
+                        <InputSelect @bind-Value="filtroPeriodicidad" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                            <option value="@PeriodicidadPago.Semanal">Semanal</option>
+                            <option value="@PeriodicidadPago.Quincenal">Quincenal</option>
+                            <option value="@PeriodicidadPago.Mensual">Mensual</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">Departamento</label>
-                        <InputText @bind-Value="filtroDepartamento" class="form-control form-control-sm" placeholder="Todos" />
+                        <InputSelect @bind-Value="filtroDepartamento" class="form-select form-select-sm">
+                            <option value="">(Todos)</option>
+                            @foreach (var depto in departamentosDisponibles)
+                            {
+                                <option value="@depto">@depto</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Empleado</label>
+                        <InputSelect @bind-Value="filtroEmpleadoId" class="form-select form-select-sm">
+                            <option value="">(Todos)</option>
+                            @foreach (var emp in empleadosFiltro)
+                            {
+                                <option value="@emp.Id">@emp.NombreCompleto</option>
+                            }
+                        </InputSelect>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Agrupar por</label>
@@ -64,12 +92,25 @@
                             <option value="empleado">Empleado</option>
                         </InputSelect>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Empleado (opcional)</label>
-                        <InputText @bind-Value="filtroEmpleadoId" class="form-control form-control-sm" placeholder="GUID" />
+                </div>
+                <div class="row g-3 align-items-center mt-0">
+                    <div class="col-md-5">
+                        <span class="rrhh-presets-label">Presets de fecha</span>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AplicarPresetPeriodoNomina" disabled="@cargando">Periodo nómina</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AplicarPresetEstaSemana" disabled="@cargando">Esta semana</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AplicarPresetEsteMes" disabled="@cargando">Este mes</button>
+                        </div>
                     </div>
+                    <div class="col-md-3">
+                        <div class="form-check form-switch">
+                            <InputCheckbox @bind-Value="filtroSoloSinAutorizar" class="form-check-input" id="chkSoloSinAutorizar" />
+                            <label class="form-check-label" for="chkSoloSinAutorizar">Sólo sin autorizar</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2"></div>
                     <div class="col-md-2 d-flex gap-2">
-                        <button type="button" class="btn btn-primary btn-sm flex-grow-1" @onclick="CargarReporteAsync" disabled="@cargando">
+                        <button type="button" class="btn btn-accent btn-sm flex-grow-1" @onclick="CargarReporteAsync" disabled="@cargando">
                             @if (cargando)
                             {
                                 <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
@@ -99,40 +140,49 @@
 
         @if (respuestaReporte is not null)
         {
-            <div class="row g-3 mb-3">
-                <div class="col-md-3">
-                    <div class="card border-0 shadow-sm h-100">
+            <div class="row g-3 rrhh-kpis">
+                <div class="col-6 col-md">
+                    <div class="rrhh-kpi h-100">
                         <div class="card-body">
-                            <div class="small text-muted">Horas extra (sugerido)</div>
-                            <div class="fs-4 fw-bold text-primary">@respuestaReporte.Totales.TotalHorasExtraFormateado</div>
-                            <div class="small text-muted">@respuestaReporte.Totales.DiasConExtra día(s) con extra · @respuestaReporte.TotalEmpleados empleado(s)</div>
+                            <div class="kpi-etiqueta">Horas extra (sugerido)</div>
+                            <div class="kpi-valor">@respuestaReporte.Totales.TotalHorasExtraFormateado</div>
+                            <div class="kpi-sub">@respuestaReporte.Totales.DiasConExtra día(s) con extra · @respuestaReporte.TotalEmpleados empleado(s)</div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card border-0 shadow-sm h-100">
+                <div class="col-6 col-md">
+                    <div class="rrhh-kpi h-100">
                         <div class="card-body">
-                            <div class="small text-muted">Autorizado a pago</div>
-                            <div class="fs-4 fw-bold text-success">@respuestaReporte.Totales.TotalHorasExtraPagoFormateado</div>
-                            <div class="small text-muted">Lo que se liquida como tiempo extra</div>
+                            <div class="kpi-etiqueta">Autorizado a pago</div>
+                            <div class="kpi-valor">@respuestaReporte.Totales.TotalHorasExtraPagoFormateado</div>
+                            <div class="kpi-sub">Lo que se liquida como tiempo extra</div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card border-0 shadow-sm h-100">
+                <div class="col-6 col-md">
+                    <div class="rrhh-kpi h-100">
                         <div class="card-body">
-                            <div class="small text-muted">Autorizado a banco</div>
-                            <div class="fs-4 fw-bold text-info">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</div>
-                            <div class="small text-muted">Lo que se va al banco de horas</div>
+                            <div class="kpi-etiqueta">Autorizado a banco</div>
+                            <div class="kpi-valor">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</div>
+                            <div class="kpi-sub">Lo que se va al banco de horas</div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card border-0 shadow-sm h-100">
+                <div class="col-6 col-md">
+                    <div class="rrhh-kpi h-100">
                         <div class="card-body">
-                            <div class="small text-muted">Banco aplicado</div>
-                            <div class="fs-4 fw-bold text-warning">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</div>
-                            <div class="small text-muted">Tiempo ya compensado desde el banco</div>
+                            <div class="kpi-etiqueta">Banco aplicado</div>
+                            <div class="kpi-valor">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</div>
+                            <div class="kpi-sub">Tiempo ya compensado desde el banco</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md">
+                    <div class="rrhh-kpi h-100">
+                        <div class="card-body">
+                            <div class="kpi-etiqueta">Monto estimado total</div>
+                            <div class="kpi-valor">@respuestaReporte.Totales.TotalMontoHorasExtraEstimado.ToString("C2")</div>
+                            <div class="kpi-sub">Dobles @FormatearHoras(respuestaReporte.Totales.TotalHorasExtraDobles) · Triples @FormatearHoras(respuestaReporte.Totales.TotalHorasExtraTriples)</div>
                         </div>
                     </div>
                 </div>
@@ -140,21 +190,21 @@
 
             @if (respuestaReporte.Empleados.Count == 0)
             {
-                <div class="alert alert-light border text-center text-muted py-4">No hay horas extra en el rango seleccionado.</div>
+                <div class="rrhh-empty">No hay horas extra en el rango seleccionado.</div>
             }
             else
             {
-                <div class="card border-0 shadow-sm">
-                    <div class="table-responsive te-reporte-wrap">
-                        <table class="table table-sm align-middle mb-0 te-reporte-table">
-                            <thead class="table-dark">
+                <div class="rrhh-tabla-card">
+                    <div class="rrhh-tabla-wrap te-reporte-wrap">
+                        <table class="table table-sm align-middle mb-0 rrhh-tabla">
+                            <thead>
                                 <tr>
                                     <th>Empleado</th>
                                     <th class="text-end">Días con extra</th>
                                     <th class="text-end">Extra sugerido</th>
-                                    <th class="text-end">Base a pago</th>
                                     <th class="text-end">Pago × factor</th>
-                                    <th class="text-end">Base a banco</th>
+                                    <th class="text-end">Dobles</th>
+                                    <th class="text-end">Triples</th>
                                     <th class="text-end">Banco × factor</th>
                                     <th class="text-end">Banco aplicado</th>
                                     <th class="text-end">Monto est.</th>
@@ -165,7 +215,7 @@
                             <tbody>
                                 @foreach (var emp in respuestaReporte.Empleados)
                                 {
-                                    <tr class="te-reporte-empleado-row" @onclick="() => ToggleEmpleado(emp.EmpleadoId)" style="cursor:pointer">
+                                    <tr class="rrhh-row-toggle" @onclick="() => ToggleEmpleado(emp.EmpleadoId)">
                                         <td>
                                             <div class="d-flex align-items-center gap-2">
                                                 <i class="bi @(Expandido(emp.EmpleadoId) ? "bi-chevron-down" : "bi-chevron-right") small text-muted"></i>
@@ -193,9 +243,9 @@
                                         </td>
                                         <td class="text-end">@emp.Totales.DiasConExtra</td>
                                         <td class="text-end"><span class="badge @ObtenerClaseTotal(emp.Totales.TotalMinutosExtra)">@FormatearMinutos(emp.Totales.TotalMinutosExtra)</span></td>
-                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosExtraAutorizadosPago)</td>
                                         <td class="text-end"><span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">@FormatearMinutos(emp.Totales.TotalMinutosPagoFactorado)</span></td>
-                                        <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosExtraAutorizadosBanco)</td>
+                                        <td class="text-end">@FormatearHoras(emp.Totales.TotalHorasExtraDobles)</td>
+                                        <td class="text-end">@FormatearHoras(emp.Totales.TotalHorasExtraTriples)</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosBancoFactorado)</td>
                                         <td class="text-end">@FormatearMinutos(emp.Totales.TotalMinutosCubiertosBancoHoras)</td>
                                         <td class="text-end">@emp.Totales.TotalMontoHorasExtraEstimado.ToString("C2")</td>
@@ -204,9 +254,9 @@
                                     </tr>
                                     @if (Expandido(emp.EmpleadoId))
                                     {
-                                        <tr class="te-reporte-detalle-row">
+                                        <tr>
                                             <td colspan="11" class="p-0">
-                                                <div class="te-reporte-detalle">
+                                                <div class="rrhh-detalle">
                                                     @if (emp.SinAutorizar)
                                                     {
                                                         <div class="alert alert-warning py-2 mx-3 mt-2 mb-2 small"><i class="bi bi-exclamation-triangle me-1"></i>Hay tiempo extra detectado sin resolución autorizada en el rango. Apruébalo por periodo en <strong>Asistencias Semanal</strong>.</div>
@@ -226,6 +276,20 @@
                                                                         @if (!string.IsNullOrWhiteSpace(periodo.AutorizadoPor))
                                                                         {
                                                                             <span class="small text-muted ms-auto">Por @periodo.AutorizadoPor</span>
+                                                                        }
+                                                                        @if (_puedeAprobarTiempoExtra)
+                                                                        {
+                                                                            <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="() => EliminarPeriodoAsync(emp.EmpleadoId, periodo.FechaInicio)" disabled="@(cargando || eliminandoPeriodoId == periodo.PeriodoKey)" title="Eliminar la autorización de este periodo (solo si no hay prenómina cerrada/aplicada)">
+                                                                                @if (eliminandoPeriodoId == periodo.PeriodoKey)
+                                                                                {
+                                                                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <i class="bi bi-trash me-1"></i>
+                                                                                }
+                                                                                Eliminar
+                                                                            </button>
                                                                         }
                                                                     </div>
                                                                     <table class="table table-sm table-borderless mb-0 te-reporte-lineas">
@@ -301,14 +365,14 @@
                                     }
                                 }
                             </tbody>
-                            <tfoot class="table-light fw-semibold">
+                            <tfoot>
                                 <tr>
                                     <td>Totales</td>
                                     <td class="text-end">@respuestaReporte.Totales.DiasConExtra</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraFormateado</td>
-                                    <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraPagoFormateado</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalPagoFactoradoFormateado</td>
-                                    <td class="text-end">@respuestaReporte.Totales.TotalHorasExtraBancoFormateado</td>
+                                    <td class="text-end">@FormatearHoras(respuestaReporte.Totales.TotalHorasExtraDobles)</td>
+                                    <td class="text-end">@FormatearHoras(respuestaReporte.Totales.TotalHorasExtraTriples)</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalBancoFactoradoFormateado</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalBancoAplicadoFormateado</td>
                                     <td class="text-end">@respuestaReporte.Totales.TotalMontoHorasExtraEstimado.ToString("C2")</td>
@@ -325,26 +389,13 @@
 </div>
 
 <style>
+    /* Altura máxima del listado con scroll; el resto del estilo viene de custom-styles.css (.rrhh-*) */
     .te-reporte-wrap {
-        max-height: calc(100vh - 360px);
+        max-height: calc(100vh - 380px);
         overflow: auto;
     }
 
-    .te-reporte-table {
-        font-size: .85rem;
-    }
-
-    .te-reporte-table thead th {
-        position: sticky;
-        top: 0;
-        z-index: 5;
-    }
-
-    .te-reporte-detalle {
-        background: #fafbfc;
-    }
-
-    .te-reporte-detalle .table {
+    .rrhh-detalle .table {
         font-size: .82rem;
     }
 </style>
@@ -353,6 +404,9 @@
     private static readonly CultureInfo CulturaEsMx = new("es-MX");
 
     private bool _puedeVer;
+    private bool _puedeAprobarTiempoExtra;
+    private string _usuarioActual = string.Empty;
+    private string? eliminandoPeriodoId;
     private bool cargando;
     private bool exportandoCsv;
     private string? error;
@@ -362,7 +416,14 @@
     private DateTime filtroFechaHasta = new(DateTime.Today.Year, DateTime.Today.Month, DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
     private string? filtroDepartamento;
     private string filtroAgrupadoPor = "dia";
-    private string? filtroEmpleadoId;
+    private Guid? filtroEmpleadoId;
+    private PeriodicidadPago? filtroPeriodicidad;
+    private bool filtroSoloSinAutorizar;
+
+    // Catálogos para los dropdowns de filtro (cargados una vez al iniciar).
+    private List<EmpleadoFiltroVm> empleadosFiltro = [];
+    private List<string> departamentosDisponibles = [];
+    private Dictionary<PeriodicidadPago, NominaCorteRrhh> cortesPorPeriodicidad = new();
 
     private RrhhTiempoExtraReporteResponse? respuestaReporte;
     private readonly HashSet<Guid> _empleadosExpandidos = new();
@@ -373,8 +434,64 @@
         await CargarAccesoAsync();
         if (_puedeVer)
         {
+            await CargarFiltrosAsync();
             await CargarReporteAsync();
         }
+    }
+
+    private async Task CargarFiltrosAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        empleadosFiltro = await db.Empleados
+            .AsNoTracking()
+            .Where(e => e.IsActive && e.EmpresaId == _empresaId)
+            .OrderBy(e => e.Nombre)
+            .ThenBy(e => e.ApellidoPaterno)
+            .ThenBy(e => e.ApellidoMaterno)
+            .Select(e => new EmpleadoFiltroVm { Id = e.Id, NombreCompleto = e.NombreCompleto })
+            .ToListAsync();
+
+        departamentosDisponibles = await db.DepartamentosRrhh
+            .AsNoTracking()
+            .Where(d => d.IsActive)
+            .OrderBy(d => d.Orden)
+            .ThenBy(d => d.Nombre)
+            .Select(d => d.Nombre)
+            .ToListAsync();
+
+        cortesPorPeriodicidad = await db.NominaCortesRrhh
+            .AsNoTracking()
+            .Where(c => c.EmpresaId == _empresaId && c.IsActive)
+            .ToDictionaryAsync(c => c.PeriodicidadPago);
+    }
+
+    // Preset "Periodo nómina": ajusta el rango al periodo de nómina que contiene hoy para la
+    // periodicidad seleccionada (o Semanal por defecto). No cambia el filtro de periodicidad.
+    private void AplicarPresetPeriodoNomina()
+    {
+        var periodicidad = filtroPeriodicidad ?? PeriodicidadPago.Semanal;
+        cortesPorPeriodicidad.TryGetValue(periodicidad, out var corte);
+        var periodo = NominaPeriodoHelper.ObtenerPeriodoContenedor(periodicidad, DateTime.Today, corte);
+        filtroFechaDesde = periodo.Inicio;
+        filtroFechaHasta = periodo.Fin;
+    }
+
+    // Preset "Esta semana": lunes a domingo de la semana actual (cultura es-MX, lunes inicio).
+    private void AplicarPresetEstaSemana()
+    {
+        var hoy = DateTime.Today;
+        var diaSemana = (int)hoy.DayOfWeek; // Domingo = 0
+        var lunes = hoy.AddDays(diaSemana == 0 ? -6 : 1 - diaSemana);
+        filtroFechaDesde = lunes;
+        filtroFechaHasta = lunes.AddDays(6);
+    }
+
+    // Preset "Este mes": del 1º al último día del mes actual.
+    private void AplicarPresetEsteMes()
+    {
+        filtroFechaDesde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        filtroFechaHasta = new DateTime(DateTime.Today.Year, DateTime.Today.Month, DateTime.DaysInMonth(DateTime.Today.Year, DateTime.Today.Month));
     }
 
     private async Task CargarAccesoAsync()
@@ -383,6 +500,9 @@
         _puedeVer = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar")
             || state.User.HasClaim("Capacidad", "nominas.ver")
             || state.User.HasClaim("Capacidad", "empleados.ver");
+        _puedeAprobarTiempoExtra = state.User.HasClaim("Capacidad", "rrhh.tiempoextra.aprobar")
+            || state.User.HasClaim("Capacidad", "nominas.editar");
+        _usuarioActual = state.User.Identity?.Name ?? string.Empty;
         _ = Guid.TryParse(state.User.FindFirst("EmpresaId")?.Value, out _empresaId);
     }
 
@@ -413,7 +533,9 @@
                 FechaHasta = DateOnly.FromDateTime(filtroFechaHasta),
                 Departamento = string.IsNullOrWhiteSpace(filtroDepartamento) ? null : filtroDepartamento.Trim(),
                 AgrupadoPor = filtroAgrupadoPor,
-                EmpleadoId = !string.IsNullOrWhiteSpace(filtroEmpleadoId) && Guid.TryParse(filtroEmpleadoId.Trim(), out var empId) ? empId : null
+                EmpleadoId = filtroEmpleadoId,
+                Periodicidad = filtroPeriodicidad,
+                SoloSinAutorizar = filtroSoloSinAutorizar
             };
 
             respuestaReporte = await ReporteService.GenerarAsync(DbFactory, request);
@@ -440,6 +562,8 @@
         filtroDepartamento = null;
         filtroAgrupadoPor = "dia";
         filtroEmpleadoId = null;
+        filtroPeriodicidad = null;
+        filtroSoloSinAutorizar = false;
         await CargarReporteAsync();
     }
 
@@ -452,6 +576,71 @@
     }
 
     private bool Expandido(Guid empleadoId) => _empleadosExpandidos.Contains(empleadoId);
+
+    private async Task EliminarPeriodoAsync(Guid empleadoId, DateOnly fechaReferencia)
+    {
+        error = null;
+        ok = null;
+
+        var confirmar = await JS.InvokeAsync<bool>("confirm",
+            "¿Eliminar la autorización de tiempo extra de este periodo? Se revertirán los movimientos de banco de horas generados. Solo se permite si NO hay una prenómina cerrada o aplicada para el mismo periodo.");
+        if (!confirmar)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Buscar la resolución del periodo para obtener sus claves (PeriodicidadPago, AnioPeriodo, NumeroPeriodo).
+            var resolucion = await db.RrhhResolucionesTiempoExtraPeriodo
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.EmpresaId == _empresaId
+                    && r.EmpleadoId == empleadoId
+                    && r.FechaInicio == fechaReferencia
+                    && r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada);
+
+            if (resolucion is null)
+            {
+                error = "No se encontró una resolución autorizada para ese periodo.";
+                return;
+            }
+
+            eliminandoPeriodoId = resolucion.PeriodoKey;
+
+            // Validar que NO exista una prenómina Cerrada o Aplicada para el mismo periodo.
+            var prenominas = await db.Prenominas
+                .AsNoTracking()
+                .Where(p => p.EmpresaId == _empresaId
+                    && p.PeriodicidadPago == resolucion.PeriodicidadPago
+                    && p.AnioPeriodo == resolucion.AnioPeriodo
+                    && p.NumeroPeriodo == resolucion.NumeroPeriodo
+                    && p.Estatus != EstatusPrenomina.Cancelada)
+                .Select(p => new { p.Estatus })
+                .ToListAsync();
+
+            if (prenominas.Any(p => p.Estatus == EstatusPrenomina.Cerrada || p.Estatus == EstatusPrenomina.Aplicada))
+            {
+                error = "No se puede eliminar la autorización: ya existe una prenómina cerrada o aplicada para este periodo. Reabre la prenómina primero.";
+                return;
+            }
+
+            await ResolucionPeriodo.ReabrirPeriodoAsync(db, _empresaId, empleadoId, fechaReferencia, _usuarioActual);
+            await db.SaveChangesAsync();
+
+            ok = "Autorización de tiempo extra eliminada. El periodo quedó reabierto.";
+            await CargarReporteAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            eliminandoPeriodoId = null;
+        }
+    }
 
     private async Task ExportarCsvAsync()
     {
@@ -548,6 +737,10 @@
         sb.AppendLine();
     }
 
+    // Fila RESUMEN columnar (mismo esquema que AgregarLineaDia): cuando el reporte viene
+    // agrupado por empleado (o un empleado no trae días), emitimos un renglón por empleado con
+    // Fecha="RESUMEN" y los totales en sus columnas correspondientes, en vez de un blob con
+    // punto y coma que no se puede parsear por columnas.
     private static void AgregarLineaEmpleadoResumen(StringBuilder sb, RrhhTiempoExtraReporteEmpleadoDto emp)
     {
         sb.Append(Csv(emp.EmpleadoId.ToString())).Append(',');
@@ -556,8 +749,23 @@
         sb.Append(Csv(emp.NombreCompleto)).Append(',');
         sb.Append(Csv(emp.Departamento)).Append(',');
         sb.Append(Csv(emp.Puesto)).Append(',');
-        sb.Append("RESUMEN,");
-        sb.Append(Csv($"DiasConExtra={emp.Totales.DiasConExtra}; TotalExtra={emp.Totales.TotalMinutosExtra} min; Pago={emp.Totales.TotalMinutosExtraAutorizadosPago} min; Banco={emp.Totales.TotalMinutosExtraAutorizadosBanco} min; BancoAplicado={emp.Totales.TotalMinutosCubiertosBancoHoras} min; Retardo={emp.Totales.TotalMinutosRetardo} min; SalidaAnticipada={emp.Totales.TotalMinutosSalidaAnticipada} min"));
+        sb.Append(Csv("RESUMEN")).Append(',');            // Fecha
+        sb.Append(Csv("RESUMEN")).Append(',');            // Estatus
+        sb.Append(emp.Totales.TotalMinutosExtra).Append(',');
+        sb.Append(emp.Totales.TotalMinutosExtraAutorizadosPago).Append(',');
+        sb.Append(emp.Totales.TotalMinutosExtraAutorizadosBanco).Append(',');
+        sb.Append(emp.Totales.TotalMinutosCubiertosBancoHoras).Append(',');
+        sb.Append(emp.Totales.TotalMinutosRetardo).Append(',');
+        sb.Append(emp.Totales.TotalMinutosSalidaAnticipada).Append(',');
+        sb.Append(emp.Totales.TotalMinutosTrabajadosNetos).Append(',');
+        sb.Append(Csv(string.Empty)).Append(',');        // HoraEntradaProgramada
+        sb.Append(Csv(string.Empty)).Append(',');        // HoraSalidaProgramada
+        sb.Append(Csv(string.Empty)).Append(',');        // HoraEntradaReal
+        sb.Append(Csv(string.Empty)).Append(',');        // HoraSalidaReal
+        sb.Append(Csv(string.Empty)).Append(',');        // Turno
+        sb.Append(Csv(string.Empty)).Append(',');        // ResolucionTiempoExtra
+        sb.Append("No").Append(',');                     // RequiereRevision
+        sb.Append(Csv($"Resumen por empleado · Dobles {emp.Totales.TotalHorasExtraDobles:0.##}h · Triples {emp.Totales.TotalHorasExtraTriples:0.##}h · Monto {emp.Totales.TotalMontoHorasExtraEstimado:0.00}")); // Observaciones
         sb.AppendLine();
     }
 
@@ -619,6 +827,18 @@
     private static string FormatearHora(TimeSpan? hora)
         => hora.HasValue ? hora.Value.ToString(@"hh\:mm") : "—";
 
+    // Horas extra dobles/triples vienen como horas decimal (de los minutos de las líneas de
+    // pago con factor 2/3). Las mostramos compactas en horas (p.ej. "2.5h"), sin minutos.
+    private static string FormatearHoras(decimal horas)
+    {
+        if (horas <= 0m)
+        {
+            return "0h";
+        }
+
+        return $"{horas:0.##}h";
+    }
+
     private static string ObtenerClaseTotal(int minutos)
     {
         if (minutos <= 0)
@@ -637,5 +857,13 @@
         }
 
         return "bg-success-subtle text-success-emphasis border border-success-subtle";
+    }
+
+    // Proyección ligera del empleado para el dropdown de filtro (sólo Id + NombreCompleto),
+    // para no cargar entidades completas al llenar el <select>.
+    private sealed class EmpleadoFiltroVm
+    {
+        public Guid Id { get; init; }
+        public string NombreCompleto { get; init; } = string.Empty;
     }
 }

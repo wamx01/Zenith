@@ -13,7 +13,8 @@
 }
 
 .asis-modal-dialog-wide {
-    max-width: min(1600px, 96vw);
+    max-width: min(1280px, 98vw);
+    width: 100%;
 }
 
 .asis-local-preview-banner {
@@ -83,7 +84,7 @@
 }
 
 .asis-truncate-note {
-    max-width: 16rem;
+    max-width: 100%;
     display: block;
 }
 
@@ -121,50 +122,131 @@
 }
 
 .asis-modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 6;
     background: linear-gradient(135deg, #1e3a5f 0%, #0f2240 100%);
     color: #fff;
-    min-height: 3.2rem;
+    min-height: 3.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: .5rem;
+    gap: 1rem;
+    padding: .6rem 1rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
 }
 
-.asis-modal-header__icon {
-    width: 2rem;
-    height: 2rem;
-    border-radius: .6rem;
-    background: rgba(255,255,255,.15);
+.asis-modal-header__left,
+.asis-modal-header__right {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    min-width: 0;
+}
+
+.asis-modal-header__right {
+    flex-shrink: 0;
+    gap: .5rem;
+}
+
+.asis-avatar {
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.35);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 1.1rem;
     flex-shrink: 0;
 }
 
-.asis-modal-header__name {
-    font-size: .92rem;
-    font-weight: 700;
-    line-height: 1.2;
+.asis-modal-header__meta {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    min-width: 0;
 }
 
-.asis-modal-header__date {
-    font-size: .72rem;
-    opacity: .72;
+.asis-modal-header__name {
+    font-size: .98rem;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.asis-modal-header__sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem .7rem;
+    font-size: .74rem;
+    opacity: .85;
     text-transform: capitalize;
+}
+
+.asis-modal-header__sub i {
+    opacity: .85;
+}
+
+.asis-modal-header__sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.5);
+}
+
+.asis-header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .35rem .65rem;
+    border-radius: .55rem;
+    font-size: .72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.asis-header-badge--warn { background: #fef3c7; color: #92400e; }
+.asis-header-badge--danger { background: #fee2e2; color: #b91c1c; }
+.asis-header-badge--info { background: #dbeafe; color: #1d4ed8; }
+
+.asis-header-btn,
+.asis-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,.45);
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    border-radius: .6rem;
+    padding: .35rem .65rem;
+    font-size: .78rem;
+    font-weight: 600;
+    line-height: 1;
+    transition: background .15s ease;
+}
+
+.asis-close-btn {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: .55rem;
+}
+
+.asis-header-btn:hover,
+.asis-close-btn:hover {
+    background: rgba(255,255,255,.24);
 }
 
 .asis-status-badge {
     font-size: .68rem;
     white-space: nowrap;
-}
-
-.asis-help-button {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(255,255,255,.45);
-    background: rgba(255,255,255,.14);
-    color: #fff;
 }
 
 .asis-help-list {
@@ -209,7 +291,7 @@
 
 .asis-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 18rem;
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 17rem);
     gap: 1rem;
 }
 
@@ -616,8 +698,8 @@
 }
 
 .asis-dayline-select {
-    width: auto;
-    min-width: 14rem;
+    width: 100%;
+    min-width: 0;
 }
 
 .asis-dayline-bar {
@@ -746,8 +828,8 @@
 .asis-time-bar__fill--faltante { background: linear-gradient(90deg, #dc2626 0%, #f87171 100%); }
 
 .asis-inline-select {
-    width: auto;
-    min-width: 14rem;
+    width: 100%;
+    min-width: 0;
 }
 
 .asis-quick-editor {
@@ -758,7 +840,7 @@
 }
 
 .asis-quick-editor--permission {
-    max-width: 32rem;
+    max-width: 100%;
 }
 
 .asis-quick-editor__grid {
@@ -1450,10 +1532,20 @@
     margin-top: .1rem;
 }
 
-@media (max-width: 1199.98px) {
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+    .asis-layout {
+        grid-template-columns: minmax(0, 1fr) 14rem;
+    }
+}
+
+@media (max-width: 1023.98px) {
     .asis-layout,
     .asis-summary-top {
         grid-template-columns: 1fr;
+    }
+
+    .asis-cifras__row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .asis-wizard-steps {
@@ -1463,9 +1555,28 @@
     .asis-wizard-side {
         position: static;
     }
+
+    .asis-advisor {
+        position: static;
+    }
 }
 
 @media (max-width: 767.98px) {
+    .asis-modal-header {
+        min-height: 0;
+        padding: .55rem .65rem;
+    }
+
+    .asis-modal-header__name {
+        font-size: .9rem;
+    }
+
+    .asis-day-arrow {
+        width: 1.6rem;
+        height: 1.6rem;
+        font-size: .8rem;
+    }
+
     .asis-quick-editor__grid {
         grid-template-columns: 1fr;
     }
@@ -1501,24 +1612,7 @@
 /* ===== Rediseño Propuesta B: header sticky, flechas de día, cifras del día,
    barra de acciones y ayuda del día colapsable ============================ */
 
-/* Header fijo arriba del scroll del modal para que flechas/estatus/qué sigue
-   siempre queden visibles. */
-.asis-modal-header {
-    position: sticky;
-    top: 0;
-    z-index: 6;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
-}
-
-.asis-modal-header__next {
-    font-size: .68rem;
-    opacity: .85;
-    line-height: 1.25;
-    max-width: 38ch;
-}
-
-/* Flechas ◀ ▶ de navegación entre días del periodo. Reusan el patrón del
-   help-button (translúcido sobre el header oscuro). */
+/* Flechas ◀ ▶ de navegación entre días del periodo (header oscuro). */
 .asis-day-arrow {
     width: 2rem;
     height: 2rem;
@@ -1544,49 +1638,55 @@
     cursor: not-allowed;
 }
 
-/* Cifras del día: la cifra central del modal. */
+/* Cifras del día: cards Bruto / Neto / Visible / Pagado. */
 .asis-cifras {
     background: #f8fafc;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
 }
 
 .asis-cifras__row {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: .6rem;
+    gap: .85rem;
 }
 
 .asis-cifra {
     background: #fff;
     border: 1px solid #e2e8f0;
-    border-radius: .65rem;
-    padding: .55rem .65rem;
-    text-align: center;
+    border-left: 3px solid #e2e8f0;
+    border-radius: .75rem;
+    padding: .7rem .85rem;
 }
 
 .asis-cifra__label {
-    font-size: .68rem;
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .72rem;
     text-transform: uppercase;
     letter-spacing: .04em;
     color: #64748b;
     font-weight: 700;
+    margin-bottom: .25rem;
+}
+
+.asis-cifra__label i {
+    font-size: .78rem;
+    color: #94a3b8;
+    cursor: help;
 }
 
 .asis-cifra__value {
-    font-size: 1.35rem;
+    font-size: 1.45rem;
     font-weight: 800;
     line-height: 1.1;
     color: #0f172a;
 }
 
-.asis-cifra__hint {
-    font-size: .62rem;
-    color: #94a3b8;
-    margin-top: .15rem;
-}
-
 .asis-cifra--accent {
-    border-color: #c7d2fe;
-    background: #eef2ff;
+    border-left-color: #6366f1;
+    background: linear-gradient(180deg, #eef2ff 0%, #ffffff 100%);
 }
 
 .asis-cifra--accent .asis-cifra__value {
@@ -1594,49 +1694,156 @@
 }
 
 .asis-cifra--paid {
-    border-color: #bbf7d0;
-    background: #f0fdf4;
+    border-left-color: #22c55e;
+    background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
 }
 
 .asis-cifra--paid .asis-cifra__value {
     color: #166534;
 }
 
-.asis-cifras__flow {
-    margin-top: .55rem;
-    font-size: .74rem;
-    color: #475569;
-    text-align: center;
+/* Barra de fórmula como tarjetas conectadas. */
+.asis-formula-cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem .55rem;
+    margin-top: .9rem;
+    padding: .75rem .9rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: .85rem;
 }
 
-.asis-cifras__flow strong {
+.asis-formula-cards__term {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 4.2rem;
+    min-width: 0;
+    padding: .35rem .55rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: .6rem;
+    line-height: 1.15;
+}
+
+.asis-formula-cards__term--result {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border-color: #bfdbfe;
+}
+
+.asis-formula-cards__value {
+    font-size: .95rem;
+    font-weight: 800;
     color: #0f172a;
 }
 
-.asis-cifras__deltas {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .4rem;
-    justify-content: center;
-    margin-top: .5rem;
-}
-
-.asis-delta {
-    font-size: .68rem;
+.asis-formula-cards__label {
+    font-size: .62rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #64748b;
     font-weight: 700;
-    padding: .2rem .5rem;
-    border-radius: 999px;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
 }
 
-.asis-delta--minus {
-    color: #b91c1c;
-    background: #fee2e2;
+.asis-formula-cards__op {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #94a3b8;
+    align-self: center;
+    padding: 0 .1rem;
 }
 
-.asis-delta--plus {
-    color: #166534;
-    background: #dcfce7;
+/* Alerta/banner tipo card ancho. */
+.asis-alert-card,
+.asis-banner-card {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: .75rem;
+    padding: .7rem .9rem;
+    text-align: left;
+    background: #fff;
+    transition: background .15s ease;
+}
+
+.asis-alert-card {
+    cursor: pointer;
+}
+
+.asis-alert-card:hover {
+    background: #fffbeb;
+}
+
+.asis-alert-card--warn {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #92400e;
+}
+
+.asis-banner-card--info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
+}
+
+.asis-alert-card__icon,
+.asis-banner-card__icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.asis-alert-card__body,
+.asis-banner-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    flex: 1;
+    min-width: 0;
+    font-size: .78rem;
+}
+
+.asis-alert-card__title {
+    font-weight: 700;
+    color: #92400e;
+}
+
+.asis-alert-card__text {
+    color: #a16207;
+    line-height: 1.4;
+}
+
+.asis-alert-card__chev,
+.asis-banner-card__chev {
+    flex-shrink: 0;
+    font-size: .85rem;
+    opacity: .65;
+}
+
+.asis-banner-card strong {
+    font-weight: 700;
+}
+
+@media (max-width: 720px) {
+    .asis-cifras__row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .asis-formula-cards__term {
+        min-width: 3.6rem;
+        padding: .3rem .45rem;
+    }
+
+    .asis-formula-cards__value {
+        font-size: .85rem;
+    }
 }
 
 /* Barra de acciones "Corregir". */
@@ -1670,6 +1877,18 @@
     padding-top: 0;
 }
 
+.asis-ayuda-dia__section--hero {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: .75rem;
+    padding: .75rem .85rem;
+    margin-bottom: .5rem;
+}
+
+.asis-ayuda-dia__section--hero .asis-advisor__banner-title {
+    color: #1e40af;
+}
+
 @media (max-width: 720px) {
     .asis-cifras__row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1679,28 +1898,81 @@
 /* ===== Rediseño 2-col: asesor lateral, barra de fórmula, timeline visual ===== */
 
 /* Asesor lateral fijo en la columna derecha del body (grid .asis-layout). */
-.asis-asesor-lateral {
+.asis-advisor {
     display: flex;
     flex-direction: column;
-    gap: .75rem;
+    gap: .65rem;
     position: sticky;
     top: .75rem;
-}
-
-.asis-asesor-lateral__head {
     border: 1px solid #e2e8f0;
-    border-radius: .85rem;
-    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
-    padding: .85rem .9rem;
+    border-radius: 1rem;
+    background: #fff;
+    padding: .9rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
 }
 
-.asis-asesor-lateral__actions {
+.asis-advisor__title {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    font-size: .92rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.asis-advisor__title i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: .45rem;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: .85rem;
+}
+
+.asis-advisor__eyebrow {
+    font-size: .65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #64748b;
+}
+
+.asis-advisor__banner {
+    border-radius: .75rem;
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border: 1px solid #bfdbfe;
+    padding: .75rem .85rem;
+}
+
+.asis-advisor__banner--empty {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+}
+
+.asis-advisor__banner-title {
+    font-size: .92rem;
+    font-weight: 800;
+    color: #1e40af;
+    line-height: 1.25;
+    margin-bottom: .2rem;
+}
+
+.asis-advisor__banner-text {
+    font-size: .76rem;
+    color: #475569;
+    line-height: 1.4;
+}
+
+.asis-advisor__actions {
     display: flex;
     flex-direction: column;
     gap: .45rem;
 }
 
-.asis-asesor-lateral__note {
+.asis-advisor__tip {
     font-size: .74rem;
     color: #1d4ed8;
     background: #dbeafe;
@@ -1710,14 +1982,58 @@
     line-height: 1.4;
 }
 
-.asis-asesor-lateral__summary {
-    border: 1px solid #e2e8f0;
-    border-radius: .85rem;
-    background: #fff;
-    padding: .75rem .8rem;
+.asis-advisor__section {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    border-top: 1px solid #f1f5f9;
+    padding-top: .65rem;
 }
 
-.asis-asesor-lateral__state {
+.asis-advisor__section-title {
+    font-size: .68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #475569;
+}
+
+.asis-advisor__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .45rem;
+}
+
+.asis-advisor__grid-cell {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    border-radius: .6rem;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    padding: .55rem .6rem;
+}
+
+.asis-advisor__grid-label {
+    font-size: .65rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+
+.asis-advisor__grid-value {
+    font-size: .92rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+}
+
+.asis-advisor__grid-value.asis-chip--success { color: #15803d; }
+.asis-advisor__grid-value.asis-chip--warn { color: #b45309; }
+.asis-advisor__grid-value.asis-chip--muted { color: #64748b; }
+
+.asis-advisor__state {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1728,7 +2044,7 @@
     border: 1px solid transparent;
 }
 
-.asis-asesor-lateral__state span {
+.asis-advisor__state span {
     color: #64748b;
     font-weight: 700;
     text-transform: uppercase;
@@ -1736,51 +2052,37 @@
     font-size: .68rem;
 }
 
-.asis-asesor-lateral__state strong {
+.asis-advisor__state strong {
     color: #0f172a;
     font-size: .8rem;
 }
 
-/* Barra de fórmula Bruto − descansos = Neto + … = Visible − banco = Pagado. */
-.asis-formula-bar {
+.asis-advisor__turno {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: .35rem .5rem;
-    margin-top: .55rem;
-    padding: .5rem .6rem;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: .65rem;
-}
-
-.asis-formula-bar__term {
-    display: inline-flex;
     flex-direction: column;
+    gap: .35rem;
+}
+
+.asis-advisor__turno-row {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    line-height: 1.1;
+    gap: .5rem;
+    font-size: .78rem;
+    color: #475569;
+    padding: .35rem .45rem;
+    border-radius: .5rem;
+    background: #f8fafc;
 }
 
-.asis-formula-bar__label {
-    font-size: .62rem;
-    text-transform: uppercase;
-    letter-spacing: .03em;
-    color: #64748b;
-    font-weight: 700;
-}
-
-.asis-formula-bar__value {
-    font-size: .92rem;
-    font-weight: 800;
+.asis-advisor__turno-row strong {
     color: #0f172a;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
 
-.asis-formula-bar__op {
-    font-size: .9rem;
-    font-weight: 800;
-    color: #94a3b8;
-    align-self: center;
-    padding: 0 .15rem;
+.asis-advisor__turno-row i {
+    color: #64748b;
 }
 
 /* Barra visual agregada del timeline (excluye la referencia de turno). */
@@ -1808,12 +2110,6 @@
 /* Chips de incidencias en el header oscuro. */
 .asis-modal-header__chips .asis-chip {
     font-size: .66rem;
-}
-
-@media (max-width: 1199.98px) {
-    .asis-asesor-lateral {
-        position: static;
-    }
 }
 
 /* ===== Línea de tiempo del día: eje de reloj, pines, bloques posicionados ===== */
@@ -1873,19 +2169,20 @@
 .asis-tl__track {
     position: relative;
     width: 100%;
-    height: 1.1rem;
-    border-radius: .3rem;
+    height: 1.6rem;
+    border-radius: .4rem;
     background: #f1f5f9;
     box-shadow: inset 0 0 0 1px #e2e8f0;
     overflow: visible;
+    margin: .35rem 0;
 }
 
 .asis-tl__seg {
     position: absolute;
     top: 0;
     height: 100%;
-    min-width: .15rem;
-    border-radius: .25rem;
+    min-width: .2rem;
+    border-radius: .35rem;
     transition: width .2s ease, left .2s ease;
     display: flex;
     align-items: center;
@@ -1913,8 +2210,8 @@
 .asis-tl__pin {
     position: absolute;
     top: 50%;
-    width: .55rem;
-    height: .55rem;
+    width: .65rem;
+    height: .65rem;
     border-radius: 999px;
     transform: translate(-50%, -50%);
     border: 2px solid #fff;
@@ -1939,40 +2236,83 @@
 
 .asis-tl__markers {
     position: relative;
-    height: 1.15rem;
-    font-size: .68rem;
+    height: 3.2rem;
+    margin-top: .2rem;
 }
 
-.asis-tl__marker {
+.asis-tl__marker-box {
     position: absolute;
     top: 0;
-    transform: translateX(-50%);
-    font-weight: 700;
-    color: #166534;
-    background: #dcfce7;
-    border-radius: 999px;
-    padding: .1rem .45rem;
-    white-space: nowrap;
+    transform: translateX(0);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    max-width: 7rem;
 }
 
-.asis-tl__marker--end {
+.asis-tl__marker-box::before {
+    content: "";
+    width: 1px;
+    height: .55rem;
+    border-left: 1px dashed #cbd5e1;
+}
+
+.asis-tl__marker-box--end {
+    transform: translateX(-100%);
+    align-items: flex-end;
+}
+
+.asis-tl__marker-box--end::before {
+    height: .55rem;
+}
+
+.asis-tl__marker-label {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border-radius: .55rem;
+    padding: .35rem .55rem;
+    font-size: .7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.asis-tl__marker-label--start {
+    color: #166534;
+    background: #dcfce7;
+    border-color: #bbf7d0;
+}
+
+.asis-tl__marker-label--end {
     color: #b91c1c;
     background: #fee2e2;
-    transform: translateX(-100%);
+    border-color: #fecaca;
+}
+
+.asis-tl__marker-label i {
+    font-size: .8rem;
+}
+
+.asis-tl__marker-label strong {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
 }
 
 .asis-tl__legend {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: .3rem .5rem;
+    gap: .4rem .75rem;
+    padding-top: .4rem;
+    border-top: 1px solid #f1f5f9;
 }
 
 .asis-tl__legend-item {
     display: inline-flex;
     align-items: center;
-    gap: .3rem;
-    font-size: .7rem;
+    gap: .35rem;
+    font-size: .72rem;
     color: #475569;
 }
 
@@ -1984,8 +2324,8 @@
 }
 
 .asis-tl__dot {
-    width: .7rem;
-    height: .7rem;
+    width: .75rem;
+    height: .75rem;
     border-radius: .2rem;
     display: inline-block;
 }
@@ -2023,9 +2363,9 @@
     .asis-tl__tick {
         font-size: .55rem;
     }
-    .asis-tl__marker {
-        font-size: .6rem;
-        padding: .08rem .35rem;
+    .asis-tl__marker-label {
+        font-size: .62rem;
+        padding: .25rem .4rem;
     }
 }
 
@@ -2197,53 +2537,112 @@
     padding: .5rem .65rem;
 }
 
-/* ===== Acordeón "Corregir" (acciones rápidas agrupadas) ===== */
+/* ===== Acordeones de acciones ===== */
 
-.asis-corregir {
+.asis-accordion-list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.asis-accordion {
     border: 1px solid #e2e8f0;
-    border-radius: .5rem;
+    border-radius: .75rem;
     background: #fff;
     overflow: hidden;
 }
 
-.asis-corregir__head {
+.asis-accordion__head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: .75rem;
     width: 100%;
     border: none;
-    background: #f8fafc;
-    padding: .5rem .75rem;
+    background: #fff;
+    padding: .7rem .9rem;
     font-weight: 700;
     color: #0f172a;
     cursor: pointer;
+    text-align: left;
+    transition: background .15s ease;
 }
 
-.asis-corregir__head:hover {
-    background: #f1f5f9;
+.asis-accordion__head:hover {
+    background: #f8fafc;
 }
 
-.asis-corregir__head:focus-visible {
+.asis-accordion__head:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.asis-accordion__head:focus-visible {
     outline: 2px solid #1d4ed8;
     outline-offset: -2px;
 }
 
-.asis-corregir__chev {
-    transition: transform .15s ease;
-    color: #64748b;
+.asis-accordion__icon {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: .55rem;
+    background: #eff6ff;
+    color: #1d4ed8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .9rem;
+    flex-shrink: 0;
 }
 
-.asis-corregir--open .asis-corregir__chev {
+.asis-accordion__title {
+    flex: 1;
+    font-size: .84rem;
+}
+
+.asis-accordion__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.35rem;
+    padding: 0 .45rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: .68rem;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.asis-accordion__badge--warn {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.asis-accordion__chev {
+    transition: transform .15s ease;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.asis-accordion--open .asis-accordion__chev {
     transform: rotate(90deg);
 }
 
-.asis-corregir__body {
-    padding: .6rem .75rem;
+.asis-accordion__body {
+    padding: .75rem .9rem;
     border-top: 1px solid #e2e8f0;
-    animation: asis-corregir-fade .15s ease;
+    animation: asis-accordion-fade .15s ease;
 }
 
-@keyframes asis-corregir-fade {
+.asis-accordion__body .asis-quick-card {
+    border: none;
+    border-radius: .55rem;
+    background: #f8fafc;
+    box-shadow: none;
+}
+
+@keyframes asis-accordion-fade {
     from { opacity: 0; transform: translateY(-2px); }
     to { opacity: 1; transform: none; }
 }
@@ -2394,4 +2793,197 @@
     .asis-plan__grid {
         grid-template-columns: 1fr;
     }
+
+    .asis-advisor {
+        position: static;
+        padding: .75rem;
+        gap: .55rem;
+    }
+
+    .asis-advisor__grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .asis-advisor__banner,
+    .asis-advisor__section {
+        padding: .6rem .7rem;
+    }
+
+    .asis-advisor__turno-row {
+        padding: .3rem .4rem;
+    }
+}
+
+/* ===== Rediseño 3: timeline fijo arriba + body scroll + asesor plegable ===== */
+
+/* Zona fija (hermana del header, fuera de .modal-body): no scrollea con el body.
+   Bootstrap modal-dialog-scrollable pone overflow-y:auto solo en .modal-body,
+   por lo que este bloque queda automáticamente anclado arriba. */
+.asis-timeline-fixed {
+    flex: 0 0 auto;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: .55rem .75rem .65rem;
+}
+
+/* Tira delgada de resultado: Visible · Pagado (+ indicadores) — siempre visible */
+.asis-result-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem .6rem;
+    padding: .35rem .5rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: .6rem;
+    margin-bottom: .5rem;
+    font-size: .8rem;
+}
+
+.asis-result-strip__item {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.asis-result-strip__label {
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    font-size: .62rem;
+}
+
+.asis-result-strip__value {
+    color: #0f172a;
+    font-size: .95rem;
+    font-weight: 800;
+}
+
+.asis-result-strip__item--visible .asis-result-strip__value { color: #1d4ed8; }
+.asis-result-strip__item--paid .asis-result-strip__value { color: #047857; }
+.asis-result-strip__item--pending { color: #b45309; font-weight: 600; }
+.asis-result-strip__item--muted { color: #64748b; font-weight: 600; }
+
+.asis-result-strip__sep {
+    width: 1px;
+    height: 1rem;
+    background: #e2e8f0;
+}
+
+/* Banner inline (siguiente paso) dentro de la zona fija */
+.asis-banner-card--inline {
+    width: 100%;
+    margin-bottom: .5rem;
+}
+
+/* Timeline compacto en la zona fija: altura acotada para no comerse la pantalla */
+.asis-dayline-card--fixed {
+    max-height: 46vh;
+    overflow-y: auto;
+}
+
+/* Body scrollable: pila vertical de una sola columna (sin grid 2-col) */
+.asis-body-stack {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+/* El bloque de cifras ya no necesita su propio contenedor con borde; se integra a la pila */
+.asis-body-stack .asis-cifras {
+    margin: 0;
+}
+
+/* Tarjeta informativa que reemplaza al acordeón "Tiempo extra / banco" (solo lectura aquí) */
+.asis-te-info {
+    border: 1px solid #e2e8f0;
+    border-radius: .75rem;
+    background: #fff;
+    padding: .55rem .7rem;
+}
+
+.asis-te-info__head {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+    font-size: .85rem;
+    color: #0f172a;
+}
+
+.asis-te-info__hint {
+    color: #94a3b8;
+    font-size: .68rem;
+    font-weight: 500;
+}
+
+.asis-te-info__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-top: .4rem;
+}
+
+.asis-te-info__note {
+    margin-top: .4rem;
+    font-size: .72rem;
+    color: #64748b;
+}
+
+/* Asesor plegable (<details>) dentro del body-stack */
+.asis-advisor-collapse {
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    background: #fff;
+    overflow: hidden;
+}
+
+.asis-advisor-collapse > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .6rem .8rem;
+    font-size: .9rem;
+    font-weight: 700;
+    color: #0f172a;
+    user-select: none;
+}
+
+.asis-advisor-collapse > summary::-webkit-details-marker { display: none; }
+.asis-advisor-collapse > summary::after {
+    content: "\F282"; /* bi-chevron-down */
+    font-family: "bootstrap-icons", "Font Awesome", sans-serif;
+    margin-left: auto;
+    color: #94a3b8;
+    transition: transform .15s ease;
+}
+.asis-advisor-collapse[open] > summary::after { transform: rotate(180deg); }
+
+.asis-advisor-collapse__badge {
+    margin-left: .5rem;
+    font-size: .68rem;
+    font-weight: 600;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border-radius: 999px;
+    padding: .1rem .5rem;
+}
+
+/* El asesor dentro del <details> ya no necesita ser sticky ni tener borde propio */
+.asis-advisor-collapse .asis-advisor {
+    position: static;
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: .8rem;
+}
+
+@media (max-width: 767.98px) {
+    .asis-dayline-card--fixed { max-height: 40vh; }
+    .asis-result-strip { font-size: .74rem; }
+    .asis-result-strip__value { font-size: .85rem; }
 }

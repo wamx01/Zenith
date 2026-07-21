@@ -273,8 +273,8 @@
     Visible="@(mostrarCorreccionDia && asistenciaSeleccionada != null)"
     Asistencia="asistenciaSeleccionada"
     Turnos="turnos"
-    PuedeReprocesar="_puedeReprocesar"
-    PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
+    PuedeReprocesar="@_puedeReprocesar"
+    PuedeAprobarTiempoExtra="@_puedeAprobarTiempoExtra"
     OnClose="CerrarCorreccionDia"
     OnUpdated="RecargarResumenSemanalAsync"
     OnCambioDiaSolicitado="CambiarDiaCorreccionAsync"
@@ -282,13 +282,13 @@
     FechaMaximaPeriodo="@(diasPeriodo.Count > 0 ? diasPeriodo[^1] : (DateOnly?)null)" />
 
 <AsistenciasResolucionModal
-    Visible="_resolucionVisible"
-    EmpleadoId="_resolucionEmpleadoId"
-    NombreEmpleado="_resolucionNombre"
+    Visible="@_resolucionVisible"
+    EmpleadoId="@_resolucionEmpleadoId"
+    NombreEmpleado="@_resolucionNombre"
     FechaReferencia="@(DateOnly.FromDateTime(fechaReferenciaPeriodo))"
-    MinutosExtraDetectado="_resolucionMinutosExtra"
-    SaldoBancoHoras="_resolucionSaldoBanco"
-    PuedeAprobarTiempoExtra="_puedeAprobarTiempoExtra"
+    MinutosExtraDetectado="@_resolucionMinutosExtra"
+    SaldoBancoHoras="@_resolucionSaldoBanco"
+    PuedeAprobarTiempoExtra="@_puedeAprobarTiempoExtra"
     OnClose="CerrarResolucion"
     OnUpdated="RecargarResumenSemanalAsync" />
 
@@ -389,11 +389,11 @@
                 }
             </div>
 
-            <h6 class="asis-drawer__section mt-3">Bruto vs visible</h6>
+            <h6 class="asis-drawer__section mt-3">Tiempo reloj vs visible</h6>
             <div class="asis-detail-grid">
-                <div class="asis-detail-card asis-detail-card--info" title="Tiempo bruto = span(primera → última marca) menos los pares del medio (descansos), calculado bajo demanda desde las marcaciones del empleado. Sin reglas (neteo, umbral). Los descansos no tomados no se descuentan."><span class="asis-detail-card__label">Bruto</span><span class="asis-detail-card__value">@FormatearMinutos(_detalleTotalBruto)</span></div>
+                <div class="asis-detail-card asis-detail-card--info" title="Tiempo reloj = span(primera → última marca) menos los pares del medio (descansos), calculado bajo demanda desde las marcaciones del empleado. Tal cual del reloj, sin reglas (neteo, umbral). Los descansos no tomados no se descuentan."><span class="asis-detail-card__label">Tiempo reloj</span><span class="asis-detail-card__value">@FormatearMinutos(_detalleTotalBruto)</span></div>
                 <div class="asis-detail-card asis-detail-card--primary" title="Visible = base pagada + permiso con goce + compensación + extra aprobado. Es el tiempo que muestra la tabla."><span class="asis-detail-card__label">Visible</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutos)</span></div>
-                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Bruto − visible."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
+                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Tiempo reloj − visible."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
             </div>
 
             <h6 class="asis-drawer__section mt-3">Métricas del periodo</h6>

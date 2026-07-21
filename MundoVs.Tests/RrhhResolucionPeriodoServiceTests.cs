@@ -220,12 +220,51 @@ public sealed class RrhhResolucionPeriodoServiceTests
         Assert.Equal(70, periodo.MinutosExtraPago);   // 40 + 30
         Assert.Equal(20, periodo.MinutosExtraBanco);
         Assert.Equal(90, periodo.MinutosExtraDetectado);
+        // El periodo creado debe CONTENER los días que agrega (contenedor), no el
+        // último corte cerrado (que antes lo dejaba en [2025-12-22, 2025-12-28]).
+        Assert.Equal(new DateOnly(2025, 12, 29), periodo.FechaInicio);
+        Assert.Equal(new DateOnly(2026, 1, 4), periodo.FechaFin);
 
         // Segunda corrida: idempotente, nada nuevo.
         var segunda = await service.BackfillDesdeAutorizacionDiariaAsync(db, null, "backfill");
         await db.SaveChangesAsync();
         Assert.Equal(0, segunda.PeriodosCreados);
         Assert.Equal(1, segunda.PeriodosOmitidos);
+    }
+
+    [Fact]
+    public async Task Backfill_SemanalCorteMartes_NoParteLaSemanaWedATue()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Corte Tuesday → periodo Wed–Tue. La semana contenedora de 2026-07-18 (sáb)
+        // es 2026-07-15 (mié) .. 2026-07-21 (mar). Sembramos autorización en mié, sáb
+        // y mar (1er, medio y último día): con el helper viejo (último corte cerrado)
+        // mié y sáb iban al periodo anterior y sólo mar al actual → 2 registros.
+        db.NominaCortesRrhh.Add(new NominaCorteRrhh
+        {
+            EmpresaId = empresa.Id,
+            PeriodicidadPago = PeriodicidadPago.Semanal,
+            DiaCorteSemana = DayOfWeek.Tuesday
+        });
+        var aMie = CrearAsistencia(empresa.Id, empleado.Id, new DateOnly(2026, 7, 15), minutosExtra: 60);
+        aMie.MinutosExtraAutorizadosPago = 60;
+        var aSab = CrearAsistencia(empresa.Id, empleado.Id, new DateOnly(2026, 7, 18), minutosExtra: 30);
+        aSab.MinutosExtraAutorizadosPago = 30;
+        var aMar = CrearAsistencia(empresa.Id, empleado.Id, new DateOnly(2026, 7, 21), minutosExtra: 20);
+        aMar.MinutosExtraAutorizadosPago = 20;
+        db.RrhhAsistencias.AddRange(aMie, aSab, aMar);
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resultado = await service.BackfillDesdeAutorizacionDiariaAsync(db, null, "backfill");
+        await db.SaveChangesAsync();
+
+        Assert.Equal(1, resultado.PeriodosCreados); // un solo periodo, no 2
+        var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
+        Assert.Equal(new DateOnly(2026, 7, 15), periodo.FechaInicio);
+        Assert.Equal(new DateOnly(2026, 7, 21), periodo.FechaFin);
+        Assert.Equal(110, periodo.MinutosExtraPago); // 60 + 30 + 20
     }
 
     // ── Fase 2: el extra absorbe el faltante neto del periodo ──

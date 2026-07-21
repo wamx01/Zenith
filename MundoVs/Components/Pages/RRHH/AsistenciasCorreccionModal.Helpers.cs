@@ -62,6 +62,9 @@ public partial class AsistenciasCorreccionModal
         return $"{horas}:{minutosRestantes:00} h";
     }
 
+    private static string FormatearHora(TimeSpan? hora)
+        => hora.HasValue ? $"{hora.Value.Hours:D2}:{hora.Value.Minutes:D2}" : "—";
+
     private static string FormatearMensajeBitacora(RrhhLogChecador log)
         => log.Mensaje.Replace("Se aplicó corrección de asistencia: ", string.Empty);
 
@@ -568,6 +571,57 @@ public partial class AsistenciasCorreccionModal
         return terminos;
     }
 
+    // Trabajo puro según marcaciones, sin reglas: span(entrada → salida) menos los descansos
+    // reales tal cual se marcaron (fin − inicio de cada pausa). Sin umbral de extra, sin banda
+    // de tolerancia, sin clasificación de entrada/salida anticipada; sólo un redondeo final
+    // al minuto para mostrar. Referencia transparente frente al Bruto (sin descontar) y al
+    // Neto (con reglas): revela cuánto descanso se tomó realmente vs. el programado.
+    private int ObtenerMinutosTrabajoSegunMarcaciones()
+    {
+        if (AsistenciaActual == null
+            || AsistenciaActual.HoraEntradaReal is not TimeSpan entradaTs
+            || AsistenciaActual.HoraSalidaReal is not TimeSpan salidaTs)
+        {
+            return 0;
+        }
+
+        var entrada = AsistenciaActual.Fecha.ToDateTime(TimeOnly.FromTimeSpan(entradaTs));
+        var salida = AsistenciaActual.Fecha.ToDateTime(TimeOnly.FromTimeSpan(salidaTs));
+        if (salida < entrada)
+        {
+            salida = salida.AddDays(1);
+        }
+
+        var spanMinutos = (salida - entrada).TotalMinutes;
+        if (spanMinutos <= 0)
+        {
+            return 0;
+        }
+
+        var descansoMinutos = 0.0;
+        DateTime? inicioDescansoPendiente = null;
+        foreach (var marcacion in marcacionesDia)
+        {
+            var local = ObtenerFechaHoraLocalMarcacion(marcacion);
+            if (local < entrada || local > salida)
+            {
+                continue;
+            }
+            if (marcacion.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.InicioDescanso)
+            {
+                inicioDescansoPendiente = local;
+            }
+            else if (marcacion.ClasificacionOperativa == TipoClasificacionMarcacionRrhh.FinDescanso
+                     && inicioDescansoPendiente.HasValue)
+            {
+                descansoMinutos += (local - inicioDescansoPendiente.Value).TotalMinutes;
+                inicioDescansoPendiente = null;
+            }
+        }
+
+        return Math.Max(0, (int)Math.Round(spanMinutos - descansoMinutos));
+    }
+
     private IReadOnlyList<ResumenCalculoItem> ObtenerResumenCalculoDia()
     {
         if (AsistenciaActual == null)
@@ -581,6 +635,10 @@ public partial class AsistenciasCorreccionModal
                 "Jornada principal",
                 FormatearRangoPrincipalJornada(),
                 $"Se usa el bloque que mejor coincide con el turno del día: {ObtenerHorarioTurnoSeleccionadoDia().Replace("Día de descanso", "sin horario")}."),
+            new(
+                "Trabajo según marcaciones",
+                FormatearMinutos(ObtenerMinutosTrabajoSegunMarcaciones()),
+                "Span entrada → salida menos los descansos reales tal cual se marcaron. Sin reglas de extra, umbrales ni bandas de tolerancia: referencia transparente frente al neto con reglas."),
             new(
                 "Trabajo neto detectado",
                 FormatearMinutos(AsistenciaActual.MinutosTrabajadosNetos),

@@ -459,6 +459,19 @@ public partial class AsistenciasCorreccionModal
         {
             _mostrarAccionesRapidasPermiso = false;
             _mostrarAccionesRapidasTurno = false;
+            _mostrarResumenTiempoExtraBanco = false;
+        }
+    }
+
+    private void AlternarResumenTiempoExtraBanco()
+    {
+        var nuevoEstado = !_mostrarResumenTiempoExtraBanco;
+        _mostrarResumenTiempoExtraBanco = nuevoEstado;
+        if (nuevoEstado)
+        {
+            _mostrarAccionesRapidasPermiso = false;
+            _mostrarAccionesRapidasTurno = false;
+            _mostrarAccionesRapidasModoExtra = false;
         }
     }
 

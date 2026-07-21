@@ -342,7 +342,9 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
 
     private static IReadOnlyList<RrhhAsistenciaCorreccionSegmento> ConstruirSegmentos(RrhhAsistencia asistencia, int permisoMinutos, int faltanteMinutos, int extraMinutos, int extraAprobadaMinutos, int compensadoMinutos)
     {
-        var trabajoMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, compensadoMinutos);
+        var basePagadaMinutos = RrhhTiempoExtraPolicy.ObtenerMinutosBasePagada(asistencia);
+        var extraAprobadaBrutaMinutos = Math.Max(0, asistencia.MinutosExtraAutorizadosPago + asistencia.MinutosExtraAutorizadosBanco);
+        var trabajoMinutos = Math.Max(0, basePagadaMinutos + extraAprobadaBrutaMinutos + Math.Max(0, compensadoMinutos));
         var descansoMinutos = Math.Max(0, asistencia.MinutosDescansoTomado);
         var extraPendienteMinutos = Math.Max(0, extraMinutos - extraAprobadaMinutos);
         var baseVisual = Math.Max(1, trabajoMinutos + descansoMinutos + permisoMinutos + faltanteMinutos + extraPendienteMinutos);
@@ -350,8 +352,8 @@ public sealed class RrhhAsistenciaCorreccionAdvisor : IRrhhAsistenciaCorreccionA
         var segmentos = new List<RrhhAsistenciaCorreccionSegmento>();
         AgregarSegmento(segmentos, "trabajo", "Trabajado", trabajoMinutos, baseVisual, "asis-timeline__segment--worked", FormatearMinutos(trabajoMinutos));
         AgregarSegmento(segmentos, "descanso", "Descansos", descansoMinutos, baseVisual, "asis-timeline__segment--break", FormatearMinutos(descansoMinutos));
-        AgregarSegmento(segmentos, "permiso", "Permiso", permisoMinutos, baseVisual, "asis-timeline__segment--permission", FormatearMinutos(permisoMinutos), true);
-        AgregarSegmento(segmentos, "faltante", "Faltante", faltanteMinutos, baseVisual, "asis-timeline__segment--missing", FormatearMinutos(faltanteMinutos), true);
+        AgregarSegmento(segmentos, "permiso", "Permiso", permisoMinutos, baseVisual, "asis-timeline__segment--permission", FormatearMinutos(permisoMinutos), true, true);
+        AgregarSegmento(segmentos, "faltante", "Faltante", faltanteMinutos, baseVisual, "asis-timeline__segment--missing", FormatearMinutos(faltanteMinutos), true, true);
         AgregarSegmento(segmentos, "extra-pendiente", "Extra detectada", extraPendienteMinutos, baseVisual, "asis-timeline__segment--extra", FormatearMinutos(extraPendienteMinutos), true, true);
 
         if (segmentos.Count == 0)

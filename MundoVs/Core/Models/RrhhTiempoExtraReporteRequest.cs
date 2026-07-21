@@ -1,3 +1,5 @@
+using MundoVs.Core.Entities;
+
 namespace MundoVs.Core.Models;
 
 /// <summary>
@@ -26,4 +28,16 @@ public sealed class RrhhTiempoExtraReporteRequest
     /// "empleado" => agrupa todos los días bajo un solo renglón por empleado con totales.
     /// </summary>
     public string AgrupadoPor { get; set; } = "dia";
+
+    /// <summary>
+    /// Si se establece, acota el reporte a los empleados con esa periodicidad de pago
+    /// (filtra las asistencias por Empleado.PeriodicidadPago). Null = todas las periodicidades.
+    /// </summary>
+    public PeriodicidadPago? Periodicidad { get; set; }
+
+    /// <summary>
+    /// Si es true, deja sólo los empleados con extra detectado y sin resolución Autorizada
+    /// (SinAutorizar=true) y recalcula los totales generales sobre ese subconjunto.
+    /// </summary>
+    public bool SoloSinAutorizar { get; set; }
 }
