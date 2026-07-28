@@ -244,7 +244,6 @@
                     else if (!autorizada && PuedeAprobarTiempoExtra)
                     {
                         <button class="btn btn-success" @onclick="AutorizarAsync" disabled="@(cargando)" title="@(_edicion.DescartarExtra ? "Aceptar la detección descartando el extra (descuento completo, sin pago)" : (totalLineasMin == 0 ? "No hay minutos asignados: usa 'Todo pago', 'Descartar' o edita las líneas" : (excedeCap ? "Las líneas exceden el extra absorbible" : "Autorizar la resolución del periodo")))"><i class="bi bi-check2-circle me-1"></i>@(_edicion.DescartarExtra ? "Aceptar y descartar" : "Autorizar periodo")</button>
-                        <small class="text-muted ms-2" style="font-size:.7rem">[diag cargando=@cargando excedeCap=@excedeCap totalLineas=@totalLineasMin absorbible=@extraAbsorbible permiso=@PuedeAprobarTiempoExtra autorizada=@autorizada]</small>
                     }
                     <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAsync">Cerrar</button>
                 </div>

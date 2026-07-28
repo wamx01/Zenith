@@ -13,7 +13,7 @@
 }
 
 .asis-modal-dialog-wide {
-    max-width: min(1280px, 98vw);
+    max-width: min(1440px, 98vw);
     width: 100%;
 }
 
@@ -1638,7 +1638,7 @@
     cursor: not-allowed;
 }
 
-/* Cifras del día: cards Bruto / Neto / Visible / Pagado. */
+/* Cifras del día: cards Bruto / Neto / Acreditado / Pagado. */
 .asis-cifras {
     background: #f8fafc;
     padding: 1rem 1.25rem;
@@ -2210,12 +2210,12 @@
 .asis-tl__pin {
     position: absolute;
     top: 50%;
-    width: .65rem;
-    height: .65rem;
+    width: .72rem;
+    height: .72rem;
     border-radius: 999px;
     transform: translate(-50%, -50%);
     border: 2px solid #fff;
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, .35);
+    box-shadow: 0 0 0 1.5px rgba(15, 23, 42, .45);
     z-index: 4;
     padding: 0;
     margin: 0;
@@ -2232,7 +2232,7 @@
 
 .asis-tl__pin--real { background: #0f172a; }
 .asis-tl__pin--manual { background: #6d28d9; }
-.asis-tl__pin--anulada { background: #cbd5e1; opacity: .6; }
+.asis-tl__pin--anulada { background: #94a3b8; opacity: .75; }
 
 .asis-tl__markers {
     position: relative;
@@ -2271,23 +2271,24 @@
     align-items: center;
     gap: .35rem;
     border-radius: .55rem;
-    padding: .35rem .55rem;
-    font-size: .7rem;
-    font-weight: 700;
+    padding: .4rem .65rem;
+    font-size: .74rem;
+    font-weight: 800;
     white-space: nowrap;
     border: 1px solid transparent;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
 }
 
 .asis-tl__marker-label--start {
-    color: #166534;
-    background: #dcfce7;
-    border-color: #bbf7d0;
+    color: #14532d;
+    background: #bbf7d0;
+    border-color: #86efac;
 }
 
 .asis-tl__marker-label--end {
-    color: #b91c1c;
-    background: #fee2e2;
-    border-color: #fecaca;
+    color: #7f1d1d;
+    background: #fecaca;
+    border-color: #f87171;
 }
 
 .asis-tl__marker-label i {
@@ -2375,11 +2376,12 @@
     position: absolute;
     top: 0;
     height: 100%;
-    border: 1px dashed rgba(37, 99, 235, .4);
-    background: rgba(37, 99, 235, .06);
+    border: 1px solid rgba(37, 99, 235, .55);
+    background: repeating-linear-gradient(135deg, rgba(37, 99, 235, .12), rgba(37, 99, 235, .12) 5px, rgba(37, 99, 235, .05) 5px, rgba(37, 99, 235, .05) 10px);
     border-radius: .25rem;
     z-index: 1;
     pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .15);
 }
 
 .asis-tl__seg--clickable {
@@ -2392,8 +2394,8 @@
 }
 
 .asis-tl__pin--active {
-    transform: translate(-50%, -50%) scale(1.2);
-    box-shadow: 0 0 0 2px #1d4ed8, 0 0 0 1px rgba(15, 23, 42, .35);
+    transform: translate(-50%, -50%) scale(1.35);
+    box-shadow: 0 0 0 2.5px #1d4ed8, 0 0 0 1.5px rgba(15, 23, 42, .45);
     z-index: 5;
 }
 
@@ -2543,6 +2545,116 @@
     display: flex;
     flex-direction: column;
     gap: .5rem;
+}
+
+/* Pestañas horizontales de acciones (reemplazan a los colapsables apilados
+   para que en resoluciones bajas nada quede cortado debajo de la línea de tiempo). */
+.asis-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+    padding: .25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: .75rem;
+    background: #f8fafc;
+}
+
+.asis-tabs__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid transparent;
+    border-radius: .5rem;
+    background: #fff;
+    color: #475569;
+    padding: .3rem .65rem;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color .12s ease, color .12s ease, border-color .12s ease;
+}
+
+.asis-tabs__btn:hover:not(:disabled) {
+    background: #eef2ff;
+    color: #1e293b;
+}
+
+.asis-tabs__btn.active {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
+}
+
+.asis-tabs__btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.asis-tabs__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 .3rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .12);
+    color: inherit;
+    font-size: .7rem;
+    font-weight: 700;
+}
+
+.asis-tabs__btn.active .asis-tabs__badge {
+    background: rgba(255, 255, 255, .25);
+    color: #fff;
+}
+
+.asis-tabs__badge--warn {
+    background: #f59e0b;
+    color: #fff;
+}
+
+/* Panel activo de la pestaña: reutiliza el cuerpo del acordeón pero sin el
+   borde/cabezal colapsable (la pestaña ya indica cuál está abierta). */
+.asis-tab-panel {
+    border-top: none;
+    border: 1px solid #e2e8f0;
+    border-radius: .75rem;
+    background: #fff;
+    padding: .75rem .9rem;
+}
+
+/* Wrapper de los paneles: cuando el periodo está Autorizada, disabled="@true"
+   deshabilita de un solo golpe TODOS los controles (inputs, selects, checkboxes,
+   botones) dentro de las 6 pestañas → el día queda sólo-lectura sin tocar cada
+   control individualmente. La barra de pestañas queda fuera para poder seguir
+   navegando (ver) las pestañas. */
+.asis-tab-fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.asis-tab-fieldset:disabled {
+    opacity: 1; /* que no atenúe: sólo queremos bloquear, no apagar visualmente */
+}
+
+/* Aviso de candado por periodo autorizado. */
+.asis-alert--locked {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid #f59e0b;
+    background: #fffbeb;
+    color: #92400e;
+    border-radius: .5rem;
+    padding: .4rem .6rem;
+    font-size: .8rem;
 }
 
 .asis-accordion {
@@ -2763,21 +2875,22 @@
     position: absolute;
     top: 0;
     height: 100%;
-    border: 1px dashed rgba(180, 83, 9, .4);
-    background: repeating-linear-gradient(45deg, rgba(180, 83, 9, .06), rgba(180, 83, 9, .06) 4px, transparent 4px, transparent 8px);
+    border: 1px solid rgba(180, 83, 9, .55);
+    background: repeating-linear-gradient(45deg, rgba(180, 83, 9, .15), rgba(180, 83, 9, .15) 5px, rgba(180, 83, 9, .06) 5px, rgba(180, 83, 9, .06) 10px);
     border-radius: .2rem;
     z-index: 1;
     pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(180, 83, 9, .1);
 }
 
 .asis-tl__descanso-plan--miss {
-    border-color: rgba(185, 28, 28, .4);
-    background: repeating-linear-gradient(45deg, rgba(185, 28, 28, .07), rgba(185, 28, 28, .07) 4px, transparent 4px, transparent 8px);
+    border-color: rgba(185, 28, 28, .55);
+    background: repeating-linear-gradient(45deg, rgba(185, 28, 28, .16), rgba(185, 28, 28, .16) 5px, rgba(185, 28, 28, .06) 5px, rgba(185, 28, 28, .06) 10px);
 }
 
 .asis-tl__descanso-plan--ok {
-    border-color: rgba(22, 102, 52, .35);
-    background: repeating-linear-gradient(45deg, rgba(22, 102, 52, .06), rgba(22, 102, 52, .06) 4px, transparent 4px, transparent 8px);
+    border-color: rgba(22, 102, 52, .55);
+    background: repeating-linear-gradient(45deg, rgba(22, 102, 52, .14), rgba(22, 102, 52, .14) 5px, rgba(22, 102, 52, .06) 5px, rgba(22, 102, 52, .06) 10px);
 }
 
 /* Swatch estático para la leyenda (sin estilos inline en el markup) */
@@ -2826,7 +2939,7 @@
     padding: .55rem .75rem .65rem;
 }
 
-/* Tira delgada de resultado: Visible · Pagado (+ indicadores) — siempre visible */
+/* Tira delgada de resultado: Acreditado · Pagado (+ indicadores) — siempre visible */
 .asis-result-strip {
     display: flex;
     flex-wrap: wrap;
@@ -2877,9 +2990,11 @@
     margin-bottom: .5rem;
 }
 
-/* Timeline compacto en la zona fija: altura acotada para no comerse la pantalla */
+/* Timeline compacto en la zona fija: altura acotada para no comerse la pantalla
+   ni aplastar el body de abajo (cifras + colapsables de acciones). El timeline
+   tiene su propio scroll interno, así que bajarle el tope sólo le cede altura al body. */
 .asis-dayline-card--fixed {
-    max-height: 46vh;
+    max-height: 32vh;
     overflow-y: auto;
 }
 
@@ -2888,6 +3003,66 @@
     display: flex;
     flex-direction: column;
     gap: .5rem;
+}
+
+/* Layout de dos columnas para el cuerpo del modal (info | acciones). */
+.asis-body-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    gap: 1rem;
+    align-items: start;
+}
+
+.asis-body-layout__main,
+.asis-body-layout__side {
+    min-width: 0;
+}
+
+.asis-body-layout__side {
+    position: sticky;
+    top: .75rem;
+    max-height: calc(100vh - 18rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: .25rem;
+}
+
+.asis-body-layout__side::-webkit-scrollbar {
+    width: .4rem;
+}
+
+.asis-body-layout__side::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: .2rem;
+}
+
+.asis-body-layout__side-inner {
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    background: #fff;
+    padding: .85rem .9rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.asis-side-title {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .9rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.asis-side-title i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: .55rem;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: .9rem;
 }
 
 /* El bloque de cifras ya no necesita su propio contenedor con borde; se integra a la pila */
@@ -2982,8 +3157,30 @@
     padding: .8rem;
 }
 
+@media (max-width: 1023.98px) {
+    .asis-body-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .asis-body-layout__side {
+        position: static;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+        order: 2;
+    }
+
+    .asis-body-layout__side-inner {
+        padding: .75rem .8rem;
+    }
+
+    .asis-side-title {
+        font-size: .85rem;
+    }
+}
+
 @media (max-width: 767.98px) {
-    .asis-dayline-card--fixed { max-height: 40vh; }
+    .asis-dayline-card--fixed { max-height: 28vh; }
     .asis-result-strip { font-size: .74rem; }
     .asis-result-strip__value { font-size: .85rem; }
 }

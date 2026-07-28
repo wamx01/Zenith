@@ -22,6 +22,7 @@ public partial class AsistenciasCorreccionModal
             RrhhAsistenciaEstatus.Incompleta => "Incompleta",
             RrhhAsistenciaEstatus.TurnoNoAsignado => "Sin turno",
             RrhhAsistenciaEstatus.MarcaNoReconocida => "Marca no reconocida",
+            RrhhAsistenciaEstatus.SalidaAnticipada => "Salida anticipada",
             _ => "Pendiente"
         };
 
@@ -42,6 +43,7 @@ public partial class AsistenciasCorreccionModal
             RrhhAsistenciaEstatus.Incompleta => "bg-warning text-dark",
             RrhhAsistenciaEstatus.TurnoNoAsignado => "bg-secondary",
             RrhhAsistenciaEstatus.MarcaNoReconocida => "bg-dark",
+            RrhhAsistenciaEstatus.SalidaAnticipada => "bg-warning text-dark",
             _ => "bg-primary"
         };
     }
@@ -299,7 +301,7 @@ public partial class AsistenciasCorreccionModal
     private int ObtenerMinutosSalidaAnticipadaVisible(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(asistencia);
 
-    private int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia)
+    private int ObtenerMinutosTiempoAcreditado(RrhhAsistencia asistencia)
     {
         var permisoAplicadoActual = permisoDiaSeleccionado == null
             ? 0
@@ -418,7 +420,7 @@ public partial class AsistenciasCorreccionModal
         var referencia = new[]
         {
             AsistenciaActual.MinutosJornadaNetaProgramada,
-            ObtenerMinutosTiempoVisible(AsistenciaActual),
+            ObtenerMinutosTiempoAcreditado(AsistenciaActual),
             ObtenerMinutosBasePagada(AsistenciaActual),
             AsistenciaActual.MinutosExtra,
             ObtenerMinutosPermisoSugeridos(AsistenciaActual),
@@ -433,7 +435,7 @@ public partial class AsistenciasCorreccionModal
         return Math.Clamp(porcentaje, 8m, 100m);
     }
 
-    private string ObtenerResumenVisibleExplicado()
+    private string ObtenerResumenAcreditadoExplicado()
         => AsistenciaActual == null
             ? string.Empty
             : $"Base {FormatearMinutos(AsistenciaActual.MinutosJornadaNetaProgramada)} + compensación día {FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())} + extra aprobada {FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))}{(AsistenciaActual.MinutosPerdonadosManual > 0 ? $" · perdón manual {FormatearMinutos(AsistenciaActual.MinutosPerdonadosManual)}" : string.Empty)}.";
@@ -442,7 +444,7 @@ public partial class AsistenciasCorreccionModal
     // persistidos por el procesador; visible del helper que ya alinea
     // permisoDiaSeleccionado + compensación aprobada; pagado = visible menos el
     // extra autorizado al banco de horas (parte que no se paga, se acumula).
-    private DesgloseDiaCifras? ObtenerDesgloseBrutoNetoVisiblePagado()
+    private DesgloseDiaCifras? ObtenerDesgloseBrutoNetoAcreditadoPagado()
     {
         if (AsistenciaActual == null)
         {
@@ -451,10 +453,10 @@ public partial class AsistenciasCorreccionModal
 
         var bruto = Math.Max(0, AsistenciaActual.MinutosTrabajadosBrutos);
         var neto = RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(AsistenciaActual);
-        var visible = ObtenerMinutosTiempoVisible(AsistenciaActual);
+        var acreditado = ObtenerMinutosTiempoAcreditado(AsistenciaActual);
         var extraAlBanco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
-        var pagado = Math.Max(0, visible - extraAlBanco);
-        return new DesgloseDiaCifras(bruto, neto, visible, pagado);
+        var pagado = Math.Max(0, acreditado - extraAlBanco);
+        return new DesgloseDiaCifras(bruto, neto, acreditado, pagado);
     }
 
     // Deltas legibles bruto→neto→visible. Bruto→neto: lo que el procesador descontó
@@ -506,9 +508,9 @@ public partial class AsistenciasCorreccionModal
     }
 
     // Barra de fórmula legible del día: Bruto − descansos = Neto + permiso + compensación + extra
-    // = Visible − banco = Pagado. Reusa los mismos valores que ObtenerDeltasDiaLegibles y
-    // ObtenerDesgloseBrutoNetoVisiblePagado para no duplicar lógica. Sólo incluye términos no
-    // nulos; el primer término (Bruto) lleva signo vacío. Visible→Pagado resta el extra
+    // = Acreditado − banco = Pagado. Reusa los mismos valores que ObtenerDeltasDiaLegibles y
+    // ObtenerDesgloseBrutoNetoAcreditadoPagado para no duplicar lógica. Sólo incluye términos no
+    // nulos; el primer término (Bruto) lleva signo vacío. Acreditado→Pagado resta el extra
     // autorizado al banco (MinutosExtraAutorizadosBanco), que no se paga como dinero.
     private IReadOnlyList<FormulaTermino> ObtenerFormulaDiaLegible()
     {
@@ -517,7 +519,7 @@ public partial class AsistenciasCorreccionModal
             return [];
         }
 
-        var cifras = ObtenerDesgloseBrutoNetoVisiblePagado();
+        var cifras = ObtenerDesgloseBrutoNetoAcreditadoPagado();
         if (cifras == null)
         {
             return [];
@@ -559,7 +561,7 @@ public partial class AsistenciasCorreccionModal
             terminos.Add(new FormulaTermino("extra", extra, "+"));
         }
 
-        terminos.Add(new FormulaTermino("Visible", cifras.Visible, "="));
+        terminos.Add(new FormulaTermino("Acreditado", cifras.Acreditado, "="));
 
         var extraAlBanco = Math.Max(0, AsistenciaActual.MinutosExtraAutorizadosBanco);
         if (extraAlBanco > 0)
@@ -649,9 +651,9 @@ public partial class AsistenciasCorreccionModal
                 string.IsNullOrWhiteSpace(AsistenciaActual.ResumenDescansos) ? "Sin detalle de descansos." : AsistenciaActual.ResumenDescansos,
                 AsistenciaActual.MinutosDescansoTomado > 0 ? "asis-calculation-grid__item--warn" : null),
             new(
-                "Tiempo visible",
-                FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual)),
-                ObtenerResumenVisibleExplicado(),
+                "Tiempo acreditado",
+                FormatearMinutos(ObtenerMinutosTiempoAcreditado(AsistenciaActual)),
+                ObtenerResumenAcreditadoExplicado(),
                 "asis-calculation-grid__item--info")
         };
 
@@ -906,9 +908,6 @@ public partial class AsistenciasCorreccionModal
         return string.Join(" | ", bitacoraCorreccionDia.Take(3).Select(l => $"{l.FechaUtc.ToLocalTime():HH:mm} {ObtenerUsuarioBitacora(l)}: {l.Mensaje.Replace("Se aplicó corrección de asistencia: ", string.Empty)}"));
     }
 
-    private void AlternarBitacora()
-        => _mostrarBitacora = !_mostrarBitacora;
-
     private string ObtenerEstadoCorreccionActual()
     {
         if (AsistenciaActual == null)
@@ -1000,7 +999,7 @@ public partial class AsistenciasCorreccionModal
 
         if (asesorCorreccionActual.PriorizarPermiso)
         {
-            _mostrarAccionesRapidasPermiso = true;
+            _pestanaAcciones = PestanaAcciones.Permiso;
         }
 
         // PriorizarTiempo ya no abre panel local: el tiempo extra se autoriza por periodo en

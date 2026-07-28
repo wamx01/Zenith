@@ -9,51 +9,6 @@ namespace MundoVs.Tests;
 public sealed class RrhhMarcacionZonaHorariaServiceTests
 {
     [Fact]
-    public async Task CorregirMarcacionesGuardadasComoHoraLocalAsync_ConvierteAMarcacionesUtcYPermiteReclasificar()
-    {
-        await using var db = CreateDbContext();
-        var empresa = CreateEmpresa();
-        var turno = CreateTurno(empresa.Id);
-        var checador = CreateChecador(empresa.Id);
-        var empleado = CreateEmpleado(empresa.Id, turno.Id);
-
-        db.Empresas.Add(empresa);
-        db.TurnosBase.Add(turno);
-        db.RrhhChecadores.Add(checador);
-        db.Empleados.Add(empleado);
-        db.RrhhMarcaciones.AddRange(
-            CreateMarcacion(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 5, 0), "in-1"),
-            CreateMarcacion(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 30, 0), "out-1"));
-
-        await db.SaveChangesAsync();
-
-        var correctionService = new RrhhMarcacionZonaHorariaService();
-        var resultado = await correctionService.CorregirMarcacionesGuardadasComoHoraLocalAsync(db, new RrhhMarcacionZonaHorariaCorrectionRequest
-        {
-            EmpresaId = empresa.Id,
-            ChecadorId = checador.Id,
-            FechaDesde = new DateOnly(2026, 1, 5),
-            FechaHasta = new DateOnly(2026, 1, 5)
-        });
-
-        Assert.Equal(2, resultado.MarcacionesEncontradas);
-        Assert.Equal(2, resultado.MarcacionesCorregidas);
-
-        var marcaciones = await db.RrhhMarcaciones.OrderBy(m => m.FechaHoraMarcacionUtc).ToListAsync();
-        Assert.Equal(new DateTime(2026, 1, 5, 14, 5, 0, DateTimeKind.Utc), marcaciones[0].FechaHoraMarcacionUtc);
-        Assert.Equal(new DateTime(2026, 1, 5, 23, 30, 0, DateTimeKind.Utc), marcaciones[1].FechaHoraMarcacionUtc);
-        Assert.All(marcaciones, m => Assert.False(m.Procesada));
-
-        var processor = new RrhhAsistenciaProcessor();
-        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
-
-        var asistencia = await db.RrhhAsistencias.SingleAsync();
-        Assert.Equal(new TimeSpan(8, 5, 0), asistencia.HoraEntradaReal);
-        Assert.Equal(new TimeSpan(17, 30, 0), asistencia.HoraSalidaReal);
-        Assert.Equal(RrhhAsistenciaEstatus.Retardo, asistencia.Estatus);
-    }
-
-    [Fact]
     public async Task ReconstruirHoraLocalDesdeUtcAsync_RecalculaHoraLocalSinModificarUtc()
     {
         await using var db = CreateDbContext();

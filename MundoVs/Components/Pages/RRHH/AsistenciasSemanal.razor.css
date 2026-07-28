@@ -3,7 +3,7 @@
    --good (verde)  : Banco apl. / Extra pag. / A banco acum. / Saldo banco / celdas ok
    --warn (ámbar)  : Retardo
    --bad  (rojo)   : Descuento / Salida anticipada
-   --primary (azul): Visible (total del periodo)
+   --primary (azul): Acreditado (total del periodo)
    Morado reservado SÓLO a la celda "extra pendiente".
    Teal reservado a la celda "extra revisado" (autorizado/aplicado) para
    distinguirla del verde "ok / en objetivo" (fondo idéntico antes). */

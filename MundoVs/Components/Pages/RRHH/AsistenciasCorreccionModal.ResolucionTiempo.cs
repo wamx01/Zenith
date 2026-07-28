@@ -93,13 +93,15 @@ public partial class AsistenciasCorreccionModal
 
     /// <summary>
     /// Sugerencia "neto vs neto": neto trabajado − neto esperado del turno.
-    /// Debe coincidir con la secuencia del procesador (CalcularMinutosExtra modo NetoVsNeto):
+    /// Debe coincidir con la secuencia del procesador (CalcularMinutosExtra modo MarcajeReloj):
     /// NO incluye perdón manual en el neto trabajado. El procesador ya persiste
-    /// MinutosExtra con manual incluido y umbral mínimo aplicado.
+    /// MinutosExtra con manual incluido, SIN umbral (el excedente real se reporta tal cual).
+    /// El descanso NO marcado no se descuenta en este modo (el reloj indica que se trabajó),
+    /// así que MinutosTrabajadosNetos ya refleja la suma de segmentos trabajados.
     /// Sin turno, usa jornada legal de 8h (480 min) solo como referencia visual;
     /// el procesador NO auto-detecta extra, por lo que el usuario decide manualmente.
     /// </summary>
-    private int ObtenerSugerenciaExtraNetoVsNeto(RrhhAsistencia asistencia)
+    private int ObtenerSugerenciaExtraMarcajeReloj(RrhhAsistencia asistencia)
     {
         var netoTrabajado = Math.Max(0, asistencia.MinutosTrabajadosNetos);
         // Sin turno: usar jornada legal como referencia para sugerir, pero el usuario
@@ -113,21 +115,21 @@ public partial class AsistenciasCorreccionModal
     /// <summary>
     /// Retorna los minutos de extra sugeridos según el modo actualmente seleccionado en el modal.
     /// SinTurno: sugiere el excedente sobre 8h (480 min) como referencia.
-    /// NetoVsNeto: neto trabajado − neto esperado.
+    /// MarcajeReloj: neto trabajado − neto esperado.
     /// EntradaSalida: usa el extra detectado por el procesador.
     /// </summary>
     private int ObtenerMinutosExtraSugeridosModo(RrhhAsistencia asistencia)
         => modoSugerenciaExtra switch
         {
             "SinTurno" => Math.Max(0, Math.Max(0, asistencia.MinutosTrabajadosNetos) - 480),
-            "NetoVsNeto" => ObtenerSugerenciaExtraNetoVsNeto(asistencia),
+            "MarcajeReloj" => ObtenerSugerenciaExtraMarcajeReloj(asistencia),
             _ => asistencia.MinutosExtra
         };
 
     private string ObtenerDescripcionModoSugerencia(RrhhAsistencia asistencia)
     {
         var porEntradaSalida = asistencia.MinutosExtra;
-        var porNeto = ObtenerSugerenciaExtraNetoVsNeto(asistencia);
+        var porNeto = ObtenerSugerenciaExtraMarcajeReloj(asistencia);
         var netoEsperadoDescripcion = asistencia.TurnoBaseId is null
             ? "jornada legal 8h"
             : FormatearMinutos(asistencia.MinutosJornadaNetaProgramada);
@@ -138,7 +140,7 @@ public partial class AsistenciasCorreccionModal
             return $"Sin turno: el tiempo trabajado ({FormatearMinutos(asistencia.MinutosTrabajadosNetos)}) se considera normal. Sugerencia de extra sobre 8h: {FormatearMinutos(sugeridoSinTurno)}. El usuario decide cuánto aprobar como extra.";
         }
 
-        return modoSugerenciaExtra == "NetoVsNeto"
+        return modoSugerenciaExtra == "MarcajeReloj"
             ? $"Neto trabajado ({FormatearMinutos(asistencia.MinutosTrabajadosNetos)}) − neto esperado ({netoEsperadoDescripcion}) = {FormatearMinutos(porNeto)}."
             : $"Detectado por el procesador: entrada/salida real vs programada = {FormatearMinutos(porEntradaSalida)}. Alternativa neto vs neto: {FormatearMinutos(porNeto)}.";
     }
@@ -380,13 +382,19 @@ public partial class AsistenciasCorreccionModal
 
     private async Task GuardarModoSugerenciaYReprocesarAsync()
     {
-        if (AsistenciaActual == null || !PuedeAprobarTiempoExtra)
+        if (AsistenciaActual == null)
         {
             return;
         }
 
         error = null;
         ok = null;
+
+        if (!PuedeAprobarTiempoExtra || EdicionBloqueadaPorPeriodo)
+        {
+            error = MensajeEdicionBloqueada("No tienes permisos para cambiar el modo de cálculo del día.");
+            return;
+        }
 
         var usuarioActual = await ObtenerUsuarioActualAsync();
         await using var db = await DbFactory.CreateDbContextAsync();
@@ -404,7 +412,7 @@ public partial class AsistenciasCorreccionModal
             asistencia.UpdatedBy = usuarioActual;
             await db.SaveChangesAsync();
 
-            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, $"Modo de cálculo cambiado a {(modoSugerenciaExtra == "NetoVsNeto" ? "neto vs neto" : "entrada/salida")}. Día reprocesado.", recargarResolucion: true);
+            await ReprocesarYRefrescarDiaAsync(db, AsistenciaActual.Fecha, $"Modo de cálculo cambiado a {(modoSugerenciaExtra == "MarcajeReloj" ? "neto vs neto" : "entrada/salida")}. Día reprocesado.", recargarResolucion: true);
 
             tipoResolucionTiempoExtra = string.IsNullOrWhiteSpace(asistencia.ResolucionTiempoExtra) ? "PagarTodo" : asistencia.ResolucionTiempoExtra;
             AjustarResolucionTiempoSugerida();
@@ -451,29 +459,8 @@ public partial class AsistenciasCorreccionModal
         StateHasChanged();
     }
 
-    private void AlternarAccionesRapidasModoExtra()
-    {
-        var nuevoEstado = !_mostrarAccionesRapidasModoExtra;
-        _mostrarAccionesRapidasModoExtra = nuevoEstado;
-        if (nuevoEstado)
-        {
-            _mostrarAccionesRapidasPermiso = false;
-            _mostrarAccionesRapidasTurno = false;
-            _mostrarResumenTiempoExtraBanco = false;
-        }
-    }
-
     private void AlternarResumenTiempoExtraBanco()
-    {
-        var nuevoEstado = !_mostrarResumenTiempoExtraBanco;
-        _mostrarResumenTiempoExtraBanco = nuevoEstado;
-        if (nuevoEstado)
-        {
-            _mostrarAccionesRapidasPermiso = false;
-            _mostrarAccionesRapidasTurno = false;
-            _mostrarAccionesRapidasModoExtra = false;
-        }
-    }
+        => _mostrarResumenTiempoExtraBanco = !_mostrarResumenTiempoExtraBanco;
 
     private async Task CargarContextoTiempoExtraAsync(CrmDbContext db)
     {

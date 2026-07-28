@@ -330,7 +330,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             return new ResumenAsistenciaPrenominaSnapshot();
         }
 
-        var trabajadas = asistencias.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado or RrhhAsistenciaEstatus.TrabajadoPorHoras).ToList();
+        var trabajadas = asistencias.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado or RrhhAsistenciaEstatus.TrabajadoPorHoras).ToList();
         var faltas = asistencias.Where(a => a.Estatus == RrhhAsistenciaEstatus.Falta).ToList();
         var notas = asistencias
             .Where(a => a.RequiereRevision || a.Estatus is RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.TurnoNoAsignado or RrhhAsistenciaEstatus.MarcaNoReconocida)

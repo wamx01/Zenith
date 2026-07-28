@@ -52,20 +52,20 @@
                 </div>
 
                 @{
-                    var _cifras = ObtenerDesgloseBrutoNetoVisiblePagado();
+                    var _cifras = ObtenerDesgloseBrutoNetoAcreditadoPagado();
                     var _formula = ObtenerFormulaDiaLegible();
                     var _descansosConfigBarra = ObtenerDescansosConfiguradosDia();
                 }
 
                 @* 2. Zona FIJA (siempre visible, no scrollea): resultado + siguiente paso + línea de tiempo *@
                 <div class="asis-timeline-fixed">
-                    @* Tira delgada de resultado: Visible · Pagado (feedback de cada edición) *@
+                    @* Tira delgada de resultado: Acreditado · Pagado (feedback de cada edición) *@
                     @if (_cifras != null)
                     {
                         <div class="asis-result-strip">
                             <span class="asis-result-strip__item asis-result-strip__item--visible">
-                                <span class="asis-result-strip__label">Visible</span>
-                                <strong class="asis-result-strip__value">@FormatearMinutos(_cifras.Visible)</strong>
+                                <span class="asis-result-strip__label">Acreditado</span>
+                                <strong class="asis-result-strip__value">@FormatearMinutos(_cifras.Acreditado)</strong>
                             </span>
                             <span class="asis-result-strip__sep"></span>
                             <span class="asis-result-strip__item asis-result-strip__item--paid">
@@ -104,7 +104,7 @@
                                     <div class="asis-dayline-card__title">Línea de tiempo del día</div>
                                     <div class="asis-dayline-card__text">Clic en un bloque para editarlo, en un pin para ver la marcación, o en los extremos para agregar una marca.</div>
                                 </div>
-                                <button type="button" class="btn btn-sm btn-outline-primary asis-btn-xs" @onclick="AlternarMarcacionesDia">
+                                <button type="button" class="btn btn-sm btn-outline-primary asis-btn-xs" @onclick="() => ActivarPestana(PestanaAcciones.Marcaciones)">
                                     <i class="bi bi-pencil me-1"></i>Editar
                                 </button>
                             </div>
@@ -430,7 +430,7 @@
                             <div class="alert alert-success py-2 mb-2 small"><i class="bi bi-check-circle me-1"></i>@ok</div>
                         }
 
-                        @* Cifras del día (detalle): Bruto / Neto / Visible / Pagado + fórmula *@
+                        @* Cifras del día (detalle): Bruto / Neto / Acreditado / Pagado + fórmula *@
                         <div class="asis-cifras">
                             @if (_tieneCambiosPendientes)
                             {
@@ -450,11 +450,11 @@
                                         <div class="asis-cifra__value">@FormatearMinutos(_cifras.Neto)</div>
                                     </div>
                                     <div class="asis-cifra asis-cifra--accent">
-                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Cuenta para la jornada"></i> Visible</div>
-                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Visible)</div>
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Cuenta para la jornada"></i> Acreditado</div>
+                                        <div class="asis-cifra__value">@FormatearMinutos(_cifras.Acreditado)</div>
                                     </div>
                                     <div class="asis-cifra asis-cifra--paid">
-                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Visible sin extra al banco"></i> Pagado</div>
+                                        <div class="asis-cifra__label"><i class="bi bi-info-circle" title="Acreditado sin extra al banco"></i> Pagado</div>
                                         <div class="asis-cifra__value">@FormatearMinutos(_cifras.Pagado)</div>
                                     </div>
                                 </div>
@@ -487,11 +487,19 @@
                                     <i class="bi bi-chevron-right asis-alert-card__chev"></i>
                                 </button>
                             }
+                            </div>
                         </div>
 
-                        @* Acordeones de acciones (cada uno se abre/colapsa individualmente) *@
-                        <div class="asis-accordion-list mt-3">
-                            @* Tiempo extra / banco — informativo: aquí es solo lectura, se autoriza en Asistencias Semanal *@
+                        @* Columna derecha: acciones, sticky *@
+                        <div class="asis-body-layout__side">
+                            <div class="asis-body-layout__side-inner">
+                                <div class="asis-side-title mb-2">
+                                    <i class="bi bi-magic me-1"></i>Acciones
+                                </div>
+
+                                @* Acordeones de acciones (cada uno se abre/colapsa individualmente) *@
+                                <div class="asis-accordion-list mt-0">
+                                    @* Tiempo extra / banco — informativo: aquí es solo lectura, se autoriza en Asistencias Semanal *@
                             <div class="asis-te-info">
                                 <div class="asis-te-info__head">
                                     <i class="bi bi-plus-circle me-1"></i>
@@ -506,16 +514,32 @@
                                 <div class="asis-te-info__note">@ObtenerResumenDestinoTiempoActual()</div>
                             </div>
 
-                            @* Permiso rápido *@
-                            <div class="asis-accordion @(_mostrarAccionesRapidasPermiso ? "asis-accordion--open" : "")">
-                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasPermiso" aria-expanded="@_mostrarAccionesRapidasPermiso">
-                                    <span class="asis-accordion__icon"><i class="bi bi-shield-check"></i></span>
-                                    <span class="asis-accordion__title">Permiso rápido</span>
-                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                </button>
-                                @if (_mostrarAccionesRapidasPermiso)
+                            @if (EdicionBloqueadaPorPeriodo)
+                            {
+                                <div class="asis-alert asis-alert--locked mb-2">
+                                    <i class="bi bi-lock-fill me-1"></i>
+                                    <strong>Periodo autorizado.</strong> Para editar este día, reabre el periodo en Asistencias Semanal y vuelve a autorizar.
+                                </div>
+                            }
+
+                            @* Barra de pestañas de acciones *@
+                            <div class="asis-tabs" role="tablist">
+                                <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Permiso ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Permiso)">Permiso rápido</button>
+                                <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Turno ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Turno)">Turno</button>
+                                <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Metodo ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Metodo)">Método</button>
+                                <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Marcaciones ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Marcaciones)">Marcaciones <span class="asis-tabs__badge">@marcacionesDia.Count</span></button>
+                                @if (_descansosConfigBarra.Count > 0)
                                 {
-                                    <div class="asis-accordion__body">
+                                    <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Descansos ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Descansos)" disabled="@(!PuedeReprocesar)">Descansos <span class="asis-tabs__badge @(_descansosNoDescontarSeleccionados.Count > 0 ? "asis-tabs__badge--warn" : "")">@(_descansosNoDescontarSeleccionados.Count > 0 ? _descansosNoDescontarSeleccionados.Count : _descansosConfigBarra.Count)</span></button>
+                                }
+                                <button type="button" class="asis-tabs__btn @(_pestanaAcciones == PestanaAcciones.Bitacora ? "active" : "")" role="tab" @onclick="() => ActivarPestana(PestanaAcciones.Bitacora)">Bitácora <span class="asis-tabs__badge">@bitacoraCorreccionDia.Count</span></button>
+                            </div>
+
+                            <fieldset class="asis-tab-fieldset" disabled="@EdicionBloqueadaPorPeriodo">
+                            @* Permiso rápido *@
+                            @if (_pestanaAcciones == PestanaAcciones.Permiso)
+                            {
+                                <div class="asis-accordion__body asis-tab-panel">
                                         <div class="asis-quick-card asis-quick-card--compact mb-2">
                                             <div class="asis-quick-card__head">
                                                 <strong>Permiso rápido</strong>
@@ -569,18 +593,11 @@
                                         </div>
                                     </div>
                                 }
-                            </div>
 
                             @* Turno *@
-                            <div class="asis-accordion @(_mostrarAccionesRapidasTurno ? "asis-accordion--open" : "")">
-                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasTurno" aria-expanded="@_mostrarAccionesRapidasTurno">
-                                    <span class="asis-accordion__icon"><i class="bi bi-arrow-left-right"></i></span>
-                                    <span class="asis-accordion__title">Turno</span>
-                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                </button>
-                                @if (_mostrarAccionesRapidasTurno)
-                                {
-                                    <div class="asis-accordion__body">
+                            @if (_pestanaAcciones == PestanaAcciones.Turno)
+                            {
+                                <div class="asis-accordion__body asis-tab-panel">
                                         <div class="asis-quick-card asis-quick-card--compact mb-0">
                                             <div class="asis-quick-card__head">
                                                 <strong>Cambio rápido de turno</strong>
@@ -609,18 +626,11 @@
                                         </div>
                                     </div>
                                 }
-                            </div>
 
                             @* Método de cálculo *@
-                            <div class="asis-accordion @(_mostrarAccionesRapidasModoExtra ? "asis-accordion--open" : "")">
-                                <button type="button" class="asis-accordion__head" @onclick="AlternarAccionesRapidasModoExtra" aria-expanded="@_mostrarAccionesRapidasModoExtra">
-                                    <span class="asis-accordion__icon"><i class="bi bi-calculator"></i></span>
-                                    <span class="asis-accordion__title">Método de cálculo</span>
-                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                </button>
-                                @if (_mostrarAccionesRapidasModoExtra)
-                                {
-                                    <div class="asis-accordion__body">
+                            @if (_pestanaAcciones == PestanaAcciones.Metodo)
+                            {
+                                <div class="asis-accordion__body asis-tab-panel">
                                         <div class="asis-quick-card asis-quick-card--compact mb-0">
                                             <div class="asis-quick-card__body">
                                                 <label class="asis-field-label">Modo de cálculo</label>
@@ -632,7 +642,7 @@
                                                     else
                                                     {
                                                         <option value="EntradaSalida" selected="@(modoSugerenciaExtra == "EntradaSalida")">Entrada / salida real vs programada</option>
-                                                        <option value="NetoVsNeto" selected="@(modoSugerenciaExtra == "NetoVsNeto")">Neto trabajado vs neto esperado</option>
+                                                        <option value="MarcajeReloj" selected="@(modoSugerenciaExtra == "MarcajeReloj")">Marcaje de Reloj</option>
                                                     }
                                                 </select>
                                                 <button type="button" class="btn btn-sm btn-primary" @onclick="GuardarModoSugerenciaYReprocesarAsync" disabled="@cargando">
@@ -643,19 +653,11 @@
                                         </div>
                                     </div>
                                 }
-                            </div>
 
                             @* Marcaciones *@
-                            <div class="asis-accordion @(_mostrarMarcacionesDia ? "asis-accordion--open" : "")">
-                                <button type="button" class="asis-accordion__head" @onclick="AlternarMarcacionesDia" aria-expanded="@_mostrarMarcacionesDia">
-                                    <span class="asis-accordion__icon"><i class="bi bi-card-list"></i></span>
-                                    <span class="asis-accordion__title">Marcaciones</span>
-                                    <span class="asis-accordion__badge">@marcacionesDia.Count</span>
-                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                </button>
-                                @if (_mostrarMarcacionesDia)
-                                {
-                                    <div class="asis-accordion__body">
+                            @if (_pestanaAcciones == PestanaAcciones.Marcaciones)
+                            {
+                                <div class="asis-accordion__body asis-tab-panel">
                                         <div class="asis-marcaciones-quick mb-0">
                                             <div class="asis-marcaciones-quick__head">
                                                 <div>
@@ -688,28 +690,11 @@
                                         </div>
                                     </div>
                                 }
-                            </div>
 
                             @* Descansos / no descontar (solo si el turno tiene descansos configurados) *@
-                            @if (_descansosConfigBarra.Count > 0)
+                            @if (_descansosConfigBarra.Count > 0 && _pestanaAcciones == PestanaAcciones.Descansos)
                             {
-                                <div class="asis-accordion @(_mostrarDescansosNoDescontar ? "asis-accordion--open" : "")">
-                                    <button type="button" class="asis-accordion__head" @onclick="() => _mostrarDescansosNoDescontar = !_mostrarDescansosNoDescontar" disabled="@(!PuedeReprocesar)" aria-expanded="@_mostrarDescansosNoDescontar">
-                                        <span class="asis-accordion__icon"><i class="bi bi-cup-hot"></i></span>
-                                        <span class="asis-accordion__title">Descansos / no descontar</span>
-                                        @if (_descansosNoDescontarSeleccionados.Count > 0)
-                                        {
-                                            <span class="asis-accordion__badge asis-accordion__badge--warn">@_descansosNoDescontarSeleccionados.Count</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="asis-accordion__badge">@_descansosConfigBarra.Count</span>
-                                        }
-                                        <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                    </button>
-                                    @if (_mostrarDescansosNoDescontar)
-                                    {
-                                        <div class="asis-accordion__body">
+                                <div class="asis-accordion__body asis-tab-panel">
                                             <div class="asis-quick-card asis-quick-card--compact mb-0">
                                                 <div class="asis-quick-card__head">
                                                     <strong>Descansos</strong>
@@ -740,21 +725,12 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    }
-                                </div>
                             }
 
                             @* Bitácora *@
-                            <div class="asis-accordion @(_mostrarBitacora ? "asis-accordion--open" : "")">
-                                <button type="button" class="asis-accordion__head" @onclick="AlternarBitacora" aria-expanded="@_mostrarBitacora">
-                                    <span class="asis-accordion__icon"><i class="bi bi-clock-history"></i></span>
-                                    <span class="asis-accordion__title">Bitácora</span>
-                                    <span class="asis-accordion__badge">@bitacoraCorreccionDia.Count</span>
-                                    <i class="bi bi-chevron-right asis-accordion__chev"></i>
-                                </button>
-                                @if (_mostrarBitacora)
-                                {
-                                    <div class="asis-accordion__body">
+                            @if (_pestanaAcciones == PestanaAcciones.Bitacora)
+                            {
+                                <div class="asis-accordion__body asis-tab-panel">
                                         <div class="asis-quick-card asis-quick-card--compact mb-0">
                                             <div class="asis-quick-card__body">
                                                 @if (bitacoraCorreccionDia.Count == 0)
@@ -772,13 +748,17 @@
                                         </div>
                                     </div>
                                 }
+                            </fieldset>
+                                </div>
                             </div>
                         </div>
 
-                        @* Ayuda del día (colapsable): reúne el wizard, la decisión, cómo se calcula, el resumen lateral, el grid de cálculo y los chips *@
-                        @if (_mostrarAyudaDia)
-                        {
-                            <div class="asis-ayuda-dia mt-3">
+                        @* Columna izquierda continua: ayuda del día y asesor *@
+                        <div class="asis-body-layout__main asis-body-stack">
+                            @* Ayuda del día (colapsable): reúne el wizard, la decisión, cómo se calcula, el resumen lateral, el grid de cálculo y los chips *@
+                            @if (_mostrarAyudaDia)
+                            {
+                                <div class="asis-ayuda-dia mt-3">
                                 @if (asesorCorreccionActual != null)
                                 {
                                     <div class="asis-ayuda-dia__section asis-ayuda-dia__section--hero">
@@ -828,8 +808,8 @@
                                     }
                                     <div class="asis-formula-row"><span>+ Compensación aprobada</span><strong>@FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual())</strong></div>
                                     <div class="asis-formula-row"><span>+ Extra aprobada</span><strong>@FormatearMinutos(ObtenerMinutosExtraAprobados(AsistenciaActual))</strong></div>
-                                    <div class="asis-formula-row"><span>= Tiempo visible</span><strong>@FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual))</strong></div>
-                                    <div class="asis-wizard-side__note">La base es la jornada neta del turno. El visible se calcula desde el tiempo real, sin sumar extra no aprobada. Solo el permiso con goce suma al visible.</div>
+                                    <div class="asis-formula-row"><span>= Tiempo acreditado</span><strong>@FormatearMinutos(ObtenerMinutosTiempoAcreditado(AsistenciaActual))</strong></div>
+                                    <div class="asis-wizard-side__note">La base es la jornada neta del turno. El acreditado se calcula desde el tiempo real, sin sumar extra no aprobada. Solo el permiso con goce suma al acreditado.</div>
                                 </div>
 
                                 <div class="asis-ayuda-dia__section">
@@ -964,7 +944,7 @@
                                         </div>
                                         <div class="asis-advisor__grid-cell">
                                             <span class="asis-advisor__grid-label">Pagadas</span>
-                                            <strong class="asis-advisor__grid-value">@FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual))</strong>
+                                            <strong class="asis-advisor__grid-value">@FormatearMinutos(ObtenerMinutosTiempoAcreditado(AsistenciaActual))</strong>
                                         </div>
                                         <div class="asis-advisor__grid-cell">
                                             <span class="asis-advisor__grid-label">Descanso</span>

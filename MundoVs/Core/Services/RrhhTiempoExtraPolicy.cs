@@ -166,11 +166,20 @@ public static class RrhhTiempoExtraPolicy
 
     // Visible con permiso con goce prorrateado al día: el banco-cobertura lo añade
     // el policy vía ObtenerMinutosPermisoVisible, así el caller no lo duplica.
+    // El permiso cubre el faltante pero NO suma sobre la jornada neta planeada.
     public static int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia, int minutosPermisoConGoceDia, int minutosCompensadosAprobados)
-        => Math.Max(0, ObtenerMinutosBasePagada(asistencia)
-            + ObtenerMinutosPermisoVisible(asistencia, minutosPermisoConGoceDia)
+    {
+        var basePagada = ObtenerMinutosBasePagada(asistencia);
+        var permisoVisible = Math.Max(0, minutosPermisoConGoceDia) + Math.Max(0, asistencia.MinutosCubiertosBancoHoras);
+        var tope = asistencia.MinutosJornadaNetaProgramada;
+        var exceso = tope > 0 ? Math.Max(0, basePagada + permisoVisible - tope) : 0;
+        permisoVisible = Math.Max(0, permisoVisible - exceso);
+
+        return Math.Max(0, basePagada
+            + permisoVisible
             + Math.Max(0, minutosCompensadosAprobados)
             + ObtenerMinutosExtraAprobados(asistencia));
+    }
 
     // Sobrecarga conservada para callers que no pasan permiso con goce explícito
     // (el banco-cobertura sigue sumándose internamente). Redirige a la canonical.

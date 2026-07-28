@@ -167,14 +167,18 @@
                             <col class="asis-week-col--days" />
                             <col class="asis-week-col--num" />
                             <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
                             <col class="asis-week-col--action" />
                         </colgroup>
                         <thead class="table-dark">
                             <tr>
                                 <th class="asis-week-sticky-col asis-week-sticky-col--employee">Empleado</th>
                                 <th class="asis-week-col-days__head">Días del periodo (@diasPeriodo.Count)</th>
-                                <th class="text-end">Pagadas</th>
-                                <th class="text-end">Visible</th>
+                                <th class="text-end">Normal</th>
+                                <th class="text-end">Extra</th>
+                                <th class="text-end">Banco</th>
+                                <th class="text-end">Total</th>
                                 <th class="text-center">Detalle</th>
                             </tr>
                         </thead>
@@ -219,12 +223,44 @@
                                                     <button type="button" class="asis-strip__cell @presentacionDia.CssClass @(EsFinSemana(dia) ? "asis-strip__cell--weekend" : string.Empty)" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(resumen.EmpleadoId, dia)">
                                                         <span class="asis-strip__dow">@ObtenerAbreviaturaDia(dia)</span>
                                                         <span class="asis-strip__day">@dia.ToString("dd")</span>
-                                                        <span class="asis-strip__value">@presentacionDia.Visible</span>
+                                                        <span class="asis-strip__value">@presentacionDia.Acreditado</span>
                                                     </button>
                                                 }
                                             </div>
                                         </td>
-                                        <td class="text-end asis-week-num">@FormatearMinutos(resumen.TotalMinutosPagados)</td>
+                                        <td class="text-end asis-week-num">@FormatearMinutos(resumen.TotalMinutosNormales)</td>
+                                        <td class="text-end asis-week-num">
+                                            @if (resumen.PeriodoAutorizado && resumen.ExtraDescartado)
+                                            {
+                                                <span class="badge bg-secondary" title="Extra descartado: sin pago ni compensación">0:00</span>
+                                            }
+                                            else if (resumen.PeriodoAutorizado && resumen.TotalMinutosExtraPagoBase > 0)
+                                            {
+                                                <span class="badge bg-success" title="Extra a pago: @FormatearMinutos(resumen.TotalMinutosExtraPagoBase) @resumen.ExtraPagoFactorDetalle">@FormatearMinutos(resumen.TotalMinutosExtraPagoBase) <small class="opacity-75">@resumen.ExtraPagoFactorDetalle</small></span>
+                                            }
+                                            else if (resumen.TotalMinutosExtra > 0)
+                                            {
+                                                <span class="badge bg-warning text-dark" title="Extra detectado pendiente de autorizar">Pendiente</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="text-end asis-week-num">
+                                            @if (resumen.PeriodoAutorizado && resumen.TotalMinutosExtraBancoBase > 0)
+                                            {
+                                                <span class="badge bg-info text-dark" title="Extra a banco: @FormatearMinutos(resumen.TotalMinutosExtraBancoBase) @resumen.ExtraBancoFactorDetalle">@FormatearMinutos(resumen.TotalMinutosExtraBancoBase) <small class="opacity-75">@resumen.ExtraBancoFactorDetalle</small></span>
+                                            }
+                                            else if (resumen.PeriodoAutorizado)
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
                                         <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(resumen.TotalMinutos)</td>
                                         <td class="asis-week-col-action__cell">
                                             <div class="d-flex flex-column gap-1 align-items-stretch">
@@ -256,7 +292,9 @@
                                             }
                                         </div>
                                     </td>
-                                    <td class="text-end asis-week-num">@FormatearMinutos(totalMinutosPagadosPeriodo)</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosNormales))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraPagoBase))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraBancoBase))</td>
                                     <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(totalMinutosPeriodo)</td>
                                     <td class="asis-week-col-action__cell"></td>
                                 </tr>
@@ -275,6 +313,7 @@
     Turnos="turnos"
     PuedeReprocesar="@_puedeReprocesar"
     PuedeAprobarTiempoExtra="@_puedeAprobarTiempoExtra"
+    PeriodoAutorizado="@PeriodoSeleccionAutorizado"
     OnClose="CerrarCorreccionDia"
     OnUpdated="RecargarResumenSemanalAsync"
     OnCambioDiaSolicitado="CambiarDiaCorreccionAsync"
@@ -328,6 +367,7 @@
 {
     var resolucionDetalle = resolucionPorEmpleado.GetValueOrDefault(detalle.EmpleadoId);
     var autorizadaDetalle = resolucionDetalle is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+    var extraPagoPresentacion = ObtenerPresentacionExtraPago(detalle);
     <div class="asis-drawer-backdrop" @onclick="CerrarDetalle"></div>
     <aside class="asis-drawer">
         <header class="asis-drawer__header">
@@ -383,28 +423,59 @@
                     <button type="button" class="asis-strip__cell @presentacionDia.CssClass @(EsFinSemana(dia) ? "asis-strip__cell--weekend" : string.Empty)" title="@presentacionDia.Tooltip" @onclick="() => AbrirCorreccionDiaAsync(detalle.EmpleadoId, dia)">
                         <span class="asis-strip__dow">@ObtenerAbreviaturaDia(dia)</span>
                         <span class="asis-strip__day">@dia.ToString("dd")</span>
-                        <span class="asis-strip__value">@presentacionDia.Visible</span>
+                        <span class="asis-strip__value">@presentacionDia.Acreditado</span>
                         <span class="asis-strip__delta">@presentacionDia.Delta</span>
                     </button>
                 }
             </div>
 
-            <h6 class="asis-drawer__section mt-3">Tiempo reloj vs visible</h6>
+            <h6 class="asis-drawer__section mt-3">Tiempo reloj vs acreditado</h6>
             <div class="asis-detail-grid">
                 <div class="asis-detail-card asis-detail-card--info" title="Tiempo reloj = span(primera → última marca) menos los pares del medio (descansos), calculado bajo demanda desde las marcaciones del empleado. Tal cual del reloj, sin reglas (neteo, umbral). Los descansos no tomados no se descuentan."><span class="asis-detail-card__label">Tiempo reloj</span><span class="asis-detail-card__value">@FormatearMinutos(_detalleTotalBruto)</span></div>
-                <div class="asis-detail-card asis-detail-card--primary" title="Visible = base pagada + permiso con goce + compensación + extra aprobado. Es el tiempo que muestra la tabla."><span class="asis-detail-card__label">Visible</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutos)</span></div>
-                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Tiempo reloj − visible."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
+                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Normal (jornada)</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosNormales)</span></div>
+                <div class="asis-detail-card asis-detail-card--primary" title="Acreditado = base pagada + permiso con goce + compensación + extra aprobado. Es el tiempo que muestra la tabla."><span class="asis-detail-card__label">Total</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutos)</span></div>
+                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Tiempo reloj − acreditado."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
             </div>
 
-            <h6 class="asis-drawer__section mt-3">Métricas del periodo</h6>
+            <h6 class="asis-drawer__section mt-3">Desglose del periodo</h6>
             <div class="asis-detail-grid">
                 <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Normales</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosNormales)</span></div>
                 <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. c/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoConGoce)</span></div>
                 <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. s/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoSinGoce)</span></div>
                 <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Compensación</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosCompensacion)</span></div>
                 <div class="asis-detail-card asis-detail-card--good"><span class="asis-detail-card__label">Banco aplicado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosBancoAplicado)</span></div>
-                <div class="asis-detail-card asis-detail-card--good"><span class="asis-detail-card__label">Extra pagado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraAprobadoPago)</span></div>
+            </div>
+
+            <h6 class="asis-drawer__section mt-3">Tiempo extra</h6>
+            <div class="asis-detail-grid">
+                <div class="asis-detail-card asis-detail-card--warn" title="Extra detectado por el procesador (neto trabajado − neto esperado) antes de autorizar el periodo. Se reparte entre pago y banco al aceptar el tiempo."><span class="asis-detail-card__label">Extra detectado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtra)</span></div>
+                @if (detalle.PeriodoAutorizado && detalle.ExtraDescartado)
+                {
+                    <div class="asis-detail-card asis-detail-card--bad" title="Extra descartado: sin pago ni compensación"><span class="asis-detail-card__label">Extra descartado</span><span class="asis-detail-card__value">0:00</span></div>
+                }
+                else if (detalle.PeriodoAutorizado)
+                {
+                    <div class="asis-detail-card @extraPagoPresentacion.CssClass" title="@extraPagoPresentacion.Tooltip">
+                        <span class="asis-detail-card__label">Extra a pago</span>
+                        <span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraPagoBase) <small class="text-muted">@detalle.ExtraPagoFactorDetalle</small></span>
+                    </div>
+                    @if (detalle.TotalMinutosExtraBancoBase > 0)
+                    {
+                        <div class="asis-detail-card asis-detail-card--good" title="Extra a banco de horas">
+                            <span class="asis-detail-card__label">Extra a banco</span>
+                            <span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraBancoBase) <small class="text-muted">@detalle.ExtraBancoFactorDetalle</small></span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="asis-detail-card asis-detail-card--warn" title="Periodo pendiente de autorizar"><span class="asis-detail-card__label">Extra por autorizar</span><span class="asis-detail-card__value">Pendiente</span></div>
+                }
                 <div class="asis-detail-card asis-detail-card--good" title="Minutos reales acumulados al banco por movimientos de horas extra"><span class="asis-detail-card__label">A banco acum.</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraAprobadoBanco)</span></div>
+            </div>
+
+            <h6 class="asis-drawer__section mt-3">Incidencias</h6>
+            <div class="asis-detail-grid">
                 <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipDescuento(detalle)"><span class="asis-detail-card__label">Descuento</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosDescuento)</span></div>
                 <div class="asis-detail-card asis-detail-card--warn" title="@ObtenerTooltipRetardo(detalle)"><span class="asis-detail-card__label">Retardo</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosRetardo)</span></div>
                 <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipSalidaAnticipada(detalle)"><span class="asis-detail-card__label">Salida anticipada</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosSalidaAnticipada)</span></div>

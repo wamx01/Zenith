@@ -10,7 +10,7 @@
     <div class="asis-add-row__fields">
         <div class="asis-add-row__field asis-field--time">
             <label class="asis-field-label">Hora</label>
-            <InputText class="form-control form-control-sm" Value="@ManualHoraTexto" ValueChanged="OnManualHoraTextoChanged" ValueExpression="@(() => ManualHoraTexto)" placeholder="08:00" />
+            <InputText class="form-control form-control-sm" Value="@ManualHoraTexto" ValueChanged="OnManualHoraTextoChanged" ValueExpression="@(() => ManualHoraTexto)" @oninput="@(e => OnManualHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))" placeholder="08:00" />
         </div>
         <div class="asis-add-row__field asis-field--type">
             <label class="asis-field-label">Tipo</label>
@@ -23,7 +23,7 @@
         </div>
         <div class="asis-add-row__field flex-grow-1">
             <label class="asis-field-label">Observación</label>
-            <InputText class="form-control form-control-sm" Value="@ManualObservacion" ValueChanged="OnManualObservacionChanged" ValueExpression="@(() => ManualObservacion)" placeholder="Ej. olvidó checar salida" />
+            <InputText class="form-control form-control-sm" Value="@ManualObservacion" ValueChanged="OnManualObservacionChanged" ValueExpression="@(() => ManualObservacion)" @oninput="@(e => OnManualObservacionChanged.InvokeAsync(e.Value?.ToString()))" placeholder="Ej. olvidó checar salida" />
         </div>
         <div class="asis-add-row__action">
             <button class="btn btn-success btn-sm asis-btn-xs" @onclick="OnGuardarMarcacionManual" disabled="@Cargando">
@@ -83,8 +83,8 @@
                             @if (item.EsManual && MarcacionManualEditandoId == item.Id)
                             {
                                 <div class="d-flex gap-1">
-                                    <InputText class="form-control form-control-sm asis-input--time-edit" Value="@MarcacionManualEditandoHoraTexto" ValueChanged="OnMarcacionManualEditandoHoraTextoChanged" ValueExpression="@(() => MarcacionManualEditandoHoraTexto)" placeholder="hora" />
-                                    <InputText class="form-control form-control-sm flex-grow-1" Value="@MarcacionManualEditandoObservacion" ValueChanged="OnMarcacionManualEditandoObservacionChanged" ValueExpression="@(() => MarcacionManualEditandoObservacion)" placeholder="observación" />
+                                    <InputText class="form-control form-control-sm asis-input--time-edit" Value="@MarcacionManualEditandoHoraTexto" ValueChanged="OnMarcacionManualEditandoHoraTextoChanged" ValueExpression="@(() => MarcacionManualEditandoHoraTexto)" @oninput="@(e => OnMarcacionManualEditandoHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))" placeholder="hora" />
+                                    <InputText class="form-control form-control-sm flex-grow-1" Value="@MarcacionManualEditandoObservacion" ValueChanged="OnMarcacionManualEditandoObservacionChanged" ValueExpression="@(() => MarcacionManualEditandoObservacion)" @oninput="@(e => OnMarcacionManualEditandoObservacionChanged.InvokeAsync(e.Value?.ToString()))" placeholder="observación" />
                                 </div>
                             }
                             else

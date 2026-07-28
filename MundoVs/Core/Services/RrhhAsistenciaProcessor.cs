@@ -283,27 +283,29 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var asistenciaPrevia = await db.RrhhAsistencias
             .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
         var descansosNoDescontarPrevios = ParsearDescansosNoDescontar(asistenciaPrevia?.DescansosNoDescontar);
-        var analisisJornada = AnalizarJornada(detalleTurno, marcacionesClasificadas, resolucionesSegmento, configuracionDescansos, permisoParcial, descansosNoDescontarPrevios);
+        var modoSugerencia = asistenciaPrevia?.ModoSugerenciaExtra;
+        var analisisJornada = AnalizarJornada(detalleTurno, marcacionesClasificadas, resolucionesSegmento, configuracionDescansos, permisoParcial, descansosNoDescontarPrevios, modoSugerencia);
         await ConciliarResolucionesSegmentoAsync(db, empresaId, grupo.EmpleadoId, fecha, marcacionesClasificadas, resolucionesSegmento, cancellationToken);
 
         var entradaReal = analisisJornada.EntradaReal;
         var salidaReal = analisisJornada.SalidaReal;
-        var minutosEntradaAnticipada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
+        var esModoMarcajeReloj = string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase);
+        var minutosEntradaAnticipada = !esModoMarcajeReloj && detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramadaAnticipada - entradaReal.Value).TotalMinutes))
             : 0;
-        var minutosRetardo = detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
+        var minutosRetardo = !esModoMarcajeReloj && detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
             ? ObtenerMinutosRetardoAplicables(Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramada).TotalMinutes)), configuracionDescansos)
             : 0;
-        var minutosSalidaAnticipada = detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
+        var minutosSalidaAnticipada = !esModoMarcajeReloj && detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
             : 0;
-        var minutosMargenNoComputables = CalcularMinutosMargenNoComputables(detalleTurno, analisisJornada, configuracionNomina.MinutosMinimosTiempoExtra);
+        var minutosMargenNoComputables = esModoMarcajeReloj
+            ? 0
+            : CalcularMinutosMargenNoComputables(detalleTurno, analisisJornada, configuracionNomina.MinutosMinimosTiempoExtra);
         var minutosTrabajadosBrutos = Math.Max(0, analisisJornada.MinutosTrabajadosBrutos - minutosMargenNoComputables);
         var minutosTrabajadosNetos = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
 
         var asistencia = asistenciaPrevia;
-
-        var modoSugerencia = asistenciaPrevia?.ModoSugerenciaExtra;
 
         var minutosExtra = CalcularMinutosExtra(detalleTurno, analisisJornada, configuracionDescansos, configuracionNomina.MinutosMinimosTiempoExtra, minutosMargenNoComputables, modoSugerencia);
 
@@ -348,7 +350,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         asistencia.MinutosRetardo = minutosRetardo;
         asistencia.MinutosSalidaAnticipada = minutosSalidaAnticipada;
         asistencia.MinutosExtra = minutosExtra;
-        // I11: ModoSugerenciaExtra es ahora modo puro (EntradaSalida/NetoVsNeto); el
+        // I11: ModoSugerenciaExtra es ahora modo puro (EntradaSalida/MarcajeReloj); el
         // modo "SinTurno" ya no se persiste (los casos sin referencia de jornada se
         // derivan en el policy vía EsSinReferenciaJornada). Limpiar valores legacy.
         if (string.Equals(asistencia.ModoSugerenciaExtra, "SinTurno", StringComparison.OrdinalIgnoreCase))
@@ -441,7 +443,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         if (minutosSalidaAnticipada > 0)
         {
-            return (RrhhAsistenciaEstatus.AsistenciaNormal, true, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, "La salida real fue antes de la programada.", observacionesDescansos));
+            return (RrhhAsistenciaEstatus.SalidaAnticipada, true, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, "La salida real fue antes de la programada.", observacionesDescansos));
         }
 
         return (RrhhAsistenciaEstatus.AsistenciaNormal, requiereRevisionDescansos || requiereRevisionEntradaAnticipada || requiereRevisionJornadaIrregular, ConstruirObservaciones(minutosEntradaAnticipada, minutosRetardo, minutosSalidaAnticipada, minutosExtra, minutosMinimosTiempoExtra, null, observacionesDescansos));
@@ -450,42 +452,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     private static int CalcularMinutosExtra(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, RrhhAsistenciaDescansoSettings configuracionDescansos, int minutosMinimosTiempoExtra, int minutosMargenNoComputables, string? modoSugerencia = null)
     {
         minutosMinimosTiempoExtra = ObtenerMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra);
-
-        if (analisisJornada.BloquearTiempoExtraAutomatico)
-        {
-            // Aunque el automático esté bloqueado, los minutos en que la salida real
-            // supera la salida programada y la entrada fue anterior a la programada
-            // son extra objetivos e inequívocos.
-            var minutosSalidaPostBloqueada = 0;
-            if (detalleTurno?.HoraSalida is TimeSpan salidaProgramadaBloqueo && analisisJornada.SalidaReal.HasValue)
-            {
-                minutosSalidaPostBloqueada = Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramadaBloqueo).TotalMinutes));
-                if (minutosSalidaPostBloqueada < minutosMinimosTiempoExtra)
-                {
-                    minutosSalidaPostBloqueada = 0;
-                }
-            }
-
-            var minutosEntradaAnticipadaBloqueada = 0;
-            if (detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaBloqueo && analisisJornada.EntradaReal.HasValue)
-            {
-                minutosEntradaAnticipadaBloqueada = Math.Max(0, (int)Math.Round((entradaProgramadaBloqueo - analisisJornada.EntradaReal.Value).TotalMinutes));
-                if (minutosEntradaAnticipadaBloqueada < minutosMinimosTiempoExtra)
-                {
-                    minutosEntradaAnticipadaBloqueada = 0;
-                }
-            }
-
-            return analisisJornada.MinutosExtraManual + minutosSalidaPostBloqueada + minutosEntradaAnticipadaBloqueada;
-        }
-
-        if (analisisJornada.AutoDescuentoDescansoNoMarcado)
-        {
-            var margenNoComputable = CalcularMinutosMargenNoComputables(detalleTurno, analisisJornada, minutosMinimosTiempoExtra);
-            var excedenteNetoAuto = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - analisisJornada.MinutosJornadaNetaProgramada - margenNoComputable);
-            var extraAutomatico = excedenteNetoAuto <= configuracionDescansos.ToleranciaCoincidenciaBrutaMinutos ? 0 : excedenteNetoAuto;
-            return extraAutomatico + analisisJornada.MinutosExtraManual;
-        }
 
         // Sin turno definido (caso sin referencia de jornada): no hay entrada/salida
         // programada, así que NO se auto-detecta extra por jornada legal. Todo el
@@ -498,38 +464,29 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return analisisJornada.MinutosExtraManual;
         }
 
-        // Modo NetoVsNeto: calcula extra como (neto trabajado + perdón) − neto esperado del turno.
+        // Modo MarcajeReloj: calcula extra como (neto trabajado + perdón) − neto esperado del turno.
         // Solo se usa cuando el usuario lo seleccionó explícitamente para este día (requiere turno).
-        if (string.Equals(modoSugerencia, "NetoVsNeto", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase))
         {
             var netoTrabajado = Math.Max(0, analisisJornada.MinutosTrabajadosNetos);
             var netoEsperado = Math.Max(0, analisisJornada.MinutosJornadaNetaProgramada);
             var excedenteNeto = Math.Max(0, netoTrabajado - netoEsperado);
             var minutosExtraCalculados = excedenteNeto + analisisJornada.MinutosExtraManual;
 
-            if (minutosExtraCalculados > 0 && minutosExtraCalculados < minutosMinimosTiempoExtra)
-            {
-                minutosExtraCalculados = 0;
-            }
-
+            // Modo MarcajeReloj: sin umbral — el excedente neto real se reporta tal cual
+            // (3 min de excedente son 3 min de extra, no se truncan a 0). El umbral sólo
+            // aplica al modo EntradaSalida (default), que evalúa componentes por separado.
             return minutosExtraCalculados;
         }
 
-        // Modo EntradaSalida (default): entrada anticipada + salida posterior respecto al turno programado.
-        var minutosEntradaAnticipada = analisisJornada.EntradaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((entradaProgramada - analisisJornada.EntradaReal.Value).TotalMinutes))
-            : 0;
-        var minutosSalidaPosterior = analisisJornada.SalidaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((analisisJornada.SalidaReal.Value - salidaProgramada).TotalMinutes))
-            : 0;
-
-        // Aplicar umbral mínimo a cada componente por separado
-        if (minutosEntradaAnticipada < minutosMinimosTiempoExtra) minutosEntradaAnticipada = 0;
-        if (minutosSalidaPosterior < minutosMinimosTiempoExtra) minutosSalidaPosterior = 0;
-
-        var minutosExtraCalculados2 = minutosEntradaAnticipada + minutosSalidaPosterior + analisisJornada.MinutosExtraManual;
-
-        return minutosExtraCalculados2;
+        // Modo EntradaSalida (default): extra = Max(0, Trabajado − Planeado) con umbral mínimo.
+        // Se respeta el margen sub-umbral que ya se descontó del neto visible, para no
+        // reportar extra sobre tiempo que finalmente no se contó como laboral.
+        var netoTrabajado2 = Math.Max(0, analisisJornada.MinutosTrabajadosNetos - minutosMargenNoComputables);
+        var netoEsperado2 = Math.Max(0, analisisJornada.MinutosJornadaNetaProgramada);
+        var excedenteNeto2 = Math.Max(0, netoTrabajado2 - netoEsperado2);
+        var extraAutomatico2 = excedenteNeto2 < minutosMinimosTiempoExtra ? 0 : excedenteNeto2;
+        return extraAutomatico2 + analisisJornada.MinutosExtraManual;
     }
 
     private static int CalcularMinutosMargenNoComputables(TurnoBaseDetalle? detalleTurno, AnalisisJornada analisisJornada, int minutosMinimosTiempoExtra)
@@ -672,7 +629,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         return partes.Count == 0 ? null : string.Join(" ", partes);
     }
 
-    private static AnalisisJornada AnalizarJornada(TurnoBaseDetalle? detalleTurno, IReadOnlyList<MarcacionProcesada> marcaciones, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, RrhhAsistenciaDescansoSettings configuracionDescansos, PermisoParcialDia? permisoParcial, HashSet<int>? descansosNoDescontarPrevios = null)
+    private static AnalisisJornada AnalizarJornada(TurnoBaseDetalle? detalleTurno, IReadOnlyList<MarcacionProcesada> marcaciones, IReadOnlyList<RrhhSegmentoResolucion> resolucionesSegmento, RrhhAsistenciaDescansoSettings configuracionDescansos, PermisoParcialDia? permisoParcial, HashSet<int>? descansosNoDescontarPrevios = null, string? modoSugerencia = null)
     {
         var descansosConfigurados = ObtenerDescansosConfigurados(detalleTurno);
         var minutosJornadaProgramada = detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && detalleTurno.HoraSalida is TimeSpan salidaProgramada
@@ -715,8 +672,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 descansosConfigurados.Count > 0,
                 false,
                 false,
-                false,
-                false,
                 0);
         }
 
@@ -732,24 +687,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosTrabajoAdicionalDespues = CalcularMinutosTrabajoAdicional(marcasPosteriores, "posterior al turno", observaciones: []);
         var esTrabajoAdicionalAntesValido = EsTrabajoAdicionalAutomaticoValido(marcasPrevias);
         var esTrabajoAdicionalDespuesValido = EsTrabajoAdicionalAutomaticoValido(marcasPosteriores);
-        var minutosRetardoPrincipal = detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAplicada && entradaReal.HasValue
-            ? ObtenerMinutosRetardoAplicables(Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramadaAplicada).TotalMinutes)), configuracionDescansos)
-            : 0;
-        var minutosSalidaAnticipadaPrincipal = detalleTurno?.HoraSalida is TimeSpan salidaProgramadaAplicada && salidaReal.HasValue
-            ? Math.Max(0, (int)Math.Round((salidaProgramadaAplicada - salidaReal.Value).TotalMinutes))
-            : 0;
-        var bloquearBloquePrevioComoExtra = minutosTrabajoAdicionalAntes > 0 && esTrabajoAdicionalAntesValido && (minutosRetardoPrincipal > 0 || minutosSalidaAnticipadaPrincipal > 0);
-        var bloquearBloquePosteriorComoExtra = minutosTrabajoAdicionalDespues > 0 && esTrabajoAdicionalDespuesValido && (minutosRetardoPrincipal > 0 || minutosSalidaAnticipadaPrincipal > 0);
-        if (bloquearBloquePrevioComoExtra)
-        {
-            esTrabajoAdicionalAntesValido = false;
-        }
-
-        if (bloquearBloquePosteriorComoExtra)
-        {
-            esTrabajoAdicionalDespuesValido = false;
-        }
-
         var minutosTrabajadosBrutosJornada = fechaEntrada.HasValue && fechaSalida.HasValue && fechaSalida > fechaEntrada
             ? Math.Max(0, (int)Math.Round((fechaSalida.Value - fechaEntrada.Value).TotalMinutes))
             : 0;
@@ -792,20 +729,16 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         if (minutosTrabajoAdicionalAntes > 0)
         {
-            observaciones.Add(bloquearBloquePrevioComoExtra
-                ? $"Se detectó un bloque previo al turno de {minutosTrabajoAdicionalAntes} min; quedó como referencia operativa y no como extra automática porque el día también presenta retardo o salida anticipada."
-                : esTrabajoAdicionalAntesValido
-                    ? $"Se detectó un bloque previo al turno de {minutosTrabajoAdicionalAntes} min; se tomó como tiempo adicional del día."
-                    : $"Se detectó un bloque previo al turno de {minutosTrabajoAdicionalAntes} min; quedó como referencia operativa y no como extra automática.");
+            observaciones.Add(esTrabajoAdicionalAntesValido
+                ? $"Se detectó un bloque previo al turno de {minutosTrabajoAdicionalAntes} min; se tomó como tiempo adicional del día."
+                : $"Se detectó un bloque previo al turno de {minutosTrabajoAdicionalAntes} min; quedó como referencia operativa y no como extra automática.");
         }
 
         if (minutosTrabajoAdicionalDespues > 0)
         {
-            observaciones.Add(bloquearBloquePosteriorComoExtra
-                ? $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; quedó como referencia operativa y no como extra automática porque el día también presenta retardo o salida anticipada."
-                : esTrabajoAdicionalDespuesValido
-                    ? $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; se tomó como tiempo adicional del día."
-                    : $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; quedó como referencia operativa y no como extra automática.");
+            observaciones.Add(esTrabajoAdicionalDespuesValido
+                ? $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; se tomó como tiempo adicional del día."
+                : $"Se detectó un bloque posterior al turno de {minutosTrabajoAdicionalDespues} min; quedó como referencia operativa y no como extra automática.");
         }
 
         var segmentosEspeciales = ExtraerSegmentosEspeciales(marcasIntermedias, resolucionesSegmento, observaciones, detalleTurno?.HoraSalida);
@@ -838,7 +771,11 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var descansosClasificados = marcasIntermedias
             .Where(m => m.Marcacion.ClasificacionOperativa is TipoClasificacionMarcacionRrhh.InicioDescanso or TipoClasificacionMarcacionRrhh.FinDescanso)
             .ToList();
-        var usarClasificacionManual = descansosClasificados.Count >= 2;
+        var esModoMarcajeReloj = string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase);
+        // Modo Marcaje de Reloj: todo par intermedio es pausa por defecto (reloj puro).
+        // La clasificacion manual Inicio/FinDescanso se ignora; emparejamos cronologicamente.
+        // Los segmentos editados manualmente a Trabajo ya fueron excluidos de marcasIntermedias.
+        var usarClasificacionManual = !esModoMarcajeReloj && descansosClasificados.Count >= 2;
 
         if (usarClasificacionManual)
         {
@@ -894,19 +831,13 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             observaciones.Add($"Se detectaron {descansosTomados.Count} descanso(s) y el turno solo contempla {descansosConfigurados.Count}.");
         }
 
-        var descansosAplicados = CalcularDescansosAplicados(descansosConfigurados, descansosTomados, resolucionesSegmento, permisoParcial, configuracionDescansos, observaciones, descansosNoDescontarPrevios);
+        var descansosAplicados = CalcularDescansosAplicados(descansosConfigurados, descansosTomados, resolucionesSegmento, permisoParcial, configuracionDescansos, observaciones, descansosNoDescontarPrevios, modoSugerencia, entradaReal, salidaReal);
         var minutosDescansoTomado = descansosAplicados.Sum(d => d.MinutosAplicados);
         var minutosDescansoPagado = descansosAplicados.Where(d => d.EsPagado).Sum(d => d.MinutosAplicados);
         var minutosDescansoNoPagado = Math.Max(0, minutosDescansoTomado - minutosDescansoPagado);
         var minutosTrabajadosNetos = Math.Max(0, minutosTrabajadosBrutos - minutosDescansoNoPagado - minutosSalidaTemporal - minutosPermisoSegmento - minutosNoConsiderados);
         var resumenDescansos = ConstruirResumenDescansos(descansosConfigurados, descansosAplicados);
 
-        var autoDescuentoDescansoNoMarcado = descansosAplicados.Any(d => !d.FueMarcado && d.MinutosAplicados > 0);
-        var bloquearTiempoExtraAutomatico = tieneCorteAntesDeEntradaProgramada
-            || tieneCorteDespuesDeSalidaProgramada
-            || cantidadMarcasAntesEntradaProgramada > 2
-            || cantidadMarcasDespuesSalidaProgramada > 2
-            || conflictosAlternancia.BloquearTiempoExtraAutomatico;
         var cantidadDescansosRealesAplicados = descansosAplicados.Count(d => d.FueMarcado && d.MinutosAplicados > 0);
         var requiereRevisionDescansos = cantidadDescansosRealesAplicados > descansosConfigurados.Count
             || minutosTrabajoAdicionalAntes > 0
@@ -935,8 +866,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             resumenDescansos,
             observaciones,
             requiereRevisionDescansos,
-            autoDescuentoDescansoNoMarcado,
-            bloquearTiempoExtraAutomatico,
             esTrabajoAdicionalAntesValido,
             esTrabajoAdicionalDespuesValido,
             segmentosEspeciales.MinutosExtraManual
@@ -974,12 +903,11 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     {
         if (marcasIntermedias.Count < 2)
         {
-            return new AlternanciaSegmentosResult([], false, false);
+            return new AlternanciaSegmentosResult([], false);
         }
 
         var observaciones = new List<string>();
         var requiereRevision = false;
-        var bloquearTiempoExtraAutomatico = false;
 
         for (var i = 0; i + 1 < marcasIntermedias.Count; i += 2)
         {
@@ -1002,11 +930,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             {
                 observaciones.Add($"El tramo intermedio {inicio.FechaLocal:HH:mm}-{fin.FechaLocal:HH:mm} debería ser un descanso, permiso o salida temporal; revisar si corresponde clasificarlo así.");
                 requiereRevision = true;
-                bloquearTiempoExtraAutomatico = true;
             }
         }
 
-        return new AlternanciaSegmentosResult(observaciones, requiereRevision, bloquearTiempoExtraAutomatico);
+        return new AlternanciaSegmentosResult(observaciones, requiereRevision);
     }
 
     private static bool DebeInferirseComoDescansoEnMotor(IReadOnlyList<DescansoConfigurado> descansosConfigurados, TimeSpan inicio, TimeSpan fin, int minutos)
@@ -1425,7 +1352,10 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         PermisoParcialDia? permisoParcial,
         RrhhAsistenciaDescansoSettings configuracionDescansos,
         List<string> observaciones,
-        HashSet<int>? descansosNoDescontarPrevios = null)
+        HashSet<int>? descansosNoDescontarPrevios = null,
+        string? modoSugerencia = null,
+        TimeSpan? entradaReal = null,
+        TimeSpan? salidaReal = null)
     {
         if (descansosConfigurados.Count == 0 && descansosTomados.Count == 0)
         {
@@ -1464,10 +1394,15 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             {
                 var excesoMinutos = Math.Max(0, tomado.Minutos - configurado.Minutos);
                 var excedeTolerancia = excesoMinutos > configuracionDescansos.ToleranciaExcesoDescansoMinutos;
+                // Modo MarcajeReloj: descontar los minutos REALES del descanso (no los
+                // programados). Si el descanso planificado es 30 min pero el empleado
+                // tomó 18, se descuentan 18. En modo EntradaSalida (default) se
+                // mantiene la regla original: descuenta los programados.
+                var usarDescansoReal = string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase);
                 var minutosAplicados = configurado.EsPagado
                     ? tomado.Minutos
                     : tomado.Minutos < configurado.Minutos
-                        ? configurado.Minutos
+                        ? (usarDescansoReal ? tomado.Minutos : configurado.Minutos)
                         : excedeTolerancia
                             ? tomado.Minutos
                             : configurado.Minutos;
@@ -1481,7 +1416,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
                 if (!configurado.EsPagado && tomado.Minutos < configurado.Minutos)
                 {
-                    observaciones.Add($"El descanso {configurado.Numero} registró {tomado.Minutos} min; se aplicaron {configurado.Minutos} min programados.");
+                    observaciones.Add(usarDescansoReal
+                        ? $"El descanso {configurado.Numero} registró {tomado.Minutos} min; se aplicaron {tomado.Minutos} min reales (modo neto vs neto)."
+                        : $"El descanso {configurado.Numero} registró {tomado.Minutos} min; se aplicaron {configurado.Minutos} min programados.");
                 }
                 else if (excesoMinutos > 0 && excedeTolerancia)
                 {
@@ -1558,7 +1495,32 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             }
 
             var minutosPlaneados = configurado.EsPagado ? 0 : configurado.Minutos;
-            if (!configurado.EsPagado)
+            // Modo MarcajeReloj: el descanso NO marcado no se descuenta — el reloj indica
+            // que el empleado trabajó ese tiempo (no se tomó el descanso). Sólo se
+            // descuenta lo que se marcó realmente. En modo default (EntradaSalida) sí
+            // se descuenta lo planeado: el modo busca respetar el plan de neto programado.
+            var esModoMarcajeReloj = string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase);
+            if (esModoMarcajeReloj && !configurado.EsPagado)
+            {
+                minutosPlaneados = 0;
+            }
+            // Si la ventana del descanso cae totalmente fuera del tiempo efectivamente
+            // trabajado (la persona salió antes de que iniciara o llegó después de que
+            // terminara), no tiene sentido descontar minutos de descanso de tiempo que
+            // nunca se trabajó: se aplica 0 y se marca fuera de jornada.
+            var fueraDeJornada = !configurado.EsPagado
+                && ((salidaReal.HasValue && configurado.Inicio >= salidaReal.Value)
+                    || (entradaReal.HasValue && configurado.Fin <= entradaReal.Value));
+            if (fueraDeJornada)
+            {
+                minutosPlaneados = 0;
+                observaciones.Add($"El descanso {configurado.Numero} ({configurado.Inicio:hh\\:mm}-{configurado.Fin:hh\\:mm}) no se descontó porque su ventana cae fuera del tiempo trabajado (entrada {entradaReal?.ToString("hh\\:mm") ?? "—"}, salida {salidaReal?.ToString("hh\\:mm") ?? "—"}).");
+            }
+            else if (esModoMarcajeReloj && !configurado.EsPagado)
+            {
+                observaciones.Add($"No se detectó el descanso {configurado.Numero}; modo neto vs neto: no se descuenta (el reloj indica que se trabajó).");
+            }
+            else if (!configurado.EsPagado)
             {
                 observaciones.Add($"No se detectó el descanso {configurado.Numero}; se aplicaron {configurado.Minutos} min programados.");
             }
@@ -1573,7 +1535,9 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 0,
                 minutosPlaneados,
                 false,
-                false));
+                false,
+                false,
+                fueraDeJornada));
         }
 
         var siguienteNumeroAdicional = Math.Max(
@@ -1813,6 +1777,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
                 ? $"D{d.Numero}: no descontado; el empleado no tomó el descanso y el tiempo se cuenta como trabajo efectivo ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
                 : d.FueCubiertoPorPermiso
                 ? $"D{d.Numero}: sin marcar; cubierto por permiso del día ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
+                : d.FueFueraDeJornada
+                ? $"D{d.Numero}: sin marcar; fuera de jornada, no se descuenta ({d.InicioProgramado:hh\\:mm}-{d.FinProgramado:hh\\:mm})"
                 : d.FueMarcado
                     ? $"D{d.Numero}: {d.SalidaReal:HH:mm}-{d.RegresoReal:HH:mm} (real {d.MinutosReales} min, aplicado {d.MinutosAplicados} min{(d.EsPagado ? ", pagado" : string.Empty)})"
                     : $"D{d.Numero}: sin marcar; aplicado {d.MinutosAplicados} min programados{(d.EsPagado ? " pagados" : string.Empty)}"));
@@ -1943,7 +1909,8 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         int MinutosAplicados,
         bool FueMarcado,
         bool FueCubiertoPorPermiso,
-        bool FueNoDescontado = false);
+        bool FueNoDescontado = false,
+        bool FueFueraDeJornada = false);
 
     private sealed record AnalisisJornada(
         int TotalMarcaciones,
@@ -1961,8 +1928,6 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         string? ResumenDescansos,
         IReadOnlyList<string> ObservacionesRevision,
         bool RequiereRevisionDescansos,
-        bool AutoDescuentoDescansoNoMarcado,
-        bool BloquearTiempoExtraAutomatico,
         bool EsTrabajoAdicionalAntesValido,
         bool EsTrabajoAdicionalDespuesValido,
         int MinutosExtraManual)
@@ -1982,8 +1947,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
     private sealed record AlternanciaSegmentosResult(
         IReadOnlyList<string> Observaciones,
-        bool RequiereRevision,
-        bool BloquearTiempoExtraAutomatico);
+        bool RequiereRevision);
 
     private sealed record PermisoParcialDia(decimal Horas, bool ConGocePago, string? Motivo);
 

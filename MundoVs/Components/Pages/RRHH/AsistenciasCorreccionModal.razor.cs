@@ -22,6 +22,23 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     [Parameter] public IReadOnlyList<TurnoBase> Turnos { get; set; } = [];
     [Parameter] public bool PuedeReprocesar { get; set; }
     [Parameter] public bool PuedeAprobarTiempoExtra { get; set; }
+    // Fase 7/8 — el periodo del empleado está Autorizada: el día se vuelve sólo-lectura.
+    // Editar un día autorizado dejaría el snapshot del periodo desactualizado (el
+    // reproceso del día no toca la resolución del periodo). Para editar, el operador
+    // debe Reabrir el periodo en Asistencias Semanal. La vista diaria no lo pasa
+    // (default false) porque ahí no hay contexto de periodo.
+    [Parameter] public bool PeriodoAutorizado { get; set; }
+
+    // Candado efectivo: el día es editable sólo si hay permiso Y el periodo no está autorizado.
+    private bool EdicionBloqueadaPorPeriodo => PeriodoAutorizado;
+    private bool PuedeEditarDia => PuedeReprocesar && !EdicionBloqueadaPorPeriodo;
+
+    // Mensaje de error para los guards de edición: si el periodo está autorizado,
+    // explica que hay que reabrirlo; si no, devuelve el mensaje de permiso original.
+    private string MensajeEdicionBloqueada(string mensajePermiso)
+        => EdicionBloqueadaPorPeriodo
+            ? "El periodo está autorizado. Reábrelo en Asistencias Semanal para editar este día."
+            : mensajePermiso;
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnUpdated { get; set; }
     // Flechas ◀ ▶ de día: el padre (vista semanal) resuelve la asistencia del día
@@ -47,13 +64,13 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     // Cifras centrales del día para el bloque "Cifras del día":
     // Bruto = tiempo crudo (entrada→salida sin reglas), Neto = trabajado efectivo
-    // (ya con descansos/salidas temporales descontados + perdón manual), Visible =
+    // (ya con descansos/salidas temporales descontados + perdón manual), Acreditado =
     // tiempo que cuenta para la jornada (base + permiso + compensación + extra
-    // aprobado), Pagado = visible menos el extra autorizado al banco de horas (que
+    // aprobado), Pagado = acreditado menos el extra autorizado al banco de horas (que
     // no se paga como dinero, se acumula). Ver RrhhTiempoExtraPolicy.
-    private sealed record DesgloseDiaCifras(int Bruto, int Neto, int Visible, int Pagado);
+    private sealed record DesgloseDiaCifras(int Bruto, int Neto, int Acreditado, int Pagado);
 
-    // Delta legible para la línea bruto→neto→visible: qué se restó (EsSuma=false)
+    // Delta legible para la línea bruto→neto→acreditado: qué se restó (EsSuma=false)
     // o sumó (EsSuma=true) y cuántos minutos. Sólo se muestran los no nulos.
     private sealed record DeltaDiaLegible(string Etiqueta, int Minutos, bool EsSuma);
 
@@ -82,7 +99,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private sealed record ResumenLateralItem(string Etiqueta, string Valor, string CssClass);
 
-    // Término de la barra de fórmula "Bruto − descansos = Neto + permiso + extra = Visible − banco = Pagado".
+    // Término de la barra de fórmula "Bruto − descansos = Neto + permiso + extra = Acreditado − banco = Pagado".
     // Signo es el operador que precede al término ("", "−", "+", "="); el primer término lleva signo vacío.
     private sealed record FormulaTermino(string Etiqueta, int Minutos, string Signo);
 
@@ -131,7 +148,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private string minutosExtraBancoTexto = "0:00";
     private bool usarFactorTiempoExtraOverride;
     private decimal factorTiempoExtraOverrideCaptura;
-    // "EntradaSalida" | "NetoVsNeto"
+    // "EntradaSalida" | "MarcajeReloj"
     private string modoSugerenciaExtra = "EntradaSalida";
     private int minutosCompensadosPermisoAprobados;
     private int minutosRecuperablesPermisoAprobables;
@@ -155,13 +172,10 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     // Día destino cuando se pide cambiar de día con cambios sin guardar: se
     // guarda y dispara OnCambioDiaSolicitado al confirmar (guardar/descartar).
     private DateOnly? _fechaDestinoPendiente;
-    private bool _mostrarAccionesRapidasPermiso;
-    private bool _mostrarAccionesRapidasTurno;
-    private bool _mostrarAccionesRapidasModoExtra;
+    private enum PestanaAcciones { Permiso, Turno, Metodo, Marcaciones, Descansos, Bitacora }
+    private PestanaAcciones _pestanaAcciones = PestanaAcciones.Permiso;
+    private void ActivarPestana(PestanaAcciones pestana) => _pestanaAcciones = pestana;
     private bool _mostrarResumenTiempoExtraBanco;
-    private bool _mostrarBitacora;
-    private bool _mostrarMarcacionesDia;
-    private bool _mostrarDescansosNoDescontar;
     private bool _mostrarAyudaDia;
     // Timeline-first: pin seleccionado (popover de marcación). La selección de bloque
     // reutiliza segmentoEditandoInicioId/FinId (EditarSegmento).
@@ -243,6 +257,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
         await DisposeDraftContextLockedAsync();
         _draftDb = await DbFactory.CreateDbContextAsync();
+        var asistenciaId = Asistencia.Id;
         AsistenciaActual = await _draftDb.RrhhAsistencias
             .Include(a => a.Empleado)
                 .ThenInclude(e => e.TurnoBase)
@@ -251,7 +266,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             .Include(a => a.TurnoBase)
                 .ThenInclude(t => t.Detalles)
                     .ThenInclude(d => d.Descansos)
-            .FirstOrDefaultAsync(a => a.Id == Asistencia.Id)
+            .FirstOrDefaultAsync(a => a.Id == asistenciaId)
             ?? Asistencia;
 
         await ResolverTurnoVigenteCacheAsync();
@@ -265,7 +280,12 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         {
             await _draftDb.SaveChangesAsync();
         }
-        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(_draftDb, _empresaId, AsistenciaActual.Fecha, AsistenciaActual.Fecha, AsistenciaActual.EmpleadoId);
+        // Capturar IDs antes del await: Blazor puede re-renderizar y cambiar
+        // Asistencia a null durante el await, rompiendo la expresión LINQ.
+        var asistenciaFecha = AsistenciaActual.Fecha;
+        var asistenciaEmpleadoId = AsistenciaActual.EmpleadoId;
+
+        await RrhhAsistenciaProcessor.ReprocesarRangoAsync(_draftDb, _empresaId, asistenciaFecha, asistenciaFecha, asistenciaEmpleadoId);
 
         // Recargar la asistencia con los valores recalculados
         _draftDb.ChangeTracker.Clear();
@@ -277,7 +297,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
             .Include(a => a.TurnoBase)
                 .ThenInclude(t => t.Detalles)
                     .ThenInclude(d => d.Descansos)
-            .FirstOrDefaultAsync(a => a.Id == Asistencia.Id)
+            .FirstOrDefaultAsync(a => a.Id == asistenciaId)
             ?? AsistenciaActual;
 
         _ultimaAsistenciaCargadaId = AsistenciaActual.Id;
@@ -522,7 +542,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         // El procesador consulta marcaciones desde la BD con ToListAsync, no desde el
         // ChangeTracker, por lo que los cambios no guardados (clasificación, payload,
         // EsAnulada) no se verían al reprocesar, causando inconsistencias entre los
-        // bloques fijados manualmente y los cálculos del tiempo visible.
+        // bloques fijados manualmente y los cálculos del tiempo acreditado.
         await db.SaveChangesAsync();
         await ReconciliarResolucionesSegmentoDiaAsync(db, fecha);
         await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fecha, fecha, AsistenciaActual.EmpleadoId);
@@ -552,10 +572,7 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         minutosPerdonManualCaptura = AsistenciaActual?.MinutosPerdonadosManual ?? 0;
         ReiniciarEdicionManual();
         CancelarEdicionSegmento();
-        _mostrarAccionesRapidasPermiso = false;
-        _mostrarAccionesRapidasTurno = false;
-        _mostrarAccionesRapidasModoExtra = false;
-        _mostrarBitacora = false;
+        _pestanaAcciones = PestanaAcciones.Permiso;
         _mostrarAyudaDia = false;
         _pinSeleccionadoId = null;
         _mostrarResumenTiempoExtraBanco = false;

@@ -68,12 +68,12 @@ public partial class AsistenciasCorreccionModal
             var pendientes = ObtenerMinutosCompensacionPermisoPendientes();
             return pendientes > 0
                 ? $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya reduce el faltante y el permiso sugerido del día. Quedan {FormatearMinutos(pendientes)} recuperables detectados por revisar."
-                : $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya fue aplicada al faltante y al tiempo visible operativo del día.";
+                : $"Compensación aprobada: {FormatearMinutos(minutosCompensadosPermisoAprobados)}. Ya fue aplicada al faltante y al tiempo acreditado operativo del día.";
         }
 
         return minutosSugeridos < minutosRecuperablesPermisoAprobables
             ? $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Para este día solo conviene aprobar hasta {FormatearMinutos(minutosSugeridos)} porque ese es el faltante neto a compensar."
-            : $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Requiere aprobación para ajustar faltante, permiso sugerido y tiempo visible del día.";
+            : $"Tiempo recuperable detectado: {FormatearMinutos(minutosRecuperablesPermisoAprobables)}. Requiere aprobación para ajustar faltante, permiso sugerido y tiempo acreditado del día.";
     }
 
     private string ObtenerGuiaCompensacionPermiso()
@@ -122,9 +122,9 @@ public partial class AsistenciasCorreccionModal
         error = null;
         ok = null;
 
-        if (!PuedeAprobarTiempoExtra)
+        if (!PuedeAprobarTiempoExtra || EdicionBloqueadaPorPeriodo)
         {
-            error = "No tienes permisos para aprobar compensaciones del día.";
+            error = MensajeEdicionBloqueada("No tienes permisos para aprobar compensaciones del día.");
             return;
         }
 
@@ -344,9 +344,9 @@ public partial class AsistenciasCorreccionModal
         error = null;
         ok = null;
 
-        if (!PuedeReprocesar)
+        if (!PuedeEditarDia)
         {
-            error = "No tienes permisos para registrar permisos del día.";
+            error = MensajeEdicionBloqueada("No tienes permisos para registrar permisos del día.");
             return;
         }
 
@@ -445,9 +445,9 @@ public partial class AsistenciasCorreccionModal
         error = null;
         ok = null;
 
-        if (!PuedeReprocesar)
+        if (!PuedeEditarDia)
         {
-            error = "No tienes permisos para quitar permisos del día.";
+            error = MensajeEdicionBloqueada("No tienes permisos para quitar permisos del día.");
             return;
         }
 
@@ -481,17 +481,6 @@ public partial class AsistenciasCorreccionModal
         finally
         {
             guardandoPermisoDia = false;
-        }
-    }
-
-    private void AlternarAccionesRapidasPermiso()
-    {
-        var nuevoEstado = !_mostrarAccionesRapidasPermiso;
-        _mostrarAccionesRapidasPermiso = nuevoEstado;
-        if (nuevoEstado)
-        {
-            _mostrarAccionesRapidasTurno = false;
-            _mostrarAccionesRapidasModoExtra = false;
         }
     }
 

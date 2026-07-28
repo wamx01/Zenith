@@ -35,7 +35,7 @@
                         <div class="asis-page-hero__summary">
                             <span class="asis-top-pill"><i class="bi bi-list-check"></i>@lista.Count registro(s)</span>
                             <span class="asis-top-pill"><i class="bi bi-exclamation-triangle"></i>@lista.Count(a => a.RequiereRevision) por revisar</span>
-                            <span class="asis-top-pill"><i class="bi bi-eye"></i>Visible @FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoVisible(a)))</span>
+                            <span class="asis-top-pill"><i class="bi bi-eye"></i>Acreditado @FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoAcreditado(a)))</span>
                         </div>
                     </div>
                     <div class="asis-toolbar-actions">
@@ -188,8 +188,8 @@
                     <div class="asis-stat-card asis-stat-card--resolved">
                         <span class="asis-stat-card__icon"><i class="bi bi-eye"></i></span>
                         <div>
-                            <div class="asis-stat-card__label">Trabajo visible</div>
-                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoVisible(a)))</div>
+                            <div class="asis-stat-card__label">Trabajo acreditado</div>
+                            <div class="asis-stat-card__value">@FormatearMinutos(lista.Sum(a => ObtenerMinutosTiempoAcreditado(a)))</div>
                             <div class="asis-stat-card__hint">Base trabajada + compensación aprobada + extra aprobada.</div>
                         </div>
                     </div>
@@ -357,7 +357,7 @@
                                         
                                         <td>
                                             <div class="asis-stack">
-                                                <div class="asis-cell-title">@FormatearMinutos(ObtenerMinutosTiempoVisible(item))</div>
+                                                <div class="asis-cell-title">@FormatearMinutos(ObtenerMinutosTiempoAcreditado(item))</div>
                                                 <div class="asis-cell-subtitle" title="Bruto detectado"><i class="bi bi-hourglass me-1"></i>@FormatearMinutos(item.MinutosTrabajadosBrutos)</div>
                                                 @if (item.MinutosJornadaNetaProgramada > 0)
                                                 {

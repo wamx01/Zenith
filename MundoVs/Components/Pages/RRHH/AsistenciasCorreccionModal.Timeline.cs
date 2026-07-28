@@ -21,7 +21,7 @@ public partial class AsistenciasCorreccionModal
     }
 
     private bool PuedeEditarSegmento(TimelineSegmentoDia segmento)
-        => PuedeReprocesar && !segmento.EsReferenciaTurno && segmento.MarcacionInicioId.HasValue && segmento.MarcacionFinId.HasValue;
+        => PuedeEditarDia && !segmento.EsReferenciaTurno && segmento.MarcacionInicioId.HasValue && segmento.MarcacionFinId.HasValue;
 
     private bool EsSegmentoEnEdicion(TimelineSegmentoDia segmento)
         => segmentoEditandoInicioId == segmento.MarcacionInicioId && segmentoEditandoFinId == segmento.MarcacionFinId;
@@ -702,7 +702,7 @@ public partial class AsistenciasCorreccionModal
 
         return
         [
-            new("Visible", FormatearMinutos(ObtenerMinutosTiempoVisible(AsistenciaActual)), "asis-summary-side__item--primary"),
+            new("Acreditado", FormatearMinutos(ObtenerMinutosTiempoAcreditado(AsistenciaActual)), "asis-summary-side__item--primary"),
             new(extraLabel, FormatearMinutos(extraValor), "asis-summary-side__item--accent"),
             new("Permiso", permisoDiaSeleccionado == null ? FormatearMinutos(0) : FormatearMinutos(ObtenerMinutosPermisoCapturados()), "asis-summary-side__item--warn"),
             new("Compensación", FormatearMinutos(ObtenerMinutosCompensadosAprobadosActual()), "asis-summary-side__item--info"),
@@ -1177,7 +1177,7 @@ public partial class AsistenciasCorreccionModal
         if (_pinSeleccionadoId.HasValue && ObtenerMarcacionPorId(_pinSeleccionadoId.Value) is { EsManual: true } m)
         {
             IniciarEdicionMarcacionManual(m);
-            _mostrarMarcacionesDia = true;
+            _pestanaAcciones = PestanaAcciones.Marcaciones;
             _pinSeleccionadoId = null;
         }
     }

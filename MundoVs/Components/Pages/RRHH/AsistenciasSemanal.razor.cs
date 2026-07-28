@@ -47,6 +47,12 @@ public partial class AsistenciasSemanal
     private string periodoEtiquetaActual = string.Empty;
     private NominaCorteRrhh? cortePeriodo;
     private Dictionary<Guid, RrhhResolucionTiempoExtraPeriodo> resolucionPorEmpleado = new();
+    // Empleados cuyo extra del periodo YA se pagó (Nomina.Estatus==Pagada para
+    // este periodo que los incluye). Se calcula en CargarAsync junto con la
+    // resolución, y lo usa el drawer para pintar "Extra pagado" (verde) vs
+    // "Extra por pagar" (azul, autorizado pero nómina no pagada) vs "Extra
+    // detectado" (ámbar, periodo aún no autorizado).
+    private HashSet<Guid> empleadosPagadosPeriodo = new();
     private bool _resolucionVisible;
     private Guid _resolucionEmpleadoId;
     private string _resolucionNombre = string.Empty;
@@ -189,21 +195,21 @@ public partial class AsistenciasSemanal
                     TotalMinutosRetardo = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a, ObtenerMinutosPermisoAplicados(a))),
                     TotalMinutosSalidaAnticipada = grupo.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a)),
                      MinutosDescuentoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(x, ObtenerMinutosPermisoAplicados(x), ObtenerMinutosCompensados(x)))),
-                    TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
-                    TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
+                    TotalDiasTrabajados = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().Count(),
+                    TotalDiasFestivoTrabajado = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado).Count(a => EsFestivoTrabajado(a.Fecha)),
                     TotalDiasAusentismo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Falta),
                     TotalDiasRetardo = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Retardo),
                     TotalDiasIncompleto = grupo.Count(a => a.Estatus == RrhhAsistenciaEstatus.Incompleta),
                     MinutosRetardoPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(x, ObtenerMinutosPermisoAplicados(x)))),
                     MinutosSalidaAnticipadaPorDia = grupo.GroupBy(a => a.Fecha).ToDictionary(g => g.Key, g => g.Sum(x => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(x))),
-                    DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
-                    DiasFestivoTrabajadoDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Where(EsFestivoTrabajado).Distinct().ToList(),
+                    DiasTrabajadosDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Distinct().ToList(),
+                    DiasFestivoTrabajadoDetalle = grupo.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado).Select(a => a.Fecha).Where(EsFestivoTrabajado).Distinct().ToList(),
                     TotalMinutosCompensacion = grupo.Sum(a => ObtenerMinutosCompensados(a)),
                     TotalMinutosPermisoConGoce = permisosPorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     TotalMinutosPermisoSinGoce = permisosSinGocePorEmpleado.GetValueOrDefault(grupo.Key.EmpleadoId.ToString("N")),
                     MinutosPorDia = grupo
                         .GroupBy(a => a.Fecha)
-                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTiempoVisible(x))),
+                        .ToDictionary(g => g.Key, g => g.Sum(x => ObtenerMinutosTiempoAcreditado(x))),
                     MinutosDebidosPorDia = grupo
                         .GroupBy(a => a.Fecha)
                         .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.MinutosJornadaNetaProgramada)))
@@ -271,6 +277,109 @@ public partial class AsistenciasSemanal
                 .ToListAsync();
             resolucionPorEmpleado = resoluciones.ToDictionary(r => r.EmpleadoId);
 
+            // Empleados del periodo cuya nómina ya está Pagada → su extra aprobado
+            // ya se cobró. Se usa en el drawer para pintar "Extra pagado" (verde)
+            // vs "Extra por pagar" (azul). Una sola query por periodo; el filtro
+            // por empleado se hace con Contains en el markup.
+            var empleadosPagados = await db.Nominas
+                .AsNoTracking()
+                .Where(n => n.EmpresaId == _empresaId
+                    && n.PeriodicidadPago == periodicidadSeleccionada
+                    && n.AnioPeriodo == calendarioPeriodo.AnioPeriodo
+                    && n.NumeroPeriodo == calendarioPeriodo.NumeroPeriodo
+                    && n.Estatus == EstatusNomina.Pagada)
+                .SelectMany(n => n.Detalles.Select(d => d.EmpleadoId))
+                .Distinct()
+                .ToListAsync();
+            empleadosPagadosPeriodo = empleadosPagados.ToHashSet();
+
+            // Overlay de la resolución por periodo: el flujo de periodo guarda el extra
+            // aprobado en RrhhResolucionTiempoExtraPeriodo.MinutosExtraPago/Banco y NO
+            // escribe los campos diarios (RrhhAsistencia.MinutosExtraAutorizados*),
+            // así que el build inicial desde asistencias no ve el extra aceptado.
+            // Sin este overlay, "Pagadas" y "Acreditado" no reflejan el tiempo aceptado.
+            var referenciasPeriodoBancoExtra = resoluciones
+                .Where(r => r.Estatus == RrhhResolucionPeriodoEstatus.Autorizada && !r.ExtraDescartado)
+                .Select(r => $"Periodo:{r.EmpleadoId:N}:{r.PeriodoKey}:extra-banco")
+                .ToList();
+
+            var bancoExtraPeriodoPorEmpleado = new Dictionary<Guid, int>();
+            if (referenciasPeriodoBancoExtra.Count > 0)
+            {
+                var bancoExtraPeriodo = await db.RrhhBancoHorasMovimientos
+                    .AsNoTracking()
+                    .Where(m => m.EmpresaId == _empresaId
+                        && m.IsActive
+                        && m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra
+                        && referenciasPeriodoBancoExtra.Contains(m.ReferenciaTipo))
+                    .Select(m => new
+                    {
+                        m.EmpleadoId,
+                        Minutos = (int)Math.Round(m.Horas * 60m, MidpointRounding.AwayFromZero)
+                    })
+                    .ToListAsync();
+
+                bancoExtraPeriodoPorEmpleado = bancoExtraPeriodo
+                    .GroupBy(m => m.EmpleadoId)
+                    .ToDictionary(g => g.Key, g => g.Sum(x => Math.Max(0, x.Minutos)));
+            }
+
+            resumenes = resumenes.Select(r =>
+            {
+                var resolucion = resolucionPorEmpleado.GetValueOrDefault(r.EmpleadoId);
+                var autorizada = resolucion is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+
+                if (!autorizada)
+                {
+                    // Periodo no autorizado: sin datos de extra/banco, pero marcamos que está pendiente.
+                    return r with
+                    {
+                        PeriodoAutorizado = false,
+                        TotalMinutosExtraPagoBase = 0,
+                        TotalMinutosExtraBancoBase = 0,
+                        ExtraPagoFactorDetalle = string.Empty,
+                        ExtraBancoFactorDetalle = string.Empty,
+                        ExtraDescartado = false
+                    };
+                }
+
+                if (resolucion!.ExtraDescartado)
+                {
+                    return r with
+                    {
+                        PeriodoAutorizado = true,
+                        ExtraDescartado = true,
+                        TotalMinutosExtraAprobadoPago = 0,
+                        TotalMinutosExtraAprobadoBanco = 0,
+                        TotalMinutosExtraPagoBase = 0,
+                        TotalMinutosExtraBancoBase = 0,
+                        ExtraPagoFactorDetalle = "Descartado",
+                        ExtraBancoFactorDetalle = string.Empty
+                    };
+                }
+
+                var extraPago = Math.Max(0, resolucion.MinutosExtraPago);
+                var extraBancoBase = Math.Max(0, resolucion.MinutosExtraBanco);
+                var extraPagoFactorDetalle = ConstruirFactorDetalle(resolucion, RrhhDestinoTiempoExtraLinea.Pago);
+                var extraBancoFactorDetalle = ConstruirFactorDetalle(resolucion, RrhhDestinoTiempoExtraLinea.Banco);
+
+                return r with
+                {
+                    PeriodoAutorizado = true,
+                    ExtraDescartado = false,
+                    TotalMinutosNormales = r.EsPorHoras
+                        ? Math.Max(0, r.TotalMinutosNormales - extraPago)
+                        : r.TotalMinutosNormales,
+                    TotalMinutosExtraAprobadoPago = extraPago,
+                    TotalMinutosExtraAprobadoBanco = bancoExtraPeriodoPorEmpleado.GetValueOrDefault(r.EmpleadoId),
+                    TotalMinutosExtraPagoBase = extraPago,
+                    TotalMinutosExtraBancoBase = extraBancoBase,
+                    ExtraPagoFactorDetalle = extraPagoFactorDetalle,
+                    ExtraBancoFactorDetalle = extraBancoFactorDetalle,
+                    TotalMinutosAdjustment = r.EsPorHoras ? 0 : extraPago + extraBancoBase
+                };
+            }).ToList();
+
             resumenes = filtroOrden switch
             {
                 "numero" => resumenes.OrderBy(x => x.NumeroEmpleado).ThenBy(x => x.NombreCompleto).ToList(),
@@ -298,6 +407,7 @@ public partial class AsistenciasSemanal
             asistenciasPorEmpleadoDia = new();
             festivosPeriodo = [];
             resolucionPorEmpleado = new();
+            empleadosPagadosPeriodo = new();
             totalMinutosPeriodo = 0;
             promedioMinutosEmpleado = 0;
             totalMinutosPagadosPeriodo = 0;
@@ -463,6 +573,7 @@ public partial class AsistenciasSemanal
             RrhhAsistenciaEstatus.Incompleta => "Incompleta",
             RrhhAsistenciaEstatus.TurnoNoAsignado => "Sin turno",
             RrhhAsistenciaEstatus.MarcaNoReconocida => "Marca no reconocida",
+            RrhhAsistenciaEstatus.SalidaAnticipada => "Salida anticipada",
             _ => "Pendiente"
         };
 
@@ -491,6 +602,12 @@ public partial class AsistenciasSemanal
             encabezados.Add("HorasBancoAplicadoSemanalMin");
             encabezados.Add("TiempoExtraSemanal");
             encabezados.Add("TiempoExtraSemanalMin");
+            encabezados.Add("TiempoExtraPagoBaseSemanal");
+            encabezados.Add("TiempoExtraPagoBaseSemanalMin");
+            encabezados.Add("TiempoExtraPagoFactorDetalle");
+            encabezados.Add("TiempoExtraBancoBaseSemanal");
+            encabezados.Add("TiempoExtraBancoBaseSemanalMin");
+            encabezados.Add("TiempoExtraBancoFactorDetalle");
             encabezados.Add("TiempoExtraAprobadoPagoSemanal");
             encabezados.Add("TiempoExtraAprobadoPagoSemanalMin");
             encabezados.Add("TiempoExtraAprobadoBancoAcumuladoSemanal");
@@ -533,6 +650,12 @@ public partial class AsistenciasSemanal
                 columnas.Add(resumen.TotalMinutosBancoAplicado.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtra)));
                 columnas.Add(resumen.TotalMinutosExtra.ToString());
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraPagoBase)));
+                columnas.Add(resumen.TotalMinutosExtraPagoBase.ToString());
+                columnas.Add(EscapeCsv(resumen.ExtraPagoFactorDetalle));
+                columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraBancoBase)));
+                columnas.Add(resumen.TotalMinutosExtraBancoBase.ToString());
+                columnas.Add(EscapeCsv(resumen.ExtraBancoFactorDetalle));
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoPago)));
                 columnas.Add(resumen.TotalMinutosExtraAprobadoPago.ToString());
                 columnas.Add(EscapeCsv(FormatearMinutos(resumen.TotalMinutosExtraAprobadoBanco)));
@@ -731,7 +854,7 @@ public partial class AsistenciasSemanal
         }
     }
 
-    private int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia)
+    private int ObtenerMinutosTiempoAcreditado(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, ObtenerMinutosPermisoAplicados(asistencia), ObtenerMinutosCompensados(asistencia));
 
     private int ObtenerMinutosCompensados(RrhhAsistencia asistencia)
@@ -749,7 +872,7 @@ public partial class AsistenciasSemanal
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private int ObtenerTotalColumnasTabla()
-        => 5;
+        => 7;
 
     // Estado semántico de la celda de un día. Sustituye al ternario anidado que
     // decidía la clase CSS; el orden de prioridad (extra > sin movimiento > ok >
@@ -804,22 +927,24 @@ public partial class AsistenciasSemanal
 
     private PresentacionCeldaSemanal ObtenerPresentacionDia(ResumenSemanalEmpleado resumen, DateOnly dia, Dictionary<DateOnly, int>? brutoPorDia = null)
     {
-        var visible = resumen.MinutosPorDia.GetValueOrDefault(dia);
+        var acreditado = resumen.MinutosPorDia.GetValueOrDefault(dia);
         var debido = resumen.MinutosDebidosPorDia.GetValueOrDefault(dia);
-        var delta = visible - debido;
+        var delta = acreditado - debido;
         var descuentoDia = resumen.MinutosDescuentoPorDia.GetValueOrDefault(dia);
         asistenciasPorEmpleadoDia.TryGetValue(CrearClaveAsistencia(resumen.EmpleadoId, dia), out var asistencia);
         var minutosExtra = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtra);
         var minutosExtraAprobados = asistencia == null ? 0 : Math.Max(0, asistencia.MinutosExtraAutorizadosPago + asistencia.MinutosExtraAutorizadosBanco);
-        // "Resuelto" = el extra ya fue autorizado/aplicado (pago, banco, cobertura o
-        // resolución manual). Antes la condición incluía "|| !asistencia.RequiereRevision",
-        // que marca como REVISADO (verde) al extra aún PENDIENTE de autorizar en un día
-        // limpio (sin banderas de revisión) → la celda nunca se pintaba de morado.
-        // Usar el helper canónico para alinearlo con el resto del sistema.
-        var extraResuelto = asistencia != null && RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(asistencia);
+        // "Resuelto" = el extra ya fue autorizado/aplicado. Con el flujo semanal (Fase 7/8)
+        // la autorización vive en la resolución del PERIODO (RrhhResolucionTiempoExtraPeriodo),
+        // no en los campos por día de la asistencia, que ya no se pueblan. Si sólo
+        // miráramos TieneResolucionTiempoAplicada(asistencia), los días con extra se
+        // quedarían siempre en morado (pendiente) aunque el periodo esté Autorizada.
+        // Por eso también consideramos autorizado el periodo del empleado.
+        var periodoAutorizado = resolucionPorEmpleado.GetValueOrDefault(resumen.EmpleadoId) is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+        var extraResuelto = (asistencia != null && RrhhTiempoExtraPolicy.TieneResolucionTiempoAplicada(asistencia)) || periodoAutorizado;
 
         var cssClass = ObtenerClaseCelda(ObtenerEstadoCelda(
-            minutosExtra, extraResuelto, visible, debido, delta, descuentoDia));
+            minutosExtra, extraResuelto, acreditado, debido, delta, descuentoDia));
 
         var deltaTexto = delta == 0
             ? "En objetivo"
@@ -829,12 +954,16 @@ public partial class AsistenciasSemanal
 
         if (minutosExtra > 0)
         {
+            // Bajo el flujo semanal, el aprobado por día es 0 (la autorización está en el
+            // periodo). Si el periodo está autorizado, mostramos el extra detectado del día
+            // como "revisado" para no pintar "Extra rev. 0" en verde.
+            var minutosExtraRevisado = minutosExtraAprobados > 0 ? minutosExtraAprobados : minutosExtra;
             deltaTexto = extraResuelto
-                ? $"Extra rev. {FormatearMinutos(minutosExtraAprobados)}"
+                ? $"Extra rev. {FormatearMinutos(minutosExtraRevisado)}"
                 : $"Extra pend. {FormatearMinutos(minutosExtra)}";
         }
 
-        var visibleTexto = visible > 0 ? FormatearMinutos(visible) : "—";
+        var acreditadoTexto = acreditado > 0 ? FormatearMinutos(acreditado) : "—";
         var debidoTexto = debido > 0 ? FormatearMinutos(debido) : "—";
         var diferenciaTexto = delta == 0
             ? "En objetivo"
@@ -855,7 +984,7 @@ public partial class AsistenciasSemanal
             : string.Empty;
 
         // Bajo las nuevas reglas, los descansos SIEMPRE se descuentan (no se
-        // compensan con salida anticipada). "Visible" ya los excluye; lo
+        // compensan con salida anticipada). "Acreditado" ya los excluye; lo
         // explicitamos para que el delta sea interpretable.
         var descansosDescontados = asistencia == null ? 0 : RrhhTiempoExtraPolicy.ObtenerMinutosDescansoNoPagadoProgramado(asistencia);
         var tooltipDescuentos = (descansosDescontados > 0 || descuentoDia > 0)
@@ -863,10 +992,10 @@ public partial class AsistenciasSemanal
             : string.Empty;
 
         var fechaTexto = dia.ToString("dddd, dd/MM/yyyy", CulturaEsMx);
-        var tooltip = $"{fechaTexto}{tooltipBruto} | Visible (sin descansos): {visibleTexto} | Debe: {debidoTexto} | Diferencia: {diferenciaTexto}{tooltipDescuentos}{tooltipExtra}";
+        var tooltip = $"{fechaTexto}{tooltipBruto} | Acreditado (sin descansos): {acreditadoTexto} | Debe: {debidoTexto} | Diferencia: {diferenciaTexto}{tooltipDescuentos}{tooltipExtra}";
 
         return new PresentacionCeldaSemanal(
-            visibleTexto,
+            acreditadoTexto,
             debidoTexto,
             deltaTexto,
             cssClass,
@@ -883,6 +1012,12 @@ public partial class AsistenciasSemanal
 
         return Task.CompletedTask;
     }
+
+    // ¿El periodo del empleado del día seleccionado está Autorizada? Si sí, el modal
+    // del día se abre en sólo-lectura (no se puede editar sin reabrir el periodo).
+    private bool PeriodoSeleccionAutorizado =>
+        asistenciaSeleccionada != null
+        && resolucionPorEmpleado.GetValueOrDefault(asistenciaSeleccionada.EmpleadoId) is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
 
     // Navegación entre días del periodo desde las flechas del modal. El modal no
     // sabe del periodo: sólo pide "llévame a esta fecha". El padre resuelve la
@@ -1107,6 +1242,36 @@ public partial class AsistenciasSemanal
             ? null
             : resumenes.FirstOrDefault(r => r.EmpleadoId == _detalleEmpleadoId);
 
+    // Presentación del extra A PAGO en el drawer según el ciclo de vida del
+    // periodo: pagado en nómina (verde) → aprobado por pagar (azul) → pendiente
+    // de autorizar (gris). El valor siempre es TotalMinutosExtraAprobadoPago
+    // (0 mientras no se autoriza); el color/etiqueta comunica el estado.
+    private record PresentacionExtraPago(string Etiqueta, string CssClass, string Tooltip);
+
+    private PresentacionExtraPago ObtenerPresentacionExtraPago(ResumenSemanalEmpleado detalle)
+    {
+        if (empleadosPagadosPeriodo.Contains(detalle.EmpleadoId))
+        {
+            return new PresentacionExtraPago(
+                "Extra pagado",
+                "asis-detail-card--good",
+                "Extra aprobado a pago ya pagado en la nómina de este periodo.");
+        }
+
+        if (resolucionPorEmpleado.GetValueOrDefault(detalle.EmpleadoId) is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada })
+        {
+            return new PresentacionExtraPago(
+                "Extra por pagar",
+                "asis-detail-card--primary",
+                "Extra aprobado a pago. Se paga al correr la nómina del periodo.");
+        }
+
+        return new PresentacionExtraPago(
+            "Extra por pagar",
+            "asis-detail-card--info",
+            "Aún no se autoriza el extra del periodo. Apruébalo con «Aceptar tiempo».");
+    }
+
     private async Task AlCambiarPeriodicidadAsync()
     {
         fechaReferenciaPeriodo = DateTime.Today;
@@ -1312,9 +1477,72 @@ public partial class AsistenciasSemanal
         public List<DateOnly> DiasFestivoTrabajadoDetalle { get; init; } = [];
         public Dictionary<DateOnly, int> MinutosPorDia { get; init; } = new();
         public Dictionary<DateOnly, int> MinutosDebidosPorDia { get; init; } = new();
-        public int TotalMinutosPagados => TotalMinutosNormales + TotalMinutosPermisoConGoce + TotalMinutosCompensacion + TotalMinutosBancoAplicado + TotalMinutosExtraAprobadoPago;
-        public int TotalMinutos => MinutosPorDia.Values.Sum();
+        public int TotalMinutosPagados => TotalMinutosNormales + TotalMinutosPermisoConGoce + TotalMinutosCompensacion + TotalMinutosBancoAplicado;
+        // Extra a pago (minutos base, sin factorar) desde la resolución del periodo.
+        public int TotalMinutosExtraPagoBase { get; init; }
+        // Extra a banco (minutos base) desde la resolución del periodo.
+        public int TotalMinutosExtraBancoBase { get; init; }
+        // Etiqueta legible del detalle de factores del extra a pago (ej. "×2.0", "1h×2 + 1h×1").
+        public string ExtraPagoFactorDetalle { get; init; } = string.Empty;
+        // Etiqueta legible del detalle de factores del extra a banco (ej. "×1.0").
+        public string ExtraBancoFactorDetalle { get; init; } = string.Empty;
+        // Si el periodo está autorizado (tiene resolución).
+        public bool PeriodoAutorizado { get; init; }
+        // Si el extra fue descartado.
+        public bool ExtraDescartado { get; init; }
+        // Ajuste al TotalMinutos para reflejar el extra aprobado por periodo que no
+        // está en los campos diarios (MinutosExtraAutorizados*). El resumen diario usa
+        // ObtenerMinutosExtraAprobados(asistencia) que lee de la asistencia; el flujo de
+        // periodo NO escribe esos campos, así que el extra aprobado por periodo se
+        // suma aquí para que "Acreditado" lo refleje.
+        public int TotalMinutosAdjustment { get; init; }
+        public int TotalMinutos => MinutosPorDia.Values.Sum() + TotalMinutosAdjustment;
     }
 
-    private sealed record PresentacionCeldaSemanal(string Visible, string Debido, string Delta, string CssClass, string Tooltip);
+    private sealed record PresentacionCeldaSemanal(string Acreditado, string Debido, string Delta, string CssClass, string Tooltip);
+
+    /// <summary>
+    /// Construye una etiqueta legible del detalle de factores para un destino (Pago/Banco)
+    /// desde las líneas de la resolución del periodo (Fase 8). Si no hay líneas, usa el
+    /// factor escalar legado.
+    /// </summary>
+    private static string ConstruirFactorDetalle(RrhhResolucionTiempoExtraPeriodo resolucion, RrhhDestinoTiempoExtraLinea destino)
+    {
+        var lineas = resolucion.Lineas?
+            .Where(l => l.Destino == destino && l.Minutos > 0)
+            .OrderBy(l => l.Orden)
+            .ToList() ?? [];
+
+        if (lineas.Count == 0)
+        {
+            // Path legado (sin líneas): usar factor escalar
+            if (destino == RrhhDestinoTiempoExtraLinea.Pago)
+            {
+                var factor = resolucion.FactorTiempoExtraAplicado ?? 2m;
+                return $"×{factor:0.#}";
+            }
+            else
+            {
+                var factor = resolucion.FactorAcumulacionBancoHorasAplicado ?? 1m;
+                return $"×{factor:0.#}";
+            }
+        }
+
+        // Fase 8: construir detalle desde líneas
+        var partes = new List<string>();
+        foreach (var linea in lineas)
+        {
+            var horas = linea.Minutos / 60m;
+            if (linea.Factor == 1m)
+            {
+                partes.Add($"{horas:0.#}h");
+            }
+            else
+            {
+                partes.Add($"{horas:0.#}h×{linea.Factor:0.#}");
+            }
+        }
+
+        return string.Join(" + ", partes);
+    }
 }

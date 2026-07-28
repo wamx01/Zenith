@@ -47,7 +47,7 @@
 
                     <div class="row g-2 align-items-end mb-2">
                         <div class="col-sm-6">
-                            <label class="asis-field-label">Tipo de resolución</label>
+                            <label class="asis-field-label">Tipo de resoluciï¿½n</label>
                             <InputSelect class="form-select form-select-sm" Value="@TipoResolucionTiempoExtra" ValueChanged="OnTipoResolucionTiempoExtraChanged" ValueExpression="@(() => TipoResolucionTiempoExtra)">
                                 @foreach (var opcion in ResolucionesDisponibles)
                                 {
@@ -60,7 +60,7 @@
                             }
                         </div>
                         <div class="col-sm-6">
-                            <label class="asis-field-label">Notas / autorización</label>
+                            <label class="asis-field-label">Notas / autorizaciï¿½n</label>
                             <InputText class="form-control form-control-sm" Value="@ResolucionTiempoExtraObservaciones" ValueChanged="OnResolucionTiempoExtraObservacionesChanged" ValueExpression="@(() => ResolucionTiempoExtraObservaciones)" placeholder="Criterio aplicado" />
                         </div>
                         <div class="col-sm-4">
@@ -78,11 +78,11 @@
                     </div>
 
                     <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
-                        <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Este paso es solo para decidir qué haces con el tiempo extra o con el banco. El permiso se define en el paso anterior.
+                        <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Este paso es solo para decidir quï¿½ haces con el tiempo extra o con el banco. El permiso se define en el paso anterior.
                     </div>
 
                     <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
-                        <i class="bi bi-check2-circle me-1 flex-shrink-0"></i><strong class="me-1">Detectado</strong> es lo que el sistema encontró. <strong class="mx-1">Aprobable</strong> es lo máximo que puedes autorizar. <strong class="mx-1">Aprobada</strong> es lo que ya quedó aplicado.
+                        <i class="bi bi-check2-circle me-1 flex-shrink-0"></i><strong class="me-1">Detectado</strong> es lo que el sistema encontrï¿½. <strong class="mx-1">Aprobable</strong> es lo mï¿½ximo que puedes autorizar. <strong class="mx-1">Aprobada</strong> es lo que ya quedï¿½ aplicado.
                     </div>
 
                     @if (!string.IsNullOrWhiteSpace(ExplicacionAprobacionTexto))
@@ -94,24 +94,24 @@
 
                     <div class="d-flex flex-wrap gap-2 mb-2 small text-muted">
                         <span>Base trabajada: <strong>@NetoTrabajadoTexto</strong></span>
-                        <span>·</span>
-                        <span>Visible: <strong>@VisibleTrabajadoTexto</strong></span>
-                        <span>·</span>
+                        <span>ï¿½</span>
+                        <span>Acreditado: <strong>@AcreditadoTrabajadoTexto</strong></span>
+                        <span>ï¿½</span>
                         <span>Extra aprobable: <strong>@ExtraResolubleTexto</strong></span>
-                        <span>·</span>
+                        <span>ï¿½</span>
                         <span>Extra aprobada: <strong>@ExtraAprobadaTexto</strong></span>
-                        <span>·</span>
+                        <span>ï¿½</span>
                         <span>Faltante: <strong>@FaltanteNetoTexto</strong></span>
                     </div>
 
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <button class="btn btn-warning btn-sm asis-btn-xs" @onclick="OnAplicarResolucionTiempo" disabled="@Cargando">
-                            <i class="bi bi-check2-circle me-1"></i>Guardar resolución
+                            <i class="bi bi-check2-circle me-1"></i>Guardar resoluciï¿½n
                         </button>
                         @if (PuedeQuitarResolucion)
                         {
                             <button class="btn btn-outline-danger btn-sm asis-btn-xs" @onclick="OnQuitarResolucionTiempo" disabled="@Cargando">
-                                <i class="bi bi-arrow-counterclockwise me-1"></i>Quitar resolución
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Quitar resoluciï¿½n
                             </button>
                         }
                         <span class="small text-muted">Actual: @ResumenResolucionActual</span>
@@ -123,7 +123,7 @@
         {
             <div class="asis-empty-state">
                 <i class="bi bi-clock d-block mb-2 asis-empty-icon asis-empty-icon--lg"></i>
-                <div class="small text-muted">No hay resolución de tiempo extra o banco pendiente para este día.</div>
+                <div class="small text-muted">No hay resoluciï¿½n de tiempo extra o banco pendiente para este dï¿½a.</div>
             </div>
         }
     </div>
@@ -131,11 +131,11 @@
     <div class="col-lg-4">
         <div class="asis-section-card h-100">
             <div class="asis-section-card__head">
-                <strong class="small"><i class="bi bi-journal-text me-1"></i>Bitácora del día</strong>
+                <strong class="small"><i class="bi bi-journal-text me-1"></i>Bitï¿½cora del dï¿½a</strong>
             </div>
             <div class="asis-section-card__body">
                 <div class="asis-banner asis-banner--info asis-banner--dense d-flex mb-2">
-                    <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Solo muestra cambios ya realizados. No sustituye permiso, compensación ni resolución.
+                    <i class="bi bi-info-circle me-1 flex-shrink-0"></i>Solo muestra cambios ya realizados. No sustituye permiso, compensaciï¿½n ni resoluciï¿½n.
                 </div>
                 @if (BitacoraCorreccionDia.Count == 0)
                 {
@@ -184,7 +184,7 @@
     [Parameter] public EventCallback<int> OnMinutosCubrirBancoCapturaChanged { get; set; }
     [Parameter] public bool BancoHorasHabilitadoConfigurado { get; set; }
     [Parameter, EditorRequired] public string NetoTrabajadoTexto { get; set; } = string.Empty;
-    [Parameter, EditorRequired] public string VisibleTrabajadoTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string AcreditadoTrabajadoTexto { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string ResumenResolucionActual { get; set; } = string.Empty;
     [Parameter] public bool Cargando { get; set; }
     [Parameter] public EventCallback OnAplicarResolucionTiempo { get; set; }

@@ -308,6 +308,7 @@ public partial class Asistencias : ComponentBase
             RrhhAsistenciaEstatus.Incompleta => "Incompleta",
             RrhhAsistenciaEstatus.TurnoNoAsignado => "Sin turno",
             RrhhAsistenciaEstatus.MarcaNoReconocida => "Marca no reconocida",
+            RrhhAsistenciaEstatus.SalidaAnticipada => "Salida anticipada",
             _ => "Pendiente"
         };
 
@@ -330,6 +331,7 @@ public partial class Asistencias : ComponentBase
             RrhhAsistenciaEstatus.Incompleta => "bg-warning text-dark",
             RrhhAsistenciaEstatus.TurnoNoAsignado => "bg-secondary",
             RrhhAsistenciaEstatus.MarcaNoReconocida => "bg-dark",
+            RrhhAsistenciaEstatus.SalidaAnticipada => "bg-warning text-dark",
             _ => "bg-primary"
         };
     }
@@ -808,7 +810,7 @@ public partial class Asistencias : ComponentBase
             ? Math.Max(0, minutos)
             : 0;
 
-    private int ObtenerMinutosTiempoVisible(RrhhAsistencia asistencia)
+    private int ObtenerMinutosTiempoAcreditado(RrhhAsistencia asistencia)
         => RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(asistencia, ObtenerMinutosPermisoConGoceDia(asistencia), ObtenerMinutosCompensados(asistencia));
 
     // Neto efectivo = neto trabajado + perdón manual. Es la base que va a nómina (igual

@@ -49,7 +49,7 @@ public class RrhhAsistencia : BaseEntity
     /// <summary>
     /// Modo de cálculo de tiempo extra para este día:
     /// "EntradaSalida" = entrada/salida real vs programada (default),
-    /// "NetoVsNeto" = neto trabajado vs neto esperado del turno.
+    /// "MarcajeReloj" = neto trabajado vs neto esperado del turno.
     /// </summary>
     public string? ModoSugerenciaExtra { get; set; }
     /// <summary>
@@ -85,5 +85,7 @@ public enum RrhhAsistenciaEstatus
     TurnoNoAsignado = 8,
     MarcaNoReconocida = 9,
     /// <summary>Día trabajado por un empleado en esquema PorHoras (sin jornada fija).</summary>
-    TrabajadoPorHoras = 10
+    TrabajadoPorHoras = 10,
+    /// <summary>Salió antes de la hora programada y trabajó menos de lo planeado.</summary>
+    SalidaAnticipada = 11,
 }

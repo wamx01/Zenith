@@ -45,8 +45,8 @@
                             <span class="asis-metric-pill__val">@FaltanteRemanenteTexto</span>
                         </div>
                         <div class="asis-metric-pill asis-metric-pill--muted">
-                            <span class="asis-metric-pill__label">Visible</span>
-                            <span class="asis-metric-pill__val">@TrabajoVisibleTexto</span>
+                            <span class="asis-metric-pill__label">Acreditado</span>
+                            <span class="asis-metric-pill__val">@TrabajoAcreditadoTexto</span>
                         </div>
                         <div class="asis-metric-pill asis-metric-pill--muted">
                             <span class="asis-metric-pill__label">Desc. excl.</span>
@@ -209,7 +209,7 @@
     [Parameter, EditorRequired] public string FaltanteNetoTexto { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string PermisoCapturadoTexto { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string FaltanteRemanenteTexto { get; set; } = string.Empty;
-    [Parameter, EditorRequired] public string TrabajoVisibleTexto { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string TrabajoAcreditadoTexto { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string DescansoExcluidoTexto { get; set; } = string.Empty;
     [Parameter] public bool DeshabilitarGuardarPermiso { get; set; }
     [Parameter] public EventCallback OnAplicarPermisoSugerido { get; set; }

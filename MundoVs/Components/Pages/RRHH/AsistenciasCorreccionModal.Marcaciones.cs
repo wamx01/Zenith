@@ -28,9 +28,9 @@ public partial class AsistenciasCorreccionModal
         error = null;
         ok = null;
 
-        if (!PuedeReprocesar)
+        if (!PuedeEditarDia)
         {
-            error = "No tienes permisos para perdonar minutos del día.";
+            error = MensajeEdicionBloqueada("No tienes permisos para perdonar minutos del día.");
             return;
         }
 
@@ -253,9 +253,6 @@ public partial class AsistenciasCorreccionModal
         CancelarEdicionMarcacionManual();
     }
 
-    private void AlternarMarcacionesDia()
-        => _mostrarMarcacionesDia = !_mostrarMarcacionesDia;
-
     private async Task GuardarTurnoDiaAsync()
     {
         if (AsistenciaActual == null)
@@ -314,17 +311,6 @@ public partial class AsistenciasCorreccionModal
         await ReprocesarYRefrescarDiaAsync(db, fecha, "Turno del día actualizado y asistencia reprocesada.");
     }
 
-    private void AlternarAccionesRapidasTurno()
-    {
-        var nuevoEstado = !_mostrarAccionesRapidasTurno;
-        _mostrarAccionesRapidasTurno = nuevoEstado;
-        if (nuevoEstado)
-        {
-            _mostrarAccionesRapidasPermiso = false;
-            _mostrarAccionesRapidasModoExtra = false;
-        }
-    }
-
     private async Task ConfirmarSalidaTempranaCompensaDescansoAsync()
     {
         if (AsistenciaActual == null)
@@ -335,9 +321,9 @@ public partial class AsistenciasCorreccionModal
         error = null;
         ok = null;
 
-        if (!PuedeReprocesar)
+        if (!PuedeEditarDia)
         {
-            error = "No tienes permisos para confirmar esta regla operativa.";
+            error = MensajeEdicionBloqueada("No tienes permisos para confirmar esta regla operativa.");
             return;
         }
 
@@ -373,13 +359,19 @@ public partial class AsistenciasCorreccionModal
 
     private async Task GuardarDescansosNoDescontarAsync()
     {
-        if (AsistenciaActual == null || !PuedeReprocesar)
+        if (AsistenciaActual == null)
         {
             return;
         }
 
         error = null;
         ok = null;
+
+        if (!PuedeEditarDia)
+        {
+            error = MensajeEdicionBloqueada("No tienes permisos para guardar descansos del día.");
+            return;
+        }
 
         try
         {
