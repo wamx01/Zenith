@@ -22,6 +22,8 @@ public partial class AsistenciasResolucionModal : ComponentBase
     [Parameter] public Guid EmpleadoId { get; set; }
     [Parameter] public string NombreEmpleado { get; set; } = string.Empty;
     [Parameter] public DateOnly FechaReferencia { get; set; }
+    [Parameter] public DateOnly? FechaInicioPeriodo { get; set; }
+    [Parameter] public DateOnly? FechaFinPeriodo { get; set; }
     [Parameter] public int MinutosExtraDetectado { get; set; }
     [Parameter] public int SaldoBancoHoras { get; set; }
     [Parameter] public bool PuedeAprobarTiempoExtra { get; set; }
@@ -31,6 +33,8 @@ public partial class AsistenciasResolucionModal : ComponentBase
     private Guid _empresaId;
     private string _usuarioActual = string.Empty;
     private Guid _ultimoEmpleadoCargado;
+    private DateOnly? _ultimoInicioPeriodo;
+    private DateOnly? _ultimoFinPeriodo;
     private bool _cargandoDatos;
     private bool cargando;
     private string? error;
@@ -54,14 +58,18 @@ public partial class AsistenciasResolucionModal : ComponentBase
             return;
         }
 
-        // Recargar sólo cuando cambia el empleado o era distinto a cero (evita
+        // Recargar sólo cuando cambia el empleado o el rango de fechas (evita
         // recargas redundantes por re-render del padre).
-        if (_ultimoEmpleadoCargado == EmpleadoId && _resumenPeriodo is not null)
+        var claveCarga = (EmpleadoId, FechaInicioPeriodo, FechaFinPeriodo);
+        if (_ultimoEmpleadoCargado == EmpleadoId && _resumenPeriodo is not null
+            && _ultimoInicioPeriodo == FechaInicioPeriodo && _ultimoFinPeriodo == FechaFinPeriodo)
         {
             return;
         }
 
         _ultimoEmpleadoCargado = EmpleadoId;
+        _ultimoInicioPeriodo = FechaInicioPeriodo;
+        _ultimoFinPeriodo = FechaFinPeriodo;
         error = null;
         ok = null;
         await CargarDatosAsync();
@@ -73,8 +81,11 @@ public partial class AsistenciasResolucionModal : ComponentBase
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            _resumenPeriodo = await ResolucionPeriodo.ObtenerResumenPeriodoAsync(
-                db, _empresaId, EmpleadoId, FechaReferencia);
+            _resumenPeriodo = FechaInicioPeriodo.HasValue && FechaFinPeriodo.HasValue
+                ? await ResolucionPeriodo.ObtenerResumenPeriodoAsync(
+                    db, _empresaId, EmpleadoId, FechaInicioPeriodo.Value, FechaFinPeriodo.Value)
+                : await ResolucionPeriodo.ObtenerResumenPeriodoAsync(
+                    db, _empresaId, EmpleadoId, FechaReferencia);
 
             _resolucion = await db.RrhhResolucionesTiempoExtraPeriodo
                 .AsNoTracking()
@@ -100,6 +111,8 @@ public partial class AsistenciasResolucionModal : ComponentBase
     private async Task CerrarAsync()
     {
         _ultimoEmpleadoCargado = Guid.Empty;
+        _ultimoInicioPeriodo = null;
+        _ultimoFinPeriodo = null;
         _resumenPeriodo = null;
         _resolucion = null;
         _edicion = new EdicionResolucionPeriodo();

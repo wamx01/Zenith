@@ -71,6 +71,22 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
         var fechaInicio = DateOnly.FromDateTime(calendario.Inicio);
         var fechaFin = DateOnly.FromDateTime(calendario.Fin);
 
+        return await ObtenerResumenPeriodoPorRangoAsync(db, empresaId, empleadoId, empleado.TipoNomina != TipoNomina.Destajo, fechaInicio, fechaFin, calendario, cancellationToken);
+    }
+
+    public async Task<RrhhResolucionPeriodoResumen> ObtenerResumenPeriodoAsync(
+        CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fechaInicio, DateOnly fechaFin, CancellationToken cancellationToken = default)
+    {
+        var (empleado, corte) = await CargarEmpleadoYCorteAsync(db, empresaId, empleadoId, cancellationToken);
+        var calendario = ResolverPeriodoDesdeFechas(empleado, fechaInicio, fechaFin, corte);
+
+        return await ObtenerResumenPeriodoPorRangoAsync(db, empresaId, empleadoId, empleado.TipoNomina != TipoNomina.Destajo, fechaInicio, fechaFin, calendario, cancellationToken);
+    }
+
+    private async Task<RrhhResolucionPeriodoResumen> ObtenerResumenPeriodoPorRangoAsync(
+        CrmDbContext db, Guid empresaId, Guid empleadoId, bool esAplicable, DateOnly fechaInicio, DateOnly fechaFin,
+        NominaPeriodoCalendario calendario, CancellationToken cancellationToken = default)
+    {
         var contexto = await _tiempoExtra.ObtenerContextoEmpleadoAsync(db, empresaId, empleadoId, cancellationToken);
 
         var periodo = await db.RrhhResolucionesTiempoExtraPeriodo
@@ -113,14 +129,6 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
         var retardoPeriodo = dias.Sum(d => d.MinutosRetardo);
 
         // Cadena de neteo (Fase 2 + Fase 3 + Fase 4):
-        //   extraDetectado
-        //     − faltanteNeto (permiso con goce ya descontado)   [Fase 2]
-        //     − retardo del periodo                             [Fase 3]
-        //     − banco consumido en el periodo                    [Fase 4]
-        //   = extraAbsorbible (lo que se reparte pago/banco)
-        // El sobrante de extra tras faltante tapa el retardo (Fase 3); el sobrante
-        // tras retardo REPONE el banco consumido en el periodo (Fase 4) generando
-        // un movimiento positivo al banco. Solo lo que sobra tras todo es pagable.
         var faltanteAbsorbido = Math.Min(extraDetectado, faltanteNetoPeriodo);
         var sobranteTrasFaltante = Math.Max(0, extraDetectado - faltanteNetoPeriodo);
         var retardoAbsorbido = Math.Min(sobranteTrasFaltante, retardoPeriodo);
@@ -135,7 +143,7 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
 
         return new RrhhResolucionPeriodoResumen
         {
-            EsAplicable = empleado.TipoNomina != TipoNomina.Destajo,
+            EsAplicable = esAplicable,
             Periodo = periodo,
             PeriodicidadPago = calendario.PeriodicidadPago,
             AnioPeriodo = calendario.AnioPeriodo,
@@ -951,6 +959,35 @@ public sealed class RrhhResolucionPeriodoService : IRrhhResolucionPeriodoService
             empleado.PeriodicidadPago,
             fechaReferencia.ToDateTime(TimeOnly.MinValue),
             corte);
+
+    private static NominaPeriodoCalendario ResolverPeriodoDesdeFechas(Empleado empleado, DateOnly fechaInicio, DateOnly fechaFin, NominaCorteRrhh? corte)
+    {
+        var inicio = fechaInicio.ToDateTime(TimeOnly.MinValue);
+        var fin = fechaFin.ToDateTime(TimeOnly.MinValue);
+        var calendario = NominaPeriodoHelper.ObtenerPeriodo(empleado.PeriodicidadPago, fin, corte);
+
+        // Cuando el rango forzado no coincide con el periodo de cierre tradicional
+        // (p.ej. vista contenedor vs periodo cerrado), reconstruimos el calendario
+        // para reflejar exactamente el inicio/fin recibido, conservando año y número
+        // de periodo calculados a partir del día final.
+        if (calendario.Inicio != inicio || calendario.Fin != fin)
+        {
+            calendario = new NominaPeriodoCalendario
+            {
+                PeriodicidadPago = empleado.PeriodicidadPago,
+                Inicio = inicio,
+                Fin = fin,
+                AnioPeriodo = calendario.AnioPeriodo,
+                NumeroPeriodo = calendario.NumeroPeriodo,
+                Periodo = empleado.PeriodicidadPago == PeriodicidadPago.Semanal
+                    ? NominaPeriodoHelper.ConstruirEtiquetaSemanal(inicio, fin)
+                    : $"{calendario.Periodo} (ajustado)",
+                NumeroNomina = calendario.NumeroNomina
+            };
+        }
+
+        return calendario;
+    }
 
     private static void GarantizarAplicable(Empleado empleado)
     {

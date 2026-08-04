@@ -28,6 +28,14 @@ public interface IRrhhResolucionPeriodoService
         CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fechaReferencia, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resumen de un periodo forzando el rango de fechas exacto (inicio/fin). Útil cuando
+    /// la vista ya conoce la ventana mostrada y se quiere evitar que el servicio
+    /// recalcule el periodo con reglas de cierre de nómina distintas.
+    /// </summary>
+    Task<RrhhResolucionPeriodoResumen> ObtenerResumenPeriodoAsync(
+        CrmDbContext db, Guid empresaId, Guid empleadoId, DateOnly fechaInicio, DateOnly fechaFin, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Autoriza la resolución del periodo: reparte el extra detectado entre pago y
     /// banco. Sin netting (Fase 1). No toca RrhhAsistencia. Idempotente por
     /// ReferenciaTipo del ledger del periodo.
