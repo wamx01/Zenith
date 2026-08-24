@@ -106,8 +106,12 @@ public partial class AsistenciasCorreccionModal
         var netoTrabajado = Math.Max(0, asistencia.MinutosTrabajadosNetos);
         // Sin turno: usar jornada legal como referencia para sugerir, pero el usuario
         // puede aprobar cualquier valor. Con turno: usar jornada programada.
+        // Meta semanal (Fija sin turno): la meta es semanal (48h), NO 8h/día → el extra
+        // se autoriza por periodo, así que la sugerencia per-día es 0.
+        // English: Weekly meta (Fija with no shift): the meta is weekly (48h), NOT 8h/day →
+        // extra is authorized per-period, so the per-day suggestion is 0.
         var netoEsperado = asistencia.TurnoBaseId is null
-            ? 480
+            ? (RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(asistencia) ? 0 : 480)
             : Math.Max(0, asistencia.MinutosJornadaNetaProgramada);
         return Math.Max(0, netoTrabajado - netoEsperado);
     }
@@ -121,7 +125,11 @@ public partial class AsistenciasCorreccionModal
     private int ObtenerMinutosExtraSugeridosModo(RrhhAsistencia asistencia)
         => modoSugerenciaExtra switch
         {
-            "SinTurno" => Math.Max(0, Math.Max(0, asistencia.MinutosTrabajadosNetos) - 480),
+            // Meta semanal (Fija sin turno): el extra se resuelve por periodo, no por-día → 0.
+            // English: Weekly meta (Fija with no shift): extra is resolved per-period, not per-day → 0.
+            "SinTurno" => RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(asistencia)
+                ? 0
+                : Math.Max(0, Math.Max(0, asistencia.MinutosTrabajadosNetos) - 480),
             "MarcajeReloj" => ObtenerSugerenciaExtraMarcajeReloj(asistencia),
             _ => asistencia.MinutosExtra
         };
@@ -136,6 +144,16 @@ public partial class AsistenciasCorreccionModal
 
         if (modoSugerenciaExtra == "SinTurno")
         {
+            // Meta semanal (Fija sin turno): el extra se autoriza por periodo contra la meta
+            // de 48h en Asistencias Semanal; no se sugiere extra por-día. El tiempo del día
+            // suma al total semanal.
+            // English: Weekly meta (Fija with no shift): extra is authorized per-period against
+            // the 48h meta in Asistencias Semanal; no per-day extra is suggested. The day's time
+            // adds to the weekly total.
+            if (RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(asistencia))
+            {
+                return $"Meta semanal 48h (Fija sin turno): el extra se autoriza por periodo en Asistencias Semanal contra la meta de 48h. No se sugiere extra por-día (0). El tiempo trabajado del día ({FormatearMinutos(asistencia.MinutosTrabajadosNetos)}) suma al total semanal; el déficit descuenta sueldo.";
+            }
             var sugeridoSinTurno = Math.Max(0, Math.Max(0, asistencia.MinutosTrabajadosNetos) - 480);
             return $"Sin turno: el tiempo trabajado ({FormatearMinutos(asistencia.MinutosTrabajadosNetos)}) se considera normal. Sugerencia de extra sobre 8h: {FormatearMinutos(sugeridoSinTurno)}. El usuario decide cuánto aprobar como extra.";
         }
@@ -351,9 +369,13 @@ public partial class AsistenciasCorreccionModal
         var jornadaNetaProgramada = Math.Max(0, AsistenciaActual.MinutosJornadaNetaProgramada);
         var sugerido = (AsistenciaActual.TurnoBaseId is null
                         || jornadaNetaProgramada <= 0) && Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos) > 0
-            ? (AsistenciaActual.TurnoBaseId is null
-                ? Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos - 480)
-                : Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos))
+            ? (RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(AsistenciaActual)
+                // Meta semanal: el extra se resuelve por periodo, no por-día → sugerencia 0.
+                // English: Weekly meta: extra is resolved per-period, not per-day → 0.
+                ? 0
+                : (AsistenciaActual.TurnoBaseId is null
+                    ? Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos - 480)
+                    : Math.Max(0, AsistenciaActual.MinutosTrabajadosNetos)))
             : ObtenerMinutosExtraSugeridosModo(AsistenciaActual);
 
         var baseCaptura = Math.Min(sugerido, resoluble);

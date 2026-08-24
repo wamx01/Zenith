@@ -27,6 +27,19 @@ public class RrhhAsistencia : BaseEntity
     public int MinutosDescansoPagado { get; set; }
     public int MinutosDescansoNoPagado { get; set; }
     public int MinutosRetardo { get; set; }
+    /// <summary>
+    /// Minutos de llegada tarde perdonados por la tolerancia de retardo (umbral). Cuando el
+    /// retardo crudo es &lt;= ToleranciaRetardoMinutos, el procesador deja MinutosRetardo=0
+    /// (perdona la clasificación) Y registra aquí los minutos crudos para perdonar también el
+    /// TIEMPO: se suman al neto efectivo (ObtenerMinutosNetoEfectivo) y reducen el faltante,
+    /// dejando el día limpio. Si el retardo supera la tolerancia, queda 0 (no hay perdón).
+    /// English: Late-arrival minutes forgiven by the retardo tolerance threshold. When the raw
+    /// retardo is &lt;= tolerance, the processor zeroes MinutosRetardo (forgives the classification)
+    /// AND records the raw minutes here to forgive the TIME too: they are added to net effective
+    /// time (ObtenerMinutosNetoEfectivo) and reduce the faltante, leaving the day clean. If the
+    /// retardo exceeds the tolerance, this stays 0 (no forgiveness).
+    /// </summary>
+    public int MinutosToleranciaRetardoAplicada { get; set; }
     public int MinutosSalidaAnticipada { get; set; }
     public int MinutosExtra { get; set; }
     public int MinutosExtraAutorizadosPago { get; set; }
@@ -60,6 +73,21 @@ public class RrhhAsistencia : BaseEntity
     /// en festivo el tiempo trabajado va al factor festivo (sin extra manual ese día).
     /// </summary>
     public bool EsPorHoras { get; set; }
+
+    /// <summary>
+    /// Día PorHoras con pago fijo por labor (lo estampa el procesador desde
+    /// EmpleadoEsquemaJornada.PagoFijoPorLabor). Cuando es true, el snapshot NO manda este
+    /// día al bucket "por horas" (minutos × sueldoHora) sino que lo deja en DiasPagados →
+    /// se paga como Fija (sueldoDiario × día): cobra lo mismo sin importar cuánto tardó.
+    /// Sólo tiene efecto cuando EsPorHoras == true.
+    /// English: PorHoras day with fixed per-task pay (stamped by the processor from
+    /// EmpleadoEsquemaJornada.PagoFijoPorLabor). When true, the snapshot does NOT route this
+    /// day to the "by hours" bucket (minutes × hourly rate) but leaves it in DiasPagados →
+    /// paid as Fija (daily salary × day): earns the same regardless of duration.
+    /// Only effective when EsPorHoras == true.
+    /// </summary>
+    public bool EsPagoFijoPorLabor { get; set; }
+
     public RrhhAsistenciaEstatus Estatus { get; set; } = RrhhAsistenciaEstatus.Pendiente;
     public bool RequiereRevision { get; set; }
     public string? Observaciones { get; set; }

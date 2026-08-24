@@ -681,17 +681,17 @@
             </div>
             <div class="col-xl-6">
                 <div class="card border-0 shadow-sm h-100">
-                    <div class="card-header bg-success text-white py-2">Nómina y prenómina</div>
+                    <div class="card-header bg-success text-white py-2">Nómina</div>
                     <div class="card-body p-0">
                         <table class="table table-sm align-middle mb-0">
                             <tbody>
                                 <tr>
-                                    <th class="ps-3">Prenóminas cerradas</th>
-                                    <td class="text-end pe-3">@resumen.PrenominasCerradas</td>
+                                    <th class="ps-3">Nóminas con captura abierta</th>
+                                    <td class="text-end pe-3">@resumen.NominasCapturaAbierta</td>
                                 </tr>
                                 <tr>
-                                    <th class="ps-3">Prenóminas aplicadas</th>
-                                    <td class="text-end pe-3">@resumen.PrenominasAplicadas</td>
+                                    <th class="ps-3">Nóminas con captura cerrada (congeladas)</th>
+                                    <td class="text-end pe-3">@resumen.NominasCapturaCerrada</td>
                                 </tr>
                                 <tr>
                                     <th class="ps-3">Nóminas borrador</th>
@@ -973,10 +973,10 @@
                 .OrderByDescending(n => n.FechaInicio)
                 .ToListAsync();
 
-            var prenominas = await db.Prenominas
-                .AsNoTracking()
-                .Where(p => p.EmpresaId == _empresaId && p.FechaInicio.Date <= filtroHasta.Date && p.FechaFin.Date >= filtroDesde.Date)
-                .ToListAsync();
+            // Nominas already loaded above (nominas) — the prenomina query was removed
+            // when the Prenomina entity was eliminated in the prenómina→nómina fusion.
+            // Nominas ya se cargó arriba (nominas) — la consulta de prenómina fue eliminada
+            // al suprimir la entidad Prenomina en la fusión prenómina→nómina.
 
             var movimientosBancoPeriodo = await db.RrhhBancoHorasMovimientos
                 .AsNoTracking()
@@ -1058,7 +1058,7 @@
                     .ToListAsync()
                 : [];
 
-            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, prenominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle, minutosExtraResolucion);
+            ConstruirResumen(empleadosActivos, asistencias, ausencias, agentes, nominas, movimientosBancoPeriodo, movimientosBancoTotales, detallesNomina, nominasPrevias, detallesNominaPrevios, bonosDetalle, percepcionesDetalle, deduccionesDetalle, provisionesDetalle, minutosExtraResolucion);
         }
         catch (Exception ex)
         {
@@ -1076,7 +1076,6 @@
         List<AusenciaResumenRaw> ausencias,
         List<AgenteResumenRaw> agentes,
         List<Nomina> nominas,
-        List<Prenomina> prenominas,
         List<MovimientoBancoResumenRaw> movimientosBancoPeriodo,
         List<MovimientoBancoResumenRaw> movimientosBancoTotales,
         List<NominaDetalle> detallesNomina,
@@ -1223,8 +1222,12 @@
             HorasExtraPeriodo = Math.Round(minutosExtraResolucion / 60m, 2),
             HorasBancoPeriodo = CalcularHorasBanco(movimientosBancoPeriodo),
             HorasBancoSaldoActual = CalcularHorasBanco(movimientosBancoTotales),
-            PrenominasCerradas = prenominas.Count(p => p.Estatus == EstatusPrenomina.Cerrada),
-            PrenominasAplicadas = prenominas.Count(p => p.Estatus == EstatusPrenomina.Aplicada),
+            // Capture open: Borrador nómminas whose capture has not been frozen (Phase A).
+            // Captura abierta: nóminas Borrador cuya captura no ha sido congelada (Fase A).
+            NominasCapturaAbierta = nominas.Count(n => n.Estatus != EstatusNomina.Cancelada && n.FechaCierreCaptura == null),
+            // Capture closed: period frozen, calculation already ran.
+            // Captura cerrada: periodo congelado, cálculo ya corrido.
+            NominasCapturaCerrada = nominas.Count(n => n.Estatus != EstatusNomina.Cancelada && n.FechaCierreCaptura != null),
             NominasPeriodo = nominas.Count,
             NominasBorrador = nominas.Count(n => n.Estatus == EstatusNomina.Borrador),
             NominasPagadas = nominas.Count(n => n.Estatus == EstatusNomina.Pagada),
@@ -1605,8 +1608,12 @@
         public decimal HorasExtraPeriodo { get; set; }
         public decimal HorasBancoPeriodo { get; set; }
         public decimal HorasBancoSaldoActual { get; set; }
-        public int PrenominasCerradas { get; set; }
-        public int PrenominasAplicadas { get; set; }
+        // Nómminas with capture still open (Borrador, FechaCierreCaptura == null) — Phase A.
+        // Nóminas con captura aún abierta (Borrador, FechaCierreCaptura == null) — Fase A.
+        public int NominasCapturaAbierta { get; set; }
+        // Nómminas with capture closed/frozen (FechaCierreCaptura != null, calc already ran).
+        // Nóminas con captura cerrada/congelada (FechaCierreCaptura != null, cálculo ya corrido).
+        public int NominasCapturaCerrada { get; set; }
         public int NominasPeriodo { get; set; }
         public int NominasBorrador { get; set; }
         public int NominasPagadas { get; set; }

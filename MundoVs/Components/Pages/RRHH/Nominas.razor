@@ -18,6 +18,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject IRrhhResolucionPeriodoService ResolucionPeriodo
+@inject IRrhhNominaSnapshotService PrenominaSnapshotService
 @rendermode InteractiveServer
 
 <PageTitle>Nóminas</PageTitle>
@@ -32,7 +33,6 @@
     <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
         <h1 class="display-6 fw-bold"><i class="bi bi-wallet2 me-2"></i>Nóminas</h1>
         <div class="d-flex gap-2 flex-wrap">
-            <a class="btn btn-outline-secondary" href="/rrhh/prenominas"><i class="bi bi-calendar2-week me-1"></i>Ir a prenómina</a>
             <a class="btn btn-outline-secondary" href="/rrhh/asistencias"><i class="bi bi-calendar-check me-1"></i>Ir a asistencias</a>
             @if (_puedeEditar)
             {
@@ -204,96 +204,196 @@
                         </div>
                     </div>
                 </div>
-                @if (NominaSeleccionadaRequiereActualizacionPrenomina)
-                {
-                    <div class="alert alert-warning py-2 small mt-2 mb-0">
-                        <strong>Prenómina actualizada:</strong> la prenómina ligada cambió después de esta nómina. Recalcula para traer incidencias e importes actualizados.
-                    </div>
-                }
                 <div class="small text-muted mt-2">Total neto = sueldo base + destajo + bono + festivo trabajado + descanso trabajado + prima dominical + prima vacacional + complemento salario mínimo + horas extra + percepciones manuales - descuentos por minutos - IMSS obrero - Infonavit - deducciones estructuradas.</div>
             </div>
 
-            <div class="card-body p-0">
-                <table class="table table-sm table-hover mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Empleado</th>
-                            <th>Incidencias</th>
-                            <th>Ingresos</th>
-                            <th>Legal</th>
-                            <th class="text-end">Neto</th>
-                            <th class="text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var d in detallesNomina)
+            @* ══ FASE A — Resumen y captura del periodo (fusión prenómina→nómina) ══
+               La asistencia se carga directo desde el snapshot de Asistencias Semanal (periodo
+               cerrado). "Cerrar periodo y calcular" congela la captura y dispara el cálculo
+               (SincronizarNominaAsync lee NominaDetalle + la config congelada); "Reabrir captura"
+               la vuelve editable. Las observaciones (Notas) NO van en esta tabla: se muestran
+               aparte en la sección "Observaciones del periodo" de abajo.
+               English: Phase A — Period summary and capture (prenómina→nómina fusion).
+               Attendance loads straight from the Weekly Attendances snapshot (closed period).
+               "Close period and calculate" freezes capture and runs the calculation
+               (SincronizarNominaAsync reads NominaDetalle + the frozen config); "Reopen capture"
+               makes it editable again. Observations (Notas) are NOT in this table: shown
+               separately in the "Period observations" section below. *@
+            <div class="card-body border-bottom">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <h6 class="mb-0"><i class="bi bi-clipboard-data me-1"></i>Fase A — Resumen y captura del periodo</h6>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge @(CapturaCerradaNominaSeleccionada ? "bg-success" : "bg-warning text-dark")">@(CapturaCerradaNominaSeleccionada ? "Captura cerrada" : "Captura abierta")</span>
+                        <span class="badge text-bg-light">@ObtenerEtiquetaCorteNomina()</span>
+                        @if (CapturaCerradaNominaSeleccionada && !string.IsNullOrWhiteSpace(nominaSeleccionada.CerradaCapturaPor))
                         {
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold">@d.Empleado.Nombre @d.Empleado.ApellidoPaterno</div>
-                                    <div class="small text-muted">@ObtenerNombreEsquema(d.EsquemaPagoId) · @d.Empleado.PeriodicidadPago</div>
-                                    <div class="d-flex flex-wrap gap-1 mt-1">
-                                        @if (TieneFestivosAplicados(d.EmpleadoId))
-                                        {
-                                            <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(d.EmpleadoId)">
-                                                <i class="bi bi-info-circle me-1"></i>Festivos
-                                            </span>
-                                        }
-                                        @if (d.Bonos > 0)
-                                        {
-                                            <span class="badge text-bg-light">Percep. @d.Bonos.ToString("C0")</span>
-                                        }
-                                        @if (d.Deducciones > 0)
-                                        {
-                                            <span class="badge text-bg-light">Deduc. @d.Deducciones.ToString("C0")</span>
-                                        }
-                                        @if (d.MontoInfonavit > 0)
-                                        {
-                                            <span class="badge text-bg-light">Infonavit</span>
-                                        }
-                                        @if (TieneDiferenciaAsistenciaNomina(d))
-                                        {
-                                            <span class="badge text-bg-warning">Revisar asistencia</span>
-                                        }
-                                    </div>
-                                </td>
-                                <td class="small">
-                                    <div>Trab @d.DiasTrabajados · Pag @d.DiasPagados · Vac @d.DiasVacaciones</div>
-                                    <div>Desc @d.DiasDescansoTrabajado · Dom @d.DiasDomingoTrabajado · Fest @d.DiasFestivoTrabajado</div>
-                                    <div>@ObtenerResumenHorasExtra(d) · Min @ObtenerMinutosDescuentoPreview(d)</div>
-                                </td>
-                                <td class="small">
-                                    <div>Sueldo @d.SueldoBase.ToString("C2")</div>
-                                    <div>Destajo @d.MontoDestajo.ToString("C2") · Bono @d.MontoBono.ToString("C2")</div>
-                                    <div>Comp. mín. @d.ComplementoSalarioMinimo.ToString("C2")</div>
-                                </td>
-                                <td class="small">
-                                    <div>Fest @d.MontoFestivoTrabajado.ToString("C2") · Desc @d.MontoDescansoTrabajado.ToString("C2")</div>
-                                    <div>Dom @d.MontoPrimaDominical.ToString("C2") · Vac @d.MontoPrimaVacacional.ToString("C2")</div>
-                                    <div>IMSS @ObtenerTextoImssObrero(d) · ISR @d.RetencionIsr.ToString("C2")</div>
-                                    <div>Patronal @d.CuotaImssPatronal.ToString("C2") · Prov @d.TotalProvisiones.ToString("C2") · Costo @d.CostoEmpresa.ToString("C2")</div>
-                                </td>
-                                <td class="text-end fw-bold">@ObtenerTotalPagarPreview(d).ToString("C2")</td>
-                                <td class="text-center">
-                                    <div class="d-flex justify-content-center gap-1">
-                                        <button class="btn btn-sm btn-outline-primary" type="button" @onclick="() => AbrirDetalleEmpleado(d)">
-                                            <i class="bi bi-pencil-square me-1"></i>Detalle
-                                        </button>
-                                        <a class="btn btn-sm btn-outline-secondary" href="@($"/rrhh/nominas/recibo/{d.Id}")" target="_blank" title="Recibo de nómina"><i class="bi bi-printer"></i></a>
-                                    </div>
-                                </td>
-                            </tr>
+                            <span class="small text-muted">Cerrada por @nominaSeleccionada.CerradaCapturaPor · @(nominaSeleccionada.FechaCierreCaptura?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? string.Empty)</span>
                         }
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-dark">
-                            <td colspan="4" class="text-end fw-bold">TOTAL NÓMINA:</td>
-                            <td class="text-end fw-bold">@resumenNomina.TotalNeto.ToString("C2")</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    @if (PuedeModificarCapturaNominaSeleccionada)
+                    {
+                        <button class="btn btn-sm btn-primary" @onclick="CargarEmpleadosDesdeSnapshotAsync" disabled="@(cargandoSnapshot || guardando)">
+                            <i class="bi bi-cloud-download me-1"></i>@(cargandoSnapshot ? "Cargando…" : "Cargar empleados desde asistencias")
+                        </button>
+                        <button class="btn btn-sm btn-success" @onclick="CerrarCapturaYCalcularAsync" disabled="@(guardando || cargandoSnapshot || detallesNomina.Count == 0)">
+                            <i class="bi bi-lock-fill me-1"></i>Cerrar periodo y calcular
+                        </button>
+                    }
+                    @if (CapturaCerradaNominaSeleccionada && PuedeModificarNominaSeleccionada)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="ReabrirCapturaAsync" disabled="@guardando">
+                            <i class="bi bi-unlock me-1"></i>Reabrir captura
+                        </button>
+                    }
+                </div>
+
+                @if (detallesNomina.Count == 0)
+                {
+                    <div class="alert alert-light small mb-0 py-2">
+                        <i class="bi bi-info-circle me-1"></i>No hay empleados cargados. Presiona <strong>"Cargar empleados desde asistencias"</strong> para traer el snapshot del periodo cerrado (@nominaSeleccionada.FechaInicio.ToString("dd/MM/yyyy") – @nominaSeleccionada.FechaFin.ToString("dd/MM/yyyy")).
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <input class="form-control form-control-sm" style="max-width: 22rem;" placeholder="Filtrar por nombre, n° empleado o checador…" @bind="filtroEmpleadosNomina" />
+                        <span class="small text-muted">@ObtenerDetallesVisiblesNomina().Count() de @detallesNomina.Count empleados</span>
+                    </div>
+
+                    @* Hint: los ingresos/descuentos en dinero se calculan al "Cerrar periodo y calcular".
+                       Mientras la captura está abierta la tabla unificada muestra valores pendientes
+                       (sueldo $0, descuento minutos $0). English: money incomes/deductions are
+                       calculated on "Close period and calculate". While capture is open the unified
+                       table shows pending values (salary $0, minutes discount $0). *@
+                    @if (!CapturaCerradaNominaSeleccionada)
+                    {
+                        <div class="alert alert-warning small mb-2 py-2">
+                            <i class="bi bi-info-circle me-1"></i>Los <strong>ingresos y descuentos en dinero</strong> (sueldo, horas extra, descuento por minutos, IMSS, ISR) se calculan al presionar <strong>"Cerrar periodo y calcular"</strong>. Mientras la captura esté abierta, la tabla muestra los valores pendientes de cálculo (sueldo $0.00, descuento $0.00).
+                        </div>
+                    }
+
+                    @* Tabla de 18 columnas por empleado: SEMANA · Periodo del · Al · Total Hrs Pagadas ·
+                       Entró a Banco · Usaste Banco · Saldo Banco · Hrs Adic a Pagar · Pago Hrs Adic ·
+                       DESEMPEÑO % · INCENTIVOS · ASUETO · IMSS · Descuento por Falta · Total Ingresos ·
+                       Abono a Deuda · Saldo Deuda · Total a Pagar. El desglose granular día a día y el
+                       recibo viven en el modal "Detalle" (botón en la celda Empleado). Descuento por
+                       Falta = MontoDescuentoMinutos en $ (antes sólo se veía en minutos). English:
+                       18-column per-employee table. Day-by-day detail and the receipt live in the
+                       "Detalle" modal (button in the Empleado cell). Descuento por Falta =
+                       MontoDescuentoMinutos in $ (previously only shown in minutes). *@
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0 align-middle small text-center text-nowrap">
+                            <thead class="table-light text-center">
+                                <tr>
+                                    <th class="text-start" style="min-width:14rem;">Empleado</th>
+                                    <th>SEM.</th>
+                                    <th>Periodo del</th>
+                                    <th>Al</th>
+                                    <th>Total Hrs. Pagadas</th>
+                                    <th>Entró a Banco de Hrs</th>
+                                    <th>Usaste Banco de Hrs</th>
+                                    <th>Saldo de Hrs Banco</th>
+                                    <th>Total Hrs Adic. a Pagar</th>
+                                    <th>Pago de Hrs Adicionales</th>
+                                    <th>DESEMPEÑO %</th>
+                                    <th>INCENTIVOS</th>
+                                    <th>ASUETO</th>
+                                    <th>IMSS</th>
+                                    <th>Descuento por Falta</th>
+                                    <th>Total de Ingresos</th>
+                                    <th>Abono a Deuda</th>
+                                    <th>Saldo Deuda</th>
+                                    <th>Total a Pagar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in ObtenerDetallesVisiblesNomina())
+                                {
+                                    <tr class="@(d.DiasConMarcacion == 0 ? "table-warning" : null)">
+                                        <td class="text-start align-top">
+                                            <div class="fw-semibold">
+                                                @d.Empleado.Nombre @d.Empleado.ApellidoPaterno
+                                                <button class="btn btn-sm btn-outline-primary ms-1 py-0 px-1" type="button" @onclick="() => AbrirDetalleEmpleado(d)" title="Detalle día a día"><i class="bi bi-pencil-square"></i></button>
+                                                <a class="btn btn-sm btn-outline-secondary py-0 px-1" href="@($"/rrhh/nominas/recibo/{d.Id}")" target="_blank" title="Recibo de nómina"><i class="bi bi-printer"></i></a>
+                                            </div>
+                                            <div class="text-muted">#@d.Empleado.NumeroEmpleado · Checador @d.Empleado.CodigoChecador</div>
+                                            <div class="text-muted">@ObtenerNombreEsquema(d.EsquemaPagoId) · @d.Empleado.PeriodicidadPago</div>
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                @if (TieneFestivosAplicados(d.EmpleadoId))
+                                                {
+                                                    <span class="badge text-bg-light" title="@ObtenerTextoFestivosAplicados(d.EmpleadoId)"><i class="bi bi-info-circle me-1"></i>Festivos</span>
+                                                }
+                                                @if (TieneDiferenciaAsistenciaNomina(d))
+                                                {
+                                                    <span class="badge text-bg-warning">Revisar asistencia</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>@ObtenerNumeroSemanaIso()</td>
+                                        <td>@(nominaSeleccionada?.FechaInicio.ToString("dd-MMM"))</td>
+                                        <td>@(nominaSeleccionada?.FechaFin.ToString("dd-MMM"))</td>
+                                        <td>@ObtenerHorasPagadasResumen(d.EmpleadoId)</td>
+                                        <td>@FormatearHorasResumen(d.HorasExtraBanco)</td>
+                                        <td>@FmtHorasNeg(d.HorasBancoConsumidas)</td>
+                                        <td>@FormatearHorasResumen(d.HorasBancoSaldoActual)</td>
+                                        <td>@FormatearHorasResumen(d.HorasExtra)</td>
+                                        <td class="text-end">@FmtDineroPos(ObtenerMontoHorasExtraPreview(d))</td>
+                                        <td>@ObtenerDesempenoPct(d)</td>
+                                        <td class="text-end">@FmtDineroPos(ObtenerIncentivos(d))</td>
+                                        <td class="text-end">@FmtDineroPos(d.MontoFestivoTrabajado)</td>
+                                        <td class="text-end text-danger">@FmtDineroNeg(d.CuotaImssObrera)</td>
+                                        <td class="text-end text-danger">@FmtDineroNeg(d.MontoDescuentoMinutos)</td>
+                                        <td class="text-end fw-semibold">@ObtenerTotalIngresos(d).ToString("C2")</td>
+                                        <td class="text-end text-danger">@FmtDineroNeg(ObtenerAbonoDeuda(d))</td>
+                                        <td>—</td>
+                                        <td class="text-end fw-bold">@ObtenerTotalPagarPreview(d).ToString("C2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td class="text-end" colspan="18">Total (@detallesNomina.Count):</td>
+                                    <td class="text-end">@resumenNomina.TotalNeto.ToString("C2")</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Fila en amarillo = empleado sin marcas en el periodo. Descuento por Falta = tiempo no laborado (retardo/salida/faltante) en $. El desglose día a día y el recibo se abren con <i class="bi bi-pencil-square"></i> en la celda Empleado.</div>
+                }
             </div>
+
+            @* Observaciones (Notas) aparte — no van en la tabla de asistencia para mantenerla
+               compacta (sólo horas/días). Se listan los empleados con Notas no vacías.
+               English: Observations (Notas) kept separate — kept out of the attendance table to
+               keep it compact (hours/days only). Lists employees with non-empty Notas. *@
+            @{
+                var detallesConNotas = detallesNomina
+                    .Where(d => !string.IsNullOrWhiteSpace(d.Notas))
+                    .OrderBy(d => d.Empleado.Nombre)
+                    .ToList();
+            }
+            @if (detallesConNotas.Count > 0)
+            {
+                <div class="card-body border-bottom">
+                    <details>
+                        <summary class="fw-semibold small mb-2"><i class="bi bi-journal-text me-1"></i>Observaciones del periodo (@detallesConNotas.Count)</summary>
+                        <ul class="list-group list-group-flush small mb-0">
+                            @foreach (var d in detallesConNotas)
+                            {
+                                <li class="list-group-item px-0 py-1">
+                                    <span class="fw-semibold">@d.Empleado.Nombre @d.Empleado.ApellidoPaterno</span>
+                                    <span class="text-muted"> · #@d.Empleado.NumeroEmpleado</span>
+                                    <div class="text-muted">@d.Notas</div>
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                </div>
+            }
+
 
             @if (detalleModalSeleccionado != null)
             {
@@ -417,15 +517,19 @@
                                             <div class="card-body">
                                                 <div class="row g-2 small">
                                                     <div class="col-md-6"><div class="border rounded p-2">Sueldo base<br /><strong>@detalleModalSeleccionado.SueldoBase.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Horas extra<br /><strong>@ObtenerMontoHorasExtraPreview(detalleModalSeleccionado).ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Destajo<br /><strong>@detalleModalSeleccionado.MontoDestajo.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Bono<br /><strong>@detalleModalSeleccionado.MontoBono.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Percepciones<br /><strong>@detalleModalSeleccionado.Bonos.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Complemento sal. mín.<br /><strong>@detalleModalSeleccionado.ComplementoSalarioMinimo.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Festivo<br /><strong>@detalleModalSeleccionado.MontoFestivoTrabajado.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Descanso<br /><strong>@detalleModalSeleccionado.MontoDescansoTrabajado.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Prima dominical<br /><strong>@detalleModalSeleccionado.MontoPrimaDominical.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Prima vacacional<br /><strong>@detalleModalSeleccionado.MontoPrimaVacacional.ToString("C2")</strong></div></div>
-                                                    <div class="col-md-6"><div class="border rounded p-2">IMSS obrero<br /><strong>@detalleModalSeleccionado.CuotaImssObrera.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">Descuento por minutos<br /><strong class="text-danger">@detalleModalSeleccionado.MontoDescuentoMinutos.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Deducciones<br /><strong>@detalleModalSeleccionado.Deducciones.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">IMSS obrero<br /><strong>@detalleModalSeleccionado.CuotaImssObrera.ToString("C2")</strong></div></div>
+                                                    <div class="col-md-6"><div class="border rounded p-2">ISR<br /><strong>@detalleModalSeleccionado.RetencionIsr.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Infonavit<br /><strong>@detalleModalSeleccionado.MontoInfonavit.ToString("C2")</strong></div></div>
                                                     <div class="col-md-6"><div class="border rounded p-2">Neto<br /><strong class="text-success">@ObtenerTotalPagarPreview(detalleModalSeleccionado).ToString("C2")</strong></div></div>
                                                 </div>
@@ -712,10 +816,6 @@
                             <td class="text-center">
                                 <div class="d-flex flex-column align-items-center gap-1">
                                     <span class="badge @EstatusBadge(n.Estatus)">@n.Estatus</span>
-                                    @if (RequiereActualizacionDesdePrenomina(n))
-                                    {
-                                        <span class="badge text-bg-warning">Prenómina cambió</span>
-                                    }
                                 </div>
                             </td>
                             <td class="text-end fw-bold">@total.ToString("C2")</td>
@@ -739,6 +839,14 @@
     private List<Nomina> nominas = [];
     private List<NominaDetalle> detallesNomina = [];
     private Dictionary<Guid, ResumenAsistenciaNominaVm> resumenAsistenciaPorEmpleado = [];
+    // Resumen neteo del periodo por empleado (el mismo batch que Asistencia Semanal) para mostrar
+    // "Hrs Pagadas" (MinutosBasePagadaPeriodo) en la Fase A — horas base pagadas, no el total
+    // trabajado. Es display; el cálculo de nómina sigue pagando sueldoDiario×diasPagados (Fija) o
+    // minutos×sueldoHora (PorHoras). / Period netted summary per employee (same batch as Weekly
+    // Attendances) to show "Paid Hrs" (MinutosBasePagadaPeriodo) in Phase A — paid base hours, not
+    // total worked. Display-only; payroll still pays sueldoDiario×diasPagados (Fija) or
+    // minutes×hourlyRate (PorHoras).
+    private IReadOnlyDictionary<Guid, RrhhResolucionPeriodoResumen> resumenNeteoPorEmpleado = new Dictionary<Guid, RrhhResolucionPeriodoResumen>();
     private Dictionary<Guid, List<ValeResumenVm>> valesPorEmpleado = [];
     private Dictionary<Guid, string> esquemaNombrePorId = [];
     private List<Empleado> empleados = [];
@@ -769,11 +877,24 @@
     private bool _nominaEditandoBloqueada;
     private Guid _empresaId;
     private ReglasPrenominaConfiguracion reglasPrenomina = new();
+
+    // Fusión prenómina→nómina — Fase A "Resumen y captura del periodo". Filtro de empleados
+    // y bandera de carga del snapshot de asistencias. English: prenómina→nómina fusion —
+    // Phase A "Period summary and capture". Employee filter + snapshot-loading flag.
+    private string filtroEmpleadosNomina = string.Empty;
+    private bool cargandoSnapshot;
+
     private decimal TotalPercepcionesManualesEditando => percepcionesEditando.Sum(p => p.Importe);
     private decimal TotalDeduccionesEditando => deduccionesEditando.Sum(d => d.Importe);
     private bool PuedeModificarNominaEditando => _puedeEditar && !_nominaEditandoBloqueada;
     private bool PuedeModificarNominaSeleccionada => _puedeEditar && nominaSeleccionada is not null && !EstaBloqueadaNomina(nominaSeleccionada.Estatus);
-    private bool NominaSeleccionadaRequiereActualizacionPrenomina => nominaSeleccionada is not null && RequiereActualizacionDesdePrenomina(nominaSeleccionada);
+
+    // Captura congelada = la nómina tiene FechaCierreCaptura (se estampó "Cerrar periodo y
+    // calcular"). En Fase A esto vuelve read-only la asistencia. Reabrir captura la limpia.
+    // English: frozen capture = the nómina has FechaCierreCaptura (stamped by "Close period
+    // and calculate"). In Phase A this makes attendance read-only. Reopening clears it.
+    private bool CapturaCerradaNominaSeleccionada => nominaSeleccionada is not null && nominaSeleccionada.FechaCierreCaptura.HasValue;
+    private bool PuedeModificarCapturaNominaSeleccionada => PuedeModificarNominaSeleccionada && !CapturaCerradaNominaSeleccionada;
     private static IReadOnlyList<PeriodicidadPago> PeriodicidadesDisponibles { get; } = [PeriodicidadPago.Semanal, PeriodicidadPago.Quincenal, PeriodicidadPago.Mensual];
 
     protected override async Task OnInitializedAsync()
@@ -808,7 +929,7 @@
     private async Task Cargar()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        nominas = await db.Nominas.Include(n => n.Detalles).Include(n => n.Prenomina).OrderByDescending(n => n.FechaInicio).AsNoTracking().ToListAsync();
+        nominas = await db.Nominas.Include(n => n.Detalles).OrderByDescending(n => n.FechaInicio).AsNoTracking().ToListAsync();
         empleados = await db.Empleados.Where(e => e.IsActive).OrderBy(e => e.Nombre).AsNoTracking().ToListAsync();
         esquemaNombrePorId = await db.EsquemasPago.AsNoTracking().ToDictionaryAsync(e => e.Id, e => e.Nombre);
         tiposPercepcion = await db.NominasPercepcionesTipos.Where(t => t.IsActive).OrderBy(t => t.Orden).ThenBy(t => t.Nombre).AsNoTracking().ToListAsync();
@@ -821,6 +942,7 @@
         {
             detallesNomina = [];
             resumenAsistenciaPorEmpleado = [];
+            resumenNeteoPorEmpleado = new Dictionary<Guid, RrhhResolucionPeriodoResumen>();
             RecalcularResumenNomina();
             return;
         }
@@ -839,7 +961,36 @@
             .ToListAsync();
         await CargarResumenAsistenciaNominaAsync(nominaSeleccionada.FechaInicio, nominaSeleccionada.FechaFin, detallesNomina.Select(d => d.EmpleadoId));
         await CargarFestivosAplicadosAsync(nominaSeleccionada.FechaInicio, nominaSeleccionada.FechaFin, detallesNomina.Select(d => d.EmpleadoId));
+        await CargarResumenNeteoPeriodoAsync();
         RecalcularResumenNomina();
+    }
+
+    // Carga el resumen neteo del periodo (el mismo batch que usa Asistencia Semanal) para mostrar
+    // "Hrs Pagadas" = MinutosBasePagadaPeriodo en la Fase A. Una sola pasada por nómina; si el
+    // periodo no tiene asistencias el resumen viene vacío y la columna muestra 0.
+    // English: loads the period netted summary (the same batch Weekly Attendances uses) to show
+    // "Paid Hrs" = MinutosBasePagadaPeriodo in Phase A. One pass per nómina; if the period has no
+    // attendances the summary is empty and the column shows 0.
+    private async Task CargarResumenNeteoPeriodoAsync()
+    {
+        var ids = detallesNomina.Select(d => d.EmpleadoId).Distinct().Where(id => id != Guid.Empty).ToList();
+        if (ids.Count == 0 || nominaSeleccionada == null)
+        {
+            resumenNeteoPorEmpleado = new Dictionary<Guid, RrhhResolucionPeriodoResumen>();
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var calendario = NominaPeriodoHelper.ObtenerPeriodo(
+            nominaSeleccionada.PeriodicidadPago,
+            nominaSeleccionada.FechaFin == default ? DateTime.Today : nominaSeleccionada.FechaFin,
+            ObtenerCortePeriodo(nominaSeleccionada.PeriodicidadPago));
+        resumenNeteoPorEmpleado = await ResolucionPeriodo.ObtenerResumenesPeriodoBatchAsync(
+            db, _empresaId, ids,
+            DateOnly.FromDateTime(nominaSeleccionada.FechaInicio),
+            DateOnly.FromDateTime(nominaSeleccionada.FechaFin),
+            nominaSeleccionada.PeriodicidadPago,
+            calendario);
     }
 
     private async Task CargarResumenAsistenciaNominaAsync(DateTime inicio, DateTime fin, IEnumerable<Guid> empleadoIds)
@@ -1711,7 +1862,357 @@
         }
     }
 
-    private async Task SincronizarNominaAsync(Guid nominaId, Guid? prenominaAnteriorId = null)
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Fusión prenómina→nómina — Fase A "Resumen y captura del periodo".
+    // La nómina carga su asistencia directo desde el snapshot de RrhhAsistencia (no necesita
+    // una prenómina ligada). "Cerrar periodo y calcular" congela la captura
+    // (FechaCierreCaptura + SnapshotConfiguracionJson) y dispara el cálculo (que lee
+    // NominaDetalle); "Reabrir captura" la vuelve editable.
+    // English: prenómina→nómina fusion — Phase A "Period summary and capture". The nómina
+    // loads its attendance straight from the RrhhAsistencia snapshot (no linked prenomina
+    // required). "Close period and calculate" freezes capture (FechaCierreCaptura +
+    // SnapshotConfiguracionJson) and runs calculation (which reads NominaDetalle); "Reopen
+    // capture" makes it editable again.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    private async Task<string?> ObtenerUsuarioActualAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name
+            ?? state.User.FindFirst("name")?.Value
+            ?? state.User.FindFirst("email")?.Value
+            ?? state.User.FindFirst("preferred_username")?.Value;
+    }
+
+    // Carga los empleados del periodo cerrado desde el snapshot de asistencias y pobla los
+    // campos de asistencia de NominaDetalle (días/extra/banco/minutos/complemento/destajo
+    // informativo). Preserva MinutosDescuentoManual y los NominaBono/NominaPercepcion/
+    // NominaDeduccion existentes (no los toca). Sólo si la captura está abierta
+    // (FechaCierreCaptura == null) y la nómina no está bloqueada.
+    // English: Loads the closed-period employees from the attendance snapshot and fills the
+    // NominaDetalle attendance fields (days/extra/bank/minutes/complement/informational
+    // destajo). Preserves MinutosDescuentoManual and existing NominaBono/NominaPercepcion/
+    // NominaDeduccion (untouched). Only when capture is open (FechaCierreCaptura == null)
+    // and the nómina isn't locked.
+    private async Task CargarEmpleadosDesdeSnapshotAsync()
+    {
+        error = ok = null;
+        if (nominaSeleccionada == null)
+            return;
+
+        if (!PuedeModificarCapturaNominaSeleccionada)
+        {
+            error = CapturaCerradaNominaSeleccionada
+                ? "La captura del periodo está cerrada. Reabre la captura para volver a cargar desde asistencias."
+                : ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+            return;
+        }
+
+        cargandoSnapshot = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nomina = await db.Nominas.SingleAsync(n => n.Id == nominaSeleccionada.Id);
+            var inicio = nomina.FechaInicio.Date;
+            var fin = nomina.FechaFin.Date;
+
+            // Gate duro: tiempo extra detectado sin resolución Autorizada del periodo no se
+            // congela (secuencia: autorizar en Asistencias Semanal → cargar → cerrar y calcular).
+            // English: Hard gate: detected overtime without an Authorized resolution for the
+            // period can't be frozen (sequence: authorize in Weekly Attendances → load → close).
+            if (reglasPrenomina.RequiereResolucionAutorizadaParaNomina)
+            {
+                var sinAutorizar = await ResolucionPeriodo.ObtenerEmpleadosConExtraSinAutorizarAsync(
+                    db, _empresaId, nomina.PeriodicidadPago, inicio, fin);
+                if (sinAutorizar.Count > 0)
+                {
+                    error = $"Falta autorizar el tiempo extra de {sinAutorizar.Count} empleado(s) del periodo en Asistencias Semanal antes de cargar la nómina.";
+                    return;
+                }
+            }
+
+            var snapshots = (await PrenominaSnapshotService.ConstruirSnapshotPeriodoAsync(db, inicio, fin, configuracionNomina))
+                .Where(s => s.Empleado.PeriodicidadPago == nomina.PeriodicidadPago)
+                .ToList();
+
+            var existentes = await db.NominaDetalles
+                .Where(d => d.NominaId == nomina.Id)
+                .ToListAsync();
+            var porEmpleado = existentes.ToDictionary(d => d.EmpleadoId, d => d);
+
+            // Bono distribuido del periodo: el preview de "Cargar empleados" debe reflejar el bono
+            // capturado en Bonos distribuidos (misma lectura que "Cerrar y calcular" en
+            // SincronizarNominaAsync), no esperar al cierre para mostrar la percepción. Si no hay
+            // captura para el empleado, se preserva el MontoBono existente (p.ej. bono manual o
+            // legacy) en lugar de forzarlo a 0.
+            // English: Distributed bonus for the period: the "Cargar empleados" preview must
+            // reflect the bonus captured in Bonos distribuidos (same read as "Cerrar y calcular"
+            // in SincronizarNominaAsync), not wait until close to show the perception. When there
+            // is no capture for the employee, the existing MontoBono is preserved (e.g. a manual or
+            // legacy bonus) instead of forcing it to 0.
+            var bonosDistribuidosPeriodo = await db.BonosDistribucionesPeriodoRrhh
+                .AsNoTracking()
+                .Include(b => b.Detalles)
+                    .ThenInclude(d => d.Detalles)
+                .Where(b => b.IsActive && b.FechaInicio == inicio && b.FechaFin == fin)
+                .ToListAsync();
+            var montoBonoPorEmpleado = bonosDistribuidosPeriodo
+                .SelectMany(b => b.Detalles.Where(d => d.IsActive))
+                .GroupBy(d => d.EmpleadoId)
+                .ToDictionary(g => g.Key, g => g.SelectMany(d => d.Detalles.Where(r => r.IsActive)).Sum(r => r.MontoAsignado));
+
+            foreach (var snapshot in snapshots)
+            {
+                var empleado = snapshot.Empleado;
+                var detalle = porEmpleado.TryGetValue(empleado.Id, out var actual)
+                    ? actual
+                    : new NominaDetalle { Id = Guid.NewGuid(), NominaId = nomina.Id, EmpleadoId = empleado.Id };
+
+                detalle.EsquemaPagoId = snapshot.AsignacionEsquema?.EsquemaPagoId;
+                detalle.AplicaImss = snapshot.AplicaImss;
+                detalle.MontoDestajoInformativo = snapshot.MontoDestajoInformativo;
+                detalle.DiasTrabajados = snapshot.DiasTrabajados;
+                detalle.DiasPagados = snapshot.DiasPagados;
+                detalle.DiasVacaciones = snapshot.DiasVacaciones;
+                detalle.DiasFaltaJustificada = snapshot.DiasFaltaJustificada;
+                detalle.DiasFaltaInjustificada = snapshot.DiasFaltaInjustificada;
+                detalle.DiasIncapacidad = snapshot.DiasIncapacidad;
+                detalle.DiasDescansoTrabajado = snapshot.DiasDescansoTrabajado;
+                detalle.DiasConMarcacion = snapshot.DiasConMarcacion;
+                detalle.DiasDomingoTrabajado = snapshot.DiasDomingoTrabajado;
+                detalle.DiasFestivoTrabajado = snapshot.DiasFestivoTrabajado;
+                detalle.DiasPorHorasTrabajados = snapshot.DiasPorHorasTrabajados;
+                detalle.MinutosPorHorasNetos = snapshot.MinutosPorHorasNetos;
+                detalle.MinutosPorHorasFestivoNetos = snapshot.MinutosPorHorasFestivoNetos;
+                detalle.DiasFestivoTrabajadoFija = snapshot.DiasFestivoTrabajadoFija;
+                detalle.HorasExtraBase = snapshot.HorasExtraBase;
+                detalle.HorasExtra = snapshot.HorasExtra;
+                detalle.HorasTrabajadasNetas = snapshot.HorasTrabajadasNetas;
+                detalle.HorasBancoAcumuladas = snapshot.HorasBancoAcumuladas;
+                detalle.HorasBancoConsumidas = snapshot.HorasBancoConsumidas;
+                detalle.HorasBancoSaldoActual = snapshot.HorasBancoSaldoActual;
+                detalle.HorasDescansoTomado = snapshot.HorasDescansoTomado;
+                detalle.HorasDescansoPagado = snapshot.HorasDescansoPagado;
+                detalle.HorasDescansoNoPagado = snapshot.HorasDescansoNoPagado;
+                detalle.MinutosRetardo = snapshot.MinutosRetardo;
+                detalle.MinutosSalidaAnticipada = snapshot.MinutosSalidaAnticipada;
+                detalle.MinutosPerdonadosManual = snapshot.MinutosPerdonadosManual;
+                detalle.MinutosFaltanteDescontable = snapshot.MinutosFaltanteDescontable;
+                detalle.DiasVacacionesDisponibles = snapshot.DiasVacacionesDisponibles;
+                detalle.DiasVacacionesRestantes = Math.Max(0m, snapshot.DiasVacacionesDisponibles - snapshot.DiasVacaciones);
+                detalle.ComplementoSalarioMinimoSugerido = snapshot.ComplementoSalarioMinimoSugerido;
+                detalle.Notas = snapshot.Notas;
+                detalle.FactorPagoTiempoExtra = snapshot.FactorPagoTiempoExtra;
+                // Bono distribuido: refleja la captura del periodo en el preview (ver carga arriba).
+                // Se preserva el valor existente si no hay captura para el empleado.
+                // English: Distributed bonus: reflects the period capture in the preview (see load
+                // above). The existing value is preserved when there is no capture for the employee.
+                if (montoBonoPorEmpleado.TryGetValue(empleado.Id, out var montoBono))
+                    detalle.MontoBono = montoBono;
+                // MinutosDescuentoManual se preserva (no viene del snapshot; es captura manual
+                // del operador). / MinutosDescuentoManual is preserved (not from the snapshot;
+                // it's operator manual capture).
+
+                if (!porEmpleado.ContainsKey(empleado.Id))
+                {
+                    db.NominaDetalles.Add(detalle);
+                    porEmpleado[empleado.Id] = detalle;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Cargar empleados nómina", nameof(Nomina), nomina.Id,
+                $"Carga desde snapshot de asistencias: {snapshots.Count} empleado(s).", _empresaId);
+
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+            ok = $"Se cargaron {snapshots.Count} empleado(s) desde asistencias del periodo cerrado.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargandoSnapshot = false;
+        }
+    }
+
+    // "Cerrar periodo y calcular": congela la captura (FechaCierreCaptura + SnapshotConfiguracionJson)
+    // y dispara el cálculo (SincronizarNominaAsync lee NominaDetalle + la config congelada).
+    // English: "Close period and calculate": freezes capture (FechaCierreCaptura +
+    // SnapshotConfiguracionJson) and runs calculation (SincronizarNominaAsync reads NominaDetalle +
+    // the frozen config).
+    private async Task CerrarCapturaYCalcularAsync()
+    {
+        error = ok = null;
+        if (nominaSeleccionada == null)
+            return;
+
+        if (!PuedeModificarNominaSeleccionada)
+        {
+            error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            var usuarioActual = await ObtenerUsuarioActualAsync();
+            await CargarConfiguracionNominaAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nomina = await db.Nominas.SingleAsync(n => n.Id == nominaSeleccionada.Id);
+            // Congela la configuración vigente al cierre dentro de la propia nómina: el cálculo
+            // la reutiliza aunque la config viva cambie después (auditoría del punto de corte).
+            // English: freezes the config in effect at close onto the nómina itself: calculation
+            // reuses it even if the live config changes later (cut-off audit point).
+            nomina.SnapshotConfiguracionJson ??= System.Text.Json.JsonSerializer.Serialize(configuracionNomina);
+            nomina.FechaCierreCaptura ??= DateTime.UtcNow;
+            nomina.CerradaCapturaPor = string.IsNullOrWhiteSpace(nomina.CerradaCapturaPor) ? usuarioActual : nomina.CerradaCapturaPor;
+            nomina.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Cerrar captura nómina", nameof(Nomina), nomina.Id,
+                $"Captura del periodo congelada por {nomina.CerradaCapturaPor}.", _empresaId);
+
+            // Cálculo: Sincronizar lee la asistencia congelada en NominaDetalle y la config
+            // congelada en SnapshotConfiguracionJson (fusión completa, sin prenómina).
+            // English: calculation: Sincronizar reads the frozen attendance on NominaDetalle and
+            // the frozen config on SnapshotConfiguracionJson (fusion complete, no prenomina).
+            await SincronizarNominaAsync(nomina.Id);
+            await Cargar();
+            await CargarDetalles();
+            await CargarDesgloseValesAsync();
+            ok = "Captura cerrada y nómina recalculada.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    // "Reabrir captura": limpia FechaCierreCaptura para volver a editar la asistencia (Fase A).
+    // No se permite si la nómina está Aprobada/Pagada (bloqueada). / "Reopen capture": clears
+    // FechaCierreCaptura to edit attendance again (Phase A). Not allowed if the nómina is
+    // Approved/Paid (locked).
+    private async Task ReabrirCapturaAsync()
+    {
+        error = ok = null;
+        if (nominaSeleccionada == null)
+            return;
+
+        if (!PuedeModificarNominaSeleccionada)
+        {
+            error = ObtenerMensajeBloqueoNomina(nominaSeleccionada.Estatus);
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var nomina = await db.Nominas.SingleAsync(n => n.Id == nominaSeleccionada.Id);
+            nomina.FechaCierreCaptura = null;
+            nomina.CerradaCapturaPor = null;
+            nomina.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            await AuditService.LogAsync("Reabrir captura nómina", nameof(Nomina), nomina.Id,
+                "Captura del periodo reabierta.", _empresaId);
+            await Cargar();
+            await CargarDetalles();
+            ok = "Captura reabierta; ya puedes editar la asistencia del periodo.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    // Filtro de visualización (sólo render; no muta detallesNomina, así los badges de resumen
+    // siguen sumando sobre todos). Acepta nombre, n° de empleado o código de checador.
+    // English: Display-only filter (render only; doesn't mutate detallesNomina, so the summary
+    // badges still sum over everyone). Matches name, employee number, or clock code.
+    private IEnumerable<NominaDetalle> ObtenerDetallesVisiblesNomina()
+    {
+        var filtro = filtroEmpleadosNomina?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(filtro))
+            return detallesNomina;
+
+        return detallesNomina.Where(d =>
+            (d.Empleado?.NombreCompleto ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase)
+            || (d.Empleado?.NumeroEmpleado ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase)
+            || (d.Empleado?.CodigoChecador ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // Réplica de RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal: retardo + salida +
+    // faltante descontable + descuento manual. / Mirrors
+    // RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal: tardiness + early-leave +
+    // deductible missing + manual discount.
+    private static int ObtenerMinutosDescuentoTotal(NominaDetalle detalle)
+        => Math.Max(0, detalle.MinutosRetardo)
+            + Math.Max(0, detalle.MinutosSalidaAnticipada)
+            + Math.Max(0, detalle.MinutosFaltanteDescontable)
+            + Math.Max(0, detalle.MinutosDescuentoManual);
+
+    private static string FormatearHorasResumen(decimal horas) => horas.ToString("0.##");
+
+    // "Hrs Pagadas" del periodo = MinutosBasePagadaPeriodo del resumen neteo (mismo batch que
+    // Asistencia Semanal). Fija: jornada programada − deducciones netas; PorHoras: trabajado −
+    // extra aprobado. 0 si el empleado no tiene resumen (p.ej. sin asistencias en el periodo).
+    // English: period "Paid Hrs" = MinutosBasePagadaPeriodo from the netted summary (same batch
+    // as Weekly Attendances). Fija: scheduled jornada − net deductions; PorHoras: worked −
+    // approved extra. 0 when the employee has no summary (e.g. no attendances in the period).
+    private int ObtenerMinutosBasePagadaPeriodo(Guid empleadoId)
+        => resumenNeteoPorEmpleado.GetValueOrDefault(empleadoId)?.MinutosBasePagadaPeriodo ?? 0;
+
+    private string ObtenerHorasPagadasResumen(Guid empleadoId)
+        => FormatearHorasResumen(ObtenerMinutosBasePagadaPeriodo(empleadoId) / 60m);
+
+    private static string ObtenerNombreDiaSemana(DayOfWeek dia) => dia switch
+    {
+        DayOfWeek.Sunday => "Domingo",
+        DayOfWeek.Monday => "Lunes",
+        DayOfWeek.Tuesday => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday => "Jueves",
+        DayOfWeek.Friday => "Viernes",
+        DayOfWeek.Saturday => "Sábado",
+        _ => dia.ToString()
+    };
+
+    // Etiqueta del día de corte configurado para la periodicidad de la nómina seleccionada.
+    // English: Label of the configured cutoff day for the selected nómina's periodicity.
+    private string ObtenerEtiquetaCorteNomina()
+        => nominaSeleccionada == null ? string.Empty : ObtenerEtiquetaCorte(nominaSeleccionada.PeriodicidadPago);
+
+    private string ObtenerEtiquetaCorte(PeriodicidadPago periodicidadPago)
+    {
+        var corte = ObtenerCortePeriodo(periodicidadPago);
+        if (periodicidadPago == PeriodicidadPago.Semanal)
+            return $"Corte: {ObtenerNombreDiaSemana(corte.DiaCorteSemana)}";
+        return corte.DiaCorteMes >= 28 ? "Corte: fin de mes" : $"Corte: día {corte.DiaCorteMes}";
+    }
+
+    // Fusión prenómina→nómina (Etapa 3): el cálculo lee la asistencia directamente de NominaDetalle
+    // (cargada desde el snapshot de asistencias y congelada al cerrar la captura) y la configuración
+    // congelada de Nomina.SnapshotConfiguracionJson. Ya no carga ni requiere una prenómina. Los
+    // bonos/percepciones se toman de los NominaBono/NominaPercepcion ya persistidos (capturados
+    // directamente en la nómina) y de los bonos distribuidos por periodo; ya no hay promoción desde
+    // la prenómina. English: prenómina→nómina fusion (Stage 3): calculation reads attendance
+    // straight from NominaDetalle (loaded from the attendance snapshot and frozen at capture-close)
+    // and the frozen config from Nomina.SnapshotConfiguracionJson. It no longer loads or requires a
+    // prenomina. Bonuses/perceptions come from already-persisted NominaBono/NominaPerceptron
+    // (captured directly on the nómina) and from period-distributed bonuses; there's no longer
+    // promotion from the prenomina.
+    private async Task SincronizarNominaAsync(Guid nominaId)
     {
         await CargarConfiguracionNominaAsync();
         await using var db = await DbFactory.CreateDbContextAsync();
@@ -1723,12 +2224,6 @@
 
         var inicio = nomina.FechaInicio.Date;
         var fin = nomina.FechaFin.Date;
-
-        var prenomina = await ObtenerPrenominaParaNominaAsync(db, nomina.EmpresaId, nomina.PeriodicidadPago, nomina.AnioPeriodo, nomina.NumeroPeriodo);
-        if (prenomina == null)
-        {
-            throw new InvalidOperationException(ObtenerMensajePrenominaRequerida());
-        }
 
         // Fase 7 — gate duro: no se calcula la nómina con tiempo extra detectado sin resolución
         // Autorizada del periodo (backstop del paso de dinero). Un periodo sin extra no se bloquea.
@@ -1742,25 +2237,17 @@
             }
         }
 
-        prenomina = await db.Prenominas
-            .Include(p => p.Detalles)
-                .ThenInclude(d => d.BonosRapidos)
-                    .ThenInclude(b => b.BonoRubroRrhh)
-            .Include(p => p.Detalles)
-                .ThenInclude(d => d.PercepcionesRapidas)
-                    .ThenInclude(p => p.TipoPercepcion)
-            .FirstOrDefaultAsync(p => p.Id == prenomina.Id);
-
-        if (prenomina == null)
-        {
-            throw new InvalidOperationException("No se pudo cargar la prenómina vinculada para sincronizar la nómina.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(prenomina.SnapshotConfiguracionJson))
+        // Fusión: la configuración congelada al cerrar la captura vive en la propia nómina
+        // (SnapshotConfiguracionJson). Si existe, se calcula con la config vigente al cierre;
+        // si no, se mantiene la configuración viva cargada arriba.
+        // English: Fusion: the config frozen at capture-close lives on the nómina itself
+        // (SnapshotConfiguracionJson). If present, calculation uses the config in effect at close;
+        // otherwise the live config loaded above is kept.
+        if (!string.IsNullOrWhiteSpace(nomina.SnapshotConfiguracionJson))
         {
             try
             {
-                var snapshotConfig = System.Text.Json.JsonSerializer.Deserialize<NominaConfiguracion>(prenomina.SnapshotConfiguracionJson);
+                var snapshotConfig = System.Text.Json.JsonSerializer.Deserialize<NominaConfiguracion>(nomina.SnapshotConfiguracionJson);
                 if (snapshotConfig != null)
                 {
                     configuracionNomina = snapshotConfig;
@@ -1768,23 +2255,16 @@
             }
             catch
             {
-                // Si el snapshot no se puede deserializar, se mantiene la configuración viva cargada arriba.
+                // Si el snapshot no se puede deserializar, se mantiene la configuración viva.
             }
         }
 
-        nomina.PrenominaId = prenomina.Id;
-        await AplicarEstadoPrenominaDesdeNominaAsync(db, nomina, prenomina);
-        if (prenominaAnteriorId.HasValue && prenominaAnteriorId.Value != prenomina.Id)
-            await LiberarPrenominaAnteriorAsync(db, prenominaAnteriorId.Value, nomina.Id);
-
-        var prenominaPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d);
-
-        var empleadosActivos = await db.Empleados
-            .Where(e => e.IsActive && e.PeriodicidadPago == nomina.PeriodicidadPago)
-            .OrderBy(e => e.Nombre)
-            .ThenBy(e => e.ApellidoPaterno)
-            .ToListAsync();
-
+        // La asistencia congelada vive en NominaDetalle (cargada con "Cargar empleados desde
+        // asistencias" o por el backfill de la fusión). El cálculo itera esos detalles y lee la
+        // asistencia directamente de ellos — ya no hay prenómina como fuente.
+        // English: The frozen attendance lives on NominaDetalle (loaded by "Load employees from
+        // attendances" or by the fusion backfill). Calculation iterates those details and reads
+        // attendance straight from them — there's no longer a prenomina as a source.
         var detallesExistentes = await db.NominaDetalles
             .Where(d => d.NominaId == nominaId)
             .ToListAsync();
@@ -1794,8 +2274,10 @@
             .ToDictionary(g => g.Key, g => g.First());
 
         var detalleIdsExistentes = detallesExistentes.Select(d => d.Id).ToList();
-        var prenominaBonosPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d.BonosRapidos.Where(b => b.IsActive && b.Importe > 0).OrderBy(b => b.BonoRubroRrhh.Orden).ThenBy(b => b.BonoRubroRrhh.Nombre).ToList());
-        var prenominaPercepcionesPorEmpleado = prenomina.Detalles.ToDictionary(d => d.EmpleadoId, d => d.PercepcionesRapidas.Where(p => p.IsActive && p.Importe > 0).OrderBy(p => p.TipoPercepcion.Orden).ThenBy(p => p.TipoPercepcion.Nombre).ToList());
+        var empleadoIds = detallesExistentes.Select(d => d.EmpleadoId).Distinct().ToList();
+        var empleadosPorId = await db.Empleados
+            .Where(e => empleadoIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id);
         var montoBonoPorDetalle = detalleIdsExistentes.Count == 0
             ? new Dictionary<Guid, decimal>()
             : await db.NominasBonos
@@ -1957,7 +2439,6 @@
         var sumaFactorFestivoPorEmpleado = new Dictionary<Guid, decimal>();
         if (fechasFestivas.Count > 0)
         {
-            var empleadoIds = empleadosActivos.Select(e => e.Id).ToList();
             var asistenciasFestivoTrabajado = await db.RrhhAsistencias
                 .AsNoTracking()
                 .Where(a => empleadoIds.Contains(a.EmpleadoId)
@@ -1993,48 +2474,47 @@
                 && r.IsActive)
             .ToDictionaryAsync(r => r.EmpleadoId);
 
-        foreach (var empleado in empleadosActivos)
+        // Fusión: se itera sobre los NominaDetalle existentes (cargados desde el snapshot de
+        // asistencias y congelados al cerrar la captura). Ya no se crean renglones aquí — la
+        // carga vive en CargarEmpleadosDesdeSnapshotAsync; el cálculo sólo lee y persiste
+        // resultados sobre los renglones presentes.
+        // English: Fusion: iterate over the existing NominaDetalle rows (loaded from the
+        // attendance snapshot and frozen at capture-close). Rows are no longer created here —
+        // loading lives in CargarEmpleadosDesdeSnapshotAsync; calculation only reads and
+        // persists results onto the present rows.
+        foreach (var detalle in detallesPorEmpleado.Values)
         {
-            var esNuevo = false;
-            if (!detallesPorEmpleado.TryGetValue(empleado.Id, out var detalle))
+            if (!empleadosPorId.TryGetValue(detalle.EmpleadoId, out var empleado))
             {
-                esNuevo = true;
-                detalle = new NominaDetalle
-                {
-                    NominaId = nominaId,
-                    EmpleadoId = empleado.Id
-                };
-
-                db.NominaDetalles.Add(detalle);
-                detallesPorEmpleado[empleado.Id] = detalle;
+                // El detalle pertenece a un empleado que ya no existe (baja); se conserva el
+                // renglón congelado sin recalcular. No debería ocurrir en operación normal.
+                // English: the detail belongs to an employee that no longer exists (terminated);
+                // the frozen row is kept without recalculation. Should not happen in normal use.
+                continue;
             }
 
             var asignacion = esquemaPorEmp.GetValueOrDefault(empleado.Id);
             var esquema = asignacion?.EsquemaPago;
-            var incidencia = prenominaPorEmpleado.GetValueOrDefault(empleado.Id);
-            var diasPagados = incidencia?.DiasPagados ?? 0;
-            var diasTrabajados = incidencia?.DiasTrabajados ?? 0;
-            var diasVacaciones = incidencia?.DiasVacaciones ?? 0;
             var resolucionPeriodo = resolucionesPeriodo.GetValueOrDefault(empleado.Id);
+            // La asistencia congelada se lee del propio NominaDetalle; el sourcing la consume
+            // igual que antes consumía la incidencia de prenómina.
+            // English: the frozen attendance is read from the NominaDetalle itself; sourcing
+            // consumes it just as it previously consumed the prenomina incidence.
             var sourcing = NominaTiempoExtraSourcing.Source(
-                NominaTiempoExtraSourcing.InputFrom(incidencia ?? new PrenominaDetalle()),
+                NominaTiempoExtraSourcing.InputFrom(detalle),
                 resolucionPeriodo, configuracionNomina, detalle.FactorPagoTiempoExtra);
-            detalle.EsquemaPagoId = esquema?.Id;
+            detalle.EsquemaPagoId ??= esquema?.Id;
             detalle.TipoPago = empleado.TipoNomina;
-            detalle.DiasTrabajados = diasTrabajados;
-            detalle.DiasPagados = diasPagados;
-            detalle.DiasVacaciones = diasVacaciones;
-            detalle.DiasFaltaJustificada = incidencia?.DiasFaltaJustificada ?? 0;
-            detalle.DiasFaltaInjustificada = incidencia?.DiasFaltaInjustificada ?? 0;
-            detalle.DiasIncapacidad = incidencia?.DiasIncapacidad ?? 0;
-            detalle.DiasDescansoTrabajado = incidencia?.DiasDescansoTrabajado ?? 0;
-            detalle.DiasConMarcacion = incidencia?.DiasConMarcacion ?? 0;
-            detalle.DiasDomingoTrabajado = incidencia?.DiasDomingoTrabajado ?? 0;
-            detalle.DiasFestivoTrabajado = incidencia?.DiasFestivoTrabajado ?? 0;
-            detalle.HorasTrabajadasNetas = incidencia?.HorasTrabajadasNetas ?? detalle.HorasTrabajadasNetas;
+            // Días/asistencia: ya congelados en el detalle (cargados desde el snapshot).
+            // English: days/attendance: already frozen on the detail (loaded from the snapshot).
+            var diasPagados = detalle.DiasPagados;
+            var diasVacaciones = detalle.DiasVacaciones;
             // Fase 5.5 — tiempo extra y deducciones vienen de la resolución por periodo
             // autorizada (fuente autoritativa; alivia la deducción de los minutos que el
-            // extra absorbió) o, si no existe, de la incidencia de prenómina (histórico).
+            // extra absorbió) o, si no existe, del propio detalle (histórico congelado).
+            // English: Phase 5.5 — overtime and deductions come from the authorized period
+            // resolution (authoritative source; eases the deduction of the minutes the extra
+            // absorbed) or, if none exists, from the detail itself (frozen history).
             detalle.HorasExtra = sourcing.HorasExtra;
             detalle.HorasExtraBase = sourcing.HorasExtraBase;
             detalle.HorasExtraBanco = sourcing.HorasExtraBanco;
@@ -2047,7 +2527,7 @@
             detalle.MinutosSalidaAnticipada = sourcing.MinutosSalidaAnticipada;
             detalle.MinutosDescuentoManual = sourcing.MinutosDescuentoManual;
             detalle.MinutosPerdonadosManual = sourcing.MinutosPerdonadosManual;
-            detalle.AplicaImss = empleado.AplicaImss && (incidencia?.AplicaImss ?? true);
+            detalle.AplicaImss = empleado.AplicaImss && detalle.AplicaImss;
 
             var sueldoReferencia = NominaLegalPolicy.ObtenerSueldoReferencia(empleado, asignacion);
             var incluyeSueldoBase = NominaLegalPolicy.IncluyeSueldoBase(asignacion);
@@ -2059,10 +2539,13 @@
                 : configuracionNomina.ObtenerFactorFestivoTrabajado();
             // F4b: festivo efectivo (sólo Fija) para no duplicar el festivo PorHoras (ya va en el
             // base por minutos × factor). En puro Fija sigue al total de DiasFestivoTrabajado para
-            // respetar correcciones manuales del campo en la prenómina (sin regresión vs. calc previo).
-            var diasFestivoTrabajadoEfectivo = (incidencia?.DiasPorHorasTrabajados ?? 0) == 0
-                ? incidencia?.DiasFestivoTrabajado ?? 0
-                : incidencia?.DiasFestivoTrabajadoFija ?? 0;
+            // respetar correcciones manuales del campo congelado (sin regresión vs. calc previo).
+            // English: F4b: effective holiday (Fija only) to avoid duplicating the PorHoras holiday
+            // (already in base by minutes × factor). In pure Fija it follows the total
+            // DiasFestivoTrabajado to respect manual corrections of the frozen field (no regression).
+            var diasFestivoTrabajadoEfectivo = detalle.DiasPorHorasTrabajados == 0
+                ? detalle.DiasFestivoTrabajado
+                : detalle.DiasFestivoTrabajadoFija;
             // F4b: sueldo base mixto Fija (días × sueldo diario) + PorHoras (minutos × sueldo hora).
             detalle.SueldoBase = NominaSueldoBasePolicy.Calcular(new SueldoBaseInput
             {
@@ -2070,9 +2553,9 @@
                 IncluyeSueldoBase = incluyeSueldoBase,
                 SueldoReferencia = sueldoReferencia,
                 DiasPagados = diasPagados,
-                DiasPorHorasTrabajados = incidencia?.DiasPorHorasTrabajados ?? 0,
-                MinutosPorHorasNetos = incidencia?.MinutosPorHorasNetos ?? 0,
-                MinutosPorHorasFestivoNetos = incidencia?.MinutosPorHorasFestivoNetos ?? 0,
+                DiasPorHorasTrabajados = detalle.DiasPorHorasTrabajados,
+                MinutosPorHorasNetos = detalle.MinutosPorHorasNetos,
+                MinutosPorHorasFestivoNetos = detalle.MinutosPorHorasFestivoNetos,
                 FactorFestivo = factorFestivoAplicado,
                 Configuracion = configuracionNomina
             }).SueldoBase;
@@ -2097,25 +2580,68 @@
 
             detalle.ComplementoSalarioMinimo = NominaLegalPolicy.CalcularComplementoSalarioMinimo(detalle.SueldoBase, detalle.MontoDestajo, diasPagados, configuracionNomina);
 
-            var bonosPrenomina = prenominaBonosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
+            // Fusión: ya no hay bonos/percepciones de prenómina que promover. Los bonos vienen
+            // de la distribución por periodo (capturados directo en nómina) o de NominaBono ya
+            // persistido; las percepciones manuales de NominaPercepcion ya persistido.
+            // English: Fusion: no more prenomina bonuses/perceptions to promote. Bonuses come
+            // from the period distribution (captured directly on the nómina) or from already-
+            // persisted NominaBono; manual perceptions from already-persisted NominaPercepcion.
             var bonoDistribuido = bonosDistribuidosPorEmpleado.GetValueOrDefault(empleado.Id);
-            var percepcionesPrenomina = prenominaPercepcionesPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
-            var montoBono = bonosPrenomina.Count > 0
-                ? bonosPrenomina.Sum(b => b.Importe)
-                : bonoDistribuido?.Detalle.MontoAsignado ?? montoBonoPorDetalle.GetValueOrDefault(detalle.Id);
+            // Resolución del bono con precedencia clara: (1) distribución capturada del periodo
+            // (Bonos distribuidos — el valor NUEVO, incluso si es 0 porque el empleado capturó
+            // 0%); (2) bono estructurado ya persistido de un cálculo previo (NominaBonoDetalle);
+            // (3) bono manual/legacy congelado en NominaDetalle.MontoBono (se preserva). Antes
+            // esto era un `??` sobre decimal? que trataba el 0 de la distribución como "sin
+            // valor" y caía al structured, y además el calculator recibía detalle.MontoBono
+            // (stale) en vez de este montoBono resuelto → el neto/ISR/IMSS se calculaban con el
+            // bono viejo aunque la línea del bono sí se actualizara después (SincronizarBonos-
+            // Distribuidos corre DESPUÉS del Calculate). Ahora estampamos detalle.MontoBono =
+            // montoBono ANTES del cálculo para que calculator, baseCalculoConceptos y el campo
+            // congelado usen el mismo valor nuevo.
+            // English: bonus resolution with clear precedence: (1) period capture (the NEW value,
+            // even 0 if the employee captured 0%); (2) already-persisted structured bonus
+            // (NominaBonoDetalle); (3) manual/legacy frozen MontoBono (preserved). Previously a
+            // `??` over decimal? treated the distribution's 0 as "no value" and fell through to
+            // structured, and the calculator received detalle.MontoBono (stale) instead of this
+            // resolved montoBono → neto/ISR/IMSS were computed with the old bonus even though the
+            // bonus line was updated afterward (SincronizarBonosDistribuidos runs AFTER Calculate).
+            // Now we stamp detalle.MontoBono = montoBono BEFORE the calculation so calculator,
+            // baseCalculoConceptos and the frozen field all use the same new value.
+            decimal montoBono;
+            if (bonoDistribuido is not null)
+                // Sumamos los rubros capturados (Σ MontoAsignado de los rubros activos) en vez de
+                // leer el campo denormalizado BonoDistribucionEmpleadoRrhh.MontoAsignado. Ese campo
+                // es un cache que puede quedar stale (ej. el bote/pot cambió y no se re-grabó) y
+                // diverger del total real capturado — eso hacía que el neto se calculara con el
+                // bote viejo mientras el recibo (SincronizarBonosDistribuidos, que SÍ suma rubros)
+                // mostraba la captura nueva → nómina inconsistente (neto ≠ percepciones del recibo).
+                // Usamos la MISMA fuente que CargarEmpleados (montoBonoPorEmpleado) y
+                // SincronizarBonosDistribuidos → las tres lecturas nunca divergen. // English: sum
+                // the captured rubros (Σ active rubros' MontoAsignado) instead of reading the
+                // denormalized BonoDistribucionEmpleadoRrhh.MontoAsignado field. That field is a
+                // cache that can go stale (e.g. the pot changed and wasn't re-saved) and diverge
+                // from the real captured total — that made the neto compute with the old pot while
+                // the receipt (SincronizarBonosDistribuidos, which DOES sum rubros) showed the new
+                // capture → inconsistent nómina (neto ≠ receipt percepciones). We use the SAME
+                // source as CargarEmpleados (montoBonoPorEmpleado) and SincronizarBonosDistribuidos
+                // → the three reads never diverge.
+                montoBono = bonoDistribuido.Detalle.Detalles.Where(r => r.IsActive).Sum(r => r.MontoAsignado);
+            else if (montoBonoPorDetalle.TryGetValue(detalle.Id, out var importeEstructurado))
+                montoBono = importeEstructurado;
+            else
+                montoBono = detalle.MontoBono;
+            detalle.MontoBono = montoBono;
             var conceptosEmpleado = conceptosActivosPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
             var baseCalculoConceptos = detalle.SueldoBase + detalle.MontoDestajo + montoBono + detalle.MontoFestivoTrabajado
                 + detalle.MontoDescansoTrabajado + detalle.MontoPrimaDominical + detalle.MontoPrimaVacacional + detalle.ComplementoSalarioMinimo
                 + detalle.MontoHorasExtra;
             var percepcionesConfigurables = ConstruirPercepcionesConfigurablesEmpleado(conceptosEmpleado, baseCalculoConceptos, tipoPercepcionOtrosIngresos.Id, tiposPercepcionPorClave);
             var totalPercepcionesConfigurables = percepcionesConfigurables.Sum(p => p.Importe);
-            var percepcionesManual = percepcionesPrenomina.Count > 0
-                ? percepcionesPrenomina.Sum(p => p.Importe)
-                : montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual)
-                    ? totalPercepcionesManual
-                    : detalleConPercepcionesPersistidas.Contains(detalle.Id)
-                        ? 0m
-                        : detalle.Bonos;
+            var percepcionesManual = montoPercepcionesPorDetalle.TryGetValue(detalle.Id, out var totalPercepcionesManual)
+                ? totalPercepcionesManual
+                : detalleConPercepcionesPersistidas.Contains(detalle.Id)
+                    ? 0m
+                    : detalle.Bonos;
             var totalDeducciones = deduccionesPorDetalle.TryGetValue(detalle.Id, out var deduccionesCalculadas) ? deduccionesCalculadas : 0m;
             var conceptoDeduccionBase = conceptosDeduccionPorDetalle.TryGetValue(detalle.Id, out var conceptoDeduccion) ? conceptoDeduccion : null;
             detalle.ConceptoDeducciones = conceptoDeduccionBase;
@@ -2144,7 +2670,7 @@
                 FactorPagoTiempoExtra = detalle.FactorPagoTiempoExtra,
                 HorasExtraFactoradas = detalle.HorasExtraFactoradas,
                 MontoDestajo = detalle.MontoDestajo,
-                MontoBono = detalle.MontoBono,
+                MontoBono = montoBono,
                 MontoPercepcionesManuales = percepcionesManual + totalPercepcionesConfigurables,
                 MontoDeducciones = totalDeducciones,
                 ComplementoSalarioMinimo = detalle.ComplementoSalarioMinimo,
@@ -2156,48 +2682,14 @@
             AplicarResultadoCalculo(detalle, resultado);
             AplicarConceptosConfigurablesEmpleado(db, nomina, detalle, conceptosEmpleado, totalDeducciones, conceptoDeduccionBase);
 
-            if (bonosPrenomina.Count > 0)
-                SincronizarBonosPrenomina(db, bonosNominaExistentes, detalle, bonosPrenomina, nomina.EmpresaId);
-            else if (bonoDistribuido is not null)
+            if (bonoDistribuido is not null)
                 SincronizarBonosDistribuidos(db, bonosNominaExistentes, detalle, bonoDistribuido.Detalle, nomina.EmpresaId);
-
-            if (percepcionesPrenomina.Count > 0)
-                SincronizarPercepcionesPrenomina(db, percepcionesNominaExistentes, detalle, percepcionesPrenomina, nomina.EmpresaId);
 
             SincronizarPercepcionesConfigurables(db, percepcionesNominaExistentes, detalle, percepcionesConfigurables, nomina.EmpresaId, percepcionesConfigurablesReferenciaPrefijo);
         }
 
         nomina.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
-    }
-
-    private static Task AplicarEstadoPrenominaDesdeNominaAsync(CrmDbContext db, Nomina nomina, Prenomina prenomina)
-    {
-        if (nomina.Estatus != EstatusNomina.Cancelada)
-        {
-            prenomina.Estatus = EstatusPrenomina.Aplicada;
-            prenomina.FechaCierre ??= DateTime.UtcNow;
-            prenomina.UpdatedAt = DateTime.UtcNow;
-            return Task.CompletedTask;
-        }
-
-        return LiberarPrenominaAnteriorAsync(db, prenomina.Id, nomina.Id);
-    }
-
-    private static async Task LiberarPrenominaAnteriorAsync(CrmDbContext db, Guid prenominaId, Guid nominaActualId)
-    {
-        var prenomina = await db.Prenominas.FirstOrDefaultAsync(p => p.Id == prenominaId);
-        if (prenomina == null)
-            return;
-
-        var tieneOtraNominaActiva = await db.Nominas.AnyAsync(n => n.Id != nominaActualId && n.PrenominaId == prenominaId && n.Estatus != EstatusNomina.Cancelada);
-        if (tieneOtraNominaActiva)
-            return;
-
-        if (prenomina.Estatus == EstatusPrenomina.Aplicada)
-            prenomina.Estatus = EstatusPrenomina.Cerrada;
-
-        prenomina.UpdatedAt = DateTime.UtcNow;
     }
 
     private async Task GuardarCambiosDetalle(NominaDetalle detalle)
@@ -2292,15 +2784,11 @@
 
             var periodo = editando.Periodo.Trim();
             var numeroNomina = string.IsNullOrWhiteSpace(editando.NumeroNomina) ? null : editando.NumeroNomina.Trim();
-            var prenomina = await ObtenerPrenominaParaNominaAsync(db, empresaId, editando.PeriodicidadPago, editando.AnioPeriodo, editando.NumeroPeriodo);
-            if (prenomina == null)
-            {
-                error = ObtenerMensajePrenominaRequerida();
-                return;
-            }
 
             // Fase 7 — gate duro: no se guarda la nómina con tiempo extra detectado sin resolución
             // Autorizada del periodo. Un periodo sin extra no se bloquea.
+            // English: Phase 7 — hard gate: the nómina is not saved with detected overtime lacking
+            // an Authorized period resolution. A period with no overtime is not blocked.
             if (reglasPrenomina.RequiereResolucionAutorizadaParaNomina)
             {
                 var sinAutorizar = await ResolucionPeriodo.ObtenerEmpleadosConExtraSinAutorizarAsync(
@@ -2327,18 +2815,22 @@
                 editando.Folio = string.IsNullOrWhiteSpace(editando.Folio)
                     ? await CodigoNegocio.GetNextPeriodFolioAsync(empresaId, "NOM", "Consecutivo:Nomina", editando.FechaInicio)
                     : editando.Folio.Trim();
+                // Fusión: la nómina nace sin prenómina ligada y con los NominaDetalle vacíos; la
+                // carga de empleados y el cálculo se disparan desde la Fase A ("Cargar empleados"
+                // + "Cerrar periodo y calcular").
+                // English: Fusion: the nómina is born with no linked prenomina and empty
+                // NominaDetalle; loading employees and calculation are triggered from Phase A.
                 var nueva = new Nomina
                 {
                     EmpresaId = empresaId, Folio = editando.Folio, NumeroNomina = numeroNomina, PeriodicidadPago = editando.PeriodicidadPago, AnioPeriodo = editando.AnioPeriodo, NumeroPeriodo = editando.NumeroPeriodo, Periodo = periodo,
                     FechaInicio = editando.FechaInicio, FechaFin = editando.FechaFin,
-                    FechaPago = editando.FechaPago, Estatus = editando.Estatus, Notas = editando.Notas?.Trim(),
-                    PrenominaId = prenomina.Id
+                    FechaPago = editando.FechaPago, Estatus = editando.Estatus, Notas = editando.Notas?.Trim()
                 };
                 db.Nominas.Add(nueva);
                 await db.SaveChangesAsync();
-                await SincronizarNominaAsync(nueva.Id);
                 await AuditService.LogAsync("Crear nómina", nameof(Nomina), nueva.Id, $"Nómina {nueva.Periodo} creada.", empresaId);
-                ok = "Nómina guardada."; mostrarForm = false; await Cargar();
+                ok = "Nómina guardada. Usa «Cargar empleados desde asistencias» para traer el periodo y luego «Cerrar periodo y calcular».";
+                mostrarForm = false; await Cargar();
                 return;
             }
             else
@@ -2352,7 +2844,6 @@
                     return;
                 }
 
-                var prenominaAnteriorId = ex.PrenominaId;
                 ex.Folio = string.IsNullOrWhiteSpace(editando.Folio) ? ex.Folio : editando.Folio.Trim();
                 ex.NumeroNomina = numeroNomina;
                 ex.PeriodicidadPago = editando.PeriodicidadPago;
@@ -2360,9 +2851,12 @@
                 ex.NumeroPeriodo = editando.NumeroPeriodo;
                 ex.Periodo = periodo; ex.FechaInicio = editando.FechaInicio;
                 ex.FechaFin = editando.FechaFin; ex.FechaPago = editando.FechaPago;
-                ex.Estatus = editando.Estatus; ex.Notas = editando.Notas?.Trim(); ex.PrenominaId = prenomina.Id; ex.UpdatedAt = DateTime.UtcNow;
+                ex.Estatus = editando.Estatus; ex.Notas = editando.Notas?.Trim(); ex.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
-                await SincronizarNominaAsync(ex.Id, prenominaAnteriorId);
+                // El recálculo vive en la Fase A ("Cerrar periodo y calcular"); al guardar sólo
+                // cabecera no se recalcula para no pisar la captura en curso.
+                // English: recalculation lives in Phase A ("Close period and calculate"); saving
+                // the header only does not recalculate, to avoid clobbering the in-progress capture.
                 await AuditService.LogAsync("Editar nómina", nameof(Nomina), ex.Id, $"Nómina {ex.Periodo} actualizada.", empresaId);
                 ok = "Nómina guardada."; mostrarForm = false; await Cargar();
                 return;
@@ -2459,17 +2953,6 @@
     private static bool EstaBloqueadaNomina(EstatusNomina estatus)
         => estatus is EstatusNomina.Pagada or EstatusNomina.Cancelada;
 
-    private static bool RequiereActualizacionDesdePrenomina(Nomina nomina)
-        => nomina.Estatus == EstatusNomina.Borrador
-            && nomina.Prenomina is not null
-            && ObtenerFechaUltimaActualizacionPrenomina(nomina.Prenomina) > ObtenerFechaUltimaSincronizacionNomina(nomina);
-
-    private static DateTime ObtenerFechaUltimaSincronizacionNomina(Nomina nomina)
-        => nomina.UpdatedAt ?? nomina.CreatedAt;
-
-    private static DateTime ObtenerFechaUltimaActualizacionPrenomina(Prenomina prenomina)
-        => prenomina.UpdatedAt ?? prenomina.CreatedAt;
-
     private static string ObtenerMensajeBloqueoNomina(EstatusNomina estatus)
         => estatus switch
         {
@@ -2530,6 +3013,61 @@
         => resumenNomina.Detalles.TryGetValue(detalle.Id, out var resumenDetalle)
             ? resumenDetalle.TotalPagarPreview
             : detalle.TotalPagar;
+
+    // Número de semana ISO del periodo de la nómina (columna SEMANA). Todas las filas del
+    // mismo periodo comparten el valor. / ISO week number of the nómina's period (SEMANA
+    // column). All rows of the same period share the value.
+    private int ObtenerNumeroSemanaIso()
+        => nominaSeleccionada == null ? 0 : System.Globalization.ISOWeek.GetWeekOfYear(nominaSeleccionada.FechaInicio);
+
+    // Total de Ingresos = percepciones brutas (suma de todos los componentes antes de
+    // descuentos). Refleja el lado positivo de NominaDetalle.TotalPagar. Mientras la captura
+    // está abierta los campos de $ son 0 (se calculan al "Cerrar periodo y calcular").
+    // English: Total Ingresos = gross percepciones (sum of all components before deductions).
+    // Mirrors the positive side of NominaDetalle.TotalPagar. While capture is open the $
+    // fields are 0 (calculated on "Close period and calculate").
+    private decimal ObtenerTotalIngresos(NominaDetalle d)
+        => Math.Max(0m, d.SueldoBase)
+         + Math.Max(0m, d.MontoDestajo)
+         + Math.Max(0m, d.MontoBono)
+         + Math.Max(0m, d.MontoFestivoTrabajado)
+         + Math.Max(0m, d.MontoDescansoTrabajado)
+         + Math.Max(0m, d.MontoPrimaDominical)
+         + Math.Max(0m, d.MontoPrimaVacacional)
+         + Math.Max(0m, d.ComplementoSalarioMinimo)
+         + Math.Max(0m, ObtenerMontoHorasExtraPreview(d))
+         + Math.Max(0m, d.Bonos)
+         + Math.Max(0m, d.SubsidioEmpleo);
+
+    // INCENTIVOS = bono de producción (MontoBono) + percepciones adicionales (Bonos).
+    // English: INCENTIVOS = production bonus (MontoBono) + additional perceptions (Bonos).
+    private static decimal ObtenerIncentivos(NominaDetalle d)
+        => Math.Max(0m, d.MontoBono) + Math.Max(0m, d.Bonos);
+
+    // DESEMPEÑO % = incentivos / sueldo base × 100 (— si no hay sueldo). El desempeño nace
+    // de los bonos (incentivos) expresado como porcentaje del sueldo del periodo.
+    // English: DESEMPEÑO % = incentives / base salary × 100 (— when no salary). Performance
+    // derives from bonuses (incentives) as a percentage of the period's salary.
+    private static string ObtenerDesempenoPct(NominaDetalle d)
+        => d.SueldoBase <= 0m ? "—" : (ObtenerIncentivos(d) / d.SueldoBase * 100m).ToString("0") + "%";
+
+    // Abono a Deuda = deducciones estructuradas de tipo Préstamo (Clave "PRESTAMO" o Nombre
+    // contiene "Préstamo"). No existe saldo de deuda persistente → Saldo Deuda es siempre "—".
+    // English: Abono a Deuda = structured deductions of type Préstamo (Clave "PRESTAMO" or
+    // Nombre contains "Préstamo"). There is no persistent debt balance → Saldo Deuda is "—".
+    private static decimal ObtenerAbonoDeuda(NominaDetalle d)
+        => (d.DeduccionesEstructuradas ?? [])
+            .Where(x => x.IsActive && x.TipoDeduccion != null
+                && (string.Equals(x.TipoDeduccion.Clave, "PRESTAMO", StringComparison.OrdinalIgnoreCase)
+                    || (x.TipoDeduccion.Nombre ?? string.Empty).Contains("Préstamo", StringComparison.OrdinalIgnoreCase)
+                    || (x.TipoDeduccion.Nombre ?? string.Empty).Contains("Prestamo", StringComparison.OrdinalIgnoreCase)))
+            .Sum(x => Math.Max(0m, x.Importe));
+
+    // Formateadores compactos para la tabla de 18 columnas. / Compact formatters for the
+    // 18-column table.
+    private static string FmtDineroPos(decimal v) => v > 0m ? v.ToString("C2") : "—";
+    private static string FmtDineroNeg(decimal v) => v > 0m ? (-v).ToString("C2") : "—";
+    private static string FmtHorasNeg(decimal v) => FormatearHorasResumen(v == 0m ? 0m : -v);
 
     private static string ObtenerTextoImssObrero(NominaDetalle detalle)
         => detalle.CuotaImssObrera > 0m || detalle.AplicaImss
@@ -2701,7 +3239,14 @@
             DiasDescansoTrabajado = detalle.DiasDescansoTrabajado,
             DiasDomingoTrabajado = detalle.DiasDomingoTrabajado,
             DiasFestivoTrabajado = detalle.DiasFestivoTrabajado,
-            MinutosDescuento = detalle.MinutosRetardo + detalle.MinutosSalidaAnticipada + detalle.MinutosDescuentoManual,
+            // Preview debe usar el mismo descuento de 4 buckets que el cálculo guardado
+            // (CalcularResultado, lín 2136), para que la vista previa en vivo coincida con
+            // el TotalPagar que se persiste. Antes omitía MinutosFaltanteDescontable y la
+            // preview mostraba un Total mayor al guardado cuando había faltante.
+            // English: Preview must use the same 4-bucket discount as the saved calc so the
+            // live preview matches the persisted TotalPagar (previously omitted
+            // MinutosFaltanteDescontable, inflating the preview when faltante existed).
+            MinutosDescuento = ObtenerMinutosDescuentoPreview(detalle),
             AplicaImss = detalle.AplicaImss,
             AplicaIsr = empleado.AplicaIsr,
             HorasExtra = detalle.HorasExtra,
@@ -3007,92 +3552,6 @@
         return $"{conceptoNormalizado} + configurables";
     }
 
-    private static void SincronizarBonosPrenomina(CrmDbContext db, List<NominaBono> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaBono> bonosPrenomina, Guid empresaId)
-    {
-        var actual = existentes.FirstOrDefault(b => b.NominaDetalleId == detalle.Id);
-        if (actual == null)
-        {
-            actual = new NominaBono
-            {
-                Id = Guid.NewGuid(),
-                EmpresaId = empresaId,
-                NominaDetalleId = detalle.Id,
-                TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte,
-                CreatedAt = DateTime.UtcNow,
-                IsActive = true,
-                Detalles = []
-            };
-            db.NominasBonos.Add(actual);
-            existentes.Add(actual);
-        }
-
-        actual.TipoCaptura = TipoCapturaBonoNomina.PorRubroImporte;
-        actual.MontoTotal = bonosPrenomina.Sum(b => b.Importe);
-        actual.Observaciones = "Generado desde prenómina";
-        actual.IsActive = true;
-        actual.UpdatedAt = DateTime.UtcNow;
-
-        var existentesDetalle = actual.Detalles.ToDictionary(d => d.BonoRubroRrhhId, d => d);
-        foreach (var eliminar in actual.Detalles.Where(d => bonosPrenomina.All(x => x.BonoRubroRrhhId != d.BonoRubroRrhhId)).ToList())
-            db.NominasBonosDetalle.Remove(eliminar);
-
-        var orden = 1;
-        foreach (var bono in bonosPrenomina)
-        {
-            if (!existentesDetalle.TryGetValue(bono.BonoRubroRrhhId, out var detalleBono))
-            {
-                detalleBono = new NominaBonoDetalle
-                {
-                    Id = Guid.NewGuid(),
-                    NominaBono = actual,
-                    BonoRubroRrhhId = bono.BonoRubroRrhhId,
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true
-                };
-                db.NominasBonosDetalle.Add(detalleBono);
-                actual.Detalles.Add(detalleBono);
-            }
-
-            detalleBono.Importe = bono.Importe;
-            detalleBono.Porcentaje = actual.MontoTotal <= 0 ? 0m : Math.Round((bono.Importe / actual.MontoTotal) * 100m, 2);
-            detalleBono.Orden = orden++;
-            detalleBono.IsActive = true;
-            detalleBono.UpdatedAt = DateTime.UtcNow;
-        }
-    }
-
-    private static void SincronizarPercepcionesPrenomina(CrmDbContext db, List<NominaPercepcion> existentes, NominaDetalle detalle, IReadOnlyCollection<PrenominaPercepcion> percepcionesPrenomina, Guid empresaId)
-    {
-        var existentesDetalle = existentes.Where(p => p.NominaDetalleId == detalle.Id).ToDictionary(p => p.TipoPercepcionId, p => p);
-        foreach (var eliminar in existentes.Where(p => p.NominaDetalleId == detalle.Id && percepcionesPrenomina.All(x => x.TipoPercepcionId != p.TipoPercepcionId)).ToList())
-            db.NominasPercepciones.Remove(eliminar);
-
-        foreach (var percepcion in percepcionesPrenomina)
-        {
-            if (!existentesDetalle.TryGetValue(percepcion.TipoPercepcionId, out var actual))
-            {
-                actual = new NominaPercepcion
-                {
-                    Id = Guid.NewGuid(),
-                    EmpresaId = empresaId,
-                    NominaDetalleId = detalle.Id,
-                    TipoPercepcionId = percepcion.TipoPercepcionId,
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true
-                };
-                db.NominasPercepciones.Add(actual);
-                existentes.Add(actual);
-            }
-
-            actual.Importe = percepcion.Importe;
-            actual.Referencia = percepcion.Referencia;
-            actual.Observaciones = string.IsNullOrWhiteSpace(percepcion.Observaciones) ? "Generado desde prenómina" : percepcion.Observaciones;
-            actual.Origen = OrigenPercepcionNomina.Manual;
-            actual.IsActive = true;
-            actual.UpdatedAt = DateTime.UtcNow;
-        }
-    }
-
     private async Task<int> ObtenerEnteroConfigAsync(string clave, int valorDefault)
     {
         var valor = await AppConfig.GetValueAsync(clave);
@@ -3107,38 +3566,10 @@
             : valorDefault;
     }
 
-    private static Task<Prenomina?> ObtenerPrenominaCerradaAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
-        => db.Prenominas
-            .OrderByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync(p => p.EmpresaId == empresaId
-                && p.PeriodicidadPago == periodicidadPago
-                && p.AnioPeriodo == anioPeriodo
-                && p.NumeroPeriodo == numeroPeriodo
-                && (p.Estatus == EstatusPrenomina.Cerrada || p.Estatus == EstatusPrenomina.Aplicada));
-
-    private Task<Prenomina?> ObtenerPrenominaParaNominaAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
-        => reglasPrenomina.RequierePrenominaCerradaParaNomina
-            ? ObtenerPrenominaCerradaAsync(db, empresaId, periodicidadPago, anioPeriodo, numeroPeriodo)
-            : ObtenerPrenominaPeriodoAsync(db, empresaId, periodicidadPago, anioPeriodo, numeroPeriodo);
-
-    private string ObtenerMensajePrenominaRequerida()
-        => reglasPrenomina.RequierePrenominaCerradaParaNomina
-            ? "Debes cerrar una prenómina del mismo periodo antes de guardar la nómina."
-            : "Debes guardar una prenómina del mismo periodo antes de guardar la nómina.";
-
     private string ObtenerMensajeResolucionRequerida(int cantidad)
         => reglasPrenomina.RequiereResolucionAutorizadaParaNomina
             ? $"Debes autorizar la resolución de tiempo extra de {cantidad} empleado(s) del periodo en Asistencias Semanal antes de calcular la nómina."
             : $"Guarda una resolución de tiempo extra para {cantidad} empleado(s) del periodo en Asistencias Semanal antes de calcular la nómina.";
-
-    private static Task<Prenomina?> ObtenerPrenominaPeriodoAsync(CrmDbContext db, Guid empresaId, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
-        => db.Prenominas
-            .OrderByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync(p => p.EmpresaId == empresaId
-                && p.PeriodicidadPago == periodicidadPago
-                && p.AnioPeriodo == anioPeriodo
-                && p.NumeroPeriodo == numeroPeriodo
-                && p.Estatus != EstatusPrenomina.Cancelada);
 
     private async Task AplicarPeriodoNominaAsync(PeriodicidadPago periodicidad, DateTime? fechaReferencia = null)
     {
@@ -3191,7 +3622,6 @@
     private Task<Nomina?> BuscarNominaExistenteAsync(CrmDbContext db, PeriodicidadPago periodicidadPago, int anioPeriodo, int numeroPeriodo)
         => db.Nominas
             .Include(n => n.Detalles)
-            .Include(n => n.Prenomina)
             .AsNoTracking()
             .OrderByDescending(n => n.CreatedAt)
             .FirstOrDefaultAsync(n => n.EmpresaId == _empresaId

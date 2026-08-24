@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.JSInterop;
 using Microsoft.EntityFrameworkCore;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Entities.Serigrafia;
@@ -15,6 +16,12 @@ public partial class Empleados
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private CodigoNegocioService CodigoNegocio { get; set; } = default!;
     [Inject] private INominaLegalPolicyService NominaLegalPolicy { get; set; } = default!;
+    // IJSRuntime para hacer scroll automático al formulario de edición cuando se
+    // edita desde una fila de hasta abajo de la lista (si no, el form aparece arriba
+    // y la vista no se mueve → parece que no pasó nada).
+    // English: IJSRuntime to auto-scroll to the edit form when editing from a row far
+    // down the list (otherwise the form renders up top and the viewport doesn't move).
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private List<Empleado> lista = [];
     private List<Posicion> posiciones = [];
@@ -48,14 +55,49 @@ public partial class Empleados
     // F5a: captura del esquema de jornada (Fija/PorHoras) con vigencia.
     private TipoJornada jornadaSeleccionada = TipoJornada.Fija;
     private DateTime jornadaVigenteDesde = DateTime.Today;
+    // Pago fijo por labor (sólo con PorHoras): cobra el sueldo del día sin importar la
+    // duración (ej. limpieza). English: Fixed per-task pay (PorHoras only): earns the day's
+    // salary regardless of duration (e.g. cleaning).
+    private bool jornadaPagoFijoPorLabor;
+    // Método de cálculo por defecto del empleado (sólo Fija): null = "Vs horario" (con reglas),
+    // "MarcajeReloj" = tal cual las marcas, sin reglas. El "Recalcular por periodo" lo impone a
+    // todos los días. English: employee default calc method (Fija only): null = "Vs schedule"
+    // (with rules), "MarcajeReloj" = marks as-is, no rules. "Recalculate by period" enforces it.
+    private string? jornadaModoCalculo;
     private List<HistorialJornadaVm> historialJornadas = [];
     private List<HistorialTurnoVm> historialTurnos = [];
     private string? turnoObservaciones;
     private bool mostrarForm, guardando;
+    // Bandera para pedir scroll al formulario tras el siguiente render. Se pone a true
+    // en Editar()/Nuevo() y se consume en OnAfterRenderAsync (donde el DOM ya existe).
+    // English: Flag to request a scroll-to-form after the next render. Set true in
+    // Editar()/Nuevo() and consumed in OnAfterRenderAsync (DOM already exists then).
+    private bool _scrollAlForm;
     private string? error, ok;
     private bool _puedeVer;
     private bool _puedeEditar;
     private Guid _empresaId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Tras renderizar (el DOM del form ya existe), hacer scroll suave hacia la
+        // tarjeta del formulario si lo pidió Editar()/Nuevo(). Así, al editar desde una
+        // fila de hasta abajo, la vista sube al form en vez de quedarse quieta.
+        // English: After render (the form DOM exists), smoothly scroll to the form card
+        // when Editar()/Nuevo() requested it — so editing from a far-down row moves the
+        // viewport up to the form instead of leaving it stuck in place.
+        if (_scrollAlForm)
+        {
+            _scrollAlForm = false;
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "document.getElementById('empleado-form-card')?.scrollIntoView({behavior:'smooth',block:'start'})");
+            }
+            catch { /* JS interop no disponible (pre-render SSR) — ignorar / ignore. */ }
+        }
+    }
+
     private void OrdenarNoEmpleado() => AlternarOrden("NoEmpleado");
     private void OrdenarCodigoChecador() => AlternarOrden("CodigoChecador");
     private void OrdenarNombre() => AlternarOrden("Nombre");
@@ -480,11 +522,14 @@ public partial class Empleados
         historialTurnos = [];
         jornadaSeleccionada = TipoJornada.Fija;
         jornadaVigenteDesde = DateTime.Today;
+        jornadaPagoFijoPorLabor = false;
+        jornadaModoCalculo = null;
         historialJornadas = [];
         conceptosEmpleadoEditando = [];
         conceptoEmpleadoEnCaptura = CrearConceptoEmpleadoVacio();
         conceptoEmpleadoTipoSeleccionadoId = string.Empty;
         mostrarForm = true;
+        _scrollAlForm = true;
     }
 
     private async Task Editar(Empleado e)
@@ -511,11 +556,13 @@ public partial class Empleados
         };
 
         turnoSeleccionadoId = e.TurnoBaseId;
+        jornadaModoCalculo = e.ModoSugerenciaExtraDefault;
         await CargarHistorialEsquemas(e.Id);
         await CargarHistorialJornadas(e.Id);
         await CargarHistorialTurnos(e.Id);
         await CargarConceptosEmpleado(e.Id);
         mostrarForm = true;
+        _scrollAlForm = true;
     }
 
     private async Task CargarConceptosEmpleado(Guid empleadoId)
@@ -589,6 +636,7 @@ public partial class Empleados
         historialJornadas = asignaciones.Select(a => new HistorialJornadaVm
         {
             TipoJornada = a.TipoJornada,
+            PagoFijoPorLabor = a.PagoFijoPorLabor,
             Desde = a.VigenteDesde,
             Hasta = a.VigenteHasta
         }).ToList();
@@ -596,6 +644,7 @@ public partial class Empleados
         var vigente = asignaciones.FirstOrDefault(a => a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today);
         jornadaSeleccionada = vigente?.TipoJornada ?? TipoJornada.Fija;
         jornadaVigenteDesde = vigente?.VigenteDesde ?? DateTime.Today;
+        jornadaPagoFijoPorLabor = vigente?.PagoFijoPorLabor ?? false;
     }
 
     private async Task CargarHistorialTurnos(Guid empleadoId)
@@ -698,7 +747,8 @@ public partial class Empleados
                     TipoNomina = editando.TipoNomina, AplicaImss = editando.AplicaImss, AplicaIsr = editando.AplicaIsr, AplicaInfonavit = editando.AplicaInfonavit,
                     NumeroCreditoInfonavit = editando.AplicaInfonavit ? editando.NumeroCreditoInfonavit?.Trim() : null,
                     FactorDescuentoInfonavit = editando.AplicaInfonavit ? editando.FactorDescuentoInfonavit : 0m,
-                    IsActive = editando.IsActive, Notas = editando.Notas?.Trim()
+                    IsActive = editando.IsActive, Notas = editando.Notas?.Trim(),
+                    ModoSugerenciaExtraDefault = jornadaModoCalculo
                 };
 
                 db.Empleados.Add(nuevoEmpleado);
@@ -720,6 +770,7 @@ public partial class Empleados
                 ex.NumeroCreditoInfonavit = editando.AplicaInfonavit ? editando.NumeroCreditoInfonavit?.Trim() : null;
                 ex.FactorDescuentoInfonavit = editando.AplicaInfonavit ? editando.FactorDescuentoInfonavit : 0m; ex.IsActive = editando.IsActive;
                 ex.Notas = editando.Notas?.Trim(); ex.UpdatedAt = DateTime.UtcNow;
+                ex.ModoSugerenciaExtraDefault = jornadaModoCalculo;
                 empId = ex.Id;
             }
 
@@ -777,17 +828,26 @@ public partial class Empleados
                 }
             }
 
-            // F5a: guardar esquema de jornada. Si cambió el tipo o la vigencia respecto al
-            // vigente hoy, cerrar el esquema anterior abierto (VigenteHasta = nueva fecha - 1)
-            // e insertar el nuevo. Sin patrón de borrado (igual que el esquema de pago).
+            // F5a: guardar esquema de jornada. Si cambió el tipo, la vigencia o el flag de
+            // pago fijo por labor respecto al vigente hoy, cerrar el esquema anterior abierto
+            // (VigenteHasta = nueva fecha - 1) e insertar el nuevo. Sin patrón de borrado
+            // (igual que el esquema de pago). El flag PagoFijoPorLabor sólo aplica con PorHoras:
+            // cobra el sueldo del día sin importar cuánto tardó (ej. limpieza).
+            // English: detect change in TipoJornada, vigencia, or PagoFijoPorLabor flag;
+            // close the prior open scheme and insert the new one (no deletion pattern).
             var jornadaVigente = await db.EmpleadosEsquemaJornada
                 .AsNoTracking()
                 .Where(a => a.EmpleadoId == empId && (a.VigenteHasta == null || a.VigenteHasta >= DateTime.Today))
                 .OrderByDescending(a => a.VigenteDesde)
                 .FirstOrDefaultAsync();
+            // Normaliza el flag: sólo tiene sentido con PorHoras. Si la jornada es Fija,
+            // forzamos false para no persistir un flag inerte.
+            // English: normalize the flag — only meaningful with PorHoras; force false for Fija.
+            var flagPorLabor = jornadaSeleccionada == TipoJornada.PorHoras && jornadaPagoFijoPorLabor;
             if (jornadaVigente is null
                 || jornadaVigente.TipoJornada != jornadaSeleccionada
-                || jornadaVigente.VigenteDesde != jornadaVigenteDesde)
+                || jornadaVigente.VigenteDesde != jornadaVigenteDesde
+                || jornadaVigente.PagoFijoPorLabor != flagPorLabor)
             {
                 var anterioresJornada = await db.EmpleadosEsquemaJornada
                     .Where(a => a.EmpleadoId == empId && a.VigenteHasta == null)
@@ -802,6 +862,7 @@ public partial class Empleados
                 {
                     EmpleadoId = empId,
                     TipoJornada = jornadaSeleccionada,
+                    PagoFijoPorLabor = flagPorLabor,
                     VigenteDesde = jornadaVigenteDesde
                 });
                 await db.SaveChangesAsync();
@@ -1194,6 +1255,7 @@ public partial class Empleados
     private class HistorialJornadaVm
     {
         public TipoJornada TipoJornada { get; set; } = TipoJornada.Fija;
+        public bool PagoFijoPorLabor { get; set; }
         public DateTime Desde { get; set; }
         public DateTime? Hasta { get; set; }
     }

@@ -99,6 +99,17 @@ public class NominaReciboBuilder : INominaReciboBuilder
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Tiempo no laborado", detalle.MinutosFaltanteDescontable, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoFaltante);
         AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, ConstruirConceptoMinutos("Ajuste manual de tiempo", detalle.MinutosDescuentoManual, detalle.Nomina.FechaInicio, detalle.Nomina.FechaFin), montoDescuentoManual);
 
+        // Si no hubo desglose por minuto (todos los campos de minutos en 0) pero sí hay un
+        // descuento por minutos, emitir un solo Ausentismo con el monto total para no perder
+        // la deducción en el recibo. English: if there was no per-minute breakdown (all minute
+        // fields 0) but there IS a minutes discount, emit a single Ausentismo with the total
+        // so the deduction isn't lost from the receipt.
+        if (montoRetardo == 0m && montoSalidaAnticipada == 0m && montoFaltante == 0m && montoDescuentoManual == 0m
+            && detalle.MontoDescuentoMinutos > 0m)
+        {
+            AddIfPositive(conceptos, NominaSatCatalogos.Sistema.DeduccionAusentismo, "Tiempo no laborado", detalle.MontoDescuentoMinutos);
+        }
+
         var deduccionesEstructuradas = detalle.DeduccionesEstructuradas
             .Where(d => d.IsActive)
             .OrderBy(d => d.TipoDeduccion.Orden)
@@ -146,9 +157,21 @@ public class NominaReciboBuilder : INominaReciboBuilder
 
     private static string ConstruirConceptoHorasExtra(NominaDetalle detalle)
     {
+        // Renderiza el desglose base/dobles/triples en la etiqueta del concepto (antes sólo
+        // mostraba "base", ocultando las dobles/triples). Una sola percepción Horas extra con
+        // el monto total y la descripción completa. English: render the base/double/triple
+        // breakdown in the concept label (previously only showed "base", hiding doubles/
+        // triples). A single Horas extra perception with the total amount and full description.
         var horasBase = Math.Max(0m, detalle.HorasExtraBase > 0 ? detalle.HorasExtraBase : detalle.HorasExtra);
-        return horasBase > 0
-            ? $"Horas extra ({FormatearHoras(horasBase)} base)"
+        var partes = new List<string>();
+        if (horasBase > 0)
+            partes.Add($"{FormatearHoras(horasBase)} base");
+        if (detalle.HorasExtraDobles > 0)
+            partes.Add($"{FormatearHoras(detalle.HorasExtraDobles)} dobles");
+        if (detalle.HorasExtraTriples > 0)
+            partes.Add($"{FormatearHoras(detalle.HorasExtraTriples)} triples");
+        return partes.Count > 0
+            ? $"Horas extra ({string.Join(" · ", partes)})"
             : "Horas extra";
     }
 

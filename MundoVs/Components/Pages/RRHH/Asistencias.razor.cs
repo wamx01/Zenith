@@ -45,6 +45,13 @@ public partial class Asistencias : ComponentBase
     private DateTime? reprocesoHasta = DateTime.Today;
     private string reprocesoEmpleadoIdTexto = string.Empty;
     private string? reprocesoMotivo;
+    // Método bajo el que se recalcula el rango del reproceso. DefaultEmpleado = usa el default
+    // configurado en Empleados (recomendado); VsHorario / MarcajeReloj = fuerza ese método
+    // concreto sobre todos los días, ignorando el default del empleado.
+    // English: method under which the reprocess range is recalculated. DefaultEmpleado = uses
+    // the default configured in Empleados (recommended); VsHorario / MarcajeReloj = forces that
+    // concrete method on every day, ignoring the employee default.
+    private RecalcularPeriodoOpcion reprocesoMetodo = RecalcularPeriodoOpcion.DefaultEmpleado;
     private RrhhAsistencia? asistenciaSeleccionada;
     private Dictionary<string, string> ausenciasPorDia = new();
     private Dictionary<string, int> permisosVisiblesPorDia = new();
@@ -185,6 +192,7 @@ public partial class Asistencias : ComponentBase
             reprocesoEmpleadoIdTexto = string.Empty;
             reprocesoDesde = DateTime.Today.AddDays(-7);
             reprocesoHasta = DateTime.Today;
+            reprocesoMetodo = RecalcularPeriodoOpcion.DefaultEmpleado;
             reprocesoProgresoProcesados = 0;
             reprocesoProgresoTotal = 0;
             reprocesoProgresoTexto = null;
@@ -248,7 +256,14 @@ public partial class Asistencias : ComponentBase
                 reprocesoProgresoTexto = $"Procesando {avance.Procesados} de {avance.Total} grupos... {avance.Fecha:dd/MM}";
                 InvokeAsync(StateHasChanged);
             });
-            var grupos = await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fechaDesde, fechaHasta, empleadoId, progress);
+            // Traducir el método elegido en el UI a los parámetros del processor. DefaultEmpleado
+            // → forzarDefaultEmpleado=true (default del empleado); VsHorario/MarcajeReloj →
+            // modoCalculoForzado (fuerza ese método concreto, ignora el default del empleado).
+            // English: translate the UI-chosen method into processor params. DefaultEmpleado →
+            // forzarDefaultEmpleado=true (employee default); VsHorario/MarcajeReloj →
+            // modoCalculoForzado (forces that concrete method, ignores the employee default).
+            var (forzarDefaultEmpleado, modoForzado, etiquetaMetodo) = TraducirOpcionReproceso(reprocesoMetodo);
+            var grupos = await RrhhAsistenciaProcessor.ReprocesarRangoAsync(db, _empresaId, fechaDesde, fechaHasta, empleadoId, progress, forzarDefaultEmpleado, modoForzado);
 
             var state = await AuthStateProvider.GetAuthenticationStateAsync();
             db.RrhhLogsChecador.Add(new RrhhLogChecador
@@ -258,13 +273,13 @@ public partial class Asistencias : ComponentBase
                 FechaUtc = DateTime.UtcNow,
                 Nivel = "Information",
                 Mensaje = "Se ejecutó un reproceso histórico de asistencias desde la UI.",
-                Detalle = $"usuario={state.User.Identity?.Name ?? "desconocido"};desde={fechaDesde:yyyy-MM-dd};hasta={fechaHasta:yyyy-MM-dd};empleado={empleadoId};grupos={grupos};motivo={(string.IsNullOrWhiteSpace(reprocesoMotivo) ? "sin motivo" : reprocesoMotivo.Trim())}",
+                Detalle = $"usuario={state.User.Identity?.Name ?? "desconocido"};desde={fechaDesde:yyyy-MM-dd};hasta={fechaHasta:yyyy-MM-dd};empleado={empleadoId};grupos={grupos};metodo={etiquetaMetodo};motivo={(string.IsNullOrWhiteSpace(reprocesoMotivo) ? "sin motivo" : reprocesoMotivo.Trim())}",
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             });
             await db.SaveChangesAsync();
 
-            ok = $"Reproceso completado. Grupos recalculados: {grupos}.";
+            ok = $"Reproceso completado ({etiquetaMetodo}). Grupos recalculados: {grupos}.";
             mostrarReproceso = false;
             await CargarAsync();
         }
@@ -280,6 +295,18 @@ public partial class Asistencias : ComponentBase
 
     private int ObtenerPorcentajeReproceso()
         => reprocesoProgresoTotal <= 0 ? 0 : (int)Math.Round((decimal)reprocesoProgresoProcesados * 100m / reprocesoProgresoTotal, MidpointRounding.AwayFromZero);
+
+    // Traduce la opción de método del UI a los parámetros del processor y una etiqueta legible
+    // para el log/mensaje. English: translates the UI method option to processor params and a
+    // readable label for the log/message.
+    private static (bool forzarDefaultEmpleado, RrhhModoCalculoForzado? modoForzado, string etiqueta) TraducirOpcionReproceso(RecalcularPeriodoOpcion opcion)
+        => opcion switch
+        {
+            RecalcularPeriodoOpcion.DefaultEmpleado => (true, null, "default del empleado"),
+            RecalcularPeriodoOpcion.VsHorario => (false, RrhhModoCalculoForzado.VsHorario, "Vs horario (con reglas)"),
+            RecalcularPeriodoOpcion.MarcajeReloj => (false, RrhhModoCalculoForzado.MarcajeReloj, "marcaje de reloj (tal cual)"),
+            _ => (true, null, "default del empleado")
+        };
 
     private Task AbrirCorreccionDiaAsync(RrhhAsistencia asistencia)
     {

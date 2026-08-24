@@ -6,12 +6,21 @@ Documentar cómo está implementado actualmente el flujo de nómina en `MundoVs`
 ## Alcance actual
 La implementación revisada cubre:
 - carga de configuración de nómina por empresa y configuración maestra global;
-- construcción de snapshot de prenómina desde asistencia, ausencias, esquemas de pago y vales de destajo;
+- construcción de snapshot de nómina desde asistencia, ausencias, esquemas de pago y vales de destajo;
 - cálculo monetario de conceptos principales de nómina;
 - persistencia de `Nomina` y `NominaDetalle`;
 - armado del recibo con conceptos SAT base.
 
 No se documenta exportación a JSON porque se descartó por solicitud del usuario.
+
+## Fusión prenómina → nómina (2026-08-22)
+La entidad `Prenomina` fue eliminada. El flujo de RRHH pasa de 3 páginas (`Asistencia Semanal → Prenómina → Nómina`) a 2 páginas (`Asistencia Semanal → Nómina`). La ruta `/rrhh/prenominas` redirige a `/rrhh/nominas`.
+
+La captura y revisión que vivía en prenómina ahora es una fase dentro de Nómina:
+- **Cerrar periodo y calcular** — estampa `FechaCierreCaptura` y ejecuta el cálculo (solo sobre semana cerrada, `NominaPeriodoHelper.ObtenerPeriodo`).
+- **Reabrir captura** — limpia `FechaCierreCaptura`.
+
+Como parte de la fusión, el snapshot se renombró: `RrhhPrenominaSnapshotService` → `RrhhNominaSnapshotService` (interfaz `IRrhhNominaSnapshotService`). Los campos de congelamiento (`SnapshotConfiguracionJson`, `FechaCierreCaptura`) y los 14 campos delta de captura quedan en `NominaDetalle`.
 
 ## Componentes principales
 
@@ -19,9 +28,10 @@ No se documenta exportación a JSON porque se descartó por solicitud del usuari
 - `MundoVs/Core/Services/NominaConfiguracionLoader.cs`
   - Resuelve la configuración efectiva de nómina.
   - Mezcla parámetros por empresa desde `AppConfig` con parámetros maestros desde `NominaConfiguracionGlobal`.
-- `MundoVs/Core/Services/RrhhPrenominaSnapshotService.cs`
-  - Construye el snapshot operativo del período.
+- `MundoVs/Core/Services/RrhhNominaSnapshotService.cs`
+  - Construye el snapshot operativo del período (antes `RrhhPrenominaSnapshotService`, renombrado en la fusión 2026-08-22).
   - Consolida asistencias, ausencias, destajo, esquemas de pago, banco de horas y sugerencias legales.
+  - Inyecta `IRrhhResolucionPeriodoService` y llama a `ObtenerResumenesPeriodoBatchAsync` una vez para sobrescribir las 3 deducciones diarias con el valor canónico del neteo.
 - `MundoVs/Core/Services/NominaLegalPolicyService.cs`
   - Centraliza reglas legales auxiliares: sueldo base del período, vacaciones disponibles y complemento a salario mínimo.
 - `MundoVs/Core/Services/NominaCalculator.cs`
@@ -34,7 +44,7 @@ No se documenta exportación a JSON porque se descartó por solicitud del usuari
 - `MundoVs/Core/Entities/NominaConfiguracionGlobal.cs`
 - `MundoVs/Core/Entities/Nomina.cs`
 - `MundoVs/Core/Entities/NominaDetalle.cs`
-- `MundoVs/Core/Interfaces/IRrhhPrenominaSnapshotService.cs`
+- `MundoVs/Core/Interfaces/IRrhhNominaSnapshotService.cs`
 - `MundoVs/Core/Services/NominaCalculationModels.cs`
 
 ### Pantallas de administración
@@ -49,7 +59,7 @@ Los servicios de nómina se registran en `MundoVs/Program.cs`:
 - `INominaLegalPolicyService`
 - `INominaReciboBuilder`
 - `INominaResumenBuilder`
-- `IRrhhPrenominaSnapshotService`
+- `IRrhhNominaSnapshotService` (renombrado desde `IRrhhPrenominaSnapshotService`)
 - `INominaSatCatalogInitializer`
 
 ## Persistencia y tablas involucradas
@@ -138,15 +148,16 @@ El usuario administra:
 - configuración por empresa en `/configuracion/nomina`;
 - configuración maestra en `/superadmin/configuracion-nomina`.
 
-### 2. Snapshot de prenómina
-`RrhhPrenominaSnapshotService` arma un snapshot por empleado del período:
+### 2. Snapshot de nómina
+`RrhhNominaSnapshotService` arma un snapshot por empleado del período:
 - empleados activos;
 - esquema de pago vigente;
 - monto de destajo aprobado por vales;
 - vacaciones usadas históricas;
 - ausencias del período;
 - resumen de asistencias y tiempo extra;
-- festivos del período.
+- festivos del período;
+- **neteo `NetoVsNeto` canónico** (lo llama una vez del batch).
 
 ### 3. Derivación operativa previa al cálculo
 Para cada empleado se determina:
@@ -200,7 +211,7 @@ Los importes terminan en `NominaDetalle` y el total del documento se agrega en `
 - Si el esquema de pago no incluye sueldo base y no es `SueldoFijo`, la política legal puede devolver `0` como sueldo base del período.
 
 ### 3. Destajo
-**Fuente:** `RrhhPrenominaSnapshotService` + `NominaCalculator`
+**Fuente:** `RrhhNominaSnapshotService` + `NominaCalculator`
 
 **Regla**
 - El snapshot suma importes de `ValesDestajo` aprobados del período.
@@ -310,7 +321,7 @@ Los importes terminan en `NominaDetalle` y el total del documento se agrega en `
 - `montoHorasExtra = montoDobles + montoTriples`
 
 ### 10. Banco de horas
-**Fuente:** `RrhhPrenominaSnapshotService`
+**Fuente:** `RrhhNominaSnapshotService`
 
 **Reglas**
 - si el banco está deshabilitado:
@@ -480,13 +491,34 @@ Menos deducciones:
 - descuento por retardos/minutos -> `DeduccionAusentismo`
 - deducciones manuales o estructuradas -> clave configurada o `DeduccionAusentismo`
 
-## Reglas operativas de prenómina configurables
-Se almacenan en `ReglasPrenominaJson` y se exponen en `ConfiguracionNomina.razor`.
+## Reglas operativas de captura configurables
+Se almacenan en `ReglasPrenominaJson` y se exponen en `ConfiguracionNomina.razor`. Tras la fusión 2026-08-22, la bandera `RequierePrenominaCerradaParaNomina` pierde sentido (la captura ahora es una fase interna de Nómina), pero la clave `AppConfig` se conserva por compatibilidad.
 
 ### Banderas actuales
 - `PermitirHorasExtraManual`
 - `ValidarDiasPagadosContraPeriodo`
-- `RequierePrenominaCerradaParaNomina`
+- `RequierePrenominaCerradaParaNomina` (obsoleto: la captura cerrada ahora se controla con `FechaCierreCaptura` dentro de Nómina)
+
+## Neteo NetoVsNeto — fuente única (2026-08-22)
+El neteo semanal `NetoVsNeto` (extra que absorbe faltante → retardo → salida → banco) tiene un único dueño: el lote `RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync`, que a su vez invoca a `RrhhTiempoExtraPolicy.CalcularNeteoNetoVsNeto` (cadena de pools). Ese mismo lote es el que pinta `Asistencia Semanal`.
+
+### Consumidores
+- **Display (Asistencia Semanal):** `ConstruirResumenDesdeDatos` usa el resultado del lote para mostrar las deducciones neteadas en vivo. Solo se persisten al autorizar (`AplicarResolucionPeriodoAsync`).
+- **Nómina:** consume el neteo tal cual, **no lo recalcula**. `RrhhNominaSnapshotService` inyecta `IRrhhResolucionPeriodoService` y llama a `ObtenerResumenesPeriodoBatchAsync` una vez para sobrescribir las 3 deducciones diarias (faltante, retardo, salida anticipada) con el valor canónico (detectado − absorbido).
+- **Sourcing de extra (`NominaTiempoExtraSourcing`):** es **passthrough** para las deducciones en ambos caminos:
+  - camino "periodo": no recalcula neteo; solo intercambia el extra autorizado a pagar;
+  - camino "incidencia": toma las deducciones del input (ya neteado).
+
+### Invariante
+Un faltante/retardo/salida neteado a `—` (cero) en `Asistencia Semanal` se mantiene en cero en nómina, **con o sin resolución `Autorizada`**.
+
+## DescartarExtra (F9) — cambio de comportamiento (2026-08-22)
+Cuando el operador descarta el tiempo extra:
+- se anula **solo el pago** del extra;
+- **no se anula el neteo de deducciones**;
+- el faltante/retardo/salida se descuenta según el neteo **en vivo** del periodo (el mismo que muestra `Asistencia Semanal`).
+
+Para forzar un descuento completo, se debe ajustar el neteo en `Asistencia Semanal`; el descarte del extra ya no fuerza un descuento "a cero" completo.
 
 ## Supuestos relevantes del código actual
 - La configuración maestra solo gobierna `UMA`, salarios mínimos, ISR y subsidio.
@@ -506,7 +538,7 @@ Se almacenan en `ReglasPrenominaJson` y se exponen en `ConfiguracionNomina.razor
 - `MundoVs/Core/Services/NominaConfiguracionLoader.cs`
 - `MundoVs/Core/Entities/NominaConfiguracion.cs`
 - `MundoVs/Core/Entities/NominaConfiguracionGlobal.cs`
-- `MundoVs/Core/Services/RrhhPrenominaSnapshotService.cs`
+- `MundoVs/Core/Services/RrhhNominaSnapshotService.cs`
 - `MundoVs/Core/Services/NominaLegalPolicyService.cs`
 - `MundoVs/Core/Services/NominaCalculator.cs`
 - `MundoVs/Core/Services/NominaReciboBuilder.cs`

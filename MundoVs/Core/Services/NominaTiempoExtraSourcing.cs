@@ -63,24 +63,43 @@ public readonly record struct NominaOvertimeSourcingInput
 /// Fase 7 — la prenómina (snapshot) reutiliza este mismo helper para que su display cuadre con la
 /// nómina (mismo origen, misma fórmula → sin divergencia).
 ///
-/// Coherencia de la deducción (F5.5b): los minutos que la resolución absorbió en el extra
-/// (faltante neto, retardo) se ALIVIAN de la deducción de sueldo — el extra "tapa" ese tiempo,
-/// el empleado queda parejo, no se le doble-cobra. La salida anticipada y el descuento manual
-/// no forman parte del neteo del periodo y se toman íntegros del input.
+/// Coherencia de la deducción (F5.5b / fuente única 2026-08-22): el alivio de las deducciones
+/// (faltante/retardo/salida) NO lo recalcula el sourcing — viene del snapshot de nómina, que lo
+/// consume del batch canónico (<c>ObtenerResumenesPeriodoBatchAsync</c> → <c>CalcularNeteoNetoVsNeto</c>,
+/// el MISMO neteo que pinta Asistencia Semanal). Así un faltante/retardo neteado a 0 en Asistencia
+/// Semanal ya NO reaparece en nómina. La resolución Autorizada del periodo sólo aporta el extra
+/// autorizado a PAGAR (pago/dobles/triples/factor/banco); el alivio de deducciones es el VIVO del
+/// periodo, no el congelado al autorizar — que puede estar stale o zeroado si el operador
+/// descartó el extra (<c>DescartarExtra</c> anula el PAGO, no el neteo de deducciones). El
+/// descuento manual y los perdonados manuales se toman íntegros del input.
+/// English: Deduction coherence (F5.5b / single source 2026-08-22): the deduction relief
+/// (shortage/late/early-leave) is NOT recomputed by sourcing — it comes from the payroll snapshot,
+/// which consumes it from the canonical batch (... → CalcularNeteoNetoVsNeto, the SAME neteo
+/// Asistencia Semanal paints). So a shortage/late netted to 0 in Asistencia Semanal no longer
+/// reappears in nómina. The period's Authorized resolution only contributes the extra authorized
+/// to PAY (pay/doubles/triples/factor/bank); the deduction relief is the LIVE one for the period,
+/// not the one frozen at authorization — which can be stale or zeroed if the operator discarded
+/// the extra (DescartarExtra annuls the PAYMENT, not the deduction neteo). Manual discount and
+/// manual forgiven minutes are taken intact from the input.
 /// </summary>
 public static class NominaTiempoExtraSourcing
 {
-    /// <summary>Mapper de conveniencia desde una incidencia de prenómina persistida.</summary>
-    public static NominaOvertimeSourcingInput InputFrom(PrenominaDetalle incidencia) => new()
+    /// <summary>
+    /// Mapper de conveniencia desde un <see cref="NominaDetalle"/> (fusión prenómina→nómina):
+    /// la asistencia congelada vive en la propia nómina, así que el sourcing la lee de aquí.
+    /// English: Convenience mapper from a <see cref="NominaDetalle"/> (prenómina→nómina fusion):
+    /// the frozen attendance lives on the nómina itself, so sourcing reads it from here.
+    /// </summary>
+    public static NominaOvertimeSourcingInput InputFrom(NominaDetalle detalle) => new()
     {
-        HorasExtra = incidencia.HorasExtra,
-        HorasExtraBase = incidencia.HorasExtraBase,
-        HorasBancoAcumuladas = incidencia.HorasBancoAcumuladas,
-        MinutosRetardo = incidencia.MinutosRetardo,
-        MinutosSalidaAnticipada = incidencia.MinutosSalidaAnticipada,
-        MinutosPerdonadosManual = incidencia.MinutosPerdonadosManual,
-        MinutosFaltanteDescontable = incidencia.MinutosFaltanteDescontable,
-        MinutosDescuentoManual = incidencia.MinutosDescuentoManual
+        HorasExtra = detalle.HorasExtra,
+        HorasExtraBase = detalle.HorasExtraBase,
+        HorasBancoAcumuladas = detalle.HorasBancoAcumuladas,
+        MinutosRetardo = detalle.MinutosRetardo,
+        MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada,
+        MinutosPerdonadosManual = detalle.MinutosPerdonadosManual,
+        MinutosFaltanteDescontable = detalle.MinutosFaltanteDescontable,
+        MinutosDescuentoManual = detalle.MinutosDescuentoManual
     };
 
     public static NominaOvertimeSourcing Source(
@@ -106,10 +125,24 @@ public static class NominaTiempoExtraSourcing
                 HorasExtraTriples = resolucion.MinutosExtraTriples / 60m,
                 HorasExtraFactoradas = porLineas ? resolucion.HorasExtraFactoradas : 0m,
                 FactorPagoTiempoExtra = porLineas ? 0m : (resolucion.FactorTiempoExtraAplicado ?? 0m),
-                // Alivio de deducción: solo se descuenta lo NO absorbido por el extra.
-                MinutosFaltanteDescontable = Math.Max(0, resolucion.MinutosFaltanteNetoDetectado - resolucion.MinutosFaltanteAbsorbidoExtra),
-                MinutosRetardo = Math.Max(0, resolucion.MinutosRetardoDetectado - resolucion.MinutosRetardoAbsorbidoExtra),
-                // Salida anticipada, descuento manual y perdon no participan en el neteo del periodo.
+                // DEDUCCIONES (faltante/retardo/salida): vienen del input (snapshot), ya neteadas
+                // por el batch canónico (RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync
+                // → CalcularNeteoNetoVsNeto = el MISMO neteo que pinta Asistencia Semanal). El sourcing
+                // NO recalcula el neteo aunque haya resolución Autorizada: el resumen autoritativo
+                // del extra a PAGAR (pago/dobles/triples/factor) sí viene de la resolución, pero el
+                // alivio de deducciones es el VIVO del periodo — no el congelado al autorizar, que
+                // puede estar stale o zeroado si el operador descartó el extra (DescartarExtra anula
+                // el PAGO, no el neteo de deducciones). Así nómina = Asistencia Semanal (cero drift).
+                // English: DEDUCTIONS (shortage/late/early-leave) come from the input (snapshot),
+                // already netted by the canonical batch (... → CalcularNeteoNetoVsNeto = the SAME
+                // neteo Asistencia Semanal paints). Sourcing does NOT recompute neteo even with an
+                // Autorizada resolution: the authoritative extra-to-PAY summary (pay/doubles/triples
+                // /factor) does come from the resolution, but the deduction relief is the LIVE one
+                // for the period — not the one frozen at authorization, which can be stale or zeroed
+                // if the operator discarded the extra (DescartarExtra annuls the PAYMENT, not the
+                // deduction neteo). So nómina = Asistencia Semanal (zero drift).
+                MinutosFaltanteDescontable = input.MinutosFaltanteDescontable,
+                MinutosRetardo = input.MinutosRetardo,
                 MinutosSalidaAnticipada = input.MinutosSalidaAnticipada,
                 MinutosDescuentoManual = input.MinutosDescuentoManual,
                 MinutosPerdonadosManual = input.MinutosPerdonadosManual,
@@ -117,7 +150,18 @@ public static class NominaTiempoExtraSourcing
             };
         }
 
-        // Fallback histórico: incidencia de prenómina + derivación local de dobles/triples.
+        // Fallback histórico: incidencia (NominaDetalle congelado) + derivación local de
+        // dobles/triples. Las deducciones (faltante/retardo/salida) YA vienen neteadas desde el
+        // snapshot (que consume el neteo canónico de Asistencia Semanal vía
+        // RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync), así que aquí sólo se
+        // pasan intactas — el sourcing NO recalcula el neteo. Ambos paths (periodo e incidencia)
+        // toman las deducciones del input; el "periodo" sólo cambia el extra a pagar.
+        // English: Historical fallback: incidencia (frozen NominaDetalle) + local dobles/triples
+        // derivation. The deductions (shortage/late/early-leave) ALREADY come netted from the
+        // snapshot (which consumes Asistencia Semanal's canonical neteo via
+        // RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync), so they pass through
+        // intact here — sourcing does NOT recompute the neteo. Both paths (periodo and incidencia)
+        // take deductions from the input; "periodo" only swaps in the extra to pay.
         var horasExtra = input.HorasExtra;
         var horasExtraBase = input.HorasExtraBase;
         var horasBase = Math.Max(0m, horasExtraBase > 0 ? horasExtraBase : horasExtra);

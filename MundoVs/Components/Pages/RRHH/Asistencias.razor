@@ -39,7 +39,6 @@
                         </div>
                     </div>
                     <div class="asis-toolbar-actions">
-                        <a class="btn btn-outline-secondary" href="/rrhh/prenominas"><i class="bi bi-calendar2-week me-1"></i>Ir a prenómina</a>
                         <a class="btn btn-success shadow-sm" href="/rrhh/asistencias-semanal"><i class="bi bi-calendar-week me-1"></i>Resumen semanal</a>
                         <div class="dropdown">
                             <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -103,6 +102,24 @@
                             <div class="col-md-4">
                                 <label class="form-label">Motivo</label>
                                 <InputText class="form-control" @bind-Value="reprocesoMotivo" placeholder="Ej. alta tardía de empleados o corrección de turno" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label d-block">Método de cálculo del reproceso</label>
+                                <div class="d-flex flex-wrap gap-4">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="reprocesoMetodo" id="reprocesoMetodoDefault" value="@RecalcularPeriodoOpcion.DefaultEmpleado" checked="@(reprocesoMetodo == RecalcularPeriodoOpcion.DefaultEmpleado)" @onchange="() => reprocesoMetodo = RecalcularPeriodoOpcion.DefaultEmpleado" />
+                                        <label class="form-check-label" for="reprocesoMetodoDefault"><strong>Default del empleado</strong> <small class="text-muted">(recomendado)</small></label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="reprocesoMetodo" id="reprocesoMetodoVsHorario" value="@RecalcularPeriodoOpcion.VsHorario" checked="@(reprocesoMetodo == RecalcularPeriodoOpcion.VsHorario)" @onchange="() => reprocesoMetodo = RecalcularPeriodoOpcion.VsHorario" />
+                                        <label class="form-check-label" for="reprocesoMetodoVsHorario"><strong>Vs horario</strong> <small class="text-muted">(con reglas)</small></label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="reprocesoMetodo" id="reprocesoMetodoReloj" value="@RecalcularPeriodoOpcion.MarcajeReloj" checked="@(reprocesoMetodo == RecalcularPeriodoOpcion.MarcajeReloj)" @onchange="() => reprocesoMetodo = RecalcularPeriodoOpcion.MarcajeReloj" />
+                                        <label class="form-check-label" for="reprocesoMetodoReloj"><strong>Marcaje de reloj</strong> <small class="text-muted">(tal cual)</small></label>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block mt-1">El reproceso impone este método a todos los días del rango, pisando los ajustes manuales por día. «Default del empleado» usa lo configurado en Empleados · Esquema de jornada.</small>
                             </div>
                             <div class="col-12 d-flex gap-2 flex-wrap">
                                 <button class="btn btn-primary" @onclick="EjecutarReprocesoAsync" disabled="@reprocesando">
@@ -275,7 +292,7 @@
                         <span class="asis-legend-pill"><span class="asis-legend-pill__dot asis-legend-pill__dot--normal"></span>Sin señal crítica</span>
                     </div>
                 </div>
-                <div class="table-responsive">
+                <div class="asis-day-table-scroll">
                     <table class="table table-hover table-sm mb-0 align-middle asis-table">
                         <thead class="table-dark">
                             <tr>

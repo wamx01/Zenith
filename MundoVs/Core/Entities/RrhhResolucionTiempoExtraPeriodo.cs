@@ -38,6 +38,11 @@ public class RrhhResolucionTiempoExtraPeriodo : BaseEntity
     public int MinutosExtraDetectado { get; set; }
     public int MinutosFaltanteDetectado { get; set; }
     public int MinutosRetardoDetectado { get; set; }
+    // Salida anticipada del periodo (suma de RrhhAsistencia). Fase 3b — entra al neteo
+    // DESPUÉS del retardo, antes del banco (igual que faltante/retardo: el extra la tapa).
+    // English: Early-leave for the period (sum of RrhhAsistencia). Phase 3b — enters the
+    // net AFTER late, before bank (same as shortage/late: extra covers it).
+    public int MinutosSalidaAnticipadaDetectado { get; set; }
     public int MinutosTrabajadosNetosDetectado { get; set; }
 
     // Fase 2 — neteo: faltante del periodo NO cubierto por permiso con goce
@@ -49,6 +54,11 @@ public class RrhhResolucionTiempoExtraPeriodo : BaseEntity
     // Fase 3 — neteo: retardo del periodo. El sobrante de extra tras tapar el
     // faltante neto cubre el retardo del periodo ANTES de ser pagable/bancable.
     public int MinutosRetardoAbsorbidoExtra { get; set; }
+    // Fase 3b — neteo: salida anticipada del periodo. El sobrante de extra tras tapar
+    // faltante y retardo cubre la salida ANTES de restaurar banco / ser pagable.
+    // English: Phase 3b — net: early-leave for the period. Extra surplus after covering
+    // shortage and late covers early-leave BEFORE restoring bank / becoming payable.
+    public int MinutosSalidaAnticipadaAbsorbidoExtra { get; set; }
 
     // Fase 4 — restauración: banco consumido en el periodo (Consumo del ledger,
     // excluyendo cobertura-banco que Fase 2 ya cuenta como faltante neto).

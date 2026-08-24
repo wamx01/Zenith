@@ -5,18 +5,23 @@ using MundoVs.Infrastructure.Data;
 
 namespace MundoVs.Core.Services;
 
-public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
+public sealed class RrhhNominaSnapshotService : IRrhhNominaSnapshotService
 {
     private readonly INominaLegalPolicyService _nominaLegalPolicy;
     private readonly IRrhhTiempoExtraResolutionService _tiempoExtraResolutionService;
+    private readonly IRrhhResolucionPeriodoService _resolucionPeriodo;
 
-    public RrhhPrenominaSnapshotService(INominaLegalPolicyService nominaLegalPolicy, IRrhhTiempoExtraResolutionService tiempoExtraResolutionService)
+    public RrhhNominaSnapshotService(
+        INominaLegalPolicyService nominaLegalPolicy,
+        IRrhhTiempoExtraResolutionService tiempoExtraResolutionService,
+        IRrhhResolucionPeriodoService resolucionPeriodo)
     {
         _nominaLegalPolicy = nominaLegalPolicy;
         _tiempoExtraResolutionService = tiempoExtraResolutionService;
+        _resolucionPeriodo = resolucionPeriodo;
     }
 
-    public async Task<IReadOnlyList<RrhhPrenominaSnapshotItem>> ConstruirSnapshotPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, NominaConfiguracion configuracion, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<RrhhNominaSnapshotItem>> ConstruirSnapshotPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, NominaConfiguracion configuracion, CancellationToken cancellationToken = default)
     {
         var diasPeriodo = Math.Max(1, (fin.Date - inicio.Date).Days + 1);
         var empleadosPeriodo = await db.Empleados
@@ -64,8 +69,55 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             .GroupBy(a => a.EmpleadoId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        var resumenAsistencias = await ObtenerResumenAsistenciasPeriodoAsync(db, inicio, fin, ids, configuracion, cancellationToken);
+        var resumenAsistencias = await ObtenerResumenAsistenciasPeriodoAsync(db, inicio, fin, diasPeriodo, ids, configuracion, cancellationToken);
         var saldosBancoActuales = new Dictionary<Guid, decimal>();
+
+        // Neteo canónico NetoVsNeto: el MISMO batch que pinta Asistencia Semanal
+        // (RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync → ConstruirResumenDesdeDatos
+        // → RrhhTiempoExtraPolicy.CalcularNeteoNetoVsNeto). La nómina CONSUME esos valores neteados
+        // en lugar de recalcularlos: sobreescribe las 3 deducciones del resumen diario con el
+        // (detectado − absorbido) canónico. Así un faltante/retardo neteado a 0 en Asistencia Semanal
+        // ya NO reaparece en nómina — con o sin resolución Autorizada. Importante: el override SÍ
+        // toma efecto en el path "periodo" del sourcing (Autorizada), porque ese path ahora lee las
+        // deducciones del input (este override) y sólo toma el extra a PAGAR de la resolución. Antes
+        // el "periodo" recomputaba (detectado − absorbido) de la resolución persistida, que quedaba
+        // stale o zeroada si el operador descartó el extra (DescartarExtra anula el PAGO, no el
+        // neteo) → la nómina divergía de Asistencia Semanal (bug Abigail #107). EmpresaId se deriva
+        // de los empleados cargados (un único company por el global filter); periodicidad y
+        // calendario mínimos — el neteo se impulsa por las asistencias, no por la resolución
+        // emparejada, así que NumeroPeriodo/AnioPeriodo son metadata irrelevante aquí.
+        // English: Canonical NetoVsNeto neteo: the SAME batch Asistencia Semanal paints
+        // (RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync → ConstruirResumenDesdeDatos
+        // → RrhhTiempoExtraPolicy.CalcularNeteoNetoVsNeto). Nómina CONSUMES those netted values
+        // instead of recomputing them: overwrites the 3 daily-summary deductions with the canonical
+        // (detected − absorbed). So a shortage/late netted to 0 in Asistencia Semanal no longer
+        // reappears in nómina — with or without an Autorizada resolution. Importantly, the override
+        // DOES take effect in the sourcing "periodo" path (Autorizada), because that path now reads
+        // deductions from the input (this override) and only takes the extra-to-PAY from the
+        // resolution. Before, "periodo" recomputed (detected − absorbed) from the persisted
+        // resolution, which went stale or got zeroed if the operator discarded the extra
+        // (DescartarExtra annuls the PAYMENT, not the neteo) → nómina diverged from Asistencia
+        // Semanal (bug Abigail #107). EmpresaId is derived from the loaded employees (single
+        // company via the global filter); minimal periodicity and calendario — the neteo is
+        // driven by attendances, not by the matched resolution, so NumeroPeriodo/AnioPeriodo are
+        // irrelevant metadata here.
+        var empresaId = empleadosPeriodo.Select(e => e.EmpresaId).Distinct().FirstOrDefault();
+        var resumenesNeteo = empresaId == Guid.Empty
+            ? new Dictionary<Guid, RrhhResolucionPeriodoResumen>()
+            : await _resolucionPeriodo.ObtenerResumenesPeriodoBatchAsync(
+                db, empresaId, ids,
+                DateOnly.FromDateTime(inicio), DateOnly.FromDateTime(fin),
+                InferirPeriodicidad(diasPeriodo),
+                new NominaPeriodoCalendario
+                {
+                    PeriodicidadPago = InferirPeriodicidad(diasPeriodo),
+                    Inicio = inicio,
+                    Fin = fin,
+                    AnioPeriodo = inicio.Year,
+                    NumeroPeriodo = 1,
+                    Periodo = $"{inicio:dd/MM}–{fin:dd/MM}",
+                    NumeroNomina = "0"
+                }, cancellationToken);
 
         // Fase 7 — resoluciones de tiempo extra Autorizadas del periodo (lookup por FechaInicio/Fin;
         // la entidad acota la empresa vía el global filter de CrmDbContext). Cuando existe, la
@@ -80,12 +132,27 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
                 && r.IsActive)
             .ToDictionaryAsync(r => r.EmpleadoId, cancellationToken);
 
-        var snapshots = new List<RrhhPrenominaSnapshotItem>(empleadosPeriodo.Count);
+        var snapshots = new List<RrhhNominaSnapshotItem>(empleadosPeriodo.Count);
 
         foreach (var empleado in empleadosPeriodo)
         {
             var ausenciasEmpleado = ausenciasPorEmpleado.GetValueOrDefault(empleado.Id) ?? [];
-            var resumen = resumenAsistencias.GetValueOrDefault(empleado.Id) ?? new ResumenAsistenciaPrenominaSnapshot();
+            var resumen = resumenAsistencias.GetValueOrDefault(empleado.Id) ?? new ResumenAsistenciaNominaSnapshot();
+
+            // Override de las 3 deducciones con el neteo canónico (detectado − absorbido). Sólo
+            // deducciones: el extra (HorasExtra/HorasExtraBase) sigue del resumen diario (el path
+            // "periodo" del sourcing lo pisa si hay Autorizada; el incidencia lo deja del input).
+            // Sin asistencias para el empleado no hay entrada en el batch → resumen queda en 0.
+            // English: Override the 3 deductions with the canonical net (detected − absorbed).
+            // Deductions only: extra (HorasExtra/HorasExtraBase) still comes from the daily summary
+            // (sourcing "periodo" path overrides it when Autorizada; incidencia leaves it from input).
+            // No attendances for the employee → no batch entry → resumen stays 0.
+            if (resumenesNeteo.TryGetValue(empleado.Id, out var resumenNeteo))
+            {
+                resumen.MinutosFaltanteDescontable = Math.Max(0, resumenNeteo.MinutosFaltanteNetoPeriodo - resumenNeteo.MinutosFaltanteAbsorbidoExtra);
+                resumen.MinutosRetardo = Math.Max(0, resumenNeteo.MinutosRetardoDetectado - resumenNeteo.MinutosRetardoAbsorbidoExtra);
+                resumen.MinutosSalidaAnticipada = Math.Max(0, resumenNeteo.MinutosSalidaAnticipadaDetectado - resumenNeteo.MinutosSalidaAnticipadaAbsorbidoExtra);
+            }
 
             if (!saldosBancoActuales.ContainsKey(empleado.Id))
             {
@@ -110,10 +177,10 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         return snapshots;
     }
 
-    private RrhhPrenominaSnapshotItem ConstruirSnapshotEmpleado(
+    private RrhhNominaSnapshotItem ConstruirSnapshotEmpleado(
         Empleado empleado,
         IReadOnlyList<RrhhAusencia> ausenciasEmpleado,
-        ResumenAsistenciaPrenominaSnapshot resumen,
+        ResumenAsistenciaNominaSnapshot resumen,
         EmpleadoEsquemaPago? asignacion,
         decimal montoDestajoEmpleado,
         decimal saldoBancoActual,
@@ -164,7 +231,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             ? sourcing.FactorPagoTiempoExtra
             : (factorOverride > 0m ? factorOverride : configuracion.FactorHoraExtra);
 
-        return new RrhhPrenominaSnapshotItem
+        return new RrhhNominaSnapshotItem
         {
             Empleado = empleado,
             AsignacionEsquema = asignacion,
@@ -286,7 +353,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             .ToDictionaryAsync(g => g.Key, g => g.OrderByDescending(a => a.VigenteDesde).First(), cancellationToken);
     }
 
-    private static async Task<Dictionary<Guid, ResumenAsistenciaPrenominaSnapshot>> ObtenerResumenAsistenciasPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, IReadOnlyCollection<Guid> empleadoIds, NominaConfiguracion configuracion, CancellationToken cancellationToken)
+    private static async Task<Dictionary<Guid, ResumenAsistenciaNominaSnapshot>> ObtenerResumenAsistenciasPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, int diasPeriodo, IReadOnlyCollection<Guid> empleadoIds, NominaConfiguracion configuracion, CancellationToken cancellationToken)
     {
         if (empleadoIds.Count == 0)
         {
@@ -320,14 +387,27 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
 
         return asistenciasPeriodo
             .GroupBy(a => a.EmpleadoId)
-            .ToDictionary(g => g.Key, g => ConstruirResumenAsistencia(g.ToList(), festivosPeriodoSet, configuracion, permisosPorDia));
+            .ToDictionary(g => g.Key, g => ConstruirResumenAsistencia(g.ToList(), festivosPeriodoSet, diasPeriodo, configuracion, permisosPorDia));
     }
 
-    private static ResumenAsistenciaPrenominaSnapshot ConstruirResumenAsistencia(IReadOnlyCollection<RrhhAsistencia> asistencias, IReadOnlySet<DateOnly> festivosPeriodo, NominaConfiguracion configuracion, IReadOnlyDictionary<string, int> permisosPorDia)
+    // Infiere la periodicidad del periodo a partir del número de días del rango. Se usa para
+    // resolver las HorasBase de la meta semanal (Fija sin turno) en el snapshot, donde no llega
+    // la periodicidad explícita. Semanal<=7, Quincenal<=15, Mensual en caso contrario.
+    // English: Infers the period periodicity from the range day count. Used to resolve the
+    // HorasBase for the weekly meta (Fija with no shift) in the snapshot, where the explicit
+    // periodicity is not available. Semanal<=7, Quincenal<=15, Mensual otherwise.
+    private static PeriodicidadPago InferirPeriodicidad(int diasPeriodo) => diasPeriodo switch
+    {
+        <= 7 => PeriodicidadPago.Semanal,
+        <= 15 => PeriodicidadPago.Quincenal,
+        _ => PeriodicidadPago.Mensual
+    };
+
+    private static ResumenAsistenciaNominaSnapshot ConstruirResumenAsistencia(IReadOnlyCollection<RrhhAsistencia> asistencias, IReadOnlySet<DateOnly> festivosPeriodo, int diasPeriodo, NominaConfiguracion configuracion, IReadOnlyDictionary<string, int> permisosPorDia)
     {
         if (asistencias.Count == 0)
         {
-            return new ResumenAsistenciaPrenominaSnapshot();
+            return new ResumenAsistenciaNominaSnapshot();
         }
 
         var trabajadas = asistencias.Where(a => a.Estatus is RrhhAsistenciaEstatus.AsistenciaNormal or RrhhAsistenciaEstatus.Retardo or RrhhAsistenciaEstatus.Incompleta or RrhhAsistenciaEstatus.SalidaAnticipada or RrhhAsistenciaEstatus.DescansoTrabajado or RrhhAsistenciaEstatus.TrabajadoPorHoras).ToList();
@@ -354,9 +434,55 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
         var minutosRetardo = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a)));
         var minutosSalidaAnticipada = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a));
         var minutosFaltanteDescontable = asistencias.Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteDescontable(a, ObtenerMinutosPermisoAplicados(permisosPorDia, a), Math.Max(0, a.MinutosCompensacionPermisoAprobados)));
+        // Meta semanal (Fija sin turno): overlay a nivel de periodo. El extra es lo trabajado
+        // sobre la meta (HorasBase del periodo); el déficit es lo que falta bajo la meta menos
+        // el tiempo cubierto (con goce + compensación) y descuenta sueldo como
+        // FaltanteDescontable. Sin retardo/salida (sin turno no hay entrada/salida programada).
+        // El extra aquí es sólo detectado: el pago requiere autorización en la resolución de
+        // periodo (path "periodo" del sourcing); el path "incidencia" no paga extra sin
+        // resolución, así que se anula el extra per-día autorizado legacy.
+        // English: Weekly meta (Fija with no shift): period-level overlay. Extra is worked time
+        // over the meta (period HorasBase); the deficit is the shortfall under the meta minus
+        // covered time (paid leave + compensation) and docks salary as FaltanteDescontable. No
+        // retardo/early-leave (no shift means no scheduled entrada/salida). The extra here is
+        // only detected: payment requires authorization in the period resolution (sourcing
+        // "periodo" path); the "incidencia" path pays no extra without a resolution, so legacy
+        // per-day authorized extra is zeroed.
+        if (RrhhTiempoExtraPolicy.EsPeriodoMetaSemanal(asistencias))
+        {
+            var metaMinutos = RrhhTiempoExtraPolicy.ObtenerMetaSemanalMinutos(
+                configuracion.ObtenerHorasBase(InferirPeriodicidad(diasPeriodo)));
+            var trabajadoActual = asistencias.Sum(RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo);
+            var conGoce = asistencias.Sum(a => ObtenerMinutosPermisoAplicados(permisosPorDia, a))
+                        + asistencias.Sum(a => Math.Max(0, a.MinutosCompensacionPermisoAprobados));
+            // Umbral normalizado (default 15 si la config es 0): mismo perdón que el cálculo
+            // por día, para que el extra del periodo (snapshot de nómina) respete el umbral
+            // igual que el detalle por día. / Normalized threshold (default 15 if config is 0):
+            // same forgiveness as the per-day calc so the period extra (payroll snapshot)
+            // honors the threshold just like the per-day detail.
+            var umbralNormalizado = RrhhTiempoExtraPolicy.NormalizarMinutosMinimosTiempoExtra(configuracion.MinutosMinimosTiempoExtra);
+            var (extraSem, deficitSem) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(trabajadoActual, conGoce, metaMinutos, umbralNormalizado);
+            minutosExtraBase = extraSem;
+            minutosFaltanteDescontable = deficitSem;
+            minutosRetardo = 0;
+            minutosSalidaAnticipada = 0;
+            minutosExtraPago = 0;
+            minutosBancoAcumulados = 0;
+        }
         // F4b: agregados PorHoras para pago por minutos. El neto efectivo (neto + perdón)
         // es la base que se paga; en festivo va al factor festivo (lo aplica el service de sueldo).
-        var asistenciasPorHoras = asistencias.Where(a => a.EsPorHoras).ToList();
+        // PagoFijoPorLabor: los días PorHoras con este flag se excluyen del bucket "por horas"
+        // (no se pagan por minutos) → quedan en DiasPagados y fluyen a la parte Fija
+        // (sueldoDiario × día) en NominaSueldoBasePolicy. Así un empleado de limpieza cobra
+        // lo mismo por la labor sin importar cuánto tardó. Sigue siendo EsPorHoras (sin
+        // turno/meta/retardo/faltante/salida), sólo cambia el bucket de pago.
+        // English: PorHoras aggregates for by-minute pay. PagoFijoPorLabor: PorHoras days
+        // with this flag are excluded from the "by hours" bucket (not paid by minutes) → they
+        // stay in DiasPagados and flow to the Fija part (daily salary × day) in
+        // NominaSueldoBasePolicy. A cleaning employee thus earns the same regardless of
+        // duration. Still EsPorHoras (no shift/meta/late/shortage/early-leave), only the pay
+        // bucket changes.
+        var asistenciasPorHoras = asistencias.Where(a => a.EsPorHoras && !a.EsPagoFijoPorLabor).ToList();
         var minutosPorHorasNetos = asistenciasPorHoras
             .Where(a => !festivosPeriodo.Contains(a.Fecha))
             .Sum(a => RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
@@ -382,7 +508,7 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
             notas.Add("Banco de horas deshabilitado en configuración: el tiempo extra autorizado para banco se pagará.");
         }
 
-        return new ResumenAsistenciaPrenominaSnapshot
+        return new ResumenAsistenciaNominaSnapshot
         {
             TieneAsistencias = true,
             DiasTrabajados = trabajadas.Select(a => a.Fecha).Distinct().Count(),
@@ -491,10 +617,25 @@ public sealed class RrhhPrenominaSnapshotService : IRrhhPrenominaSnapshotService
     private static string? CombinarNotas(params string?[] notas)
     {
         var valores = notas.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).ToList();
-        return valores.Count == 0 ? null : string.Join(" | ", valores);
+        if (valores.Count == 0)
+            return null;
+
+        // Tope de 500 chars: tanto NominaDetalle.Notas como PrenominaDetalle.Notas son
+        // varchar(500) en DB. Al combinar muchas ausencias + notas de revisión el texto excede
+        // el límite y MaríaDB rechaza la fila ("Data too long for column 'Notas'"). Se trunca
+        // con elipsis para señal de corte.
+        // English: 500-char cap: both NominaDetalle.Notas and PrenominaDetalle.Notas are
+        // varchar(500) in the DB. Combining many absences + revision notes can exceed the limit
+        // and MariaDB rejects the row ("Data too long for column 'Notas'"). Truncate with an
+        // ellipsis to signal the cut.
+        const int topeNotas = 500;
+        var combinado = string.Join(" | ", valores);
+        return combinado.Length <= topeNotas
+            ? combinado
+            : $"{combinado[..(topeNotas - 1)]}…";
     }
 
-    private sealed class ResumenAsistenciaPrenominaSnapshot
+    private sealed class ResumenAsistenciaNominaSnapshot
     {
         public bool TieneAsistencias { get; set; }
         public int DiasTrabajados { get; set; }

@@ -5,7 +5,9 @@ namespace MundoVs.Core.Services;
 public static class RrhhTiempoExtraPolicy
 {
     public static int ObtenerMinutosNetoEfectivo(RrhhAsistencia asistencia)
-        => Math.Max(0, asistencia.MinutosTrabajadosNetos + Math.Max(0, asistencia.MinutosPerdonadosManual));
+        => Math.Max(0, asistencia.MinutosTrabajadosNetos
+            + Math.Max(0, asistencia.MinutosPerdonadosManual)
+            + Math.Max(0, asistencia.MinutosToleranciaRetardoAplicada));
 
     public static int ObtenerMinutosRetardoEfectivos(RrhhAsistencia asistencia)
         => ObtenerMinutosRetardoEfectivos(asistencia, 0);
@@ -95,6 +97,125 @@ public static class RrhhTiempoExtraPolicy
     private static bool EsSinReferenciaJornada(RrhhAsistencia asistencia)
         => asistencia.EsPorHoras
            || asistencia.MinutosJornadaNetaProgramada <= 0;
+
+    // Empleado Fija SIN turno asignado (TurnoBaseId null, no PorHoras). A diferencia de
+    // PorHoras (que se paga el tiempo trabajado sin meta), el Fija-sin-turno tiene una
+    // META SEMANAL (default 48h = 2880 min): el extra sobre la meta es autorizable y el
+    // déficit bajo la meta descuenta sueldo como FaltanteDescontable. La meta se calcula
+    // a nivel de periodo (no per-día), así que este predicado sólo identifica el día; el
+    // overlay real vive en la agregación del periodo (RrhhResolucionPeriodoService /
+    // RrhhNominaSnapshotService). El día suelto sigue siendo "sin referencia" para los
+    // displays per-día (EsSinReferenciaJornada no cambia).
+    // English: Fija employee with NO assigned shift (TurnoBaseId null, not PorHoras). Unlike
+    // PorHoras (paid for worked time, no meta), Fija-sin-turno has a WEEKLY META (default 48h
+    // = 2880 min): extra over the meta is authorizable, deficit under the meta docks salary
+    // as FaltanteDescontable. The meta is computed at the period level (not per-day), so this
+    // predicate only identifies the day; the real overlay lives in the period aggregation. The
+    // standalone day still behaves as "sin referencia" for per-day displays (unchanged).
+    public static bool EsJornadaMetaSemanal(RrhhAsistencia asistencia)
+        => !asistencia.EsPorHoras && asistencia.TurnoBaseId is null;
+
+    // ¿El periodo entero se rige por la meta semanal? Cuando TODAS las asistencias no-PorHoras
+    // son sin turno (sin mezcla turno/sin-turno). Un periodo mixto (algun día con turno, otro
+    // sin) es raro (cambio de turno) y cae al behavior per-día existente por seguridad. Un
+    // periodo todo-PorHoras no es meta semanal (se paga por horas).
+    // English: Is the whole period governed by the weekly meta? When ALL non-PorHoras
+    // asistencias have no shift (no turno/sin-turno mix). A mixed period (some days with shift,
+    // some without) is rare (shift change) and falls back to the existing per-day behavior for
+    // safety. An all-PorHoras period is not weekly-meta (paid by the hour).
+    public static bool EsPeriodoMetaSemanal(IEnumerable<RrhhAsistencia> asistencias)
+    {
+        var lista = asistencias as IReadOnlyList<RrhhAsistencia> ?? asistencias.ToList();
+        if (lista.Count == 0)
+            return false;
+
+        var noPorHoras = lista.Where(a => !a.EsPorHoras).ToList();
+        if (noPorHoras.Count == 0)
+            return false;
+
+        return noPorHoras.All(a => a.TurnoBaseId is null);
+    }
+
+    // Meta semanal en minutos a partir de las horas base configuradas por empresa
+    // (NominaConfiguracion.HorasBaseSemanal, default 48). 48h -> 2880 min.
+    // English: Weekly meta in minutes from the company-configured base hours
+    // (NominaConfiguracion.HorasBaseSemanal, default 48). 48h -> 2880 min.
+    public static int ObtenerMetaSemanalMinutos(int horasBaseSemanal)
+        => Math.Max(0, horasBaseSemanal) * 60;
+
+    // Normaliza el umbral mínimo de tiempo extra (MinutosMinimosTiempoExtra): un valor
+    // ausente o <= 0 cae al default 15. Es el MISMO perdón que usa el cálculo por día
+    // (RrhhAsistenciaProcessor.ObtenerMinutosMinimosTiempoExtra delega aquí), centralizado
+    // para que el overlay de meta semanal aplique el mismo umbral que el detalle por día y
+    // no haya inconsistencia entre "Ver detalle" y "Aceptar tiempo" cuando la config es 0.
+    // English: Normalizes the minimum extra-time threshold (MinutosMinimosTiempoExtra): a
+    // missing or <= 0 value falls back to the default 15. This is the SAME forgiveness the
+    // per-day calc uses (RrhhAsistenciaProcessor.ObtenerMinutosMinimosTiempoExtra delegates
+    // here), centralized so the weekly-meta overlay applies the same threshold as the
+    // per-day detail and there is no mismatch between "Ver detalle" and "Aceptar tiempo"
+    // when the config value is 0.
+    public static int NormalizarMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
+        => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 15;
+
+    // Balance de la meta semanal: extra = trabajo real sobre la meta; deficit = meta menos
+    // trabajo real menos el tiempo cubierto (permiso con goce + compensacion aprobada). El
+    // conGoce cubre el deficit (es tiempo pagado que satisface la expectativa, espejo del
+    // Fija-con-turno donde el permiso con goce cubre el faltante del dia). Extra y deficit son
+    // mutuamente excluyentes por construccion (uno siempre es 0).
+    // El extra respeta el mismo umbral mínimo que el cálculo por día (MinutosMinimosTiempoExtra):
+    // un excedente bajo el umbral NO cuenta como extra (meta 2880, trabajado 2890 → 10 < umbral
+    // → 0); al superarlo sí cuenta todo el excedente (2911 → 31 ≥ umbral → 31). El déficit no se
+    // ve afectado por el umbral (descuenta sueldo). `minutosMinimosTiempoExtra` default 0 =
+    // sin umbral (backward compat para callers que no lo pasan).
+    // English: Weekly meta balance: extra = real work over the meta; deficit = meta minus real
+    // work minus covered time (paid leave + approved compensation). conGoce covers the deficit
+    // (it is paid time that satisfies the expectation, mirroring Fija-con-turno where paid
+    // leave covers the day's faltante). Extra and deficit are mutually exclusive by construction.
+    // Extra honors the same minimum threshold as the per-day calc (MinutosMinimosTiempoExtra):
+    // surplus below the threshold does NOT count as extra (meta 2880, worked 2890 → 10 < threshold
+    // → 0); once exceeded, the whole surplus counts (2911 → 31 ≥ threshold → 31). Deficit is
+    // unaffected by the threshold (docks salary). `minutosMinimosTiempoExtra` default 0 = no
+    // threshold (backward compat for callers that don't pass it).
+    public static (int ExtraDetectado, int Deficit) CalcularBalanceMetaSemanal(
+        int trabajadoActualMinutos, int conGoceMinutos, int metaMinutos, int minutosMinimosTiempoExtra = 0)
+    {
+        var extraCrudo = Math.Max(0, trabajadoActualMinutos - metaMinutos);
+        var extra = minutosMinimosTiempoExtra > 0 && extraCrudo < minutosMinimosTiempoExtra ? 0 : extraCrudo;
+        var deficit = Math.Max(0, metaMinutos - trabajadoActualMinutos - Math.Max(0, conGoceMinutos));
+        return (extra, deficit);
+    }
+
+    /// <summary>
+    /// Cadena de neteo NetoVsNeto del periodo (faltante → retardo → salida → banco). POOL =
+    /// <paramref name="extraDetectado"/> (sobre umbral, pagadero) + <paramref name="extraBajoUmbral"/>
+    /// (bajo umbral, NO pagadero, sólo tapa deducciones). El extra de un día tapa en orden las
+    /// deducciones de otros días; el sobrante repone el banco consumido; el sobrante final —topado
+    /// al extraDetectado— es pagable (el bajo-umbral nunca se paga). Único dueño del neteo: lo
+    /// usan el resumen display (<c>ConstruirResumenDesdeDatos</c>), la autorización
+    /// (<c>AplicarResolucionPeriodoAsync</c>) y —vía el batch— el snapshot de nómina, así los tres
+    /// nunca divergen de lo que Asistencia Semanal muestra.
+    /// English: NetoVsNeto period net chain (shortage → late → early-leave → bank). POOL =
+    /// extraDetectado (above threshold, payable) + extraBajoUmbral (below, NOT payable, only
+    /// covers). One day's extra covers other days' deductions in order; the surplus replenishes
+    /// consumed bank; the final surplus —capped at extraDetectado— is payable (below-threshold is
+    /// never paid). Sole owner of the neteo: used by the display summary, authorization and —via
+    /// the batch— the payroll snapshot, so all three never diverge from what Asistencia Semanal
+    /// shows.
+    /// </summary>
+    public static (int FaltanteAbsorbido, int RetardoAbsorbido, int SalidaAbsorbido, int BancoRestaurado, int ExtraAbsorbible) CalcularNeteoNetoVsNeto(
+        int extraDetectado, int extraBajoUmbral, int faltanteNeto, int retardo, int salidaAnticipada, int bancoConsumido)
+    {
+        var pool = extraDetectado + extraBajoUmbral;
+        var faltanteAbsorbido = Math.Min(pool, faltanteNeto);
+        var sobranteTrasFaltante = Math.Max(0, pool - faltanteNeto);
+        var retardoAbsorbido = Math.Min(sobranteTrasFaltante, retardo);
+        var sobranteTrasRetardo = Math.Max(0, sobranteTrasFaltante - retardo);
+        var salidaAbsorbido = Math.Min(sobranteTrasRetardo, salidaAnticipada);
+        var sobranteTrasSalida = Math.Max(0, sobranteTrasRetardo - salidaAnticipada);
+        var bancoRestaurado = Math.Min(sobranteTrasSalida, bancoConsumido);
+        var extraAbsorbible = Math.Min(Math.Max(0, sobranteTrasSalida - bancoConsumido), extraDetectado);
+        return (faltanteAbsorbido, retardoAbsorbido, salidaAbsorbido, bancoRestaurado, extraAbsorbible);
+    }
 
     public static int ObtenerMinutosBasePagada(RrhhAsistencia asistencia)
     {
@@ -190,7 +311,23 @@ public static class RrhhTiempoExtraPolicy
         => Math.Max(0, asistencia.MinutosJornadaProgramada - asistencia.MinutosTrabajadosBrutos);
 
     public static int ObtenerMinutosFaltanteNeto(RrhhAsistencia asistencia)
-        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada - ObtenerMinutosNetoEfectivo(asistencia));
+        // Faltante = ausencia genuina only. La tardanza (retardo) y la salida anticipada ya
+        // tienen su propio bucket de descuento (ObtenerMinutosRetardoEfectivos /
+        // ObtenerMinutosSalidaAnticipadaEfectivos), así que se restan aquí para no
+        // contarlos dos veces en el neteo semanal, el descuento de salario y el déficit
+        // del Permiso por Diferencia. Espejo del fix de tolerancia: la tardanza tolerada
+        // (MinutosToleranciaRetardoAplicada) ya vive dentro de NetoEfectivo y el campo
+        // MinutosRetardo queda 0, así que aquí sólo se excluye la tardanza NO tolerada.
+        // English: Faltante = genuine absence only. Lateness (retardo) and early-leave
+        // (salida anticipada) already have their own deduction buckets, so they are
+        // subtracted here to avoid double-counting them in the weekly neteo, salary
+        // discount and PermisoDiferencia deficit. Mirrors the tolerance fix: tolerated
+        // lateness already lives inside NetoEfectivo (MinutosRetardo is 0), so only the
+        // non-tolerated lateness is excluded here.
+        => Math.Max(0, asistencia.MinutosJornadaNetaProgramada
+            - ObtenerMinutosNetoEfectivo(asistencia)
+            - ObtenerMinutosRetardoEfectivos(asistencia)
+            - ObtenerMinutosSalidaAnticipadaEfectivos(asistencia));
 
     public static int ObtenerMinutosFaltanteDescontable(RrhhAsistencia asistencia)
         => ObtenerMinutosFaltanteDescontable(asistencia, 0, 0);

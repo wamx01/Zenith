@@ -90,4 +90,30 @@ public sealed class NominaSueldoBasePolicyTests
         var r = _policy.Calcular(Input(diasPagados: 7, incluyeSueldoBase: false));
         Assert.Equal(0m, r.SueldoBase);
     }
+
+    [Fact]
+    public void Calcular_PagoFijoPorLabor_DuracionIrrelevante_PagaSueldoDiarioPorDia()
+    {
+        // Perfil #4 (limpieza): el snapshot redirige los días PorHoras con flag PagoFijoPorLabor
+        // al bucket Fija → el input llega con DiasPorHorasTrabajados=0 y MinutosPorHorasNetos=0,
+        // y el día queda en DiasPagados. El sueldo base depende sólo de los días pagados, NO de
+        // los minutos trabajados: dure 1h o 5h, cobra lo mismo (sueldoDiario × día).
+        // English: profile #4 (cleaning): the snapshot routes PorHoras days with the
+        // PagoFijoPorLabor flag to the Fija bucket → the input arrives with
+        // DiasPorHorasTrabajados=0 and MinutosPorHorasNetos=0, the day stays in DiasPagados.
+        // Sueldo base depends only on paid days, NOT on worked minutes — 1h or 5h pays the same.
+        // Con flag: 2 días redirigidos al bucket Fija → sueldoDiario(1000/7) × 2 = 285.71.
+        var conFlag = _policy.Calcular(Input(diasPagados: 2, diasPorHorasTrabajados: 0, minutosPorHorasNetos: 0));
+        Assert.Equal(285.71m, conFlag.SueldoBase);
+
+        // Sin flag: los mismos 2 días PorHoras con 360 min trabajados (1h + 5h) se pagan por
+        // minuto → 360 min = 6h × (1000/48) = 125.00. Distinto al fijo: el flag cambia el bucket
+        // y la duración SÍ importa (cobra por el tiempo real).
+        // English: without the flag, the same 2 PorHoras days with 360 worked min (1h + 5h) are
+        // paid by minute → 125.00. Different from fixed: the flag changes the bucket and duration
+        // DOES matter (paid by actual time).
+        var sinFlag = _policy.Calcular(Input(diasPagados: 2, diasPorHorasTrabajados: 2, minutosPorHorasNetos: 360));
+        Assert.Equal(125.00m, sinFlag.SueldoBase);
+        Assert.NotEqual(conFlag.SueldoBase, sinFlag.SueldoBase);
+    }
 }

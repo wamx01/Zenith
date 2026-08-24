@@ -269,7 +269,7 @@
     top: 0;
     right: 0;
     height: 100vh;
-    width: min(560px, 92vw);
+    width: min(900px, 94vw);
     background: #fff;
     z-index: 1045;
     box-shadow: -1rem 0 2.5rem rgba(15, 23, 42, .22);
@@ -312,6 +312,40 @@
     padding: .75rem 1.1rem;
     border-top: 1px solid #e2e8f0;
     background: #f8fafc;
+}
+
+/* Overlay de "recalculando" sobre el drawer: cubre todo el panel mientras corre
+   el reproceso de periodo para que el usuario vea que está trabajando y no se
+   trabó. / Recalc overlay covering the drawer while the period reprocess runs. */
+.asis-drawer__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .65rem;
+    text-align: center;
+    background: rgba(255, 255, 255, .82);
+    backdrop-filter: blur(2px);
+    animation: asis-drawer-fade .15s ease;
+}
+
+.asis-drawer__overlay-text {
+    font-size: .82rem;
+    font-weight: 700;
+    color: #1d4ed8;
+}
+
+.asis-drawer__overlay-sub {
+    font-size: .72rem;
+    color: #64748b;
+}
+
+@keyframes asis-drawer-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* ---------- Grid de métricas del drawer ---------- */
@@ -357,3 +391,51 @@
 .asis-detail-card--warn .asis-detail-card__value { color: #92400e; }
 .asis-detail-card--bad { background: #fef2f2; border-color: #fecaca; border-left-color: #ef4444; }
 .asis-detail-card--bad .asis-detail-card__value { color: #991b1b; }
+
+/* ---------- Bloque de neteo del periodo (read-only, espejo del modal) ---------- */
+
+.asis-res-neteo {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: .5rem;
+    padding: .75rem;
+}
+
+.asis-res-neteo__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+}
+
+.asis-res-neteo__item {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    padding: .5rem .65rem;
+    border-radius: .5rem;
+    min-width: 120px;
+    background-color: #fff;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #cbd5e1;
+}
+
+.asis-res-neteo__label {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: #64748b;
+    line-height: 1;
+}
+
+.asis-res-neteo__value {
+    font-size: .9rem;
+    font-weight: 600;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+.asis-res-neteo__item--info { border-left-color: #94a3b8; }
+.asis-res-neteo__item--good { background-color: #f0fdf4; border-left-color: #22c55e; }
+.asis-res-neteo__item--warn { background-color: #fffbeb; border-left-color: #f59e0b; }
+.asis-res-neteo__item--bad { background-color: #fef2f2; border-left-color: #ef4444; }
+.asis-res-neteo__item--destacado { box-shadow: 0 0 0 1px #86efac inset; }

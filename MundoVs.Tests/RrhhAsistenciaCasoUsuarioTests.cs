@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MundoVs.Core.Entities;
+using MundoVs.Core.Interfaces;
 using MundoVs.Core.Models;
 using MundoVs.Core.Services;
 using MundoVs.Infrastructure.Data;
@@ -111,13 +112,17 @@ public sealed class RrhhAsistenciaCasoUsuarioTests
         IsActive = true
     };
 
-    private static async Task<(CrmDbContext db, Empresa empresa, Empleado empleado, DateOnly fecha)> SembrarCasoBaseAsync()
+    private static async Task<(CrmDbContext db, Empresa empresa, Empleado empleado, DateOnly fecha)> SembrarCasoBaseAsync(string? modoDefault = null)
     {
         var db = CreateDbContext();
         var empresa = CreateEmpresa();
         var turno = CreateTurnoUsuario(empresa.Id);
         var checador = CreateChecador(empresa.Id);
         var empleado = CreateEmpleado(empresa.Id, turno.Id);
+        // Método de cálculo por defecto del empleado (null = Vs horario, "MarcajeReloj" = tal
+        // cual reloj). English: employee default calc method (null = Vs schedule, "MarcajeReloj"
+        // = clock punch as-is).
+        empleado.ModoSugerenciaExtraDefault = modoDefault;
 
         db.Empresas.Add(empresa);
         db.TurnosBase.Add(turno);
@@ -167,8 +172,8 @@ public sealed class RrhhAsistenciaCasoUsuarioTests
 
     // ───────────────────────────────────────────────────────────────────────
     // Combo 2: modo MarcajeReloj + D1 NO marcado + sin no-descontar.  ← el fix.
-    // En MarcajeReloj el descanso NO marcado no se descuenta (el reloj dice que se trabajó),
-    // por lo que el modo corre sin umbral.
+    // En MarcajeReloj el descanso NO marcado no se descuenta (el reloj dice que se trabajó).
+    // El extra SÍ respeta el umbral: 18 ≥ 15 → cuenta.
     // Esperado: Neto = 453 (suma de segmentos, sin descuento), Extra = 18, visible 7:15.
     // No hace falta activar no-descontar; el modo basta.
     // ───────────────────────────────────────────────────────────────────────
@@ -187,7 +192,7 @@ public sealed class RrhhAsistenciaCasoUsuarioTests
         Assert.Equal("MarcajeReloj", a.ModoSugerenciaExtra);
         Assert.Equal(0, a.MinutosDescansoNoPagado); // D1 no marcado → no se descuenta en MarcajeReloj
         Assert.Equal(453, a.MinutosTrabajadosNetos); // suma de segmentos = bruto (sin descuento)
-        Assert.Equal(18, a.MinutosExtra);            // 453 − 435 = 18, sin umbral
+        Assert.Equal(18, a.MinutosExtra);            // 453 − 435 = 18 (≥ umbral 15 → cuenta)
         Assert.Equal(435, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(a, 0, 0)); // 7:15
     }
 
@@ -217,7 +222,7 @@ public sealed class RrhhAsistenciaCasoUsuarioTests
     // Combo 4: modo MarcajeReloj + D1 SÍ no-descontar.
     // Con el fix, el descanso no marcado ya no se descuenta en MarcajeReloj por el modo
     // mismo, así que activar no-descontar es redundante pero coherente: mismo resultado.
-    // Extra = Max(0, Neto − JornadaNeta) = Max(0, 453 − 435) = 18 (sin umbral).
+    // Extra = Max(0, Neto − JornadaNeta) = Max(0, 453 − 435) = 18 (≥ umbral 15 → cuenta).
     // Esperado: Neto = 453, Extra = 18, DescansoNoPagado = 0.
     // ───────────────────────────────────────────────────────────────────────
     [Fact]
@@ -295,5 +300,172 @@ public sealed class RrhhAsistenciaCasoUsuarioTests
         // Visible = Min(454 − 19, 435) = 435 = 7:15 (la jornada planeada)
         Assert.Equal(435, RrhhTiempoExtraPolicy.ObtenerMinutosBasePagada(aDef));
         Assert.Equal(435, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(aDef, 0, 0));
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Método de cálculo por defecto por empleado (Marcaje de reloj vs Vs horario).
+    // El empleado tiene un default en Empleado.ModoSugerenciaExtraDefault (null = Vs horario,
+    // "MarcajeReloj" = tal cual reloj). El "Recalcular por periodo" (forzarDefaultEmpleado=true)
+    // impone el default a todos los días y pisa overrides manuales; el recálculo por día /
+    // incremental (forzar=false) preserva el override y usa el default como fallback.
+    // English: per-employee default calc method. "Recalculate by period" (forzarDefaultEmpleado
+    // =true) enforces the default on every day, overriding per-day overrides; per-day/incremental
+    // recalc (forzar=false) preserves the override and uses the default as a fallback.
+    // ───────────────────────────────────────────────────────────────────────
+    private static async Task<RrhhAsistencia> ReprocesarForzandoAsync(CrmDbContext db, Guid empresaId, DateOnly fecha)
+    {
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresaId, fecha, fecha, forzarDefaultEmpleado: true);
+        await db.SaveChangesAsync();
+        return await db.RrhhAsistencias.SingleAsync();
+    }
+
+    [Fact]
+    public async Task EmpleadoDefaultMarcajeReloj_DiaNuevo_CalculaComoMarcajeReloj()
+    {
+        // Default MarcajeReloj; día nuevo (incremental, forzar=false, sin override) → el default
+        // aplica como fallback y se calcula sin reglas. English: MarcajeReloj default; new day
+        // (incremental, forzar=false, no override) → default applies as fallback, no rules.
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: "MarcajeReloj");
+        var a = await db.RrhhAsistencias.SingleAsync();
+
+        Assert.Equal("MarcajeReloj", a.ModoSugerenciaExtra);
+        Assert.Equal(0, a.MinutosRetardo);              // sin reglas
+        Assert.Equal(0, a.MinutosSalidaAnticipada);     // sin reglas
+        Assert.Equal(0, a.MinutosDescansoNoPagado);     // descanso no marcado no descuenta
+        Assert.Equal(453, a.MinutosTrabajadosNetos);    // 18:43 − 11:10 = 453, sin descuento
+        Assert.Equal(18, a.MinutosExtra);               // 453 − 435 = 18 (≥ umbral 15 → cuenta)
+    }
+
+    [Fact]
+    public async Task EmpleadoDefaultNull_DiaNuevo_AplicaReglasEntradaSalida()
+    {
+        // Default null = "Vs horario": aplican salida anticipada, descanso no marcado, etc.
+        // English: default null = "Vs schedule": early-leave, unmarked-break rules apply.
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: null);
+        var a = await db.RrhhAsistencias.SingleAsync();
+
+        Assert.Null(a.ModoSugerenciaExtra);
+        Assert.Equal(17, a.MinutosSalidaAnticipada);    // 19:00 − 18:43 = 17 (reglas)
+        Assert.Equal(15, a.MinutosDescansoNoPagado);    // D1 no marcado descuenta
+        Assert.Equal(438, a.MinutosTrabajadosNetos);    // 453 − 15
+    }
+
+    [Fact]
+    public async Task ReprocesoPorPeriodo_ForzarDefault_PisaOverrideManual()
+    {
+        // Default null; override manual por día a "MarcajeReloj" (como hace el modal). Al
+        // "Recalcular por periodo" (forzarDefaultEmpleado=true) el default del empleado gana y
+        // pisa el override → el día vuelve a EntradaSalida (reglas). English: default null; per-
+        // day override "MarcajeReloj". "Recalculate by period" (forzar=true) → default wins,
+        // overrides the per-day override → day reverts to EntradaSalida (rules).
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: null);
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        asistencia.ModoSugerenciaExtra = "MarcajeReloj";
+        await db.SaveChangesAsync();
+
+        var a = await ReprocesarForzandoAsync(db, empresa.Id, fecha);
+
+        Assert.Null(a.ModoSugerenciaExtra);            // default gana, override pisado
+        Assert.Equal(17, a.MinutosSalidaAnticipada);    // reglas EntradaSalida restauradas
+        Assert.Equal(15, a.MinutosDescansoNoPagado);
+    }
+
+    [Fact]
+    public async Task RecalculoPorDia_SinForzar_PreservaOverrideManual()
+    {
+        // Default null; override manual "MarcajeReloj". Recálculo por día (forzar=false,
+        // default): preserva el override (no lo pisa). Contrasta con el reproceso por periodo.
+        // English: default null; manual override "MarcajeReloj". Per-day recalc (forzar=false):
+        // preserves the override. Contrast with the period-reprocess test.
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: null);
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        asistencia.ModoSugerenciaExtra = "MarcajeReloj";
+        await db.SaveChangesAsync();
+
+        var a = await ReprocesarAsync(db, empresa.Id, fecha);
+
+        Assert.Equal("MarcajeReloj", a.ModoSugerenciaExtra);  // override preservado
+        Assert.Equal(0, a.MinutosSalidaAnticipada);           // MarcajeReloj: sin reglas
+        Assert.Equal(0, a.MinutosDescansoNoPagado);
+    }
+
+    [Fact]
+    public async Task ReprocesoPorPeriodo_AplicaNuevoDefaultCambiado()
+    {
+        // El día quedó en EntradaSalida (default null). El cliente cambia el default del empleado
+        // a MarcajeReloj y "Recalcula por periodo": el nuevo default se impone a todos los días.
+        // English: day left in EntradaSalida (default null). The client changes the employee
+        // default to MarcajeReloj and "Recalculates by period": the new default is enforced.
+        var (db, empresa, empleado, fecha) = await SembrarCasoBaseAsync(modoDefault: null);
+        var antes = await db.RrhhAsistencias.SingleAsync();
+        Assert.Null(antes.ModoSugerenciaExtra);
+
+        empleado.ModoSugerenciaExtraDefault = "MarcajeReloj";
+        await db.SaveChangesAsync();
+
+        var a = await ReprocesarForzandoAsync(db, empresa.Id, fecha);
+
+        Assert.Equal("MarcajeReloj", a.ModoSugerenciaExtra);  // nuevo default aplicado
+        Assert.Equal(0, a.MinutosSalidaAnticipada);           // MarcajeReloj: sin reglas
+        Assert.Equal(0, a.MinutosDescansoNoPagado);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Forzar un método concreto en el reproceso por periodo (modoCalculoForzado): el operador
+    // elige Vs horario o Marcaje de reloj en el diálogo, y ese método gana SOBRE el default del
+    // empleado y sobre overrides por día. Distinto de forzarDefaultEmpleado (que usa el default
+    // del empleado). English: force a concrete method in the period reprocess (modoCalculoForzado):
+    // the operator picks Vs schedule or Clock punch in the dialog, and that method wins OVER the
+    // employee default and per-day overrides. Distinct from forzarDefaultEmpleado (which uses
+    // the employee default).
+    // ───────────────────────────────────────────────────────────────────────
+    private static async Task<RrhhAsistencia> ReprocesarForzandoModoAsync(CrmDbContext db, Guid empresaId, DateOnly fecha, RrhhModoCalculoForzado modo)
+    {
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresaId, fecha, fecha, modoCalculoForzado: modo);
+        await db.SaveChangesAsync();
+        return await db.RrhhAsistencias.SingleAsync();
+    }
+
+    [Fact]
+    public async Task ReprocesoPorPeriodo_ForzarModoMarcajeReloj_IgnoraDefaultDelEmpleado()
+    {
+        // Default null (Vs horario); el operador fuerza "Marcaje de reloj" en el diálogo. El
+        // método forzado gana sobre el default → el día se calcula sin reglas aunque el
+        // default del empleado sea Vs horario. English: default null (Vs schedule); the operator
+        // forces "Clock punch" in the dialog. The forced method wins over the default → the day
+        // computes without rules even though the employee default is Vs schedule.
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: null);
+        var antes = await db.RrhhAsistencias.SingleAsync();
+        Assert.Null(antes.ModoSugerenciaExtra);            // default = Vs horario
+        Assert.Equal(17, antes.MinutosSalidaAnticipada);    // reglas aplicadas inicialmente
+
+        var a = await ReprocesarForzandoModoAsync(db, empresa.Id, fecha, RrhhModoCalculoForzado.MarcajeReloj);
+
+        Assert.Equal("MarcajeReloj", a.ModoSugerenciaExtra);  // modo forzado, no el default null
+        Assert.Equal(0, a.MinutosSalidaAnticipada);           // sin reglas
+        Assert.Equal(0, a.MinutosDescansoNoPagado);
+        Assert.Equal(18, a.MinutosExtra);                    // 453 − 435 = 18 (≥ umbral 15 → cuenta)
+    }
+
+    [Fact]
+    public async Task ReprocesoPorPeriodo_ForzarModoVsHorario_IgnoraDefaultMarcajeReloj()
+    {
+        // Default "MarcajeReloj"; el operador fuerza "Vs horario" en el diálogo. El método
+        // forzado gana sobre el default → el día se calcula con reglas aunque el default del
+        // empleado sea Marcaje de reloj. English: default "MarcajeReloj"; the operator forces
+        // "Vs schedule" in the dialog. The forced method wins over the default → the day
+        // computes with rules even though the employee default is Clock punch.
+        var (db, empresa, _, fecha) = await SembrarCasoBaseAsync(modoDefault: "MarcajeReloj");
+        var antes = await db.RrhhAsistencias.SingleAsync();
+        Assert.Equal("MarcajeReloj", antes.ModoSugerenciaExtra);  // default = reloj
+        Assert.Equal(0, antes.MinutosSalidaAnticipada);           // sin reglas inicialmente
+
+        var a = await ReprocesarForzandoModoAsync(db, empresa.Id, fecha, RrhhModoCalculoForzado.VsHorario);
+
+        Assert.Null(a.ModoSugerenciaExtra);                 // modo forzado = Vs horario (null)
+        Assert.Equal(17, a.MinutosSalidaAnticipada);        // reglas restauradas
+        Assert.Equal(15, a.MinutosDescansoNoPagado);        // D1 no marcado descuenta
     }
 }

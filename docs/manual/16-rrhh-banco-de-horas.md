@@ -1,14 +1,14 @@
 # 16. Banco de horas en `RRHH`
 
 ## Objetivo
-Este manual explica para qué sirve el `Banco de horas`, cómo se alimenta, cómo se consume y qué relación tiene con `Asistencias`, `Prenómina` y `Nómina` en `MundoVs`.
+Este manual explica para qué sirve el `Banco de horas`, cómo se alimenta, cómo se consume y qué relación tiene con `Asistencias`, `Nómina` y el neteo NetoVsNeto en `MundoVs`.
 
 ## Alcance
 Incluye:
 - propósito del banco de horas
 - movimientos automáticos y manuales
 - relación con horas extra
-- relación con prenómina y nómina
+- relación con nómina y el neteo semanal
 - control de saldo por empleado
 
 No incluye:
@@ -73,23 +73,33 @@ Después de eso, puede generarse el movimiento correspondiente.
 - `Asistencias` detecta el tiempo extra
 - `Banco de horas` guarda la parte acumulable de ese tiempo
 
-## Relación con `Prenómina`
-La `Prenómina` debe saber que el tiempo extra puede tener dos efectos:
-- una parte pagable en el periodo
-- otra parte acumulable en banco de horas
+## Banco como último eslabón del neteo NetoVsNeto
 
-Por eso, el banco no reemplaza a la prenómina, pero sí afecta cómo se interpreta el tiempo extra del periodo.
+El banco de horas es el **último** paso de la cadena de neteo semanal NetoVsNeto: el pool de
+extra (detectado + bajo umbral) tapa primero `faltante → retardo → salida anticipada`, y el
+sobrante restante **restaura** el banco consumido (`bancoRestaurado = Min(sobrante, bancoConsumido)`).
+El neteo tiene una sola fuente de verdad: el batch `RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync`
+→ `CalcularNeteoNetoVsNeto`, el mismo que pinta Asistencia Semanal. La nómina **lo consume** sin
+recalcular (ver [Reglas de cálculo](./rrhh-reglas-calculo.md#snapshot-de-nómina)).
 
-La relación correcta es:
+> **DescartarExtra** (F9): anula el **pago** del extra, no el neteo. Si el operador descarta el
+> extra, el banco sigue restaurándose según el neteo **vivo** del periodo (igual que Asistencia
+> Semanal); no se fuerza un descuento completo. Para forzarlo, ajustar el neteo en Asistencia
+> Semanal.
+> English: DescartarExtra annuls the extra PAYMENT, not the neteo. The bank is still restored per
+> the period's LIVE neteo (matching Asistencia Semanal); a full dock isn't forced.
 
-`Asistencia -> detecta tiempo extra`
+## Relación con `Nómina` (fusión 2026-08-22)
+
+La `Prenómina` dejó de existir como etapa separada (fusión prenómina→nómina). La revisión/captura
+del periodo ahora vive dentro de Nómina como la fase "Cerrar periodo y calcular" (y "Reabrir
+captura"). El banco sigue afectando cómo se interpreta el tiempo extra del periodo:
+
+`Asistencia Semanal -> detecta tiempo extra y netea (pool → faltante → retardo → salida → banco)`
 
 `Banco de horas -> acumula la parte que no se pagará completa en efectivo`
 
-`Prenómina -> revisa cómo impacta ese periodo`
-
-## Relación con `Nómina`
-La `Nómina` toma el resultado ya validado del periodo.
+`Nómina -> consume el neteo ya calculado por Asistencia Semanal; paga lo que corresponda pagar`
 
 Eso significa que, si parte del tiempo extra se acumuló a banco, la nómina no debería tratar ese componente como si todo fuera pago directo.
 
@@ -123,10 +133,11 @@ Conviene registrar consumo cuando el empleado ya hizo uso del saldo acumulado.
 El objetivo es que el banco refleje la realidad y no solo acumulación teórica.
 
 ## Tabla rápida de relación
-| Concepto | Para qué sirve | Impacta `Prenómina` | Impacta `Nómina` |
+> La `Prenómina` se fusionó con `Nómina` (2026-08-22); la columna "captura" = fase "Cerrar periodo y calcular" dentro de Nómina.
+| Concepto | Para qué sirve | Impacta captura en `Nómina` | Impacta `Nómina` |
 | --- | --- | --- | --- |
-| `Asistencias` | Detecta tiempo extra real | Sí | Sí |
-| `Banco de horas` | Guarda la parte acumulable del tiempo extra | Sí, porque afecta la revisión del periodo | Sí, porque evita pagar como efectivo lo que se acumuló |
+| `Asistencias` | Detecta tiempo extra real y netea | Sí | Sí |
+| `Banco de horas` | Guarda la parte acumulable del tiempo extra; último eslabón del neteo | Sí, porque afecta la revisión del periodo | Sí, porque evita pagar como efectivo lo que se acumuló |
 | `Ajuste manual` | Corrige saldo con control | Indirectamente | Indirectamente |
 | `Consumo` | Descuenta horas ya usadas del saldo | Indirectamente | Indirectamente |
 
@@ -163,7 +174,7 @@ El siguiente paso lógico es:
 
 ---
 
-> Última revisión: 2026-07-03
+> Última revisión: 2026-08-22
 
 ## Ver también
 - [10. Marcaciones y asistencias](./10-rrhh-marcaciones-y-asistencias.md)

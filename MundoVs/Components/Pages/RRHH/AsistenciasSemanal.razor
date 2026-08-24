@@ -14,6 +14,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 @inject IRrhhResolucionPeriodoService ResolucionPeriodo
+@inject IRrhhAsistenciaProcessor RrhhAsistenciaProcessor
 @rendermode InteractiveServer
 
 <PageTitle>Resumen semanal de asistencias</PageTitle>
@@ -169,16 +170,26 @@
                             <col class="asis-week-col--num" />
                             <col class="asis-week-col--num" />
                             <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
+                            <col class="asis-week-col--num" />
                             <col class="asis-week-col--action" />
                         </colgroup>
                         <thead class="table-dark">
                             <tr>
                                 <th class="asis-week-sticky-col asis-week-sticky-col--employee">Empleado</th>
                                 <th class="asis-week-col-days__head">Días del periodo (@diasPeriodo.Count)</th>
-                                <th class="text-end">Normal</th>
-                                <th class="text-end">Extra</th>
-                                <th class="text-end">Banco</th>
-                                <th class="text-end">Total</th>
+                                <th class="text-end">Total Hrs</th>
+                                <th class="text-end">Hrs Pagadas</th>
+                                <th class="text-end">Entro a Banco</th>
+                                <th class="text-end">Usaste Banco</th>
+                                <th class="text-end">Saldo Banco</th>
+                                <th class="text-end">Adic. a Pago</th>
+                                <th class="text-end text-danger">Ded. faltante</th>
+                                <th class="text-end text-danger">Ded. retardo</th>
+                                <th class="text-end text-danger">Ded. salida</th>
                                 <th class="text-center">Detalle</th>
                             </tr>
                         </thead>
@@ -195,6 +206,11 @@
                                 {
                                     var resolucionEmpleado = resolucionPorEmpleado.GetValueOrDefault(resumen.EmpleadoId);
                                     var autorizadaEmpleado = resolucionEmpleado is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
+                                    // Resumen neteado del periodo para este empleado (batch): las mismas
+                                    // 9 columnas del drawer. Null si no hay asistencias en el rango.
+                                    // English: Netted period summary for this employee (batch): the same
+                                    // 9 columns as the drawer. Null if no attendances in the range.
+                                    var resumenNeteo = resumenNeteoPorEmpleado.GetValueOrDefault(resumen.EmpleadoId);
                                     <tr class="@(_detalleVisible && _detalleEmpleadoId == resumen.EmpleadoId ? "asis-week-row--active" : string.Empty)">
                                         <td class="asis-week-sticky-col asis-week-sticky-col--employee">
                                             <div class="fw-semibold">@resumen.NombreCompleto</div>
@@ -228,15 +244,44 @@
                                                 }
                                             </div>
                                         </td>
-                                        <td class="text-end asis-week-num">@FormatearMinutos(resumen.TotalMinutosNormales)</td>
+                                        <td class="text-end asis-week-num">@FormatearMinutos(resumenNeteo?.MinutosTrabajadosNetosDetectado ?? 0)</td>
+                                        <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(resumenNeteo?.MinutosBasePagadaPeriodo ?? 0)</td>
                                         <td class="text-end asis-week-num">
-                                            @if (resumen.PeriodoAutorizado && resumen.ExtraDescartado)
+                                            @* Por horas: no hay extra/banco/deducciones (paga = trabajado). Se muestran
+                                               sólo Total Hrs / Hrs Pagadas / Saldo Banco; el resto en guion para no
+                                               ensuciar la fila con ceros que no aplican a este esquema.
+                                               English: By-the-hour: no extra/bank/deductions (pay = worked). Only
+                                               Total Hrs / Paid Hrs / Bank Balance are shown; the rest as a dash so
+                                               the row isn't cluttered with zeros that don't apply to this scheme. *@
+                                            @if (resumen.EsPorHoras)
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                            else if (resolucionEmpleado is { MinutosExtraBanco: > 0 })
+                                            {
+                                                <span class="badge bg-info text-dark" title="Extra a banco: @FormatearMinutos(resolucionEmpleado.MinutosExtraBanco) @resumen.ExtraBancoFactorDetalle">@FormatearMinutos(resolucionEmpleado.MinutosExtraBanco) <small class="opacity-75">@resumen.ExtraBancoFactorDetalle</small></span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="text-end asis-week-num">
+                                            @if (resumen.EsPorHoras) { <span class="text-muted">—</span> } else { @FormatearMinutos(resumenNeteo?.MinutosBancoConsumidoPeriodo ?? 0) }
+                                        </td>
+                                        <td class="text-end asis-week-num">@FormatearMinutos(resumenNeteo?.SaldoBancoHorasMinutos ?? 0)</td>
+                                        <td class="text-end asis-week-num">
+                                            @if (resumen.EsPorHoras)
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                            else if (resumen.PeriodoAutorizado && resumen.ExtraDescartado)
                                             {
                                                 <span class="badge bg-secondary" title="Extra descartado: sin pago ni compensación">0:00</span>
                                             }
-                                            else if (resumen.PeriodoAutorizado && resumen.TotalMinutosExtraPagoBase > 0)
+                                            else if (resolucionEmpleado is { MinutosExtraPago: > 0 })
                                             {
-                                                <span class="badge bg-success" title="Extra a pago: @FormatearMinutos(resumen.TotalMinutosExtraPagoBase) @resumen.ExtraPagoFactorDetalle">@FormatearMinutos(resumen.TotalMinutosExtraPagoBase) <small class="opacity-75">@resumen.ExtraPagoFactorDetalle</small></span>
+                                                <span class="badge bg-success" title="Extra a pago: @FormatearMinutos(resolucionEmpleado.MinutosExtraPago) @resumen.ExtraPagoFactorDetalle">@FormatearMinutos(resolucionEmpleado.MinutosExtraPago) <small class="opacity-75">@resumen.ExtraPagoFactorDetalle</small></span>
                                             }
                                             else if (resumen.TotalMinutosExtra > 0)
                                             {
@@ -247,21 +292,15 @@
                                                 <span class="text-muted">—</span>
                                             }
                                         </td>
-                                        <td class="text-end asis-week-num">
-                                            @if (resumen.PeriodoAutorizado && resumen.TotalMinutosExtraBancoBase > 0)
-                                            {
-                                                <span class="badge bg-info text-dark" title="Extra a banco: @FormatearMinutos(resumen.TotalMinutosExtraBancoBase) @resumen.ExtraBancoFactorDetalle">@FormatearMinutos(resumen.TotalMinutosExtraBancoBase) <small class="opacity-75">@resumen.ExtraBancoFactorDetalle</small></span>
-                                            }
-                                            else if (resumen.PeriodoAutorizado)
-                                            {
-                                                <span class="text-muted">—</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="text-muted">—</span>
-                                            }
+                                        <td class="text-end asis-week-num text-danger">
+                                            @if (resumen.EsPorHoras) { <span class="text-muted">—</span> } else { @FormatearMinutos(CalcularDedFaltanteNeta(resumenNeteo)) }
                                         </td>
-                                        <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(resumen.TotalMinutos)</td>
+                                        <td class="text-end asis-week-num text-danger">
+                                            @if (resumen.EsPorHoras) { <span class="text-muted">—</span> } else { @FormatearMinutos(CalcularDedRetardoNeta(resumenNeteo)) }
+                                        </td>
+                                        <td class="text-end asis-week-num text-danger">
+                                            @if (resumen.EsPorHoras) { <span class="text-muted">—</span> } else { @FormatearMinutos(CalcularDedSalidaNeta(resumenNeteo)) }
+                                        </td>
                                         <td class="asis-week-col-action__cell">
                                             <div class="d-flex flex-column gap-1 align-items-stretch">
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AbrirDetalleAsync(resumen.EmpleadoId)">
@@ -292,10 +331,15 @@
                                             }
                                         </div>
                                     </td>
-                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosNormales))</td>
-                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraPagoBase))</td>
-                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenes.Sum(x => x.TotalMinutosExtraBancoBase))</td>
-                                    <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(totalMinutosPeriodo)</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(x => x.MinutosTrabajadosNetosDetectado))</td>
+                                    <td class="text-end asis-week-num asis-week-num--total">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(x => x.MinutosBasePagadaPeriodo))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resolucionPorEmpleado.Values.Sum(r => Math.Max(0, r.MinutosExtraBanco)))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(x => x.MinutosBancoConsumidoPeriodo))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(x => x.SaldoBancoHorasMinutos))</td>
+                                    <td class="text-end asis-week-num">@FormatearMinutos(resolucionPorEmpleado.Values.Sum(r => Math.Max(0, r.MinutosExtraPago)))</td>
+                                    <td class="text-end asis-week-num text-danger">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(CalcularDedFaltanteNeta))</td>
+                                    <td class="text-end asis-week-num text-danger">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(CalcularDedRetardoNeta))</td>
+                                    <td class="text-end asis-week-num text-danger">@FormatearMinutos(resumenNeteoPorEmpleado.Values.Sum(CalcularDedSalidaNeta))</td>
                                     <td class="asis-week-col-action__cell"></td>
                                 </tr>
                             }
@@ -333,6 +377,12 @@
     OnClose="CerrarResolucion"
     OnUpdated="RecargarResumenSemanalAsync" />
 
+<RecalcularPeriodoModal
+    Visible="@_recalcPeriodoVisible"
+    Contexto="@($"Empleado: {DetalleResumen?.NombreCompleto ?? string.Empty} · Periodo: {periodoEtiquetaActual}")"
+    OnClose="CerrarRecalcPeriodo"
+    OnConfirmar="ConfirmarRecalcPeriodoAsync" />
+
 @if (_mostrarConfirmacionLote)
 {
     <div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true">
@@ -369,9 +419,20 @@
 {
     var resolucionDetalle = resolucionPorEmpleado.GetValueOrDefault(detalle.EmpleadoId);
     var autorizadaDetalle = resolucionDetalle is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
-    var extraPagoPresentacion = ObtenerPresentacionExtraPago(detalle);
     <div class="asis-drawer-backdrop" @onclick="CerrarDetalle"></div>
     <aside class="asis-drawer">
+        @* Overlay de recálculo: cubre el drawer mientras se reprocesa el periodo para
+           que el usuario vea que está trabajando (no se trabó). / Recalc overlay:
+           covers the drawer while the period is being reprocessed so the user sees
+           it is working (not frozen). *@
+        @if (_recalcPeriodo)
+        {
+            <div class="asis-drawer__overlay" role="status" aria-live="polite">
+                <div class="spinner-border text-primary" style="width:2.5rem;height:2.5rem" aria-hidden="true"></div>
+                <div class="asis-drawer__overlay-text">Recalculando periodo…</div>
+                <div class="asis-drawer__overlay-sub">Reprocesando los días; no cierres el panel.</div>
+            </div>
+        }
         <header class="asis-drawer__header">
             <div>
                 <h5 class="mb-0 fw-bold">@detalle.NombreCompleto</h5>
@@ -431,63 +492,184 @@
                 }
             </div>
 
-            <h6 class="asis-drawer__section mt-3">Tiempo reloj vs acreditado</h6>
-            <div class="asis-detail-grid">
-                <div class="asis-detail-card asis-detail-card--info" title="Tiempo reloj = span(primera → última marca) menos los pares del medio (descansos), calculado bajo demanda desde las marcaciones del empleado. Tal cual del reloj, sin reglas (neteo, umbral). Los descansos no tomados no se descuentan."><span class="asis-detail-card__label">Tiempo reloj</span><span class="asis-detail-card__value">@FormatearMinutos(_detalleTotalBruto)</span></div>
-                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Normal (jornada)</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosNormales)</span></div>
-                <div class="asis-detail-card asis-detail-card--primary" title="Acreditado = base pagada + permiso con goce + compensación + extra aprobado. Es el tiempo que muestra la tabla."><span class="asis-detail-card__label">Total</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutos)</span></div>
-                <div class="asis-detail-card asis-detail-card--bad" title="Lo que recortan las reglas: descansos no pagados, neteo del periodo, umbral de extra, permisos sin goce. Tiempo reloj − acreditado."><span class="asis-detail-card__label">Diferencia</span><span class="asis-detail-card__value">@FormatearMinutos(Math.Max(0, _detalleTotalBruto - detalle.TotalMinutos))</span></div>
-            </div>
+            <h6 class="asis-drawer__section mt-3">Resumen de nómina del periodo</h6>
+            @if (_detalleResumen is not null)
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered text-center mb-0 align-middle small asis-res-nomina-tabla">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Total Hrs</th>
+                                <th>Hrs Pagadas</th>
+                                <th>Entro a Banco</th>
+                                <th>Usaste Banco</th>
+                                <th>Saldo Banco</th>
+                                <th>Adic. a Pago</th>
+                                <th class="text-danger">Ded. faltante</th>
+                                <th class="text-danger">Ded. retardo</th>
+                                <th class="text-danger">Ded. salida</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>@FormatearMinutos(_detalleResumen.MinutosTrabajadosNetosDetectado)</td>
+                                <td>@FormatearMinutos(CalcularJornadaProgramadaDetalle())</td>
+                                <td>@FormatearMinutos(_detalleResolucion?.MinutosExtraBanco ?? 0)</td>
+                                <td>@FormatearMinutos(_detalleResumen.MinutosBancoConsumidoPeriodo)</td>
+                                <td>@FormatearMinutos(_detalleResumen.SaldoBancoHorasMinutos)</td>
+                                <td>@FormatearMinutos(_detalleResolucion?.MinutosExtraPago ?? 0)</td>
+                                <td class="text-danger">@FormatearMinutos(CalcularDedFaltanteNetaDetalle())</td>
+                                <td class="text-danger">@FormatearMinutos(CalcularDedRetardoNetoDetalle())</td>
+                                <td class="text-danger">@FormatearMinutos(CalcularDedSalidaNetaDetalle())</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small text-muted mt-1">
+                    <strong>Total Hrs</strong> = tiempo trabajado neto (incluye el extra detectado, aún no autorizado). <strong>Hrs Pagadas</strong> = base pagada <em>neteada</em> por el extra del periodo = jornada − deducciones que el extra NO tapó. El extra de un día tapa el faltante/retardo/salida de otro, así que la base refleja esa compensación cruzada (puede ser &gt; Σ del día). <em>Ded. faltante/retardo/salida</em> = lo que realmente se descuenta en $ tras el neteo. Comprobación: <em>Hrs Pagadas + Ded. faltante + Ded. retardo + Ded. salida = jornada</em>. El extra autorizado va en <em>Adic. a Pago</em>.
+                </div>
 
-            <h6 class="asis-drawer__section mt-3">Desglose del periodo</h6>
-            <div class="asis-detail-grid">
-                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Normales</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosNormales)</span></div>
-                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. c/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoConGoce)</span></div>
-                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Perm. s/goce</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosPermisoSinGoce)</span></div>
-                <div class="asis-detail-card asis-detail-card--info"><span class="asis-detail-card__label">Compensación</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosCompensacion)</span></div>
-                <div class="asis-detail-card asis-detail-card--good"><span class="asis-detail-card__label">Banco aplicado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosBancoAplicado)</span></div>
-            </div>
-
-            <h6 class="asis-drawer__section mt-3">Tiempo extra</h6>
-            <div class="asis-detail-grid">
-                <div class="asis-detail-card asis-detail-card--warn" title="Extra detectado por el procesador (neto trabajado − neto esperado) antes de autorizar el periodo. Se reparte entre pago y banco al aceptar el tiempo."><span class="asis-detail-card__label">Extra detectado</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtra)</span></div>
-                @if (detalle.PeriodoAutorizado && detalle.ExtraDescartado)
-                {
-                    <div class="asis-detail-card asis-detail-card--bad" title="Extra descartado: sin pago ni compensación"><span class="asis-detail-card__label">Extra descartado</span><span class="asis-detail-card__value">0:00</span></div>
-                }
-                else if (detalle.PeriodoAutorizado)
-                {
-                    <div class="asis-detail-card @extraPagoPresentacion.CssClass" title="@extraPagoPresentacion.Tooltip">
-                        <span class="asis-detail-card__label">Extra a pago</span>
-                        <span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraPagoBase) <small class="text-muted">@detalle.ExtraPagoFactorDetalle</small></span>
-                    </div>
-                    @if (detalle.TotalMinutosExtraBancoBase > 0)
-                    {
-                        <div class="asis-detail-card asis-detail-card--good" title="Extra a banco de horas">
-                            <span class="asis-detail-card__label">Extra a banco</span>
-                            <span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraBancoBase) <small class="text-muted">@detalle.ExtraBancoFactorDetalle</small></span>
+                @* Neteo del periodo (read-only): cómo el extra detectado se convierte en el
+                   "Adic. a Pago" autorizado del resumen. El extra tapa primero faltante, luego
+                   retardo, luego repone banco; el sobrante es lo pagable. Espejo del modal de
+                   resolución. Sin botón de autorizar aquí — eso se hace con "Aceptar tiempo"
+                   arriba (abre el modal). *@
+                <h6 class="asis-drawer__section mt-3">Neteo del periodo</h6>
+                <div class="asis-res-neteo">
+                    <div class="asis-res-neteo__row">
+                        <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                            <span class="asis-res-neteo__label">Extra detectado</span>
+                            <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosExtraDetectado)</span>
                         </div>
-                    }
-                }
-                else
-                {
-                    <div class="asis-detail-card asis-detail-card--warn" title="Periodo pendiente de autorizar"><span class="asis-detail-card__label">Extra por autorizar</span><span class="asis-detail-card__value">Pendiente</span></div>
-                }
-                <div class="asis-detail-card asis-detail-card--good" title="Minutos reales acumulados al banco por movimientos de horas extra"><span class="asis-detail-card__label">A banco acum.</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosExtraAprobadoBanco)</span></div>
-            </div>
+                        @if (_detalleResumen.MinutosExtraBajoUmbralNoPagadero > 0)
+                        {
+                            <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                <span class="asis-res-neteo__label">Extra bajo umbral (no pagadero)</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosExtraBajoUmbralNoPagadero)</span>
+                            </div>
+                        }
+                        @if (_detalleResumen.MinutosPermisoConGocePeriodo > 0)
+                        {
+                            <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                <span class="asis-res-neteo__label">Permiso c/goce</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosPermisoConGocePeriodo)</span>
+                            </div>
+                        }
+                        <div class="asis-res-neteo__item asis-res-neteo__item--bad">
+                            <span class="asis-res-neteo__label">Faltante neto</span>
+                            <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosFaltanteNetoPeriodo)</span>
+                        </div>
+                        <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                            <span class="asis-res-neteo__label">Extra tapa faltante</span>
+                            <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosFaltanteAbsorbidoExtra)</span>
+                        </div>
+                        @if (_detalleResumen.MinutosRetardoAbsorbidoExtra > 0)
+                        {
+                            <div class="asis-res-neteo__item asis-res-neteo__item--warn">
+                                <span class="asis-res-neteo__label">Extra tapa retardo</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosRetardoAbsorbidoExtra)</span>
+                            </div>
+                        }
+                        @if (_detalleResumen.MinutosSalidaAnticipadaAbsorbidoExtra > 0)
+                        {
+                            <div class="asis-res-neteo__item asis-res-neteo__item--warn">
+                                <span class="asis-res-neteo__label">Extra tapa salida</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosSalidaAnticipadaAbsorbidoExtra)</span>
+                            </div>
+                        }
+                        @if (_detalleResumen.MinutosBancoConsumidoPeriodo > 0)
+                        {
+                            <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                <span class="asis-res-neteo__label">Banco consumido</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosBancoConsumidoPeriodo)</span>
+                            </div>
+                            <div class="asis-res-neteo__item asis-res-neteo__item--good">
+                                <span class="asis-res-neteo__label">Extra restaura banco</span>
+                                <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.MinutosBancoRestauradoExtra)</span>
+                            </div>
+                        }
+                        <div class="asis-res-neteo__item asis-res-neteo__item--good asis-res-neteo__item--destacado">
+                            <span class="asis-res-neteo__label">Extra absorbible (pagable)</span>
+                            <span class="asis-res-neteo__value">@FormatearMinutos(CalcularExtraAbsorbibleDetalle())</span>
+                        </div>
+                        <div class="asis-res-neteo__item asis-res-neteo__item--good">
+                            <span class="asis-res-neteo__label">Saldo banco</span>
+                            <span class="asis-res-neteo__value">@FormatearMinutos(_detalleResumen.SaldoBancoHorasMinutos)</span>
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">Neteo del periodo: el extra detectado tapa primero el faltante neto (@FormatearMinutos(_detalleResumen.MinutosFaltanteAbsorbidoExtra) min), luego el retardo (@FormatearMinutos(_detalleResumen.MinutosRetardoAbsorbidoExtra) min), luego la salida anticipada (@FormatearMinutos(_detalleResumen.MinutosSalidaAnticipadaAbsorbidoExtra) min), y por último repone el banco consumido en el periodo (@FormatearMinutos(_detalleResumen.MinutosBancoRestauradoExtra) min). Solo el extra absorbible (@FormatearMinutos(CalcularExtraAbsorbibleDetalle()) min) se reparte entre las líneas — y el operador decide cuánto va a Pago. Por eso "Adic. a Pago" del resumen puede ser menor al "Extra detect." de un día. @if (_detalleResumen.MinutosExtraBajoUmbralNoPagadero > 0) {<text>El extra <em>bajo umbral</em> (@FormatearMinutos(_detalleResumen.MinutosExtraBajoUmbralNoPagadero) min: días cuyo excedente no superó el umbral) entra al pool del neteo y ayuda a tapar faltante/retardo/salida/banco, pero <em>no se paga</em>: el sobrante pagable se topa al extra detectado (sobre umbral).</text>}</small>
+                </div>
 
-            <h6 class="asis-drawer__section mt-3">Incidencias</h6>
-            <div class="asis-detail-grid">
-                <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipDescuento(detalle)"><span class="asis-detail-card__label">Descuento</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosDescuento)</span></div>
-                <div class="asis-detail-card asis-detail-card--warn" title="@ObtenerTooltipRetardo(detalle)"><span class="asis-detail-card__label">Retardo</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosRetardo)</span></div>
-                <div class="asis-detail-card asis-detail-card--bad" title="@ObtenerTooltipSalidaAnticipada(detalle)"><span class="asis-detail-card__label">Salida anticipada</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.TotalMinutosSalidaAnticipada)</span></div>
-                <div class="asis-detail-card asis-detail-card--info" title="@ObtenerTooltipDiasTrabajados(detalle)"><span class="asis-detail-card__label">Días trabajados</span><span class="asis-detail-card__value">@detalle.TotalDiasTrabajados día(s)</span></div>
-                <div class="asis-detail-card asis-detail-card--info" title="@ObtenerTooltipFestivoTrabajado(detalle)"><span class="asis-detail-card__label">Festivo trab.</span><span class="asis-detail-card__value">@detalle.TotalDiasFestivoTrabajado día(s)</span></div>
-                <div class="asis-detail-card asis-detail-card--good" title="Saldo del banco de horas acumulado hasta el corte"><span class="asis-detail-card__label">Saldo banco</span><span class="asis-detail-card__value">@FormatearMinutos(detalle.SaldoBancoHoras)</span></div>
-            </div>
+                @* Desglose por día sobre la base (bruto per-día, mismo cálculo que el "Hrs
+                   Pagadas" del listado antes de netear), NO marcaciones en bruto (esas son
+                   comparativas). Permite ver de qué día sale la diferencia entre el total
+                   trabajado ("Total Hrs") y la base pagada ("Hrs Pagadas") del detalle. *@
+                @if (_detalleResumen.Dias.Count > 0)
+                {
+                    <div class="table-responsive mt-2">
+                        <table class="table table-sm table-bordered text-center align-middle mb-0 small asis-res-dia-tabla">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Día</th>
+                                    <th>Total Hrs</th>
+                                    <th>Hrs Pagadas</th>
+                                    <th title="Extra detectado en el día (el pago autorizado se ve en el resumen superior)">Extra detect.</th>
+                                    <th class="text-danger" title="Faltante neto detectado en el día (bruto; el neteo es a nivel periodo)">Faltante det.</th>
+                                    <th class="text-danger" title="Retardo detectado en el día (bruto; el neteo es a nivel periodo)">Retardo det.</th>
+                                    <th class="text-danger" title="Salida anticipada detectada en el día (bruto; el neteo es a nivel periodo)">Salida det.</th>
+                                    <th title="Jornada neta programada del turno (referencia: si Hrs Pagadas &lt; Jornada, ese día descuenta)">Jornada</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in _detalleResumen.Dias.OrderBy(x => x.Fecha))
+                                {
+                                    var shortfall = d.MinutosBasePagada < d.MinutosJornadaProgramada;
+                                    var clasePagada = shortfall ? "text-danger fw-semibold" : "";
+                                    var titlePagada = shortfall ? "Shortfall: trabajó menos que su jornada" : "";
+                                    <tr>
+                                        <td class="text-start text-nowrap">@(d.Fecha.ToString("ddd dd/MM"))</td>
+                                        <td>@FormatearMinutos(d.MinutosTrabajadosNetos)</td>
+                                        <td class="@clasePagada" title="@titlePagada">@FormatearMinutos(d.MinutosBasePagada)</td>
+                                        <td>@FormatearMinutos(d.MinutosExtra)</td>
+                                        <td class="text-danger">@FormatearMinutos(d.MinutosFaltanteNeto)</td>
+                                        <td class="text-danger">@FormatearMinutos(d.MinutosRetardo)</td>
+                                        <td class="text-danger">@FormatearMinutos(d.MinutosSalidaAnticipada)</td>
+                                        <td>@FormatearMinutos(d.MinutosJornadaProgramada)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot class="fw-semibold table-light">
+                                <tr>
+                                    <td class="text-start">Totales</td>
+                                    <td>@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosTrabajadosNetos))</td>
+                                    <td>@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosBasePagada))</td>
+                                    <td>@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosExtra))</td>
+                                    <td class="text-danger">@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosFaltanteNeto))</td>
+                                    <td class="text-danger">@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosRetardo))</td>
+                                    <td class="text-danger">@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosSalidaAnticipada))</td>
+                                    <td>@FormatearMinutos(_detalleResumen.Dias.Sum(x => x.MinutosJornadaProgramada))</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        Desglose por día = <strong>detectado (bruto)</strong>; el <strong>periodo se netea</strong>: el extra de un día tapa el faltante/retardo/salida de otro. Por eso la Σ del día puede diferir del resumen superior (las columnas <em>Ded.</em> del resumen ya están neteadas; las <em>det.</em> de aquí no). El día con <span class="text-danger">Hrs Pagadas &lt; Jornada</span> es el que descuenta horas (shortfall).
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="small text-muted">No hay resumen de nómina para este periodo.</div>
+            }
         </div>
 
         <footer class="asis-drawer__footer">
+            @if (_puedeReprocesar)
+            {
+                <button type="button" class="btn btn-outline-primary" @onclick="() => AbrirRecalcPeriodo(detalle.EmpleadoId)" disabled="@(cargando || _recalcPeriodo)" title="Pregunta bajo qué método recalculo los días del periodo de este empleado (default / Vs horario / Marcaje de reloj).">
+                    <i class="bi bi-arrow-repeat me-1"></i>Recalcular periodo
+                </button>
+            }
             <button type="button" class="btn btn-outline-secondary" @onclick="CerrarDetalle"><i class="bi bi-x-lg me-1"></i>Cerrar</button>
         </footer>
     </aside>

@@ -5,7 +5,7 @@ namespace MundoVs.Tests;
 
 /// <summary>
 /// Pruebas del sourcing de tiempo extra para la nómina (Fase 5.5 — cutover
-/// nómina → resolución por periodo; Fase 7 — reutilizado por el snapshot de prenómina).
+/// nómina → resolución por periodo; Fase 7 — reutilizado por el snapshot de nómina).
 /// Helper puro, sin base de datos.
 /// </summary>
 public sealed class NominaTiempoExtraSourcingTests
@@ -13,7 +13,7 @@ public sealed class NominaTiempoExtraSourcingTests
     private static NominaConfiguracion Config(int doblesPorSemana = 9)
         => new() { HorasExtraDoblesPorSemana = doblesPorSemana };
 
-    private static PrenominaDetalle Incidencia(
+    private static NominaDetalle Incidencia(
         decimal horasExtra = 0m, decimal horasExtraBase = 0m, decimal horasBanco = 0m,
         int minutosRetardo = 0, int minutosSalidaAnticipada = 0,
         int minutosPerdonadosManual = 0, int minutosFaltanteDescontable = 0,
@@ -32,8 +32,8 @@ public sealed class NominaTiempoExtraSourcingTests
             FactorPagoTiempoExtra = factor
         };
 
-    private static NominaOvertimeSourcingInput Input(PrenominaDetalle? incidencia)
-        => NominaTiempoExtraSourcing.InputFrom(incidencia ?? new PrenominaDetalle());
+    private static NominaOvertimeSourcingInput Input(NominaDetalle? incidencia)
+        => NominaTiempoExtraSourcing.InputFrom(incidencia ?? new NominaDetalle());
 
     private static RrhhResolucionTiempoExtraPeriodo Resolucion(
         RrhhResolucionPeriodoEstatus estatus,
@@ -42,6 +42,7 @@ public sealed class NominaTiempoExtraSourcingTests
         decimal? factorAplicado = null,
         int minutosFaltanteNeto = 0, int minutosFaltanteAbsorbido = 0,
         int minutosRetardoDetectado = 0, int minutosRetardoAbsorbido = 0,
+        int minutosSalidaAnticipadaDetectado = 0, int minutosSalidaAnticipadaAbsorbido = 0,
         int minutosExtraSimples = 0, decimal horasExtraFactoradas = 0m)
         => new()
         {
@@ -59,7 +60,9 @@ public sealed class NominaTiempoExtraSourcingTests
             MinutosFaltanteNetoDetectado = minutosFaltanteNeto,
             MinutosFaltanteAbsorbidoExtra = minutosFaltanteAbsorbido,
             MinutosRetardoDetectado = minutosRetardoDetectado,
-            MinutosRetardoAbsorbidoExtra = minutosRetardoAbsorbido
+            MinutosRetardoAbsorbidoExtra = minutosRetardoAbsorbido,
+            MinutosSalidaAnticipadaDetectado = minutosSalidaAnticipadaDetectado,
+            MinutosSalidaAnticipadaAbsorbidoExtra = minutosSalidaAnticipadaAbsorbido
         };
 
     [Fact]
@@ -77,19 +80,60 @@ public sealed class NominaTiempoExtraSourcingTests
         var s = NominaTiempoExtraSourcing.Source(Input(incidencia), resolucion, Config(), factorPersistido: 0m);
 
         Assert.Equal("periodo", s.Origen);
+        // El extra a PAGAR sí viene de la resolución autorizada (pago/banco/dobles/triples/factor).
+        // English: The extra to PAY does come from the authorized resolution.
         Assert.Equal(2m, s.HorasExtra);            // 120 min
         Assert.Equal(3m, s.HorasExtraBase);        // 180 min
         Assert.Equal(1m, s.HorasExtraBanco);       // 60 min
         Assert.Equal(2m, s.HorasExtraDobles);      // 120 min
         Assert.Equal(0m, s.HorasExtraTriples);
         Assert.Equal(2.5m, s.FactorPagoTiempoExtra);
-        // Alivio: lo absorbido no se descuenta.
-        Assert.Equal(0, s.MinutosFaltanteDescontable);   // 60 - 60
-        Assert.Equal(0, s.MinutosRetardo);               // 30 - 30
-        // Salida anticipada, descuento manual y perdon vienen de la incidencia.
-        Assert.Equal(20, s.MinutosSalidaAnticipada);
+        // DEDUCCIONES: vienen del input (incidencia), ya neteadas por el snapshot (fuente única
+        // = el batch canónico de Asistencia Semanal). El sourcing NO recomputa (detectado −
+        // absorbido) desde la resolución, aunque sea Autorizada — el alivio autoritativo es el
+        // VIVO del periodo, no el congelado al autorizar (que puede estar stale/zeroado por un
+        // DescartarExtra). Así nómina = Asistencia Semanal. La resolución de arriba trae
+        // faltanteAbsorbido=60 y retardoAbsorbido=30, pero el sourcing los IGNORA: pasa el
+        // input (80/40/20) íntegro.
+        // English: DEDUCTIONS come from the input (incidencia), already netted by the snapshot
+        // (single source = Asistencia Semanal's canonical batch). Sourcing does NOT recompute
+        // (detected − absorbed) from the resolution, even if Autorizada — the authoritative
+        // relief is the LIVE one for the period, not the one frozen at authorization (which can
+        // be stale/zeroed by a DescartarExtra). So nómina = Asistencia Semanal. The resolution
+        // above carries faltanteAbsorbido=60 and retardoAbsorbido=30, but sourcing IGNORES them:
+        // it passes the input (80/40/20) intact.
+        Assert.Equal(80, s.MinutosFaltanteDescontable);   // input (80), NO 60−60=0
+        Assert.Equal(40, s.MinutosRetardo);               // input (40), NO 30−30=0
+        Assert.Equal(20, s.MinutosSalidaAnticipada);     // input (20), NO 0−0=0
         Assert.Equal(15, s.MinutosDescuentoManual);
         Assert.Equal(0, s.MinutosPerdonadosManual);
+    }
+
+    [Fact]
+    public void PeriodoAutorizado_IgnoraAlivioZeroadoPorDescartarExtra()
+    {
+        // Caso Abigail #107 (bug 2026-08-22): resolución Autorizada con faltanteAbsorbido=0
+        // porque el operador descartó el extra (DescartarExtra anula el PAGO, no el neteo de
+        // deducciones). El sourcing ANTES recomputaba (detectado − absorbido) = 60 − 0 = 60
+        // → la nómina divergía de Asistencia Semanal (que netea en VIVO → 0). Ahora el sourcing
+        // toma las deducciones del input (snapshot neteado en vivo) → 0, igual que Asistencia
+        // Semanal, aunque la resolución persistida tenga el alivio zeroado.
+        // English: Abigail #107 (bug 2026-08-22): Autorizada resolution with faltanteAbsorbido=0
+        // because the operator discarded the extra (DescartarExtra annuls the PAYMENT, not the
+        // deduction neteo). Sourcing USED to recompute (detected − absorbed) = 60 − 0 = 60 →
+        // nómina diverged from Asistencia Semanal (which nets LIVE → 0). Now sourcing takes
+        // deductions from the input (live-netted snapshot) → 0, matching Asistencia Semanal,
+        // even though the persisted resolution has the relief zeroed.
+        var incidencia = Incidencia(minutosFaltanteDescontable: 0); // snapshot ya neteó a 0
+        var resolucion = Resolucion(RrhhResolucionPeriodoEstatus.Autorizada,
+            minutosExtraPago: 120, minutosExtraDetectado: 120,
+            minutosFaltanteNeto: 60, minutosFaltanteAbsorbido: 0);  // zeroado por DescartarExtra
+
+        var s = NominaTiempoExtraSourcing.Source(Input(incidencia), resolucion, Config(), factorPersistido: 0m);
+
+        Assert.Equal("periodo", s.Origen);
+        Assert.Equal(2m, s.HorasExtra);            // el extra a pagar sí viene de la resolución
+        Assert.Equal(0, s.MinutosFaltanteDescontable); // input (0), NO 60−0=60
     }
 
     [Theory]
@@ -114,10 +158,42 @@ public sealed class NominaTiempoExtraSourcingTests
         Assert.Equal(3m, s.HorasExtraDobles);
         Assert.Equal(0m, s.HorasExtraTriples);
         Assert.Equal(1.5m, s.FactorPagoTiempoExtra); // preserva el persistido
-        Assert.Equal(20, s.MinutosFaltanteDescontable);
+        // El path incidencia es passthrough de las deducciones: el neteo NetoVsNeto ya quedó
+        // aplicado en el snapshot (que consume el resumen canónico de Asistencia Semanal), así
+        // que el sourcing NO recalcula — devuelve las sumas crudas congeladas. La nómina no
+        // diverge de Asistencia Semanal porque el snapshot las neteó antes de congelar.
+        // English: The incidencia path is passthrough for deductions: the NetoVsNeto netting was
+        // already applied at the snapshot (which consumes Asistencia Semanal's canonical resumen),
+        // so sourcing does NOT recompute — returns the frozen raw sums. Nómina doesn't diverge
+        // from Asistencia Semanal because the snapshot netted them before freezing.
+        Assert.Equal(20, s.MinutosFaltanteDescontable);   // crudo (el snapshot ya neteó)
         Assert.Equal(10, s.MinutosRetardo);
         Assert.Equal(5, s.MinutosSalidaAnticipada);
         Assert.Equal(8, s.MinutosDescuentoManual);
+    }
+
+    [Fact]
+    public void Incidencia_SinExtra_NoNetea()
+    {
+        // Sin pool de extra el neteo no absorbe nada → las deducciones crudas pasan intactas
+        // (passthrough). El neteo mismo vive en el snapshot, no aquí.
+        // English: With no extra pool the netting absorbs nothing → raw deductions pass through
+        // intact (passthrough). The netting itself lives in the snapshot, not here.
+        var input = new NominaOvertimeSourcingInput
+        {
+            HorasExtra = 0m,
+            HorasExtraBase = 0m,
+            MinutosFaltanteDescontable = 10,
+            MinutosRetardo = 4,
+            MinutosSalidaAnticipada = 3
+        };
+
+        var s = NominaTiempoExtraSourcing.Source(input, resolucion: null, Config(), factorPersistido: 0m);
+
+        Assert.Equal("incidencia", s.Origen);
+        Assert.Equal(10, s.MinutosFaltanteDescontable); // sin extra → sin alivio
+        Assert.Equal(4, s.MinutosRetardo);
+        Assert.Equal(3, s.MinutosSalidaAnticipada);
     }
 
     [Fact]
@@ -130,46 +206,6 @@ public sealed class NominaTiempoExtraSourcingTests
         Assert.Equal("incidencia", s.Origen);
         Assert.Equal(9m, s.HorasExtraDobles);   // tope 9
         Assert.Equal(3m, s.HorasExtraTriples);  // 12 - 9
-    }
-
-    [Fact]
-    public void PeriodoAliviaFaltanteAbsorbido()
-    {
-        var resolucion = Resolucion(RrhhResolucionPeriodoEstatus.Autorizada,
-            minutosFaltanteNeto: 100, minutosFaltanteAbsorbido: 40);
-
-        var s = NominaTiempoExtraSourcing.Source(Input(Incidencia(minutosFaltanteDescontable: 200)),
-            resolucion, Config(), factorPersistido: 0m);
-
-        Assert.Equal(60, s.MinutosFaltanteDescontable); // 100 - 40, no 200
-    }
-
-    [Fact]
-    public void PeriodoAliviaRetardoAbsorbido_SalidaAnticipadaIntacta()
-    {
-        var incidencia = Incidencia(minutosSalidaAnticipada: 25, minutosDescuentoManual: 12);
-        var resolucion = Resolucion(RrhhResolucionPeriodoEstatus.Autorizada,
-            minutosRetardoDetectado: 50, minutosRetardoAbsorbido: 20);
-
-        var s = NominaTiempoExtraSourcing.Source(Input(incidencia), resolucion, Config(), factorPersistido: 0m);
-
-        Assert.Equal(30, s.MinutosRetardo);            // 50 - 20
-        Assert.Equal(25, s.MinutosSalidaAnticipada);   // intacta (no participa en el neteo)
-        Assert.Equal(12, s.MinutosDescuentoManual);    // intacto
-    }
-
-    [Fact]
-    public void PeriodoSinAbsorcion_DeduccionCompleta()
-    {
-        var resolucion = Resolucion(RrhhResolucionPeriodoEstatus.Autorizada,
-            minutosFaltanteNeto: 80, minutosFaltanteAbsorbido: 0,
-            minutosRetardoDetectado: 35, minutosRetardoAbsorbido: 0);
-
-        var s = NominaTiempoExtraSourcing.Source(Input(Incidencia()),
-            resolucion, Config(), factorPersistido: 0m);
-
-        Assert.Equal(80, s.MinutosFaltanteDescontable);
-        Assert.Equal(35, s.MinutosRetardo);
     }
 
     [Fact]

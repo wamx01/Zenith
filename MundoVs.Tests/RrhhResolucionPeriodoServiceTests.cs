@@ -439,16 +439,19 @@ public sealed class RrhhResolucionPeriodoServiceTests
     {
         await using var db = CreateDbContext();
         var (empresa, empleado) = await SembrarAsync(db);
-        // faltante=30, retardo=20, extra=90 → sobrante 60 tras faltante − 20 retardo = 40 absorbible.
+        // A′: el retardo (20) se excluye del faltante → faltante = 480−450−20 = 10 (no 30).
+        // extra=90 → faltanteAbsorbido=10, sobrante 80 − retardo 20 = 60 absorbible.
+        // English: A′: retardo (20) excluded from faltante → faltante = 480−450−20 = 10 (not 30).
+        // extra=90 → faltanteAbsorbed=10, surplus 80 − retardo 20 = 60 absorbable.
         db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 90, retardo: 20, jornadaNeta: 480, neto: 450));
         await db.SaveChangesAsync();
 
         var service = CreateService();
         var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
 
-        Assert.Equal(30, resumen.MinutosFaltanteAbsorbidoExtra);
+        Assert.Equal(10, resumen.MinutosFaltanteAbsorbidoExtra);
         Assert.Equal(20, resumen.MinutosRetardoAbsorbidoExtra);
-        Assert.Equal(40, resumen.MinutosExtraAbsorbible);
+        Assert.Equal(60, resumen.MinutosExtraAbsorbible);
     }
 
     [Fact]
@@ -456,7 +459,10 @@ public sealed class RrhhResolucionPeriodoServiceTests
     {
         await using var db = CreateDbContext();
         var (empresa, empleado) = await SembrarAsync(db);
-        // faltante=30, retardo=20, extra=90 → absorbible=40. Pago 30 + banco 20 = 50 > 40.
+        // A′: faltante=10 (retardo 20 excluido), retardo=20, extra=90 → absorbible=60.
+        // Pago 50 + banco 20 = 70 > 60.
+        // English: A′: faltante=10 (retardo 20 excluded), retardo=20, extra=90 → absorbable=60.
+        // Pay 50 + bank 20 = 70 > 60.
         db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 90, retardo: 20, jornadaNeta: 480, neto: 450));
         await db.SaveChangesAsync();
 
@@ -468,8 +474,8 @@ public sealed class RrhhResolucionPeriodoServiceTests
             EmpleadoId = empleado.Id,
             FechaReferencia = FechaReferencia,
             Resolucion = "MitadMitad",
-            MinutosBasePago = 30,
-            MinutosBaseBanco = 20, // 50 > 40 absorbible
+            MinutosBasePago = 50,
+            MinutosBaseBanco = 20, // 70 > 60 absorbible
             UsuarioActual = "tester"
         }));
     }
@@ -479,7 +485,10 @@ public sealed class RrhhResolucionPeriodoServiceTests
     {
         await using var db = CreateDbContext();
         var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true, factorAcumulacion: 1m);
-        // faltante=60, retardo=20, extra=90 → faltanteAbsorbido=60, retardoAbsorbido=20, absorbible=10.
+        // A′: faltante = 480−420−20 = 40 (no 60), retardo=20, extra=90 → faltanteAbsorbido=40,
+        // retardoAbsorbido=20, absorbible=30.
+        // English: A′: faltante = 480−420−20 = 40 (not 60), retardo=20, extra=90 →
+        // faltanteAbsorbed=40, retardoAbsorbed=20, absorbable=30.
         db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 90, retardo: 20, jornadaNeta: 480, neto: 420));
         await db.SaveChangesAsync();
 
@@ -496,9 +505,247 @@ public sealed class RrhhResolucionPeriodoServiceTests
         await db.SaveChangesAsync();
 
         var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
-        Assert.Equal(60, periodo.MinutosFaltanteAbsorbidoExtra);
+        Assert.Equal(40, periodo.MinutosFaltanteAbsorbidoExtra);
         Assert.Equal(20, periodo.MinutosRetardoAbsorbidoExtra);
         Assert.Equal(10, periodo.MinutosExtraBanco);
+    }
+
+    // ── Fase 3b: la salida anticipada entra al neteo (extra tapa faltante→retardo→salida→banco) ──
+    // English: Phase 3b: early-leave joins the neteo (extra covers shortage→late→early→bank).
+
+    [Fact]
+    public async Task Resumen_CuandoExtraMenorQueSalida_TrasFaltanteRetardo_TodoAbsorbeYCeroPagable()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Sin faltante, sin retardo, salida=40, extra=30 → el extra tapa 30 de salida, quedan 10.
+        // English: No shortage, no late, early-leave=40, extra=30 → extra covers 30, 10 remain.
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 30, jornadaNeta: 480, neto: 480, salidaAnticipada: 40));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(40, resumen.MinutosSalidaAnticipadaDetectado);
+        Assert.Equal(30, resumen.MinutosSalidaAnticipadaAbsorbidoExtra);
+        Assert.Equal(0, resumen.MinutosExtraAbsorbible); // todo el extra tapó salida
+    }
+
+    [Fact]
+    public async Task Resumen_CuandoExtraMayorQueSalida_SobraAbsorbible()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Sin faltante/retardo, salida=20, extra=30 → absorbido 20, sobrante 10 pagable.
+        // English: No shortage/late, early-leave=20, extra=30 → absorbed 20, 10 surplus payable.
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 30, jornadaNeta: 480, neto: 480, salidaAnticipada: 20));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(20, resumen.MinutosSalidaAnticipadaAbsorbidoExtra);
+        Assert.Equal(10, resumen.MinutosExtraAbsorbible); // 30 − 20
+    }
+
+    [Fact]
+    public async Task Resumen_CadenaFaltanteRetardoSalida_RespetaOrden()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // faltante=20, retardo=30, salida=40, extra=100 → faltante 20, sobrante 80;
+        // retardo 30, sobrante 50; salida 40, sobrante 10; banco 0 → absorbible 10.
+        // faltante = 480 − 390 − 30(ret) − 40(sal) = 20.
+        // English: shortage=20, late=30, early=40, extra=100 → short 20, surplus 80; late 30,
+        // surplus 50; early 40, surplus 10; bank 0 → absorbable 10.
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 100, retardo: 30, jornadaNeta: 480, neto: 390, salidaAnticipada: 40));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(20, resumen.MinutosFaltanteAbsorbidoExtra);
+        Assert.Equal(30, resumen.MinutosRetardoAbsorbidoExtra);
+        Assert.Equal(40, resumen.MinutosSalidaAnticipadaAbsorbidoExtra);
+        Assert.Equal(10, resumen.MinutosExtraAbsorbible);
+    }
+
+    // ── Umbral per-día + neteo: el extra bajo umbral tapa deducciones pero no se paga ──
+    // English: Per-day threshold + neteo: below-threshold extra covers deductions but isn't paid.
+
+    [Fact]
+    public async Task Resumen_ExtraBajoUmbral_AyudaAlNeteo_PeroNoSePaga()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Umbral 30 (config). Cuatro días Fija-con-turno dentro del periodo:
+        //   - retardo 30, neto 480, extra 0  → puro retardo (excedente 0, no aporta bajo umbral).
+        //   - neto 482, extra 0  → excedente 2 (< 30) → bajo umbral 2 (no detectado, no pagadero).
+        //   - neto 525, extra 45 → excedente 45 (≥ 30) → detectado 45 (pagadero).
+        //   - neto 495, extra 0  → excedente 15 (< 30) → bajo umbral 15.
+        // Totales: detectado 45, bajo 17, pool 62, retardo 30 → tapa 30 (17 bajo + 13 sobre),
+        // sobran 32, pagable = min(32, 45) = 32. El bajo umbral (17) NUNCA se paga.
+        // English: Threshold 30 (config). Four Fija-with-shift days in the period:
+        //   - late 30, net 480, extra 0 → pure late (surplus 0, no below-threshold).
+        //   - net 482, extra 0 → surplus 2 (< 30) → below 2 (not detected, not payable).
+        //   - net 525, extra 45 → surplus 45 (≥ 30) → detected 45 (payable).
+        //   - net 495, extra 0 → surplus 15 (< 30) → below 15.
+        // Totals: detected 45, below 17, pool 62, late 30 → covers 30 (17 below + 13 above),
+        // surplus 32, payable = min(32, 45) = 32. The below-threshold (17) is NEVER paid.
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, "30"));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 30, jornadaNeta: 480, neto: 480));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno.AddDays(1), minutosExtra: 0, jornadaNeta: 480, neto: 482));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaDos, minutosExtra: 45, jornadaNeta: 480, neto: 525));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaDos.AddDays(1), minutosExtra: 0, jornadaNeta: 480, neto: 495));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(45, resumen.MinutosExtraDetectado);            // sólo el día de 45 (≥ umbral)
+        Assert.Equal(17, resumen.MinutosExtraBajoUmbralNoPagadero);  // 2 + 15 (bajo umbral)
+        Assert.Equal(30, resumen.MinutosRetardoDetectado);
+        Assert.Equal(30, resumen.MinutosRetardoAbsorbidoExtra);     // 17 bajo + 13 sobre taparon el retardo
+        Assert.Equal(32, resumen.MinutosExtraAbsorbible);            // min(62−30, 45) = 32
+        Assert.Equal(0, resumen.MinutosFaltanteAbsorbidoExtra);     // sin faltante
+    }
+
+    [Fact]
+    public async Task Aplicar_ExtraBajoUmbral_CapPagableTopadoAlDetectado_RechazaSiExcede()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Mismo escenario (detectado 45, bajo 17, absorbible 32). Pago 32 → OK; pago 33 → rechazo
+        // (33 > 32 absorbible, aunque pool−retardo = 32). El cap topa al detectado (45) pero el
+        // retardo ya consumió 13 del sobre-umbral → sólo quedan 32 pagables.
+        // English: Same scenario (detected 45, below 17, absorbible 32). Pay 32 → OK; pay 33 →
+        // rejected (33 > 32 absorbible, even though pool−late = 32). The cap is at detected (45)
+        // but late already consumed 13 of the above-threshold → only 32 payable remain.
+        db.AppConfigs.Add(CreateAppConfig(empresa.Id, ClavesConfiguracionNomina.MinutosMinimosTiempoExtra, "30"));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 30, jornadaNeta: 480, neto: 480));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno.AddDays(1), minutosExtra: 0, jornadaNeta: 480, neto: 482));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaDos, minutosExtra: 45, jornadaNeta: 480, neto: 525));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaDos.AddDays(1), minutosExtra: 0, jornadaNeta: 480, neto: 495));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        // 32 → OK (dentro del absorbible).
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagarTodo", MinutosBasePago = 32, UsuarioActual = "tester"
+        });
+        await db.SaveChangesAsync();
+        var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
+        Assert.Equal(32, periodo.MinutosExtraPago);
+
+        // 33 → rechazo (excede el absorbible 32).
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagarTodo", MinutosBasePago = 33, UsuarioActual = "tester"
+        }));
+    }
+
+    [Fact]
+    public async Task Aplicar_PersisteSalidaDetectadoYAbsorbido_SegunNeteo()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true, factorAcumulacion: 1m);
+        // salida=40, extra=30 → salidaAbsorbido=30, absorbible=0. Descartar extra no es posible
+        // (absorbible 0), así que autorizamos 0 y persiste detección + absorbido.
+        // English: early=40, extra=30 → absorbed=30, absorbable=0. We authorize 0 and persist.
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 30, jornadaNeta: 480, neto: 480, salidaAnticipada: 40));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            FechaReferencia = FechaReferencia,
+            Resolucion = "PagarTodo",
+            MinutosBasePago = 0,
+            UsuarioActual = "tester"
+        });
+        await db.SaveChangesAsync();
+
+        var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
+        Assert.Equal(40, periodo.MinutosSalidaAnticipadaDetectado);
+        Assert.Equal(30, periodo.MinutosSalidaAnticipadaAbsorbidoExtra);
+    }
+
+    // ── Base pagada neteada: Hrs Pagadas = jornada − deduccionesNetas (no base per-día) ──
+    // English: Netted paid base: Hrs Pagadas = jornada − netDeductions (not per-day base).
+
+    [Fact]
+    public async Task Resumen_BasePagada_ExtraCubreDeducciones_BaseIgualJornada()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Luis (un día): faltante 7, retardo 23, extra 36 → el extra tapa todo, dedNeta 0.
+        // La base pagada = jornada (480), NO jornada − 30 (47:30). Caso raíz del bug.
+        // faltante = 480 − 450 − 23 − 0 = 7.
+        // English: Luis (one day): shortage 7, late 23, extra 36 → extra covers all, netDed 0.
+        // Paid base = jornada (480), NOT jornada − 30 (47:30). The root-bug case.
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 36, retardo: 23, jornadaNeta: 480, neto: 450));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(7, resumen.MinutosFaltanteAbsorbidoExtra);
+        Assert.Equal(23, resumen.MinutosRetardoAbsorbidoExtra);
+        Assert.Equal(480, resumen.MinutosBasePagadaPeriodo); // 480 − 0 (no 450)
+    }
+
+    [Fact]
+    public async Task Resumen_BasePagada_DeduccionesExcedenExtra_BaseReducida()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Caso inverso: retardo 40, extra 30 → absorbido 30, dedNeta_retardo 10.
+        // La base pagada = 480 − 10 = 470 (47:10), NO 480 (como si no se hubiera neteado).
+        // faltante = 480 − 480 − 40 − 0 = 0 (sólo retardo).
+        // English: Inverse case: late 40, extra 30 → absorbed 30, netDed_late 10.
+        // Paid base = 480 − 10 = 470 (47:10), NOT 480 (as if not netted).
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno,
+            minutosExtra: 30, retardo: 40, jornadaNeta: 480, neto: 480));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.Equal(30, resumen.MinutosRetardoAbsorbidoExtra);
+        Assert.Equal(470, resumen.MinutosBasePagadaPeriodo); // 480 − 10
+    }
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_BajoMeta_BasePagadaEsMetaMenosDeficit()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 40h (2400) vs meta 48h (2880) → déficit 480, extra 0 → dedNeta 480.
+        // Base pagada = 2880 − 480 = 2400 (40:00). Antes el override "siempre meta" mostraba
+        // 2880 + ded 480 = incoherente. La fórmula unificada cubre meta-semanal sin branch.
+        // English: 40h (2400) vs 48h meta (2880) → deficit 480, extra 0 → netDed 480.
+        // Paid base = 2880 − 480 = 2400 (40:00). The old "always meta" override showed
+        // 2880 + ded 480 = incoherent. The unified formula covers weekly-meta without a branch.
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 2400));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.True(resumen.EsMetaSemanal);
+        Assert.Equal(2880, resumen.MinutosJornadaProgramadaPeriodo);
+        Assert.Equal(480, resumen.MinutosFaltanteNetoPeriodo);
+        Assert.Equal(2400, resumen.MinutosBasePagadaPeriodo); // 2880 − 480 (no 2880)
     }
 
     // ── Fase 4: el sobrante de extra tras faltante+retardo repone el banco consumido ──
@@ -526,7 +773,10 @@ public sealed class RrhhResolucionPeriodoServiceTests
     {
         await using var db = CreateDbContext();
         var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true, factorAcumulacion: 1m);
-        // faltante=30, retardo=20, consumo=60, extra=200 → sobrante 150 − 60 = 90 absorbible.
+        // A′: faltante=10 (retardo 20 excluido), retardo=20, consumo=60, extra=200 →
+        // sobrante 190 − 20 retardo = 170 − 60 consumo = 110 absorbible.
+        // English: A′: faltante=10 (retardo 20 excluded), retardo=20, consumption=60, extra=200
+        // → surplus 190 − 20 retardo = 170 − 60 consumption = 110 absorbable.
         db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 200, retardo: 20, jornadaNeta: 480, neto: 450));
         db.RrhhBancoHorasMovimientos.Add(CrearConsumoBanco(empresa.Id, empleado.Id, DiaUno, 60, $"permiso-banco:{Guid.NewGuid():N}"));
         await db.SaveChangesAsync();
@@ -534,10 +784,10 @@ public sealed class RrhhResolucionPeriodoServiceTests
         var service = CreateService();
         var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
 
-        Assert.Equal(30, resumen.MinutosFaltanteAbsorbidoExtra);
+        Assert.Equal(10, resumen.MinutosFaltanteAbsorbidoExtra);
         Assert.Equal(20, resumen.MinutosRetardoAbsorbidoExtra);
         Assert.Equal(60, resumen.MinutosBancoRestauradoExtra);
-        Assert.Equal(90, resumen.MinutosExtraAbsorbible);
+        Assert.Equal(110, resumen.MinutosExtraAbsorbible);
     }
 
     [Fact]
@@ -793,9 +1043,12 @@ public sealed class RrhhResolucionPeriodoServiceTests
     {
         await using var db = CreateDbContext();
         var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true, factorAcumulacion: 1m);
-        // faltante=30, retardo=20, extra=90 → normalmente faltanteAbsorbido=30,
-        // retardoAbsorbido=20, absorbible=40. Con DescartarExtra el neteo se anula:
-        // absorbidos=0 → sourcing descuenta el faltante/retardo COMPLETO.
+        // A′: faltante=10 (retardo 20 excluido del faltante), retardo=20, extra=90. Con
+        // DescartarExtra el neteo se anula: absorbidos=0 → sourcing descuenta el
+        // faltante/retardo COMPLETO. La detección persiste faltante=10 (sólo lectura).
+        // English: A′: faltante=10 (retardo 20 excluded from faltante), retardo=20, extra=90.
+        // With DescartarExtra the neteo is nulled: absorbed=0 → sourcing discounts the full
+        // faltante/retardo. Detection persists faltante=10 (read-only).
         db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 90, retardo: 20, jornadaNeta: 480, neto: 450));
         await db.SaveChangesAsync();
 
@@ -811,7 +1064,10 @@ public sealed class RrhhResolucionPeriodoServiceTests
         });
         await db.SaveChangesAsync();
 
-        // El periodo queda Autorizada (desbloquea el gate de prenómina) pero sin pago.
+        // El periodo queda Autorizada (desbloquea el gate de nómina: extra autorizado antes
+        // de "Cerrar periodo y calcular") pero sin pago.
+        // English: the period ends Authorized (unlocks the nómina gate: extra authorized
+        // before "Close period and calculate") but with no payment.
         Assert.Equal(RrhhResolucionPeriodoEstatus.Autorizada, result.Periodo.Estatus);
         Assert.True(result.Periodo.ExtraDescartado);
         Assert.Equal(0, result.MinutosBasePagoAplicados);
@@ -827,9 +1083,9 @@ public sealed class RrhhResolucionPeriodoServiceTests
         Assert.Equal(0, periodo.MinutosFaltanteAbsorbidoExtra);
         Assert.Equal(0, periodo.MinutosRetardoAbsorbidoExtra);
         Assert.Equal(0, periodo.MinutosBancoRestauradoExtra);
-        // La detección sigue persistida (es de solo lectura).
+        // La detección sigue persistida (es de solo lectura). A′: faltante=10 (retardo excluido).
         Assert.Equal(90, periodo.MinutosExtraDetectado);
-        Assert.Equal(30, periodo.MinutosFaltanteNetoDetectado);
+        Assert.Equal(10, periodo.MinutosFaltanteNetoDetectado);
         Assert.Equal(20, periodo.MinutosRetardoDetectado);
 
         // Sin movimientos de banco (ni extra-banco ni restauracion-banco).
@@ -1241,6 +1497,413 @@ public sealed class RrhhResolucionPeriodoServiceTests
         Assert.Equal(1, await db.RrhhResolucionesTiempoExtraLinea.CountAsync());
     }
 
+    // ─── Permiso por diferencia neta (Fase PermisoPorDiferenciaPeriodo) ─────────────
+
+    [Fact]
+    public async Task AplicarResolucion_PermisoDiferencia_Banco_ReduceFaltanteEnReautorizacion()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true, factorAcumulacion: 1m);
+        // Saldo banco precargado: 2h. Asistencia con extra=180min + retardo=120min.
+        // Diferencia = retardo 120 − extra 180 = 0 → no se podría capturar permiso.
+        // Para forzar la rama con diferencia > 0, hacemos retardo=180, extra=120:
+        //   diferencia = 60; neteo del periodo: extra 120 − retardo 180 − banco 30 = negativo,
+        //   pago=0 pagables. Autorizamos pago=0 y permiso Banco=30 (consume saldo).
+        db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+        {
+            Id = Guid.NewGuid(), EmpresaId = empresa.Id, EmpleadoId = empleado.Id,
+            Fecha = DiaUno, TipoMovimiento = TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra,
+            Horas = 2m, EsAutomatico = true, CreatedAt = DateTime.UtcNow, IsActive = true
+        });
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 120, retardo: 180));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var result = await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "DescartarExtra", DescartarExtra = true, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.Banco, Minutos = 30, Observaciones = "banco 30m" }
+            }
+        });
+        await db.SaveChangesAsync();
+
+        Assert.NotNull(result.Periodo);
+        Assert.Equal(RrhhResolucionPeriodoEstatus.Autorizada, result.Periodo.Estatus);
+
+        // 1 ausencia sintética del Banco
+        var sintBanco = await db.RrhhAusencias
+            .Where(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo
+                && a.PeriodoKey == "Semanal-2026-01")
+            .SingleAsync();
+        Assert.Equal(TipoAusenciaRrhh.PermisoPorDiferenciaPeriodo, sintBanco.Tipo);
+        Assert.True(sintBanco.DescuentaBancoHoras);
+        Assert.Equal(new DateOnly(2026, 1, 4), sintBanco.FechaInicio);
+        Assert.Equal(new DateOnly(2026, 1, 4), sintBanco.FechaFin);
+
+        // 1 movimiento de banco del helper (prefijo "permiso-banco:") por -0.5h
+        var movBanco = await db.RrhhBancoHorasMovimientos
+            .Where(m => m.EmpleadoId == empleado.Id
+                && m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo
+                && (m.ReferenciaTipo ?? "").StartsWith("permiso-banco:"))
+            .SingleAsync();
+        Assert.Equal(-0.5m, movBanco.Horas);
+    }
+
+    [Fact]
+    public async Task AplicarResolucion_PermisoDiferencia_ConGoce_NoGeneraConsumoBanco()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true);
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 60));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagoTodo", MinutosBasePago = 0, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.ConGoceSinBanco, Minutos = 60, Observaciones = "con goce 1h" }
+            }
+        });
+        await db.SaveChangesAsync();
+
+        var sint = await db.RrhhAusencias
+            .Where(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo)
+            .SingleAsync();
+        Assert.True(sint.ConGocePago);
+        Assert.False(sint.DescuentaBancoHoras);
+        Assert.Equal(TipoAusenciaRrhh.PermisoPorDiferenciaPeriodo, sint.Tipo);
+
+        Assert.Equal(0, await db.RrhhBancoHorasMovimientos.CountAsync(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo));
+    }
+
+    [Fact]
+    public async Task AplicarResolucion_PermisoDiferencia_SinGoce_CreaAusenciaSinBanco()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true);
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 60));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagoTodo", MinutosBasePago = 0, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.SinGoce, Minutos = 60, Observaciones = "sin goce 1h" }
+            }
+        });
+        await db.SaveChangesAsync();
+
+        var sint = await db.RrhhAusencias
+            .Where(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo)
+            .SingleAsync();
+        Assert.False(sint.ConGocePago);
+        Assert.False(sint.DescuentaBancoHoras);
+        Assert.Equal(TipoAusenciaRrhh.PermisoPorDiferenciaPeriodo, sint.Tipo);
+
+        Assert.Equal(0, await db.RrhhBancoHorasMovimientos.CountAsync());
+    }
+
+    [Fact]
+    public async Task AplicarResolucion_PermisoDiferencia_Replica_EsIdempotente()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true);
+        db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+        {
+            Id = Guid.NewGuid(), EmpresaId = empresa.Id, EmpleadoId = empleado.Id,
+            Fecha = DiaUno, TipoMovimiento = TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra,
+            Horas = 2m, EsAutomatico = true, CreatedAt = DateTime.UtcNow, IsActive = true
+        });
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 90));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+
+        // 1ra autorización: 60 banco + 30 con goce
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagoTodo", MinutosBasePago = 0, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.Banco, Minutos = 60 },
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.ConGoceSinBanco, Minutos = 30 }
+            }
+        });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.RrhhAusencias.CountAsync(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo));
+
+        // 2da (re-autorización con distinta repartición): revertir y crear nueva
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagoTodo", MinutosBasePago = 0, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.SinGoce, Minutos = 90 }
+            }
+        });
+        await db.SaveChangesAsync();
+
+        Assert.Equal(1, await db.RrhhAusencias.CountAsync(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo));
+        Assert.Equal(0, await db.RrhhBancoHorasMovimientos.CountAsync(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo));
+    }
+
+    [Fact]
+    public async Task ReabrirPeriodo_ConPermisoDiferenciaAnterior_BorraSinteticasYMovimientos()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true);
+        // Diferencia > 0: extra=120, retardo=180 → diferencia=60.
+        // Autorizamos con DescartarExtra=true para evitar la validación de pago.
+        db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+        {
+            Id = Guid.NewGuid(), EmpresaId = empresa.Id, EmpleadoId = empleado.Id,
+            Fecha = DiaUno, TipoMovimiento = TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra,
+            Horas = 2m, EsAutomatico = true, CreatedAt = DateTime.UtcNow, IsActive = true
+        });
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 120, retardo: 180));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "DescartarExtra", DescartarExtra = true, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.Banco, Minutos = 60 }
+            }
+        });
+        await db.SaveChangesAsync();
+        Assert.Equal(1, await db.RrhhAusencias.CountAsync(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo));
+        Assert.True(await db.RrhhBancoHorasMovimientos.AnyAsync(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo));
+
+        await service.ReabrirPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia, "sistema-reproceso");
+        await db.SaveChangesAsync();
+
+        Assert.Equal(0, await db.RrhhAusencias.CountAsync(a => a.OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo));
+        Assert.Equal(0, await db.RrhhBancoHorasMovimientos.CountAsync(m => m.TipoMovimiento == TipoMovimientoBancoHorasRrhh.Consumo));
+        Assert.Equal(RrhhResolucionPeriodoEstatus.Reabierta, (await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync()).Estatus);
+    }
+
+    [Fact]
+    public async Task ReabrirPeriodo_ConPermisoDiferenciaAnterior_NoBorraManuales()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db, bancoHabilitado: true);
+        // Manual: 1h con goce (60min). NO debe tocarse en el reopen.
+        // Asistencia: retardo=240min (4h), extra=0. Diferencia bruta = 240.
+        // Tras descontar el permiso con goce (60min absorbidos vía neteo),
+        // retardo efectivo = 180, extra = 0, diferencia = 180.
+        var manual = CrearPermisoConGoce(empresa.Id, empleado.Id, DiaUno, horas: 1m);
+        db.RrhhAusencias.Add(manual);
+        db.RrhhBancoHorasMovimientos.Add(new RrhhBancoHorasMovimiento
+        {
+            Id = Guid.NewGuid(), EmpresaId = empresa.Id, EmpleadoId = empleado.Id,
+            Fecha = DiaUno, TipoMovimiento = TipoMovimientoBancoHorasRrhh.GeneradoPorHorasExtra,
+            Horas = 4m, EsAutomatico = true, CreatedAt = DateTime.UtcNow, IsActive = true
+        });
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaUno, minutosExtra: 0, retardo: 240));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "DescartarExtra", DescartarExtra = true, UsuarioActual = "tester",
+            PermisosPorDiferencia = new[]
+            {
+                new PermisoDiferenciaInput { Categoria = CategoriaPermisoDiferencia.Banco, Minutos = 60 }
+            }
+        });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.RrhhAusencias.CountAsync());
+
+        await service.ReabrirPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia, "sistema");
+        await db.SaveChangesAsync();
+
+        var restantes = await db.RrhhAusencias.ToListAsync();
+        Assert.Single(restantes);
+        Assert.Equal(manual.Id, restantes[0].Id);
+        Assert.Equal(OrigenAusenciaRrhh.Manual, restantes[0].OrigenAusencia);
+    }
+
+    // ── Meta semanal (Fija sin turno): extra/déficit contra 48h a nivel de periodo ──
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_SobreMeta_DevuelveExtraYZeroDeficit()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 50h trabajadas (3000 min) vs meta 48h (2880 min) → extra 120, déficit 0.
+        // English: 50h worked (3000 min) vs 48h meta (2880 min) → extra 120, deficit 0.
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 3000));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.True(resumen.EsMetaSemanal);
+        Assert.Equal(2880, resumen.MinutosMetaSemanal);
+        Assert.Equal(3000, resumen.MinutosTrabajadosMetaSemanal);
+        Assert.Equal(120, resumen.MinutosExtraDetectado);
+        Assert.Equal(0, resumen.MinutosFaltanteNetoPeriodo);
+        Assert.Equal(0, resumen.MinutosRetardoDetectado);
+        Assert.Equal(120, resumen.MinutosExtraAbsorbible); // sin faltante/retardo/banco
+    }
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_BajoMeta_DevuelveDeficitQueDescuentaSueldo()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 40h trabajadas (2400 min) vs meta 48h (2880 min) → extra 0, déficit 480 (8h).
+        // El déficit descuenta sueldo como FaltanteDescontable (NO genera permiso).
+        // English: 40h worked (2400 min) vs 48h meta (2880 min) → extra 0, deficit 480 (8h).
+        // The deficit docks salary as FaltanteDescontable (NO permiso generated).
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 2400));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.True(resumen.EsMetaSemanal);
+        Assert.Equal(0, resumen.MinutosExtraDetectado);
+        Assert.Equal(480, resumen.MinutosFaltanteNetoPeriodo); // déficit → descuenta sueldo
+        Assert.Equal(0, resumen.MinutosRetardoDetectado);
+        Assert.Equal(0, resumen.MinutosExtraAbsorbible);
+    }
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_ConGoceCubreDeficit_NoDescuenta()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 40h trabajadas + 8h permiso con goce (480 min) → déficit = 2880−2400−480 = 0.
+        // El con goce cubre la meta (no doble-descuenta: sueldoBase ya paga el día).
+        // English: 40h worked + 8h paid leave (480 min) → deficit = 2880−2400−480 = 0.
+        // The paid leave covers the meta (no double-dock: sueldoBase already pays the day).
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 2400));
+        db.RrhhAusencias.Add(CrearPermisoConGoce(empresa.Id, empleado.Id, DiaUno, horas: 8m));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.True(resumen.EsMetaSemanal);
+        Assert.Equal(480, resumen.MinutosPermisoConGocePeriodo);
+        Assert.Equal(0, resumen.MinutosFaltanteNetoPeriodo); // el con goce cubrió el déficit
+        Assert.Equal(0, resumen.MinutosExtraDetectado);
+    }
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_DiaSinMarcas_AportaCeroYElDeficitCaptura()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 3 días sin marcas (aportan 0) + 3 días × 8h (1440 min) vs meta 2880 → déficit 1440.
+        // No hay faltante per-día (día sin marcas = no laborable); el déficit semanal captura.
+        // English: 3 no-mark days (contribute 0) + 3 × 8h days (1440 min) vs 2880 meta →
+        // deficit 1440. No per-day faltante (no-mark day = non-working); the weekly deficit captures.
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 480));
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaDos, neto: 480));
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, new DateOnly(2026, 1, 3), neto: 480));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.True(resumen.EsMetaSemanal);
+        Assert.Equal(1440, resumen.MinutosTrabajadosMetaSemanal);
+        Assert.Equal(0, resumen.MinutosExtraDetectado);
+        Assert.Equal(1440, resumen.MinutosFaltanteNetoPeriodo); // 2880 − 1440
+        // Sin faltante per-día: los días marcados cumplen; los no marcados aportan 0 al trabajado.
+        Assert.True(resumen.Dias.All(d => d.MinutosFaltanteNeto == 0));
+    }
+
+    [Fact]
+    public async Task Aplicar_MetaSemanal_BajoMeta_PersisteDeficitYAutorizaSinPago()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 40h trabajadas → déficit 480 (8h), extra 0. Se autoriza con DescartarExtra
+        // (no hay extra que pagar); el sourcing descuenta el déficit como FaltanteDescontable.
+        // English: 40h worked → deficit 480 (8h), extra 0. Authorized with DescartarExtra
+        // (no extra to pay); sourcing docks the deficit as FaltanteDescontable.
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 2400));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "Descartado", DescartarExtra = true, UsuarioActual = "tester"
+        });
+        await db.SaveChangesAsync();
+
+        var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
+        Assert.Equal(RrhhResolucionPeriodoEstatus.Autorizada, periodo.Estatus);
+        Assert.Equal(0, periodo.MinutosExtraDetectado);
+        Assert.Equal(480, periodo.MinutosFaltanteNetoDetectado); // déficit persistido
+        Assert.Equal(0, periodo.MinutosRetardoDetectado);
+        Assert.Equal(0, periodo.MinutosExtraPago);
+    }
+
+    [Fact]
+    public async Task Aplicar_MetaSemanal_SobreMeta_AutorizaExtraPago()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // 50h trabajadas → extra 120. Se autoriza todo a pago.
+        // English: 50h worked → extra 120. Authorized all to pay.
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 3000));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        await service.AplicarResolucionPeriodoAsync(db, new RrhhResolucionPeriodoCommand
+        {
+            EmpresaId = empresa.Id, EmpleadoId = empleado.Id, FechaReferencia = FechaReferencia,
+            Resolucion = "PagarTodo", MinutosBasePago = 120, UsuarioActual = "tester"
+        });
+        await db.SaveChangesAsync();
+
+        var periodo = await db.RrhhResolucionesTiempoExtraPeriodo.SingleAsync();
+        Assert.Equal(RrhhResolucionPeriodoEstatus.Autorizada, periodo.Estatus);
+        Assert.Equal(120, periodo.MinutosExtraDetectado);
+        Assert.Equal(0, periodo.MinutosFaltanteNetoDetectado);
+        Assert.Equal(120, periodo.MinutosExtraPago);
+    }
+
+    [Fact]
+    public async Task Resumen_MetaSemanal_MezclaConDiaConTurno_CaeAComportamientoPerDia()
+    {
+        await using var db = CreateDbContext();
+        var (empresa, empleado) = await SembrarAsync(db);
+        // Un día Fija sin turno (meta semanal) + un día Fija CON turno → NO es meta semanal
+        // (mezcla turno/sin-turno) → cae al behavior per-día existente (regresión segura).
+        // English: One Fija no-shift day (weekly meta) + one Fija WITH-shift day → NOT weekly
+        // meta (mixed shift/no-shift) → falls back to existing per-day behavior (safe regression).
+        db.RrhhAsistencias.Add(CrearAsistenciaMetaSemanal(empresa.Id, empleado.Id, DiaUno, neto: 480));
+        db.RrhhAsistencias.Add(CrearAsistencia(empresa.Id, empleado.Id, DiaDos, minutosExtra: 60, jornadaNeta: 480, neto: 480));
+        await db.SaveChangesAsync();
+
+        var service = CreateService();
+        var resumen = await service.ObtenerResumenPeriodoAsync(db, empresa.Id, empleado.Id, FechaReferencia);
+
+        Assert.False(resumen.EsMetaSemanal); // mezcla → per-día
+        Assert.Equal(60, resumen.MinutosExtraDetectado); // sólo el día con turno detecta extra
+    }
+
     private static RrhhResolucionTiempoExtraPeriodo CrearResolucionAutorizada(
         Guid empresaId, Guid empleadoId, int minutosExtraPago,
         int minutosExtraDobles = 0, int minutosExtraTriples = 0,
@@ -1273,7 +1936,9 @@ public sealed class RrhhResolucionPeriodoServiceTests
         };
 
     private static IRrhhResolucionPeriodoService CreateService()
-        => new RrhhResolucionPeriodoService(new RrhhTiempoExtraResolutionService());
+        => new RrhhResolucionPeriodoService(
+            new RrhhTiempoExtraResolutionService(),
+            new RrhhPermisoPorDiferenciaService(new RrhhTiempoExtraResolutionService()));
 
     private static async Task<(Empresa Empresa, Empleado Empleado)> SembrarAsync(
         CrmDbContext db, bool bancoHabilitado = false, decimal factorAcumulacion = 1m)
@@ -1290,7 +1955,7 @@ public sealed class RrhhResolucionPeriodoServiceTests
         return (empresa, empleado);
     }
 
-    private static RrhhAsistencia CrearAsistencia(Guid empresaId, Guid empleadoId, DateOnly fecha, int minutosExtra = 0, int retardo = 0, int? jornadaNeta = null, int? neto = null)
+    private static RrhhAsistencia CrearAsistencia(Guid empresaId, Guid empleadoId, DateOnly fecha, int minutosExtra = 0, int retardo = 0, int? jornadaNeta = null, int? neto = null, int salidaAnticipada = 0)
     {
         var neta = jornadaNeta ?? 480;
         var netoVal = neto ?? 480;
@@ -1300,14 +1965,44 @@ public sealed class RrhhResolucionPeriodoServiceTests
             EmpresaId = empresaId,
             EmpleadoId = empleadoId,
             Fecha = fecha,
+            // Turno asignado → Fija CON turno: el overlay de meta semanal (Fija sin turno)
+            // NO aplica; estos tests modelan la jornada per-día (jornadaNeta, faltante, extra).
+            // English: Shift assigned → Fija WITH shift: the weekly-meta overlay (Fija with no
+            // shift) does NOT apply; these tests model the per-day jornada (jornadaNeta, faltante,
+            // extra). Sin turno (meta semanal) usa CrearAsistenciaMetaSemanal.
+            TurnoBaseId = Guid.NewGuid(),
             MinutosTrabajadosNetos = netoVal,
             MinutosJornadaNetaProgramada = neta,
             MinutosExtra = minutosExtra,
             MinutosRetardo = retardo,
+            MinutosSalidaAnticipada = salidaAnticipada,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
     }
+
+    // Fija SIN turno (meta semanal): TurnoBaseId=null, EsPorHoras=false, jornada neta 0.
+    // El overlay de meta semanal calcula extra/déficit contra HorasBaseSemanal (48h=2880 min)
+    // a nivel de periodo, no per-día. neto = minutos trabajados ese día (suma al total semanal).
+    // English: Fija with NO shift (weekly meta): TurnoBaseId=null, EsPorHoras=false, net jornada 0.
+    // The weekly-meta overlay computes extra/deficit against HorasBaseSemanal (48h=2880 min) at
+    // the period level, not per-day. neto = minutes worked that day (adds to the weekly total).
+    private static RrhhAsistencia CrearAsistenciaMetaSemanal(Guid empresaId, Guid empleadoId, DateOnly fecha, int neto)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresaId,
+            EmpleadoId = empleadoId,
+            Fecha = fecha,
+            TurnoBaseId = null,
+            EsPorHoras = false,
+            MinutosTrabajadosNetos = neto,
+            MinutosJornadaNetaProgramada = 0,
+            MinutosExtra = 0,
+            MinutosRetardo = 0,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
 
     private static RrhhAusencia CrearPermisoConGoce(Guid empresaId, Guid empleadoId, DateOnly fecha, decimal horas)
         => new()

@@ -55,10 +55,74 @@
                     var _cifras = ObtenerDesgloseBrutoNetoAcreditadoPagado();
                     var _formula = ObtenerFormulaDiaLegible();
                     var _descansosConfigBarra = ObtenerDescansosConfiguradosDia();
+                    // Plan del turno calculado aquí arriba para pintar la jornada planeada
+                    // en grande al inicio del modal (y reutilizarlo en el timeline).
+                    // English: Shift plan computed up here to render the planned shift
+                    // large at the top of the modal (and reuse it in the timeline).
+                    var _plan = ObtenerPlanTurnoDia();
                 }
 
                 @* 2. Zona FIJA (siempre visible, no scrollea): resultado + siguiente paso + línea de tiempo *@
                 <div class="asis-timeline-fixed">
+                    @* 0. Jornada planeada en GRANDE arriba del modal (antes estaba chico
+                       dentro del timeline). / Planned shift shown LARGE at the top of the
+                       modal (was small inside the timeline). *@
+                    @if (_plan != null)
+                    {
+                        <div class="asis-plan-hero">
+                            <div class="asis-plan-hero__head">
+                                <span class="asis-plan-hero__title"><i class="bi bi-calendar2-check me-1"></i>Jornada planeada</span>
+                                <span class="asis-plan-hero__jornada">Jornada neta planeada <strong>@FormatearMinutos(_plan.MinutosJornadaNeta)</strong>@if (_plan.CruzaMedianoche) { <span class="badge text-bg-secondary ms-1">cruza medianoche</span> }</span>
+                            </div>
+                            <div class="asis-plan-hero__grid">
+                                <div class="asis-plan-hero__cell">
+                                    <span class="asis-plan-hero__label">Entrada</span>
+                                    <span class="asis-plan-hero__planeado">@_plan.EntradaPlaneada!.Value.ToString("hh\\:mm")</span>
+                                    @if (_plan.EntradaReal.HasValue)
+                                    {
+                                        <span class="asis-plan-hero__real">real @_plan.EntradaReal.Value.ToString("HH:mm")@if (_plan.DeltaEntradaMin.HasValue) { <span class="badge @ObtenerClaseDeltaEntrada(_plan.DeltaEntradaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaEntradaMin.Value)</span> }</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="asis-plan-hero__real asis-plan-hero__real--none">sin marca</span>
+                                    }
+                                </div>
+                                <div class="asis-plan-hero__cell">
+                                    <span class="asis-plan-hero__label">Salida</span>
+                                    <span class="asis-plan-hero__planeado">@_plan.SalidaPlaneada!.Value.ToString("hh\\:mm")</span>
+                                    @if (_plan.SalidaReal.HasValue)
+                                    {
+                                        <span class="asis-plan-hero__real">real @_plan.SalidaReal.Value.ToString("HH:mm")@if (_plan.DeltaSalidaMin.HasValue) { <span class="badge @ObtenerClaseDeltaSalida(_plan.DeltaSalidaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaSalidaMin.Value)</span> }</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="asis-plan-hero__real asis-plan-hero__real--none">sin marca</span>
+                                    }
+                                </div>
+                                <div class="asis-plan-hero__cell asis-plan-hero__cell--descansos">
+                                    <span class="asis-plan-hero__label">Descansos plan</span>
+                                    @if (_plan.Descansos.Count == 0)
+                                    {
+                                        <span class="asis-plan-hero__real asis-plan-hero__real--none">sin descansos</span>
+                                    }
+                                    else
+                                    {
+                                        <div class="asis-plan-hero__descansos">
+                                            @foreach (var d in _plan.Descansos)
+                                            {
+                                                <span class="asis-plan__descanso @(d.Tomado ? "asis-plan__descanso--ok" : "asis-plan__descanso--miss")" title="D@d.Numero · @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @FormatearMinutos(d.Minutos) · @(d.Tomado ? "tomado" : "no tomado")">
+                                                    <i class="bi @(d.Tomado ? "bi-check-circle-fill" : "bi-circle")"></i>
+                                                    D@d.Numero @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm")
+                                                    @if (d.EsPagado) { <span class="asis-plan__pagado">pagado</span> }
+                                                </span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+
                     @* Tira delgada de resultado: Acreditado · Pagado (feedback de cada edición) *@
                     @if (_cifras != null)
                     {
@@ -118,73 +182,13 @@
                                 var _segmentoSel = ObtenerSegmentoSeleccionadoActual();
                                 var _pinSel = ObtenerPinSeleccionadoActual();
                                 var _casosDia = ObtenerCasosEspecialesDia();
-                                var _plan = ObtenerPlanTurnoDia();
                             }
                             @if (_ventana != null && _bloques.Count > 0)
                             {
-                                @if (_plan != null)
-                                {
-                                    <div class="asis-plan mt-2">
-                                        <div class="asis-plan__head">
-                                            <span class="asis-plan__title"><i class="bi bi-calendar2-check me-1"></i>Plan del turno</span>
-                                            <span class="asis-plan__jornada">Jornada neta planeada @FormatearMinutos(_plan.MinutosJornadaNeta)@if (_plan.CruzaMedianoche) { <span class="badge text-bg-secondary ms-1">cruza medianoche</span> }</span>
-                                        </div>
-                                        <div class="asis-plan__grid">
-                                            <div class="asis-plan__cell">
-                                                <span class="asis-plan__label">Entrada</span>
-                                                <span class="asis-plan__planeado">@_plan.EntradaPlaneada!.Value.ToString("hh\\:mm")</span>
-                                                @if (_plan.EntradaReal.HasValue)
-                                                {
-                                                    <span class="asis-plan__real">real @_plan.EntradaReal.Value.ToString("HH:mm")</span>
-                                                    @if (_plan.DeltaEntradaMin.HasValue)
-                                                    {
-                                                        <span class="badge @ObtenerClaseDeltaEntrada(_plan.DeltaEntradaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaEntradaMin.Value)</span>
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    <span class="asis-plan__real asis-plan__real--none">sin marca</span>
-                                                }
-                                            </div>
-                                            <div class="asis-plan__cell">
-                                                <span class="asis-plan__label">Salida</span>
-                                                <span class="asis-plan__planeado">@_plan.SalidaPlaneada!.Value.ToString("hh\\:mm")</span>
-                                                @if (_plan.SalidaReal.HasValue)
-                                                {
-                                                    <span class="asis-plan__real">real @_plan.SalidaReal.Value.ToString("HH:mm")</span>
-                                                    @if (_plan.DeltaSalidaMin.HasValue)
-                                                    {
-                                                        <span class="badge @ObtenerClaseDeltaSalida(_plan.DeltaSalidaMin.Value) ms-1">@FormatearDeltaMin(_plan.DeltaSalidaMin.Value)</span>
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    <span class="asis-plan__real asis-plan__real--none">sin marca</span>
-                                                }
-                                            </div>
-                                            <div class="asis-plan__cell asis-plan__cell--descansos">
-                                                <span class="asis-plan__label">Descansos plan</span>
-                                                @if (_plan.Descansos.Count == 0)
-                                                {
-                                                    <span class="asis-plan__real asis-plan__real--none">sin descansos</span>
-                                                }
-                                                else
-                                                {
-                                                    <div class="asis-plan__descansos">
-                                                        @foreach (var d in _plan.Descansos)
-                                                        {
-                                                            <span class="asis-plan__descanso @(d.Tomado ? "asis-plan__descanso--ok" : "asis-plan__descanso--miss")" title="D@d.Numero · @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm") · @FormatearMinutos(d.Minutos) · @(d.Tomado ? "tomado" : "no tomado")">
-                                                                <i class="bi @(d.Tomado ? "bi-check-circle-fill" : "bi-circle")"></i>
-                                                                D@d.Numero @d.Inicio.ToString("hh\\:mm")–@d.Fin.ToString("hh\\:mm")
-                                                                @if (d.EsPagado) { <span class="asis-plan__pagado">pagado</span> }
-                                                            </span>
-                                                        }
-                                                    </div>
-                                                }
-                                            </div>
-                                        </div>
-                                    </div>
-                                }
+                                @* El plan del turno ahora se muestra en grande arriba del modal
+                                   (asis-plan-hero); aquí dentro del timeline ya no se repite. / The
+                                   shift plan is now shown large at the top of the modal; not
+                                   repeated inside the timeline anymore. *@
                                 @if (_alertas.Count > 0 || _casosDia.Count > 0)
                                 {
                                     <div class="asis-tl__alerts mt-2">
@@ -668,20 +672,20 @@
                                             <AsistenciasCorreccionMarcacionesTab
                                                 MarcacionesDia="marcacionesDia"
                                                 ManualHoraTexto="manualHoraTexto"
-                                                OnManualHoraTextoChanged="@(value => manualHoraTexto = value)"
+                                                ManualHoraTextoChanged="@(value => manualHoraTexto = value)"
                                                 ManualClasificacion="manualClasificacion"
-                                                OnManualClasificacionChanged="@(value => manualClasificacion = value)"
+                                                ManualClasificacionChanged="@(value => manualClasificacion = value)"
                                                 ManualObservacion="manualObservacion"
-                                                OnManualObservacionChanged="@(value => manualObservacion = value)"
+                                                ManualObservacionChanged="@(value => manualObservacion = value)"
                                                 Cargando="cargando"
                                                 OnGuardarMarcacionManual="GuardarMarcacionManualDiaAsync"
                                                 ObtenerHoraMarcacion="ObtenerHoraMarcacion"
                                                 ObtenerAuditoriaMarcacion="ObtenerAuditoriaMarcacionPresentacion"
                                                 MarcacionManualEditandoId="marcacionManualEditandoId"
                                                 MarcacionManualEditandoHoraTexto="marcacionManualEditandoHoraTexto"
-                                                OnMarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
+                                                MarcacionManualEditandoHoraTextoChanged="@(value => marcacionManualEditandoHoraTexto = value)"
                                                 MarcacionManualEditandoObservacion="marcacionManualEditandoObservacion"
-                                                OnMarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
+                                                MarcacionManualEditandoObservacionChanged="@(value => marcacionManualEditandoObservacion = value)"
                                                 OnIniciarEdicionMarcacionManual="IniciarEdicionMarcacionManual"
                                                 OnGuardarEdicionMarcacionManual="GuardarEdicionMarcacionManualAsync"
                                                 OnCancelarEdicionMarcacionManual="@(() => CancelarEdicionMarcacionManual())"

@@ -1,6 +1,6 @@
 # Índice de manuales
 
-> Última revisión: 2026-07-03
+> Última revisión: 2026-08-22
 
 Este directorio concentra manuales operativos y funcionales organizados por secuencia de implementación y por módulo.
 
@@ -15,7 +15,7 @@ Este directorio concentra manuales operativos y funcionales organizados por secu
 - [08. Esquemas de pago en RRHH](./08-rrhh-esquemas-de-pago.md)
 - [09. Alta y administración de empleados en RRHH](./09-rrhh-empleados.md)
 - [10. Marcaciones y asistencias en RRHH](./10-rrhh-marcaciones-y-asistencias.md)
-- [11. Prenómina en RRHH](./11-rrhh-prenomina.md)
+- [11. Prenómina en RRHH](./11-rrhh-prenomina.md) *(fusión 2026-08-22 → Nómina; redirige)*
 - [12. Nómina en RRHH](./12-rrhh-nomina.md)
 - [13. Vales de destajo en RRHH](./13-rrhh-vales-destajo.md)
 - [14. Recibo de nómina en RRHH](./14-rrhh-recibo-nomina.md)
@@ -42,7 +42,7 @@ Este directorio concentra manuales operativos y funcionales organizados por secu
 - [08. Esquemas de pago en RRHH](./08-rrhh-esquemas-de-pago.md)
 - [09. Alta y administración de empleados en RRHH](./09-rrhh-empleados.md)
 - [10. Marcaciones y asistencias en RRHH](./10-rrhh-marcaciones-y-asistencias.md)
-- [11. Prenómina en RRHH](./11-rrhh-prenomina.md)
+- [11. Prenómina en RRHH](./11-rrhh-prenomina.md) *(fusión 2026-08-22 → Nómina; redirige)*
 - [12. Nómina en RRHH](./12-rrhh-nomina.md)
 - [13. Vales de destajo en RRHH](./13-rrhh-vales-destajo.md)
 - [14. Recibo de nómina en RRHH](./14-rrhh-recibo-nomina.md)

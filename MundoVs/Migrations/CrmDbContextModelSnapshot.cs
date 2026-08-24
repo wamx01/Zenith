@@ -1892,6 +1892,9 @@ namespace MundoVs.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<string>("ModoSugerenciaExtraDefault")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2059,6 +2062,9 @@ namespace MundoVs.Migrations
                         .HasColumnType("char(36)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("PagoFijoPorLabor")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<int>("TipoJornada")
@@ -3347,6 +3353,9 @@ namespace MundoVs.Migrations
                     b.Property<int>("AnioPeriodo")
                         .HasColumnType("int");
 
+                    b.Property<string>("CerradaCapturaPor")
+                        .HasColumnType("longtext");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -3355,6 +3364,9 @@ namespace MundoVs.Migrations
 
                     b.Property<int>("Estatus")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("FechaCierreCaptura")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime>("FechaFin")
                         .HasColumnType("datetime(6)");
@@ -3388,8 +3400,8 @@ namespace MundoVs.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
-                    b.Property<Guid?>("PrenominaId")
-                        .HasColumnType("char(36)");
+                    b.Property<string>("SnapshotConfiguracionJson")
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
@@ -3399,9 +3411,6 @@ namespace MundoVs.Migrations
                     b.HasIndex("Estatus");
 
                     b.HasIndex("FechaInicio");
-
-                    b.HasIndex("PrenominaId")
-                        .IsUnique();
 
                     b.HasIndex("EmpresaId", "Folio")
                         .IsUnique();
@@ -3786,6 +3795,12 @@ namespace MundoVs.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<decimal>("ComplementoSalarioMinimoSugerido")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<string>("ConceptoDeducciones")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");
@@ -3830,12 +3845,22 @@ namespace MundoVs.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<int>("DiasFestivoTrabajadoFija")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("DiasIncapacidad")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
                     b.Property<int>("DiasPagados")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("DiasPorHorasTrabajados")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasDefaultValue(0);
@@ -3850,6 +3875,18 @@ namespace MundoVs.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<decimal>("DiasVacacionesDisponibles")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("DiasVacacionesRestantes")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<Guid>("EmpleadoId")
                         .HasColumnType("char(36)");
 
@@ -3858,6 +3895,42 @@ namespace MundoVs.Migrations
 
                     b.Property<decimal>("FactorPagoTiempoExtra")
                         .HasColumnType("decimal(65,30)");
+
+                    b.Property<decimal>("HorasBancoAcumuladas")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("HorasBancoConsumidas")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("HorasBancoSaldoActual")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("HorasDescansoNoPagado")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("HorasDescansoPagado")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("HorasDescansoTomado")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<decimal>("HorasExtra")
                         .HasPrecision(18, 2)
@@ -3905,6 +3978,16 @@ namespace MundoVs.Migrations
                     b.Property<int>("MinutosPerdonadosManual")
                         .HasColumnType("int");
 
+                    b.Property<int>("MinutosPorHorasFestivoNetos")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("MinutosPorHorasNetos")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("MinutosRetardo")
                         .HasColumnType("int");
 
@@ -3924,6 +4007,12 @@ namespace MundoVs.Migrations
                         .HasColumnType("decimal(65,30)");
 
                     b.Property<decimal>("MontoDestajo")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("MontoDestajoInformativo")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)")
@@ -5187,339 +5276,6 @@ namespace MundoVs.Migrations
                     b.ToTable("planes");
                 });
 
-            modelBuilder.Entity("MundoVs.Core.Entities.Prenomina", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<int>("AnioPeriodo")
-                        .HasColumnType("int");
-
-                    b.Property<string>("CerradaPor")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("EmpresaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<int>("Estatus")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("FechaCierre")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("FechaFin")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime>("FechaInicio")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Folio")
-                        .HasMaxLength(30)
-                        .HasColumnType("varchar(30)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Notas")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<int>("NumeroPeriodo")
-                        .HasColumnType("int");
-
-                    b.Property<int>("PeriodicidadPago")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Periodo")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("varchar(80)");
-
-                    b.Property<string>("SnapshotConfiguracionJson")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Estatus");
-
-                    b.HasIndex("EmpresaId", "Folio")
-                        .IsUnique();
-
-                    b.HasIndex("EmpresaId", "FechaInicio", "FechaFin")
-                        .IsUnique();
-
-                    b.HasIndex("EmpresaId", "PeriodicidadPago", "AnioPeriodo", "NumeroPeriodo")
-                        .IsUnique();
-
-                    b.ToTable("prenominas");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaBono", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<Guid>("BonoRubroRrhhId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<decimal>("Importe")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Observaciones")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<Guid>("PrenominaDetalleId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BonoRubroRrhhId");
-
-                    b.HasIndex("PrenominaDetalleId");
-
-                    b.HasIndex("PrenominaDetalleId", "BonoRubroRrhhId")
-                        .IsUnique();
-
-                    b.ToTable("rrhh_prenomina_bono", (string)null);
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaDetalle", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<bool>("AplicaImss")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<decimal>("ComplementoSalarioMinimoSugerido")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("DiasConMarcacion")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasDescansoTrabajado")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasDomingoTrabajado")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("DiasFaltaInjustificada")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasFaltaJustificada")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasFestivoTrabajado")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasFestivoTrabajadoFija")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasIncapacidad")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasPagados")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasPorHorasTrabajados")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasTrabajados")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasVacaciones")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("DiasVacacionesDisponibles")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("DiasVacacionesRestantes")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<Guid>("EmpleadoId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<decimal>("FactorPagoTiempoExtra")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("HorasBancoAcumuladas")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasBancoConsumidas")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasDescansoNoPagado")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasDescansoPagado")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasDescansoTomado")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasExtra")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasExtraBase")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("HorasTrabajadasNetas")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<int>("MinutosDescuentoManual")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosFaltanteDescontable")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosPerdonadosManual")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosPorHorasFestivoNetos")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosPorHorasNetos")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosRetardo")
-                        .HasColumnType("int");
-
-                    b.Property<int>("MinutosSalidaAnticipada")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("MontoDestajoInformativo")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Notas")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<Guid>("PrenominaId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EmpleadoId");
-
-                    b.HasIndex("PrenominaId", "EmpleadoId")
-                        .IsUnique();
-
-                    b.ToTable("prenominadetalles");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaPercepcion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("longtext");
-
-                    b.Property<decimal>("Importe")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Observaciones")
-                        .HasMaxLength(300)
-                        .HasColumnType("varchar(300)");
-
-                    b.Property<Guid>("PrenominaDetalleId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("Referencia")
-                        .HasMaxLength(120)
-                        .HasColumnType("varchar(120)");
-
-                    b.Property<Guid>("TipoPercepcionId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PrenominaDetalleId");
-
-                    b.HasIndex("TipoPercepcionId");
-
-                    b.HasIndex("PrenominaDetalleId", "TipoPercepcionId")
-                        .IsUnique();
-
-                    b.ToTable("rrhh_prenomina_percepcion", (string)null);
-                });
-
             modelBuilder.Entity("MundoVs.Core.Entities.Producto", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5846,6 +5602,9 @@ namespace MundoVs.Migrations
                     b.Property<Guid>("EmpresaId")
                         .HasColumnType("char(36)");
 
+                    b.Property<bool>("EsPagoFijoPorLabor")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<bool>("EsPorHoras")
                         .HasColumnType("tinyint(1)");
 
@@ -5913,6 +5672,9 @@ namespace MundoVs.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosSalidaAnticipada")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinutosToleranciaRetardoAplicada")
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosTrabajadosBrutos")
@@ -6024,6 +5786,12 @@ namespace MundoVs.Migrations
                     b.Property<string>("Observaciones")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");
+
+                    b.Property<int>("OrigenAusencia")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PeriodoKey")
+                        .HasColumnType("longtext");
 
                     b.Property<int>("Tipo")
                         .HasColumnType("int");
@@ -6617,6 +6385,12 @@ namespace MundoVs.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosRetardoDetectado")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinutosSalidaAnticipadaAbsorbidoExtra")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MinutosSalidaAnticipadaDetectado")
                         .HasColumnType("int");
 
                     b.Property<int>("MinutosTrabajadosNetosDetectado")
@@ -9330,14 +9104,7 @@ namespace MundoVs.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("MundoVs.Core.Entities.Prenomina", "Prenomina")
-                        .WithOne()
-                        .HasForeignKey("MundoVs.Core.Entities.Nomina", "PrenominaId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Empresa");
-
-                    b.Navigation("Prenomina");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.NominaBono", b =>
@@ -9851,74 +9618,6 @@ namespace MundoVs.Migrations
                         .IsRequired();
 
                     b.Navigation("Pedido");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.Prenomina", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.Empresa", "Empresa")
-                        .WithMany()
-                        .HasForeignKey("EmpresaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Empresa");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaBono", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.BonoRubroRrhh", "BonoRubroRrhh")
-                        .WithMany()
-                        .HasForeignKey("BonoRubroRrhhId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.PrenominaDetalle", "PrenominaDetalle")
-                        .WithMany("BonosRapidos")
-                        .HasForeignKey("PrenominaDetalleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("BonoRubroRrhh");
-
-                    b.Navigation("PrenominaDetalle");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaDetalle", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.Empleado", "Empleado")
-                        .WithMany("PrenominaDetalles")
-                        .HasForeignKey("EmpleadoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.Prenomina", "Prenomina")
-                        .WithMany("Detalles")
-                        .HasForeignKey("PrenominaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Empleado");
-
-                    b.Navigation("Prenomina");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaPercepcion", b =>
-                {
-                    b.HasOne("MundoVs.Core.Entities.PrenominaDetalle", "PrenominaDetalle")
-                        .WithMany("PercepcionesRapidas")
-                        .HasForeignKey("PrenominaDetalleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MundoVs.Core.Entities.NominaPercepcionTipo", "TipoPercepcion")
-                        .WithMany()
-                        .HasForeignKey("TipoPercepcionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("PrenominaDetalle");
-
-                    b.Navigation("TipoPercepcion");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Producto", b =>
@@ -10866,8 +10565,6 @@ namespace MundoVs.Migrations
 
                     b.Navigation("NominaDetalles");
 
-                    b.Navigation("PrenominaDetalles");
-
                     b.Navigation("TurnosVigencia");
 
                     b.Navigation("ValesDestajo");
@@ -11008,18 +10705,6 @@ namespace MundoVs.Migrations
             modelBuilder.Entity("MundoVs.Core.Entities.Plan", b =>
                 {
                     b.Navigation("Suscripciones");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.Prenomina", b =>
-                {
-                    b.Navigation("Detalles");
-                });
-
-            modelBuilder.Entity("MundoVs.Core.Entities.PrenominaDetalle", b =>
-                {
-                    b.Navigation("BonosRapidos");
-
-                    b.Navigation("PercepcionesRapidas");
                 });
 
             modelBuilder.Entity("MundoVs.Core.Entities.Producto", b =>

@@ -351,6 +351,14 @@ El sistema revisa que:
 
 ---
 
+## Neteo NetoVsNeto — fuente única (2026-08-22)
+El neteo semanal `NetoVsNeto` (extra que absorbe faltante → retardo → salida → banco) se calcula **en vivo** para mostrarlo en `Asistencia Semanal` y solo se persiste al autorizar. La nómina **no recalcula** este neteo: lo consume del mismo lote canónico (`RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync` → `RrhhTiempoExtraPolicy.CalcularNeteoNetoVsNeto`). En consecuencia, un faltante/retardo/salida neteado a `—` (cero) en `Asistencia Semanal` se mantiene en cero en nómina, con o sin resolución `Autorizada`.
+
+### Descartar extra (F9)
+Cuando el operador descarta el tiempo extra, se anula **solo el pago** del extra, **no el neteo de deducciones**. El faltante/retardo/salida se descuenta según el neteo en vivo del periodo (el mismo de Asistencia Semanal). Para forzar un descuento completo, ajusta el neteo en `Asistencia Semanal`; no uses el descarte del extra para eso.
+
+---
+
 ## Véase también
 - Manual 07: Configuración de turnos
 - Manual 10: Marcaciones y asistencias

@@ -36,6 +36,13 @@ public partial class AsistenciasSemanal
     private Guid _empresaId;
     private string _usuarioActual = string.Empty;
     private bool cargando;
+    // Bandera dedicada al recálculo de periodo dentro del drawer: cubre TODO el
+    // lapso (reproceso + reload grilla + refresco drawer) sin parpadeo, a diferencia
+    // de `cargando` que CargarAsync deja en false a mitad de la operación.
+    // English: Dedicated flag for the in-drawer period recalc: spans the whole run
+    // (reprocess + grid reload + drawer refresh) without flicker, unlike `cargando`
+    // which CargarAsync flips to false mid-operation.
+    private bool _recalcPeriodo;
     private bool exportandoCsv;
     private string? error;
     private string? ok;
@@ -47,6 +54,11 @@ public partial class AsistenciasSemanal
     private string periodoEtiquetaActual = string.Empty;
     private NominaCorteRrhh? cortePeriodo;
     private Dictionary<Guid, RrhhResolucionTiempoExtraPeriodo> resolucionPorEmpleado = new();
+    // Resumen neteado por periodo por empleado (batch, sin N+1): las MISMAS 9 columnas
+    // del drawer "Resumen de nómina del periodo" traídas al listado para que coincidan.
+    // English: Netted per-period summary per employee (batch, no N+1): the SAME 9 columns
+    // from the drawer "Resumen de nómina del periodo" brought into the listing so they match.
+    private IReadOnlyDictionary<Guid, RrhhResolucionPeriodoResumen> resumenNeteoPorEmpleado = new Dictionary<Guid, RrhhResolucionPeriodoResumen>();
     // Empleados cuyo extra del periodo YA se pagó (Nomina.Estatus==Pagada para
     // este periodo que los incluye). Se calcula en CargarAsync junto con la
     // resolución, y lo usa el drawer para pintar "Extra pagado" (verde) vs
@@ -70,6 +82,12 @@ public partial class AsistenciasSemanal
     // marcaciones al abrir el detalle (CargarBrutoDetalleAsync).
     private Dictionary<DateOnly, int> _detalleBrutoPorDia = new();
     private int _detalleTotalBruto;
+    // Resumen de nómina del periodo (mismo DTO que el modal de resolución) para mostrar
+    // la "tablita" en el drawer en vez de las cards. Se carga al abrir el detalle.
+    // English: Period payroll summary (same DTO as the resolution modal) to show the
+    // "little table" in the drawer instead of the cards. Loaded when the detail opens.
+    private RrhhResolucionPeriodoResumen? _detalleResumen;
+    private RrhhResolucionTiempoExtraPeriodo? _detalleResolucion;
     private string filtroTurnoIdTexto = string.Empty;
     private string filtroEstatus = "todos";
     private string filtroRevision = "todos";
@@ -276,6 +294,19 @@ public partial class AsistenciasSemanal
                     && empIds.Contains(r.EmpleadoId))
                 .ToListAsync();
             resolucionPorEmpleado = resoluciones.ToDictionary(r => r.EmpleadoId);
+
+            // Resumen neteado por periodo en batch (una sola pasada para todos los empleados
+            // mostrados): trae al listado las 9 columnas neteadas del drawer "Resumen de
+            // nómina del periodo" usando el MISMO neteo del servicio → sin drift listado vs
+            // drawer. Reusa calendarioPeriodo + rango ya calculados (coinciden con el drawer,
+            // que deriva su calendario de periodoFechaInicio/Fin).
+            // English: Batched per-period netted summary (one pass for all displayed employees):
+            // brings into the listing the 9 netted columns from the drawer using the SAME service
+            // netting → no listing-vs-drawer drift. Reuses calendarioPeriodo + range already
+            // computed (they match the drawer, which derives its calendario from periodoFechaInicio/Fin).
+            resumenNeteoPorEmpleado = await ResolucionPeriodo.ObtenerResumenesPeriodoBatchAsync(
+                db, _empresaId, empIds, periodoFechaInicio, periodoFechaFin,
+                periodicidadSeleccionada, calendarioPeriodo);
 
             // Empleados del periodo cuya nómina ya está Pagada → su extra aprobado
             // ya se cobró. Se usa en el drawer para pintar "Extra pagado" (verde)
@@ -758,6 +789,62 @@ public partial class AsistenciasSemanal
         return $"{horas:D2}:{resto:D2}";
     }
 
+    // Horas decimales (ej. 3212 min → "53.53") para la tablita de nómina del drawer,
+    // mismo formato que el modal de resolución. / Decimal hours (e.g. 3212 min →
+    // "53.53") for the drawer payroll table, same format as the resolution modal.
+    private static string FormatearHorasDecimales(int minutos) => (minutos / 60.0).ToString("0.00");
+
+    // Jornada programada (base pagada como salario) del resumen del drawer. Se toma directa
+    // de la jornada programada/meta del periodo (MinutosBasePagadaPeriodo) en vez de
+    // trabajado − extraDetectado: el extra per-día tiene umbral y puede ser menor que
+    // (trabajado − meta), y esos minutos "perdidos" se colaban como base (bug 48.03 vs 48.00).
+    // English: Scheduled jornada (base paid as salary) for the drawer summary. Taken directly
+    // from the period's scheduled jornada/meta (MinutosBasePagadaPeriodo) instead of worked −
+    // detectedExtra: per-day extra has a threshold and can be less than (worked − meta), and
+    // those "lost" minutes leaked into the base (48.03 vs 48.00 bug).
+    private int CalcularJornadaProgramadaDetalle()
+    {
+        return _detalleResumen?.MinutosBasePagadaPeriodo ?? 0;
+    }
+
+    // Extra que queda tras el neteo del periodo: el extra detectado tapa primero el
+    // faltante neto, luego el retardo, y por último repone el banco consumido. Lo que
+    // sobra es lo realmente pagable/autorizable (las "líneas" del modal de resolución).
+    // English: extra left after period netting — detected extra first covers the net
+    // shortfall, then tardiness, then restores consumed bank. The remainder is what's
+    // actually payable/authorizable (the "lines" in the resolution modal).
+    private int CalcularExtraAbsorbibleDetalle()
+    {
+        if (_detalleResumen is null) return 0;
+        return Math.Max(0, _detalleResumen.MinutosExtraAbsorbible);
+    }
+
+    // Deducciones NETEADAS del periodo: lo que realmente descuenta la nómina tras el neteo
+    // del extra (detectado − absorbido). Espejo exacto del sourcing "periodo". Hrs Pagadas
+    // = jornada − (estas tres), así: Hrs Pagadas + Ded.faltante + Ded.retardo + Ded.salida
+    // = jornada. Bruto detectado está en el bloque de neteo (y por día como "det.").
+    // English: NETTED period deductions: what payroll actually docks after extra nets them
+    // (detected − absorbed). Exact mirror of the "periodo" sourcing. Paid Hours = jornada
+    // − (these three), so: Paid Hours + Ded.shortage + Ded.late + Ded.leave = jornada.
+    // Raw detected is in the neteo block (and per-day as "det.").
+    private int CalcularDedFaltanteNetaDetalle()
+        => _detalleResumen is null ? 0 : Math.Max(0, _detalleResumen.MinutosFaltanteNetoPeriodo - _detalleResumen.MinutosFaltanteAbsorbidoExtra);
+    private int CalcularDedRetardoNetoDetalle()
+        => _detalleResumen is null ? 0 : Math.Max(0, _detalleResumen.MinutosRetardoDetectado - _detalleResumen.MinutosRetardoAbsorbidoExtra);
+    private int CalcularDedSalidaNetaDetalle()
+        => _detalleResumen is null ? 0 : Math.Max(0, _detalleResumen.MinutosSalidaAnticipadaDetectado - _detalleResumen.MinutosSalidaAnticipadaAbsorbidoExtra);
+
+    // Variantes por empleado para el LISTADO (operan sobre el resumen batch, no sobre
+    // _detalleResumen). Espejo exacto de las del drawer → listado y drawer coinciden.
+    // English: Per-employee variants for the LISTING (operate on the batch summary, not on
+    // _detalleResumen). Exact mirror of the drawer ones → listing and drawer match.
+    private static int CalcularDedFaltanteNeta(RrhhResolucionPeriodoResumen? r)
+        => r is null ? 0 : Math.Max(0, r.MinutosFaltanteNetoPeriodo - r.MinutosFaltanteAbsorbidoExtra);
+    private static int CalcularDedRetardoNeta(RrhhResolucionPeriodoResumen? r)
+        => r is null ? 0 : Math.Max(0, r.MinutosRetardoDetectado - r.MinutosRetardoAbsorbidoExtra);
+    private static int CalcularDedSalidaNeta(RrhhResolucionPeriodoResumen? r)
+        => r is null ? 0 : Math.Max(0, r.MinutosSalidaAnticipadaDetectado - r.MinutosSalidaAnticipadaAbsorbidoExtra);
+
     private static string EscapeCsv(string? valor)
     {
         if (string.IsNullOrWhiteSpace(valor))
@@ -872,7 +959,8 @@ public partial class AsistenciasSemanal
         => $"{empleadoId:N}:{fecha:yyyyMMdd}";
 
     private int ObtenerTotalColumnasTabla()
-        => 7;
+        => 12; // Empleado + Días + 9 columnas neteadas + Detalle.
+               // English: Employee + Days + 9 netted columns + Detail.
 
     // Estado semántico de la celda de un día. Sustituye al ternario anidado que
     // decidía la clase CSS; el orden de prioridad (extra > sin movimiento > ok >
@@ -1070,7 +1158,10 @@ public partial class AsistenciasSemanal
 
     // F9 — "aceptar tiempos": empleados con extra detectado cuya resolución del
     // periodo NO está Autorizada. Aceptarlos (pagar o sólo cerrar) es lo que le da
-    // el go a la prenomina (gate de Fase 7 en Prenominas.razor).
+    // el go al cálculo de nómina (gate de Fase 7 en Nominas.razor — fusión prenómina→nómina).
+    // English: F9 — "accept times": employees with detected overtime whose period resolution
+    // is NOT Authorized. Accepting them (pay or just close) is what unblocks the nómina
+    // calculation (Phase 7 gate in Nominas.razor — prenómina→nómina fusion).
     private List<ResumenSemanalEmpleado> ObtenerPendientesAceptacion()
         => resumenes
             .Where(r => r.TotalMinutosExtra > 0
@@ -1120,7 +1211,12 @@ public partial class AsistenciasSemanal
                 if (_lotePagarTodo)
                 {
                     // PagarTodo = todo el extra absorbible (tras neteo) al factor de config.
-                    var resumen = await ResolucionPeriodo.ObtenerResumenPeriodoAsync(db, _empresaId, emp.EmpleadoId, fechaRef);
+                    // Usar el rango del periodo en pantalla (igual que el preview individual)
+                    // para que el cálculo y la autorización correspondan a la semana mostrada.
+                    // English: PagarTodo = all absorbible extra (after netting) at config factor.
+                    // Use the on-screen period range (same as the individual preview) so the
+                    // calculation and the authorization match the displayed week.
+                    var resumen = await ResolucionPeriodo.ObtenerResumenPeriodoAsync(db, _empresaId, emp.EmpleadoId, periodoFechaInicio, periodoFechaFin);
                     minutosPago = Math.Max(0, resumen.MinutosExtraAbsorbible);
                 }
 
@@ -1131,6 +1227,12 @@ public partial class AsistenciasSemanal
                         EmpresaId = _empresaId,
                         EmpleadoId = emp.EmpleadoId,
                         FechaReferencia = fechaRef,
+                        // Rango explícito del periodo en pantalla: el apply resuelve sobre este
+                        // rango, igual que el preview, evitando autorizar otra semana.
+                        // English: Explicit on-screen period range: the apply resolves over this
+                        // range, same as the preview, avoiding authorizing a different week.
+                        FechaInicioPeriodo = periodoFechaInicio,
+                        FechaFinPeriodo = periodoFechaFin,
                         Resolucion = _lotePagarTodo ? "PagarTodo" : "Descartado",
                         MinutosBasePago = minutosPago,
                         MinutosBaseBanco = 0,
@@ -1181,6 +1283,48 @@ public partial class AsistenciasSemanal
         _detalleEmpleadoId = empleadoId;
         _detalleVisible = true;
         await CargarBrutoDetalleAsync(empleadoId);
+        await CargarResumenDetalleAsync(empleadoId);
+    }
+
+    // Carga el resumen de nómina del periodo (mismo DTO que el modal de "Aceptar
+    // tiempo") para pintar la tablita en el drawer con los mismos números que ve
+    // el cliente en el modal. Incluye la resolución persistida (pago/banco autorizado).
+    // English: Loads the period payroll summary (same DTO as the "Accept time" modal)
+    // to render the little table in the drawer with the same numbers the client sees in
+    // the modal. Includes the persisted resolution (authorized pay/bank).
+    private async Task CargarResumenDetalleAsync(Guid empleadoId)
+    {
+        _detalleResumen = null;
+        _detalleResolucion = null;
+        if (empleadoId == Guid.Empty || _empresaId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _detalleResumen = await ResolucionPeriodo.ObtenerResumenPeriodoAsync(
+                db, _empresaId, empleadoId, periodoFechaInicio, periodoFechaFin);
+            if (_detalleResumen is null)
+            {
+                return;
+            }
+            _detalleResolucion = await db.RrhhResolucionesTiempoExtraPeriodo
+                .AsNoTracking()
+                .Include(r => r.Lineas)
+                .FirstOrDefaultAsync(r => r.EmpresaId == _empresaId
+                    && r.EmpleadoId == empleadoId
+                    && r.PeriodicidadPago == _detalleResumen.PeriodicidadPago
+                    && r.AnioPeriodo == _detalleResumen.AnioPeriodo
+                    && r.NumeroPeriodo == _detalleResumen.NumeroPeriodo);
+        }
+        catch
+        {
+            // Si falla, el drawer sigue mostrando la grilla de días; la tablita queda en 0.
+            _detalleResumen = null;
+            _detalleResolucion = null;
+        }
     }
 
     // Bruto del empleado del drawer, por día y total, calculado bajo demanda
@@ -1234,6 +1378,105 @@ public partial class AsistenciasSemanal
         _detalleEmpleadoId = Guid.Empty;
         _detalleBrutoPorDia = new();
         _detalleTotalBruto = 0;
+        _detalleResumen = null;
+        _detalleResolucion = null;
+    }
+
+    // Recalcular por periodo de UN solo empleado desde el drawer de detalle: pregunta bajo qué
+    // método (default del empleado / Vs horario / Marcaje de reloj) y luego impone ese método
+    // sobre TODOS los días del periodo visible, pisando los ajustes manuales por día. Es el
+    // mismo "Recalcular por periodo" de Asistencias.razor pero acotado al empleado abierto y
+    // disparado desde "Ver detalle".
+    // English: Period reprocess for ONE employee from the detail drawer: asks under which
+    // method (employee default / Vs schedule / Clock punch) and then enforces it over EVERY
+    // day of the visible period, overriding per-day manual tweaks. Same as the "Recalculate
+    // by period" button in Asistencias.razor but scoped to the open employee.
+    private bool _recalcPeriodoVisible;
+    private Guid _recalcEmpleadoId;
+
+    private void AbrirRecalcPeriodo(Guid empleadoId)
+    {
+        _recalcEmpleadoId = empleadoId;
+        _recalcPeriodoVisible = true;
+    }
+
+    private void CerrarRecalcPeriodo()
+    {
+        _recalcPeriodoVisible = false;
+        _recalcEmpleadoId = Guid.Empty;
+    }
+
+    private async Task ConfirmarRecalcPeriodoAsync(RecalcularPeriodoOpcion opcion)
+    {
+        var empleadoId = _recalcEmpleadoId;
+        _recalcPeriodoVisible = false;
+        await EjecutarRecalcPeriodoAsync(empleadoId, opcion);
+    }
+
+    // Traduce la opción del UI a los parámetros del processor y ejecuta el reproceso.
+    // English: Translates the UI option to the processor params and runs the reprocess.
+    private static (bool forzarDefaultEmpleado, RrhhModoCalculoForzado? modoForzado, string etiqueta) TraducirOpcion(RecalcularPeriodoOpcion opcion)
+        => opcion switch
+        {
+            RecalcularPeriodoOpcion.DefaultEmpleado => (true, null, "default del empleado"),
+            RecalcularPeriodoOpcion.VsHorario => (false, RrhhModoCalculoForzado.VsHorario, "Vs horario (con reglas)"),
+            RecalcularPeriodoOpcion.MarcajeReloj => (false, RrhhModoCalculoForzado.MarcajeReloj, "marcaje de reloj (tal cual)"),
+            _ => (true, null, "default del empleado")
+        };
+
+    private async Task EjecutarRecalcPeriodoAsync(Guid empleadoId, RecalcularPeriodoOpcion opcion)
+    {
+        if (!_puedeReprocesar || _empresaId == Guid.Empty || empleadoId == Guid.Empty || diasPeriodo.Count == 0)
+        {
+            return;
+        }
+
+        var (forzarDefaultEmpleado, modoForzado, etiquetaMetodo) = TraducirOpcion(opcion);
+        cargando = true;
+        _recalcPeriodo = true;
+        error = null;
+        ok = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var grupos = await RrhhAsistenciaProcessor.ReprocesarRangoAsync(
+                db, _empresaId, periodoFechaInicio, periodoFechaFin, empleadoId, forzarDefaultEmpleado, modoForzado);
+
+            db.RrhhLogsChecador.Add(new RrhhLogChecador
+            {
+                Id = Guid.NewGuid(),
+                EmpresaId = _empresaId,
+                FechaUtc = DateTime.UtcNow,
+                Nivel = "Information",
+                Mensaje = "Se ejecutó un reproceso de periodo de un empleado desde el resumen semanal.",
+                Detalle = $"usuario={_usuarioActual};desde={periodoFechaInicio:yyyy-MM-dd};hasta={periodoFechaFin:yyyy-MM-dd};empleado={empleadoId};grupos={grupos};metodo={etiquetaMetodo}",
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true
+            });
+            await db.SaveChangesAsync();
+
+            await CargarAsync();
+            // CargarAsync deja cargando=false en su finally; lo mantenemos activo hasta
+            // refrescar los datos del drawer abierto (bruto + resumen) para que el botón no
+            // parpadee habilitado entre el reload de la grilla y el del drawer.
+            cargando = true;
+            await CargarBrutoDetalleAsync(empleadoId);
+            await CargarResumenDetalleAsync(empleadoId);
+
+            if (error is null)
+            {
+                ok = $"Periodo recalculado: {grupos} día(s) reprocesado(s) con método {etiquetaMetodo}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            error = ex.InnerException?.Message ?? ex.Message;
+        }
+        finally
+        {
+            cargando = false;
+            _recalcPeriodo = false;
+        }
     }
 
     // Resumen del empleado actualmente abierto en el drawer (null si no hay).

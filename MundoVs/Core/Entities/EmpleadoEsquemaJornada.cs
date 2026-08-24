@@ -20,6 +20,19 @@ public class EmpleadoEsquemaJornada : BaseEntity
     /// </summary>
     public TipoJornada TipoJornada { get; set; } = TipoJornada.Fija;
 
+    /// <summary>
+    /// Pago fijo por labor/tarea (sólo aplica cuando TipoJornada == PorHoras). Cuando es
+    /// true, el día se paga como Fija (sueldoDiario × día) en vez de por minutos trabajados
+    /// — el empleado cobra lo mismo por la labor sin importar cuánto tardó (ej. limpieza:
+    /// va, limpia y se va; dure 1h o 5h cobra el sueldo del día). Mantiene lo "sin horario"
+    /// de PorHoras: sin turno, sin meta semanal, sin retardo/faltante/salida anticipada.
+    /// English: Fixed per-task pay (only when TipoJornada == PorHoras). When true, the day
+    /// is paid as Fija (daily salary × day) instead of by worked minutes — the employee
+    /// earns the same for the task regardless of duration (e.g. cleaning). Keeps the
+    /// "no schedule" behavior of PorHoras: no shift, no weekly meta, no late/shortage/early-leave.
+    /// </summary>
+    public bool PagoFijoPorLabor { get; set; }
+
     /// <summary>Inicio de vigencia del esquema (inclusive).</summary>
     public DateTime VigenteDesde { get; set; }
 

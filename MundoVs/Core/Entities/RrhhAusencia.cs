@@ -29,6 +29,29 @@ public class RrhhAusencia : BaseEntity
     public string? AprobadoPor { get; set; }
 
     /// <summary>
+    /// Identificador del periodo al que pertenece esta ausencia cuando es sintética
+    /// (generada automáticamente por el sistema desde una resolución de periodo).
+    /// Formato: "Periodicidad-Anio-Numero" (ej. "Semanal-2026-31").
+    /// Para ausencias manuales queda null.
+    /// </summary>
+    public string? PeriodoKey { get; set; }
+
+    /// <summary>
+    /// Origen de la ausencia. Manual = capturada por el operador; SinteticoPorPeriodo = generada
+    /// automáticamente por un proceso (ej. permiso por diferencia neta en liquidación de periodo).
+    /// </summary>
+    public OrigenAusenciaRrhh OrigenAusencia { get; set; } = OrigenAusenciaRrhh.Manual;
+
+    /// <summary>
+    /// Determina si esta ausencia fue generada automáticamente por el sistema
+    /// como parte de una resolución de periodo (permiso por diferencia, etc.).
+    /// Se usa para que el helpers de apertura de periodo pueda revertir solo sintéticas.
+    /// </summary>
+    public bool EsSinteticaDePeriodo() =>
+        OrigenAusencia == OrigenAusenciaRrhh.SinteticoPorPeriodo
+        && !string.IsNullOrEmpty(PeriodoKey);
+
+    /// <summary>
     /// Determina si este tipo de ausencia siempre debe tener goce de pago
     /// </summary>
     public bool DebeSerConGocePago() => Tipo switch
@@ -40,6 +63,7 @@ public class RrhhAusencia : BaseEntity
         TipoAusenciaRrhh.DiasEconomicos => true,
         TipoAusenciaRrhh.PermisoPaternidad => true,
         TipoAusenciaRrhh.PermisoMaternidad => true,
+        TipoAusenciaRrhh.PermisoPorDiferenciaPeriodo => true, // default con goce; el operador decide la categoría final
         _ => false
     };
 
@@ -75,7 +99,13 @@ public enum TipoAusenciaRrhh
     Suspension = 8,
     DiasEconomicos = 9,
     PermisoPaternidad = 10,
-    PermisoMaternidad = 11
+    PermisoMaternidad = 11,
+    /// <summary>
+    /// Permiso sintético generado por el sistema al cierre del periodo cuando
+    /// |retardoDetectado − extraDetectado| > 0. La categoría (banco / con goce / sin goce)
+    /// la define el operador al autorizar y se persiste en DescuentaBancoHoras + ConGocePago.
+    /// </summary>
+    PermisoPorDiferenciaPeriodo = 12
 }
 
 public enum EstatusAusenciaRrhh
@@ -85,4 +115,16 @@ public enum EstatusAusenciaRrhh
     Rechazada = 3,
     Aplicada = 4,
     Cancelada = 5
+}
+
+/// <summary>
+/// Indica el origen de una ausencia. Manual = capturada por el operador.
+/// SinteticoPorPeriodo = generada automáticamente por un proceso (ej. permiso por
+/// diferencia neta en liquidación de periodo). Se usa para que las reaperturas de
+/// periodo y los flujos de replicación distingan y no borren ausencias capturadas a mano.
+/// </summary>
+public enum OrigenAusenciaRrhh
+{
+    Manual = 1,
+    SinteticoPorPeriodo = 2
 }

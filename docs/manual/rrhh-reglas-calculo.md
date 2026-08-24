@@ -10,7 +10,7 @@
 7. [Resolución de tiempo extra](#resolución-de-tiempo-extra)
 8. [Banco de horas](#banco-de-horas)
 9. [Faltante y permiso](#faltante-y-permiso)
-10. [Snapshot de prenómina](#snapshot-de-prenómina)
+10. [Snapshot de nómina](#snapshot-de-nómina) (neteo NetoVsNeto de fuente única)
 11. [Cálculo de nómina](#cálculo-de-nómina)
 12. [Descuentos efectivos](#descuentos-efectivos)
 13. [Matriz de reglas por modo](#matriz-de-reglas-por-modo)
@@ -378,7 +378,56 @@ DescansoNoPagadoExcluido = Min(descansoNoPagadoProgramado, Max(0, ausenciaBruta 
 
 ---
 
-## Snapshot de prenómina
+## Snapshot de nómina
+
+> **Fusión 2026-08-22**: la entidad Prenómina se eliminó. El snapshot vive ahora en
+> `RrhhNominaSnapshotService` y alimenta directamente la nómina (flujo de 2 páginas:
+> Asistencia Semanal → Nómina). La página `/rrhh/prenominas` redirige a `/rrhh/nominas`.
+> English: Fusion 2026-08-22 — the Prenómina entity was removed. The snapshot now lives in
+> `RrhhNominaSnapshotService` and feeds nómina directly (2-page flow). `/rrhh/prenominas`
+> redirects to `/rrhh/nominas`.
+
+### Neteo NetoVsNeto consumido del batch canónico (fuente única)
+
+El neteo semanal NetoVsNeto (las deducciones tapadas por el extra) tiene **un solo dueño**:
+el batch `RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync` →
+`CalcularNeteoNetoVsNeto` — el MISMO que pinta **Asistencia Semanal**. La nómina **lo consume
+sin recalcularlo**.
+
+```
+Cadena de neteo (helper puro RrhhTiempoExtraPolicy.CalcularNeteoNetoVsNeto):
+  pool = extraDetectado (sobre umbral, pagadero) + extraBajoUmbral (bajo umbral, NO pagadero, sólo tapa)
+  faltanteAbsorbido  = Min(pool, faltanteNeto)
+  sobrante1          = Max(0, pool − faltanteNeto)
+  retardoAbsorbido   = Min(sobrante1, retardo)
+  sobrante2          = Max(0, sobrante1 − retardo)
+  salidaAbsorbido    = Min(sobrante2, salidaAnticipada)
+  sobrante3          = Max(0, sobrante2 − salidaAnticipada)
+  bancoRestaurado    = Min(sobrante3, bancoConsumido)
+  extraAbsorbible    = Min(Max(0, sobrante3 − bancoConsumido), extraDetectado)   # topado al pagadero
+```
+
+El snapshot llama al batch UNA vez y sobreescribe las 3 deducciones del resumen diario con el
+canónico `(detectado − absorbido)`:
+
+```
+MinutosFaltanteDescontable = Max(0, faltanteNetoPeriodo − faltanteAbsorbidoExtra)
+MinutosRetardo             = Max(0, retardoDetectado − retardoAbsorbidoExtra)
+MinutosSalidaAnticipada    = Max(0, salidaAnticipadaDetectado − salidaAnticipadaAbsorbidoExtra)
+```
+
+Así un faltante/retardo neteado a 0 en Asistencia Semanal **no reaparece** en nómina — con o sin
+resolución Autorizada. El sourcing (`NominaTiempoExtraSourcing`) NO recalcula el neteo: ambos
+paths (periodo e incidencia) toman las deducciones del `input` (snapshot ya neteado). El path
+"periodo" sólo cambia el **extra a pagar** por el de la resolución autorizada.
+
+> **DescartarExtra** (F9, el operador descarta el extra): anula el **pago** del extra, NO el
+> neteo de deducciones. El faltante/retardo/salida se descuentan como marque el neteo **vivo**
+> del periodo (igual que Asistencia Semanal), no "forzado completo" por el zeroing. Si se
+> requiere forzar el descuento completo, ajustar el neteo en Asistencia Semanal, no descartar.
+> English: DescartarExtra annuls the extra PAYMENT, not the deduction neteo. The shortage/late/
+> early-leave are docked per the period's LIVE neteo (matching Asistencia Semanal), not "forced
+> full" by the zeroing. To force a full dock, adjust the neteo in Asistencia Semanal, don't discard.
 
 ### Construcción por empleado (`ConstruirSnapshotEmpleado`)
 
@@ -413,6 +462,15 @@ DescansoNoPagadoExcluido = Min(descansoNoPagadoProgramado, Max(0, ausenciaBruta 
 ---
 
 ## Cálculo de nómina
+
+### Neteo y deducciones: la nómina CONSUME, no recalcula
+
+Las deducciones (faltante/retardo/salida) que entran al `NominaCalculator` vienen del snapshot de
+nómina, que a su vez las toma del batch canónico NetoVsNeto (ver [Snapshot de nómina](#snapshot-de-nómina)).
+**La nómina no recalcula el neteo** — es el mismo resultado que pinta Asistencia Semanal. El sourcing
+(`NominaTiempoExtraSourcing`) sólo decide de dónde tomar el **extra a pagar** (resolución Autorizada
+→ "periodo"; sin resolución → "incidencia", derivación local de dobles/triples); las deducciones
+siempre pasan del `input` ya neteado. Cero drift nómina ↔ Asistencia Semanal.
 
 ### `NominaCalculator.Calculate`
 

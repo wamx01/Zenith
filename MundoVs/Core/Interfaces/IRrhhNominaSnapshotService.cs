@@ -3,13 +3,13 @@ using MundoVs.Infrastructure.Data;
 
 namespace MundoVs.Core.Interfaces;
 
-public interface IRrhhPrenominaSnapshotService
+public interface IRrhhNominaSnapshotService
 {
-    Task<IReadOnlyList<RrhhPrenominaSnapshotItem>> ConstruirSnapshotPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, NominaConfiguracion configuracion, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RrhhNominaSnapshotItem>> ConstruirSnapshotPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, NominaConfiguracion configuracion, CancellationToken cancellationToken = default);
     Task<Dictionary<Guid, EmpleadoEsquemaPago>> ObtenerEsquemasPagoPeriodoAsync(CrmDbContext db, DateTime inicio, DateTime fin, IReadOnlyCollection<Guid> empleadoIds, CancellationToken cancellationToken = default);
 }
 
-public sealed class RrhhPrenominaSnapshotItem
+public sealed class RrhhNominaSnapshotItem
 {
     public required Empleado Empleado { get; init; }
     public EmpleadoEsquemaPago? AsignacionEsquema { get; init; }

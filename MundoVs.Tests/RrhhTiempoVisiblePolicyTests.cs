@@ -200,4 +200,267 @@ public sealed class RrhhTiempoVisiblePolicyTests
         var a = SinTurnoConTurnoAsignado(neto: 480, extraPago: 60);
         Assert.Equal(60, RrhhTiempoExtraPolicy.ObtenerMinutosExtraAprobados(a));
     }
+
+    // Tolerancia de retardo que perdona el TIEMPO: los minutos perdonados por el umbral se
+    // suman al neto efectivo (junto a los perdonados manuales) y reducen el faltante a 0.
+    // English: Retardo tolerance that forgives TIME: threshold-forgiven minutes are added to net
+    // effective time (alongside manual forgiveness) and reduce the faltante to 0.
+    [Fact]
+    public void NetoEfectivo_IncluyeToleranciaRetardoAplicada_YReduceFaltante()
+    {
+        var a = new RrhhAsistencia
+        {
+            TurnoBaseId = Guid.NewGuid(),
+            ModoSugerenciaExtra = "EntradaSalida",
+            MinutosJornadaNetaProgramada = 540,
+            MinutosTrabajadosNetos = 535,
+            MinutosPerdonadosManual = 0,
+            MinutosToleranciaRetardoAplicada = 5
+        };
+        // 535 trabajado + 5 perdonados por tolerancia = 540 = jornada neta → faltante 0.
+        Assert.Equal(540, RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(a));
+    }
+
+    [Fact]
+    public void FaltanteNeto_ExcluyeRetardoNoTolerado_DejaFaltanteEnCero()
+    {
+        var a = new RrhhAsistencia
+        {
+            TurnoBaseId = Guid.NewGuid(),
+            ModoSugerenciaExtra = "EntradaSalida",
+            MinutosJornadaNetaProgramada = 540,
+            MinutosTrabajadosNetos = 534,
+            MinutosPerdonadosManual = 0,
+            MinutosToleranciaRetardoAplicada = 0,
+            MinutosRetardo = 6
+        };
+        // La tardanza (6 min) se contabiliza aparte en el bucket de retardo, NO dentro del
+        // faltante, para no cobrarla dos veces (neteo semanal + descuento de salario). El
+        // NetoEfectivo sigue reflejando el tiempo realmente trabajado (534); el faltante
+        // neto excluye el retardo → 0 (día limpio en términos de ausencia; el retardo se
+        // descuenta por separado en su bucket).
+        // English: Lateness (6 min) is tracked in its own retardo bucket, NOT inside
+        // faltante, to avoid charging it twice (weekly neteo + salary discount). NetoEfectivo
+        // still reflects actually-worked time (534); faltante neto excludes retardo → 0
+        // (clean of absence; the retardo is deducted separately in its own bucket).
+        Assert.Equal(534, RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(a));
+    }
+
+    [Fact]
+    public void FaltanteNeto_ExcluyeSalidaAnticipada_DejaFaltanteEnCero()
+    {
+        var a = new RrhhAsistencia
+        {
+            TurnoBaseId = Guid.NewGuid(),
+            ModoSugerenciaExtra = "EntradaSalida",
+            MinutosJornadaNetaProgramada = 540,
+            MinutosTrabajadosNetos = 510,
+            MinutosPerdonadosManual = 0,
+            MinutosToleranciaRetardoAplicada = 0,
+            MinutosSalidaAnticipada = 30
+        };
+        // La salida anticipada (30 min) se contabiliza aparte en su bucket, NO dentro del
+        // faltante, para no cobrarla dos veces (neteo + descuento de salario). NetoEfectivo
+        // sigue reflejando el tiempo trabajado (510); faltante = 540 − 510 − 30 = 0.
+        // English: Early-leave (30 min) is tracked in its own bucket, NOT inside faltante,
+        // to avoid charging it twice (neteo + salary discount). NetoEfectivo still reflects
+        // worked time (510); faltante = 540 − 510 − 30 = 0.
+        Assert.Equal(510, RrhhTiempoExtraPolicy.ObtenerMinutosNetoEfectivo(a));
+        Assert.Equal(30, RrhhTiempoExtraPolicy.ObtenerMinutosSalidaAnticipadaEfectivos(a));
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(a));
+    }
+
+    [Fact]
+    public void DescuentoTotal_RetardoNoTolerado_SeCuentaUnaVez_NoDobleDescuento()
+    {
+        var a = new RrhhAsistencia
+        {
+            TurnoBaseId = Guid.NewGuid(),
+            ModoSugerenciaExtra = "EntradaSalida",
+            MinutosJornadaNetaProgramada = 480,
+            MinutosTrabajadosNetos = 473,
+            MinutosPerdonadosManual = 0,
+            MinutosToleranciaRetardoAplicada = 0,
+            MinutosRetardo = 7
+        };
+        // Red test del bug del doble descuento: un retardo de 7 min producía faltante=7
+        // (gap jornada−trabajado) Y retardo=7 → DescuentoTotal = 7+7 = 14 (cobrado dos veces
+        // en el descuento de salario y en el neteo semanal). Con A′ el retardo se excluye del
+        // faltante → faltante=0, DescuentoTotal = 7 (una sola vez, en su bucket).
+        // English: Red test for the double-discount bug: a 7-min retardo produced faltante=7
+        // (jornada−worked gap) AND retardo=7 → DescuentoTotal = 7+7 = 14 (charged twice in the
+        // salary discount and the weekly neteo). With A′ the retardo is excluded from
+        // faltante → faltante=0, DescuentoTotal = 7 (once, in its own bucket).
+        Assert.Equal(7, RrhhTiempoExtraPolicy.ObtenerMinutosRetardoEfectivos(a));
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(a));
+        Assert.Equal(7, RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal(a));
+    }
+}
+
+/// <summary>
+/// Tests del predicado y el balance de la meta semanal (Fija sin turno) en
+/// <see cref="RrhhTiempoExtraPolicy"/>. La meta semanal activa el overlay a nivel
+/// de periodo (no per-día): extra = trabajado − meta; déficit = meta − trabajado − conGoce.
+/// English: Tests for the weekly-meta predicate and balance (Fija with no shift) in
+/// RrhhTiempoExtraPolicy. The weekly meta activates a period-level overlay (not per-day):
+/// extra = worked − meta; deficit = meta − worked − conGoce.
+/// </summary>
+public sealed class RrhhMetaSemanalPolicyTests
+{
+    private static RrhhAsistencia FijaSinTurno(int neto) => new()
+    {
+        TurnoBaseId = null,
+        EsPorHoras = false,
+        MinutosJornadaNetaProgramada = 0,
+        MinutosTrabajadosNetos = neto
+    };
+
+    private static RrhhAsistencia FijaConTurno(int jornadaNeta, int neto) => new()
+    {
+        TurnoBaseId = Guid.NewGuid(),
+        EsPorHoras = false,
+        MinutosJornadaNetaProgramada = jornadaNeta,
+        MinutosTrabajadosNetos = neto
+    };
+
+    private static RrhhAsistencia PorHoras(int neto) => new()
+    {
+        TurnoBaseId = null,
+        EsPorHoras = true,
+        MinutosJornadaNetaProgramada = 0,
+        MinutosTrabajadosNetos = neto
+    };
+
+    [Fact]
+    public void EsJornadaMetaSemanal_FijaSinTurno_True()
+        => Assert.True(RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(FijaSinTurno(480)));
+
+    [Fact]
+    public void EsJornadaMetaSemanal_PorHoras_False()
+        => Assert.False(RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(PorHoras(480)));
+
+    [Fact]
+    public void EsJornadaMetaSemanal_FijaConTurno_False()
+        => Assert.False(RrhhTiempoExtraPolicy.EsJornadaMetaSemanal(FijaConTurno(480, 480)));
+
+    [Fact]
+    public void EsPeriodoMetaSemanal_TodosSinTurno_True()
+    {
+        var asistencias = new[] { FijaSinTurno(480), FijaSinTurno(300) };
+        Assert.True(RrhhTiempoExtraPolicy.EsPeriodoMetaSemanal(asistencias));
+    }
+
+    [Fact]
+    public void EsPeriodoMetaSemanal_MezclaConTurno_False()
+    {
+        var asistencias = new[] { FijaSinTurno(480), FijaConTurno(480, 480) };
+        Assert.False(RrhhTiempoExtraPolicy.EsPeriodoMetaSemanal(asistencias));
+    }
+
+    [Fact]
+    public void EsPeriodoMetaSemanal_TodoPorHoras_False()
+    {
+        var asistencias = new[] { PorHoras(480), PorHoras(300) };
+        Assert.False(RrhhTiempoExtraPolicy.EsPeriodoMetaSemanal(asistencias));
+    }
+
+    [Fact]
+    public void EsPeriodoMetaSemanal_Vacio_False()
+        => Assert.False(RrhhTiempoExtraPolicy.EsPeriodoMetaSemanal(Array.Empty<RrhhAsistencia>()));
+
+    [Fact]
+    public void ObtenerMetaSemanalMinutos_EsHorasPor60()
+    {
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMetaSemanalMinutos(0));
+        Assert.Equal(2880, RrhhTiempoExtraPolicy.ObtenerMetaSemanalMinutos(48));
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMetaSemanalMinutos(-5)); // negativo → 0
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_SobreMeta_DevuelveExtraYCeroDeficit()
+    {
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(3000, 0, 2880);
+        Assert.Equal(120, extra);   // 50h − 48h
+        Assert.Equal(0, deficit);
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_BajoMeta_DevuelveCeroExtraYDeficit()
+    {
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2400, 0, 2880);
+        Assert.Equal(0, extra);
+        Assert.Equal(480, deficit); // 48h − 40h = 8h
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_ConGoceCubreDeficit_ReduceDeficit()
+    {
+        // 40h trabajadas + 8h con goce → déficit = 2880 − 2400 − 480 = 0.
+        // English: 40h worked + 8h paid leave → deficit = 2880 − 2400 − 480 = 0.
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2400, 480, 2880);
+        Assert.Equal(0, extra);
+        Assert.Equal(0, deficit);
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_ConGoceNoGeneraExtra()
+    {
+        // El con goce cubre la meta pero NO genera extra (el extra es sólo lo trabajado sobre la meta).
+        // English: Paid leave covers the meta but does NOT generate extra (extra is only worked-over-meta).
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2400, 600, 2880);
+        Assert.Equal(0, extra);
+        Assert.Equal(0, deficit); // 2880 − 2400 − 600 = -120 → max(0,·) = 0
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_Exacto48h_CeroCero()
+    {
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2880, 0, 2880);
+        Assert.Equal(0, extra);
+        Assert.Equal(0, deficit);
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_ExtraYDeficitMutuamenteExcluyentes()
+    {
+        // Nunca hay extra y déficit a la vez: si trabajado > meta, déficit = 0; si < meta, extra = 0.
+        // English: Extra and deficit are never both positive: if worked > meta, deficit = 0; if < meta, extra = 0.
+        var (extra1, deficit1) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(3000, 0, 2880);
+        Assert.True(extra1 > 0 && deficit1 == 0);
+        var (extra2, deficit2) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2400, 0, 2880);
+        Assert.True(extra2 == 0 && deficit2 > 0);
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_ExcedenteBajoUmbral_NoCuentaComoExtra()
+    {
+        // Meta 2880, trabajado 2890 → excedente 10 < umbral 15 → extra 0 (consistencia con el
+        // cálculo por día). El déficit sigue 0 (se trabajó sobre la meta). Sin umbral (default 0)
+        // el extra sería 10; el umbral lo zeroa.
+        // English: Meta 2880, worked 2890 → surplus 10 < threshold 15 → extra 0 (consistency with
+        // the per-day calc). Deficit stays 0 (worked over the meta). Without threshold (default 0)
+        // extra would be 10; the threshold zeroes it.
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2890, 0, 2880, 15);
+        Assert.Equal(0, extra);
+        Assert.Equal(0, deficit);
+
+        // Default 0 = sin umbral → el excedente se reporta tal cual (backward compat).
+        // English: Default 0 = no threshold → surplus reported as-is (backward compat).
+        var (extraSinUmbral, _) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2890, 0, 2880);
+        Assert.Equal(10, extraSinUmbral);
+    }
+
+    [Fact]
+    public void CalcularBalanceMetaSemanal_ExcedenteSobreUmbral_CuentaTodoElExcedente()
+    {
+        // Meta 2880, trabajado 2911 → excedente 31 ≥ umbral 15 → extra 31 (TODO el excedente,
+        // no 31−15). Consistencia con el modo por día y con MarcajeReloj.
+        // English: Meta 2880, worked 2911 → surplus 31 ≥ threshold 15 → extra 31 (the WHOLE
+        // surplus, not 31−15). Consistency with the per-day mode and MarcajeReloj.
+        var (extra, deficit) = RrhhTiempoExtraPolicy.CalcularBalanceMetaSemanal(2911, 0, 2880, 15);
+        Assert.Equal(31, extra);
+        Assert.Equal(0, deficit);
+    }
 }

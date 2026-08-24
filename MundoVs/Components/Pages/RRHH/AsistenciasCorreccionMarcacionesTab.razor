@@ -10,11 +10,22 @@
     <div class="asis-add-row__fields">
         <div class="asis-add-row__field asis-field--time">
             <label class="asis-field-label">Hora</label>
-            <InputText class="form-control form-control-sm" Value="@ManualHoraTexto" ValueChanged="OnManualHoraTextoChanged" ValueExpression="@(() => ManualHoraTexto)" @oninput="@(e => OnManualHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))" placeholder="08:00" />
+            @* Native <input> + @oninput: @bind-Value:event="oninput" NO es válido sobre InputText
+               (el sufijo :event es para @bind nativo de elementos; sobre un componente cablea el
+               oninput del DOM —ChangeEventArgs— directo al ValueChanged del componente que espera
+               string, y lanza "ChangeEventArgs cannot be converted to String"). Actualizamos el
+               valor por @oninput invocando el EventCallback *Changed del parámetro (binding
+               bidireccional en vivo con el padre).
+               English: :event is for native element @bind; on a component it wires DOM oninput
+               (ChangeEventArgs) into a string-typed ValueChanged and throws. Use a native input
+               that pushes via the *Changed EventCallback (live two-way bind to the parent). *@
+            <input class="form-control form-control-sm" value="@ManualHoraTexto"
+                   @oninput="@((ChangeEventArgs e) => ManualHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))"
+                   placeholder="08:00" />
         </div>
         <div class="asis-add-row__field asis-field--type">
             <label class="asis-field-label">Tipo</label>
-            <InputSelect class="form-select form-select-sm" Value="@ManualClasificacion" ValueChanged="OnManualClasificacionChanged" ValueExpression="@(() => ManualClasificacion)">
+            <InputSelect class="form-select form-select-sm" @bind-Value="ManualClasificacion">
                 @foreach (var clasificacion in Enum.GetValues<TipoClasificacionMarcacionRrhh>())
                 {
                     <option value="@clasificacion">@clasificacion</option>
@@ -23,7 +34,9 @@
         </div>
         <div class="asis-add-row__field flex-grow-1">
             <label class="asis-field-label">Observación</label>
-            <InputText class="form-control form-control-sm" Value="@ManualObservacion" ValueChanged="OnManualObservacionChanged" ValueExpression="@(() => ManualObservacion)" @oninput="@(e => OnManualObservacionChanged.InvokeAsync(e.Value?.ToString()))" placeholder="Ej. olvidó checar salida" />
+            <input class="form-control form-control-sm" value="@ManualObservacion"
+                   @oninput="@((ChangeEventArgs e) => ManualObservacionChanged.InvokeAsync(e.Value?.ToString()))"
+                   placeholder="Ej. olvidó checar salida" />
         </div>
         <div class="asis-add-row__action">
             <button class="btn btn-success btn-sm asis-btn-xs" @onclick="OnGuardarMarcacionManual" disabled="@Cargando">
@@ -83,8 +96,12 @@
                             @if (item.EsManual && MarcacionManualEditandoId == item.Id)
                             {
                                 <div class="d-flex gap-1">
-                                    <InputText class="form-control form-control-sm asis-input--time-edit" Value="@MarcacionManualEditandoHoraTexto" ValueChanged="OnMarcacionManualEditandoHoraTextoChanged" ValueExpression="@(() => MarcacionManualEditandoHoraTexto)" @oninput="@(e => OnMarcacionManualEditandoHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))" placeholder="hora" />
-                                    <InputText class="form-control form-control-sm flex-grow-1" Value="@MarcacionManualEditandoObservacion" ValueChanged="OnMarcacionManualEditandoObservacionChanged" ValueExpression="@(() => MarcacionManualEditandoObservacion)" @oninput="@(e => OnMarcacionManualEditandoObservacionChanged.InvokeAsync(e.Value?.ToString()))" placeholder="observación" />
+                                    <input class="form-control form-control-sm asis-input--time-edit" value="@MarcacionManualEditandoHoraTexto"
+                                           @oninput="@((ChangeEventArgs e) => MarcacionManualEditandoHoraTextoChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty))"
+                                           placeholder="hora" />
+                                    <input class="form-control form-control-sm flex-grow-1" value="@MarcacionManualEditandoObservacion"
+                                           @oninput="@((ChangeEventArgs e) => MarcacionManualEditandoObservacionChanged.InvokeAsync(e.Value?.ToString()))"
+                                           placeholder="observación" />
                                 </div>
                             }
                             else
@@ -129,20 +146,20 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<RrhhMarcacion> MarcacionesDia { get; set; } = [];
     [Parameter, EditorRequired] public string ManualHoraTexto { get; set; } = string.Empty;
-    [Parameter] public EventCallback<string> OnManualHoraTextoChanged { get; set; }
+    [Parameter] public EventCallback<string> ManualHoraTextoChanged { get; set; }
     [Parameter, EditorRequired] public TipoClasificacionMarcacionRrhh ManualClasificacion { get; set; }
-    [Parameter] public EventCallback<TipoClasificacionMarcacionRrhh> OnManualClasificacionChanged { get; set; }
+    [Parameter] public EventCallback<TipoClasificacionMarcacionRrhh> ManualClasificacionChanged { get; set; }
     [Parameter] public string? ManualObservacion { get; set; }
-    [Parameter] public EventCallback<string?> OnManualObservacionChanged { get; set; }
+    [Parameter] public EventCallback<string?> ManualObservacionChanged { get; set; }
     [Parameter] public bool Cargando { get; set; }
     [Parameter] public EventCallback OnGuardarMarcacionManual { get; set; }
     [Parameter, EditorRequired] public Func<RrhhMarcacion, string> ObtenerHoraMarcacion { get; set; } = default!;
     [Parameter, EditorRequired] public Func<RrhhMarcacion, string> ObtenerAuditoriaMarcacion { get; set; } = default!;
     [Parameter] public Guid? MarcacionManualEditandoId { get; set; }
     [Parameter, EditorRequired] public string MarcacionManualEditandoHoraTexto { get; set; } = string.Empty;
-    [Parameter] public EventCallback<string> OnMarcacionManualEditandoHoraTextoChanged { get; set; }
+    [Parameter] public EventCallback<string> MarcacionManualEditandoHoraTextoChanged { get; set; }
     [Parameter] public string? MarcacionManualEditandoObservacion { get; set; }
-    [Parameter] public EventCallback<string?> OnMarcacionManualEditandoObservacionChanged { get; set; }
+    [Parameter] public EventCallback<string?> MarcacionManualEditandoObservacionChanged { get; set; }
     [Parameter] public EventCallback<RrhhMarcacion> OnIniciarEdicionMarcacionManual { get; set; }
     [Parameter] public EventCallback OnGuardarEdicionMarcacionManual { get; set; }
     [Parameter] public EventCallback OnCancelarEdicionMarcacionManual { get; set; }

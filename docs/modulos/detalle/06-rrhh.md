@@ -1,11 +1,13 @@
 # Módulo `RRHH`
 
-> Última revisión: 2026-07-03
+> Última revisión: 2026-08-22
 > Mantenedor: equipo MundoVs
 
 ## Objetivo
 
-Este módulo administra empleados, turnos, marcaciones, asistencias, esquemas de pago, vales de destajo, prenóminas, ausencias, banco de horas, bonos, deducciones e integración final de nómina. Es el módulo con mayor superficie del CRM MundoVs.
+Este módulo administra empleados, turnos, marcaciones, asistencias, esquemas de pago, vales de destajo, ausencias, banco de horas, bonos, deducciones e integración final de nómina. Es el módulo con mayor superficie del CRM MundoVs.
+
+> **Fusión 2026-08-22:** la etapa separada de `Prenómina` fue eliminada. El flujo de RRHH ahora tiene 2 páginas: `Asistencia Semanal (neteo) -> Nómina`. La ruta `/rrhh/prenominas` redirige a `/rrhh/nominas`. La captura y revisión previas al cierre viven dentro de Nómina como las fases "Cerrar periodo y calcular" (estampa `FechaCierreCaptura` y ejecuta el cálculo sobre la semana cerrada) y "Reabrir captura" (limpia `FechaCierreCaptura`). El snapshot se renombró `RrhhPrenominaSnapshotService` → `RrhhNominaSnapshotService` (interfaz `IRrhhNominaSnapshotService`). El neteo `NetoVsNeto` tiene ahora una fuente única: el lote `RrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync` (mismo que pinta Asistencia Semanal); la nómina lo consume sin recalcular.
 
 ---
 
@@ -32,8 +34,8 @@ Páginas con ruta propia (24):
 | `EsquemasPago.razor` | `/rrhh/esquemas-pago` | Catálogo de esquemas y tarifas por proceso/posición. |
 | `EstadoAgente.razor` | `/rrhh/estado-agente` | Monitoreo del agente de sincronización ZKTeco. |
 | `NominaReciboCard.razor` | (componente) | Tarjeta reutilizable de recibo de nómina. |
-| `Nominas.razor` | `/rrhh/nominas` | Cálculo y administración de nóminas. |
-| `Prenominas.razor` | `/rrhh/prenominas` | Prenóminas con captura rápida e incidencias. |
+| `Nominas.razor` | `/rrhh/nominas` | Cálculo y administración de nóminas (incluye captura y cierre del periodo, antigua prenómina). |
+| `Prenominas.razor` | `/rrhh/prenominas` | **(redirige a `/rrhh/nominas` desde la fusión 2026-08-22)** — la entidad `Prenomina` fue eliminada. |
 | `ReciboNomina.razor` | `/rrhh/nominas/recibo/{DetalleId:guid}` | Vista individual de recibo de nómina. |
 | `RecibosNomina.razor` | `/rrhh/nominas/recibos/{NominaId:guid}` | Listado de recibos de una nómina. |
 | `Turnos.razor` | (ya listado arriba) | – |
@@ -146,11 +148,11 @@ Servicios de marcación e ingesta (ZKTeco):
 | `RrhhMarcacionIngestionService` | `IRrhhMarcacionIngestionService` | Recibe lotes del worker ZKTeco (`MarcacionSyncBatchDto`) y crea `RrhhMarcacion`. |
 | `RrhhMarcacionZonaHorariaService` | `IRrhhMarcacionZonaHorariaService` | Corrige marcaciones guardadas como hora local vs UTC. |
 
-Servicios de prenómina y nómina:
+Servicios de prenómina y nómina (tras la fusión 2026-08-22, la captura vive dentro de Nómina):
 
 | Servicio | Interfaz | Responsabilidad |
 |---|---|---|
-| `RrhhPrenominaSnapshotService` | `IRrhhPrenominaSnapshotService` | Snapshot inmutable de configuración al cerrar prenómina. |
+| `RrhhNominaSnapshotService` | `IRrhhNominaSnapshotService` | Snapshot inmutable del período; llama a `ObtenerResumenesPeriodoBatchAsync` para sobrescribir las 3 deducciones diarias con el neteo canónico (renombrado desde `RrhhPrenominaSnapshotService`). |
 | `RrhhEmpleadoPerfilPageService` | `IRrhhEmpleadoPerfilPageService` | Datos agregados del perfil de empleado. |
 | `NominaCalculator` | `INominaCalculator` | Cálculo principal de nómina (sueldo, destajo, bonos, horas extra, IMSS, ISR, etc.). |
 | `NominaConfiguracionLoader` | (sin interfaz) | Carga `NominaConfiguracion` por empresa desde `AppConfig`. |
@@ -246,19 +248,7 @@ Consulta directamente:
 - configuración de nómina
 
 #### `Prenominas.razor`
-Usa:
-- `IDbContextFactory<CrmDbContext>`
-- `AuthenticationStateProvider`
-- `IRrhhPrenominaSnapshotService` (al cerrar prenómina)
-- `INominaConfiguracionLoader` (vía `NominaConfiguracionLoader`)
-
-Consulta directamente:
-- `Prenominas`
-- `PrenominaDetalles`
-- `Empleados`
-- `ValesDestajo`
-- `PrenominaCapturaRapidaRrhh` (bonos / percepciones de captura rápida)
-- configuración de nómina
+La ruta `/rrhh/prenominas` **redirige a `/rrhh/nominas`** desde la fusión 2026-08-22. La entidad `Prenomina` fue eliminada; la captura y revisión previas al cierre ahora viven en `Nominas.razor` ("Cerrar periodo y calcular" / "Reabrir captura").
 
 #### `Nominas.razor`
 Usa:
@@ -272,16 +262,20 @@ Usa:
 - `INominaLegalPolicyService`
 - `INominaPdfService`
 - `INominaSatCatalogInitializer`
+- `IRrhhNominaSnapshotService` (renombrado desde `IRrhhPrenominaSnapshotService`)
 
 Consulta directamente:
 - `Nominas`
 - `NominaDetalles`
 - `Empleados`
 - `ValesDestajo`
-- `Prenominas`
-- `PrenominaDetalles`
 - `EmpleadosEsquemaPago`
 - configuración de nómina desde `NominaConfiguracion` y `NominaConfiguracionGlobal`
+
+> Tras la fusión 2026-08-22, la captura y cierre del periodo (antigua prenómina) viven aquí:
+> - "Cerrar periodo y calcular" estampa `FechaCierreCaptura` y ejecuta el cálculo sobre la semana cerrada (`NominaPeriodoHelper.ObtenerPeriodo`);
+> - "Reabrir captura" limpia `FechaCierreCaptura`.
+> El snapshot `RrhhNominaSnapshotService` llama a `IRrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync` una sola vez para inyectar el neteo `NetoVsNeto` canónico; nómina no recalcula el neteo.
 
 #### `ReciboNomina.razor`, `RecibosNomina.razor`, `NominaReciboCard.razor`
 Componentes relacionados con la visualización del recibo.
@@ -293,7 +287,7 @@ Vista de monitoreo del agente ZKTeco (`RrhhEstadoAgente`): último heartbeat, ma
 Catálogo de checadores ZKTeco. Permite configurar IP, puerto, número de máquina, zona horaria, último evento leído.
 
 #### `Dashboard.razor`
-Vista de KPIs: empleados activos, checadores en línea, prenóminas pendientes, nóminas del período, alertas de jornada, etc.
+Vista de KPIs: empleados activos, checadores en línea, nóminas del período, alertas de jornada, etc.
 
 #### `BancoHoras.razor`, `Ausencias.razor`, `BonosDistribuidos.razor`, `AsistenciasSemanal.razor`
 Vistas operativas que consumen directamente las entidades `RrhhBancoHorasMovimiento`, `RrhhAusencia`, `BonoDistribucionPeriodoRrhh` y agregaciones semanales de `RrhhAsistencia`.
@@ -335,10 +329,9 @@ Catálogo (`MundoVs/Core/Entities/`):
 - `RrhhAusencia` — solicitud de ausencia con tipo (`Vacaciones`, `PermisoConGoce`, `PermisoSinGoce`, `Incapacidad`, `FaltaInjustificada`, `Suspension`, `DiaEconomico`, `PermisoPaternidad`, `PermisoMaternidad`, `Capacitacion`, `Otro`) y estatus; incluye `ConGocePago` y `DescuentaBancoHoras`.
 
 ### Prenómina y nómina
-- `Prenomina` — prenómina con `SnapshotConfiguracionJson` y `FechaCierre`.
-- `PrenominaDetalle` — detalle por empleado con `DiasPagados`, `HorasTrabajadasNetas`, `HorasBancoAcumuladas/Consumidas`, `MinutosRetardo/SalidaAnticipada/PerdonadosManual/FaltanteDescontable`, `MontoDestajoInformativo`, `ComplementoSalarioMinimoSugerido`.
-- `PrenominaCapturaRapidaRrhh` — captura rápida de bonos/percepciones de prenómina.
-- `Nomina` — nómina con `Folio`, `NumeroNomina`, `PrenominaId`, `EstatusNomina` (`Borrador`/`Aprobada`/`Pagada`/`Cancelada`).
+> La fusión 2026-08-22 eliminó las entidades `Prenomina`, `PrenominaDetalle` y `PrenominaCapturaRapidaRrhh`. Los campos de congelamiento (`SnapshotConfiguracionJson`, `FechaCierreCaptura`) y los 14 campos delta de captura viven ahora en `Nomina` / `NominaDetalle`. La captura y cierre del periodo se hacen dentro de Nómina.
+
+- `Nomina` — nómina con `Folio`, `NumeroNomina`, `FechaCierreCaptura`, `SnapshotConfiguracionJson`, `EstatusNomina` (`Borrador`/`Aprobada`/`Pagada`/`Cancelada`). El vínculo `PrenominaId` quedó obsoleto.
 - `NominaDetalle` — desglose completo (`TotalPagar`, `TotalObligacionesTerceros`, `TotalAportacionesPatronales`, `TotalProvisiones`, `CostoEmpresa`).
 - `NominaConfiguracion` — configuración de nómina por empresa (UMA, ISR, IMSS, banco, vacaciones, etc.).
 - `NominaConfiguracionGlobal` — parámetros globales (`UmaDiaria`, `SalarioMinimoGeneral`, `SalarioMinimoFrontera`, `TablaIsrJson`, `TablaSubsidioJson`).
@@ -423,7 +416,7 @@ Catálogo (`MundoVs/Core/Entities/`):
 
 ### Horas extra
 - captura base:
-  - `PrenominaDetalle`
+  - `NominaDetalle` (la antigua `PrenominaDetalle` fue absorbida por la fusión 2026-08-22)
 - configuración base:
   - `NominaConfiguracion` (vía `AppConfig`)
 - reflejo final:
@@ -431,10 +424,11 @@ Catálogo (`MundoVs/Core/Entities/`):
 - política:
   - `RrhhTiempoExtraPolicy` (reglas de elegibilidad)
   - `RrhhTiempoExtraResolutionService` (resolución pago / banco, topes)
+  - `CalcularNeteoNetoVsNeto` (neteo semanal — fuente única consumida por `RrhhNominaSnapshotService`)
 
 ### Días trabajados, vacaciones e incidencias
 - origen principal:
-  - `PrenominaDetalle`
+  - `NominaDetalle` (antes `PrenominaDetalle`)
 - reglas:
   - `NominaConfiguracion` y `NominaConfiguracionGlobal`
 
@@ -484,11 +478,9 @@ Buscar en:
 
 ### ¿De dónde salen vacaciones, faltas y días trabajados?
 Buscar en:
-1. `RRHH/Prenominas.razor`
-2. `Prenomina`
-3. `PrenominaDetalle`
-4. `RrhhAusencia` (vacaciones, permisos, incapacidades)
-5. integración en `RRHH/Nominas.razor`
+1. `RRHH/Nominas.razor` (la antigua `RRHH/Prenominas.razor` redirige aquí desde la fusión 2026-08-22)
+2. `Nomina` / `NominaDetalle` (absorbieron a `Prenomina` / `PrenominaDetalle`)
+3. `RrhhAusencia` (vacaciones, permisos, incapacidades)
 
 ### ¿Cómo saber si a un empleado se le calcula IMSS?
 Buscar en:
@@ -573,8 +565,7 @@ Tests unitarios en `MundoVs.Tests/` que cubren el módulo RRHH:
 - `MundoVs/Core/Entities/TurnoBase.cs` — incluye `TurnoBaseDetalle` y `TurnoBaseDetalleDescanso`
 - `MundoVs/Core/Entities/EsquemaPago.cs` y `EsquemaPagoTarifa.cs`
 - `MundoVs/Core/Entities/ValeDestajo.cs` y `ValeDestajoDetalle.cs`
-- `MundoVs/Core/Entities/Prenomina.cs` y `PrenominaDetalle.cs`
-- `MundoVs/Core/Entities/Nomina.cs`, `NominaDetalle.cs`, `NominaConfiguracion.cs`, `NominaConfiguracionGlobal.cs`
+- `MundoVs/Core/Entities/Nomina.cs`, `NominaDetalle.cs`, `NominaConfiguracion.cs`, `NominaConfiguracionGlobal.cs` (tras la fusión 2026-08-22, `Prenomina.cs` y `PrenominaDetalle.cs` fueron eliminados)
 - `MundoVs/Core/Services/Rrhh*.cs` y `Nomina*.cs`
 - `MundoVs/Core/Interfaces/IRrhh*.cs` e `INomina*.cs`
 - `MundoVs/Core/Models/Rrhh*.cs`
@@ -583,7 +574,9 @@ Tests unitarios en `MundoVs.Tests/` que cubren el módulo RRHH:
 
 ---
 
-## Flujo funcional actual: cotización → pedido → destajo → prenómina → nómina
+## Flujo funcional actual: cotización → pedido → destajo → nómina
+
+> Tras la fusión 2026-08-22, el flujo de RRHH pasó de 3 páginas (`Asistencia Semanal → Prenómina → Nómina`) a 2 páginas (`Asistencia Semanal → Nómina`).
 
 ### 1. Cotización
 - la base del destajo arranca en la cotización seleccionada del pedido,
@@ -652,38 +645,25 @@ Referencia técnica:
 - `ValesDestajo.razor` → `AutocargarDesdeProduccion()`
 - `ValesDestajo.razor` → `GuardarVale(...)`
 
-### 6. Prenómina
-- la prenómina no es la fuente final del destajo pagado,
-- la prenómina guarda `MontoDestajoInformativo` para revisión del período,
-- su función principal es consolidar:
-  - días trabajados,
-  - días pagados,
-  - vacaciones,
-  - faltas,
-  - incapacidades,
-  - horas extra,
-  - validación de IMSS,
-  - captura rápida de bonos y percepciones (`PrenominaCapturaRapidaRrhh`).
-
-Al cerrar la prenómina:
-- se congela la configuración en `SnapshotConfiguracionJson` (vía `IRrhhPrenominaSnapshotService`),
-- la prenómina queda ligada a la nómina por `Nomina.PrenominaId`.
+### 6. Prenómina (eliminada en la fusión 2026-08-22)
+La etapa separada de prenómina fue eliminada. La captura y revisión previas al cierre ahora viven dentro de Nómina como las fases "Cerrar periodo y calcular" / "Reabrir captura". La ruta `/rrhh/prenominas` redirige a `/rrhh/nominas`. Las entidades `Prenomina`, `PrenominaDetalle` y `PrenominaCapturaRapidaRrhh` fueron eliminadas; el snapshot se renombró `RrhhPrenominaSnapshotService` → `RrhhNominaSnapshotService`.
 
 Referencia técnica:
-- `PrenominaDetalle.cs`
-- `Prenominas.razor`
-- `RrhhPrenominaSnapshotService.cs`
+- `Nominas.razor` (fase "Cerrar periodo y calcular" / "Reabrir captura")
+- `RrhhNominaSnapshotService.cs`
 
 ### 7. Nómina
-- la nómina exige una prenómina cerrada del mismo período,
+- la nómina ya no exige una prenómina cerrada; la captura y el cierre del periodo se hacen dentro de la propia Nómina ("Cerrar periodo y calcular" estampa `FechaCierreCaptura`; "Reabrir captura" lo limpia),
 - al sincronizar:
-  - toma incidencias desde `PrenominaDetalle`,
+  - toma incidencias desde `NominaDetalle` (la antigua `PrenominaDetalle` fue absorbida),
   - toma destajo real desde `ValesDestajo` aprobados,
   - suma `TotalPiezas` y `MontoDestajo`,
   - liga cada vale al `NominaDetalle`,
   - cambia el vale a `EnNomina`,
   - calcula: sueldo base, tiempo extra, bonos, deducciones, IMSS, INFONAVIT, ISR, subsidio, provisiones, costo empresa,
   - persiste el detalle en `NominaDetalle` y el recibo en `ReciboNomina.razor`.
+- **Neteo `NetoVsNeto` — fuente única:** la nómina no recalcula el neteo. El snapshot `RrhhNominaSnapshotService` llama a `IRrhhResolucionPeriodoService.ObtenerResumenesPeriodoBatchAsync` una sola vez para sobrescribir las 3 deducciones diarias con el valor canónico. `NominaTiempoExtraSourcing` es passthrough para las deducciones en ambos caminos (periodo o incidencia); el camino "periodo" solo intercambia el extra autorizado a pagar.
+- **DescartarExtra (F9):** al descartar el extra se anula solo el pago del extra, no el neteo de deducciones. El faltante/retardo/salida se descuenta según el neteo en vivo del periodo (el mismo de Asistencia Semanal).
 
 Referencia técnica:
 - `Nominas.razor` → `GuardarNomina()`
@@ -692,6 +672,9 @@ Referencia técnica:
 - `NominaResumenBuilder.cs`
 - `NominaReciboBuilder.cs`
 - `NominaPdfService.cs`
+- `RrhhNominaSnapshotService.cs`
+- `RrhhTiempoExtraPolicy.cs` (`CalcularNeteoNetoVsNeto`)
+- `NominaTiempoExtraSourcing.cs`
 
 ---
 
@@ -700,7 +683,6 @@ Referencia técnica:
 ### Lo que ya sí funciona
 - la cotización sí alimenta el tiempo estándar por proceso,
 - el destajo sí llega a nómina desde vales aprobados,
-- la prenómina sí queda ligada a la nómina por `PrenominaId`,
 - el cálculo de nómina ya combina incidencias del período + destajo real,
 - el catálogo SAT se inicializa con `NominaSatCatalogInitializer`,
 - la corrección de asistencia se hace con 4 pestañas vía `AsistenciasCorreccionModal`,
@@ -727,8 +709,8 @@ Referencia técnica:
 - `Pedido` hereda esa cotización seleccionada.
 - `Seguimiento` registra producción por talla/proceso/empleado.
 - `ValeDestajo` agrupa y formaliza el destajo del período.
-- `Prenómina` concentra incidencias laborales y congela su configuración al cerrar.
-- `Nómina` consolida incidencias + vales aprobados + tiempo extra + bonos + deducciones para calcular el pago final.
+- `Nómina` concentra incidencias laborales, congela la configuración al cerrar el periodo (antigua prenómina, fusión 2026-08-22) y consolida incidencias + vales aprobados + tiempo extra + bonos + deducciones para calcular el pago final.
+- El neteo `NetoVsNeto` semanal tiene fuente única: `Asistencia Semanal` lo pinta en vivo y `Nómina` lo consume sin recalcular.
 
 ---
 

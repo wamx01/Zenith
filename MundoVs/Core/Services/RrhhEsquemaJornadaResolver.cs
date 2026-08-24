@@ -30,12 +30,12 @@ public sealed class RrhhEsquemaJornadaResolver
             .FirstOrDefaultAsync(cancellationToken);
 
         if (activo is not null)
-            return new EsquemaJornadaResuelto(activo.TipoJornada, EsDefault: false, EsHueco: false, activo.Id);
+            return new EsquemaJornadaResuelto(activo.TipoJornada, EsDefault: false, EsHueco: false, activo.Id, activo.PagoFijoPorLabor);
 
         var existeFuturo = await db.EmpleadosEsquemaJornada
             .AnyAsync(e => e.EmpleadoId == empleadoId && e.IsActive && e.VigenteDesde > fecha, cancellationToken);
 
-        return new EsquemaJornadaResuelto(TipoJornada.Fija, EsDefault: !existeFuturo, EsHueco: existeFuturo, EsquemaId: null);
+        return new EsquemaJornadaResuelto(TipoJornada.Fija, EsDefault: !existeFuturo, EsHueco: existeFuturo, EsquemaId: null, PagoFijoPorLabor: false);
     }
 
     /// <summary>Conveniencia: sólo el TipoJornada vigente (lo que usa el procesador).</summary>
@@ -49,4 +49,5 @@ public sealed class RrhhEsquemaJornadaResolver
 /// <param name="EsDefault">True si cayó al default porque no hay ningún esquema.</param>
 /// <param name="EsHueco">True si no hay esquema activo pero existe uno futuro sin entrar.</param>
 /// <param name="EsquemaId">Id del esquema vigente, o null si cayó a default/hueco.</param>
-public sealed record EsquemaJornadaResuelto(TipoJornada TipoJornada, bool EsDefault, bool EsHueco, Guid? EsquemaId);
+/// <param name="PagoFijoPorLabor">True si el esquema vigente es PorHoras con pago fijo por labor (cobra el sueldo del día sin importar duración). False si no hay esquema activo.</param>
+public sealed record EsquemaJornadaResuelto(TipoJornada TipoJornada, bool EsDefault, bool EsHueco, Guid? EsquemaId, bool PagoFijoPorLabor);

@@ -142,10 +142,6 @@ public class CrmDbContext : DbContext
     public DbSet<RrhhEstadoAgente> RrhhEstadosAgente => Set<RrhhEstadoAgente>();
     public DbSet<RrhhLogChecador> RrhhLogsChecador => Set<RrhhLogChecador>();
     public DbSet<RrhhAusencia> RrhhAusencias => Set<RrhhAusencia>();
-    public DbSet<Prenomina> Prenominas => Set<Prenomina>();
-    public DbSet<PrenominaDetalle> PrenominaDetalles => Set<PrenominaDetalle>();
-    public DbSet<PrenominaBono> PrenominasBonos => Set<PrenominaBono>();
-    public DbSet<PrenominaPercepcion> PrenominasPercepciones => Set<PrenominaPercepcion>();
     public DbSet<Nomina> Nominas => Set<Nomina>();
     public DbSet<NominaDetalle> NominaDetalles => Set<NominaDetalle>();
     public DbSet<BonoRubroRrhh> BonosRubrosRrhh => Set<BonoRubroRrhh>();
@@ -212,7 +208,6 @@ public class CrmDbContext : DbContext
         ConfigurarTurnos(modelBuilder);
         ConfigurarAsistenciaRrhh(modelBuilder);
         ConfigurarEmpleados(modelBuilder);
-        ConfigurarPrenominas(modelBuilder);
         ConfigurarNominas(modelBuilder);
         ConfigurarEsquemasPago(modelBuilder);
         ConfigurarAuth(modelBuilder);
@@ -2535,105 +2530,6 @@ public class CrmDbContext : DbContext
         });
     }
 
-    private void ConfigurarPrenominas(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Prenomina>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Folio).HasMaxLength(30);
-            entity.Property(e => e.PeriodicidadPago).HasConversion<int>();
-            entity.Property(e => e.Periodo).HasMaxLength(80).IsRequired();
-            entity.Property(e => e.Estatus).HasConversion<int>();
-            entity.Property(e => e.Notas).HasMaxLength(500);
-
-            entity.HasOne(e => e.Empresa)
-                .WithMany()
-                .HasForeignKey(e => e.EmpresaId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(e => new { e.EmpresaId, e.Folio }).IsUnique();
-            entity.HasIndex(e => new { e.EmpresaId, e.FechaInicio, e.FechaFin }).IsUnique();
-            entity.HasIndex(e => new { e.EmpresaId, e.PeriodicidadPago, e.AnioPeriodo, e.NumeroPeriodo }).IsUnique();
-            entity.HasIndex(e => e.Estatus);
-        });
-
-        modelBuilder.Entity<PrenominaDetalle>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.HorasTrabajadasNetas).HasPrecision(18, 2);
-            entity.Property(e => e.HorasExtraBase).HasPrecision(18, 2);
-            entity.Property(e => e.HorasExtra).HasPrecision(18, 2);
-            entity.Property(e => e.HorasBancoAcumuladas).HasPrecision(18, 2);
-            entity.Property(e => e.HorasBancoConsumidas).HasPrecision(18, 2);
-            entity.Property(e => e.HorasDescansoTomado).HasPrecision(18, 2);
-            entity.Property(e => e.HorasDescansoPagado).HasPrecision(18, 2);
-            entity.Property(e => e.HorasDescansoNoPagado).HasPrecision(18, 2);
-            entity.Property(e => e.FactorPagoTiempoExtra).HasPrecision(18, 4);
-            entity.Property(e => e.MontoDestajoInformativo).HasPrecision(18, 2);
-            entity.Property(e => e.DiasVacacionesDisponibles).HasPrecision(18, 2);
-            entity.Property(e => e.DiasVacacionesRestantes).HasPrecision(18, 2);
-            entity.Property(e => e.ComplementoSalarioMinimoSugerido).HasPrecision(18, 2);
-            entity.Property(e => e.Notas).HasMaxLength(500);
-            entity.Property(e => e.DiasDomingoTrabajado).HasDefaultValue(0);
-
-            entity.HasOne(e => e.Prenomina)
-                .WithMany(p => p.Detalles)
-                .HasForeignKey(e => e.PrenominaId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.Empleado)
-                .WithMany(emp => emp.PrenominaDetalles)
-                .HasForeignKey(e => e.EmpleadoId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(e => new { e.PrenominaId, e.EmpleadoId }).IsUnique();
-            entity.HasIndex(e => e.EmpleadoId);
-        });
-
-        modelBuilder.Entity<PrenominaBono>(entity =>
-        {
-            entity.ToTable("rrhh_prenomina_bono");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Importe).HasPrecision(18, 2);
-            entity.Property(e => e.Observaciones).HasMaxLength(300);
-
-            entity.HasOne(e => e.PrenominaDetalle)
-                .WithMany(d => d.BonosRapidos)
-                .HasForeignKey(e => e.PrenominaDetalleId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.BonoRubroRrhh)
-                .WithMany()
-                .HasForeignKey(e => e.BonoRubroRrhhId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(e => e.PrenominaDetalleId);
-            entity.HasIndex(e => new { e.PrenominaDetalleId, e.BonoRubroRrhhId }).IsUnique();
-        });
-
-        modelBuilder.Entity<PrenominaPercepcion>(entity =>
-        {
-            entity.ToTable("rrhh_prenomina_percepcion");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Importe).HasPrecision(18, 2);
-            entity.Property(e => e.Referencia).HasMaxLength(120);
-            entity.Property(e => e.Observaciones).HasMaxLength(300);
-
-            entity.HasOne(e => e.PrenominaDetalle)
-                .WithMany(d => d.PercepcionesRapidas)
-                .HasForeignKey(e => e.PrenominaDetalleId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.TipoPercepcion)
-                .WithMany()
-                .HasForeignKey(e => e.TipoPercepcionId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(e => e.PrenominaDetalleId);
-            entity.HasIndex(e => new { e.PrenominaDetalleId, e.TipoPercepcionId }).IsUnique();
-        });
-    }
-
     private void ConfigurarNominas(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Nomina>(entity =>
@@ -2650,11 +2546,6 @@ public class CrmDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.EmpresaId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(e => e.Prenomina)
-                .WithOne()
-                .HasForeignKey<Nomina>(e => e.PrenominaId)
-                .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasIndex(e => new { e.EmpresaId, e.Folio }).IsUnique();
             entity.HasIndex(e => new { e.EmpresaId, e.Periodo, e.NumeroNomina }).IsUnique();
@@ -2700,6 +2591,23 @@ public class CrmDbContext : DbContext
             entity.Property(e => e.DiasDescansoTrabajado).HasDefaultValue(0);
             entity.Property(e => e.DiasDomingoTrabajado).HasDefaultValue(0);
             entity.Property(e => e.DiasFestivoTrabajado).HasDefaultValue(0);
+
+            // Fusión prenómina→nómina: snapshot de asistencia congelado sobre NominaDetalle.
+            // English: prenómina→nómina fusion — attendance snapshot frozen on NominaDetalle.
+            entity.Property(e => e.DiasPorHorasTrabajados).HasDefaultValue(0);
+            entity.Property(e => e.MinutosPorHorasNetos).HasDefaultValue(0);
+            entity.Property(e => e.MinutosPorHorasFestivoNetos).HasDefaultValue(0);
+            entity.Property(e => e.DiasFestivoTrabajadoFija).HasDefaultValue(0);
+            entity.Property(e => e.HorasBancoAcumuladas).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasBancoConsumidas).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasBancoSaldoActual).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasDescansoTomado).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasDescansoPagado).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.HorasDescansoNoPagado).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.MontoDestajoInformativo).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.DiasVacacionesDisponibles).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.DiasVacacionesRestantes).HasPrecision(18, 2).HasDefaultValue(0m);
+            entity.Property(e => e.ComplementoSalarioMinimoSugerido).HasPrecision(18, 2).HasDefaultValue(0m);
 
             entity.HasOne(e => e.EsquemaPago)
                 .WithMany()
@@ -3508,10 +3416,6 @@ public class CrmDbContext : DbContext
         modelBuilder.Entity<RrhhResolucionTiempoExtraLinea>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<RrhhEmpleadoTurno>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.EmpresaId == _empresaId && e.Empleado.EmpresaId == _empresaId && e.TurnoBase.EmpresaId == _empresaId));
         modelBuilder.Entity<RrhhEstadoAgente>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
-        modelBuilder.Entity<Prenomina>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
-        modelBuilder.Entity<PrenominaDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Prenomina.EmpresaId == _empresaId);
-        modelBuilder.Entity<PrenominaBono>().HasQueryFilter(e => _empresaId == Guid.Empty || (e.PrenominaDetalle.Prenomina.EmpresaId == _empresaId && e.BonoRubroRrhh.EmpresaId == _empresaId));
-        modelBuilder.Entity<PrenominaPercepcion>().HasQueryFilter(e => _empresaId == Guid.Empty || e.PrenominaDetalle.Prenomina.EmpresaId == _empresaId);
         modelBuilder.Entity<Nomina>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);
         modelBuilder.Entity<NominaDetalle>().HasQueryFilter(e => _empresaId == Guid.Empty || e.Nomina.EmpresaId == _empresaId);
         modelBuilder.Entity<EsquemaPago>().HasQueryFilter(e => _empresaId == Guid.Empty || e.EmpresaId == _empresaId);

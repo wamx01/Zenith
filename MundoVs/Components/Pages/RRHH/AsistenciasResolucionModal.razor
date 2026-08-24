@@ -1,4 +1,5 @@
 @using MundoVs.Core.Entities
+@using MundoVs.Core.Services
 
 @if (Visible && _resumenPeriodo is not null && !_cargandoDatos)
 {
@@ -10,6 +11,15 @@
     var totalLineasBanco = _edicion.Lineas.Where(l => l.Destino == RrhhDestinoTiempoExtraLinea.Banco).Sum(l => Math.Max(0, l.Minutos));
     var factoradasPreview = _edicion.Lineas.Where(l => l.Destino == RrhhDestinoTiempoExtraLinea.Pago).Sum(l => Math.Max(0, l.Minutos) / 60m * Math.Max(0m, l.Factor));
     var excedeCap = totalLineasMin > extraAbsorbible;
+    // Descarte activo = el operador marcó "Descartar" O limpió todas las líneas a 0.
+    // En ambos casos Autorizar cierra el periodo sin pago/banco (descuento completo
+    // del faltante/retardo). Mismo etiquetado en el botón de footer para que la
+    // intención del operador sea visible ANTES de clickear.
+    // English: Discard active = operator clicked "Descartar" OR cleared all lines to 0.
+    // In both cases Authorize closes the period with no pay/bank (full deduction of
+    // faltante/retardo). Same labeling on the footer button so the operator's intent
+    // is visible BEFORE clicking.
+    var descartarActivo = _edicion.DescartarExtra || totalLineasMin == 0;
     var autorizada = resolucion is { Estatus: RrhhResolucionPeriodoEstatus.Autorizada };
 
     <div class="modal fade show d-block asis-modal-backdrop" tabindex="-1" role="dialog" aria-modal="true">
@@ -20,6 +30,11 @@
                         <h5 class="modal-title mb-0">@NombreEmpleado</h5>
                         <span class="badge @ObtenerClaseEstatus(resolucion)">@ObtenerEtiquetaEstatus(resolucion)</span>
                         <span class="badge bg-light text-dark border">@resumenPeriodo.PeriodoEtiqueta</span>
+                        <span class="badge bg-light text-dark border"><i class="bi bi-clock-history me-1"></i>@_turnoEtiqueta</span>
+                        @if (!string.IsNullOrEmpty(_turnoHorario))
+                        {
+                            <small class="text-muted d-block w-100 mb-0"><i class="bi bi-calendar3 me-1"></i>@_turnoHorario</small>
+                        }
                     </div>
                     <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CerrarAsync"></button>
                 </div>
@@ -34,12 +49,45 @@
                         <div class="alert alert-success py-2 small">@ok</div>
                     }
 
+                    @* Meta semanal (Fija sin turno): el extra/déficit se calcula contra una meta
+                       de horas base del periodo (default 48h), no por-día. El déficit descuenta
+                       sueldo como FaltanteDescontable (NO genera permiso por diferencia).
+                       English: Weekly meta (Fija with no shift): extra/deficit is computed against
+                       a base-hours meta for the period (default 48h), not per-day. The deficit
+                       docks salary as FaltanteDescontable (NO permiso por diferencia). *@
+                    @if (resumenPeriodo.EsMetaSemanal)
+                    {
+                        var metaMin = resumenPeriodo.MinutosMetaSemanal;
+                        var trabMin = resumenPeriodo.MinutosTrabajadosMetaSemanal;
+                        var sobreMeta = trabMin > metaMin;
+                        <div class="alert alert-info py-2 small d-flex flex-wrap gap-2 align-items-center mb-2">
+                            <span class="badge bg-info text-dark">Meta semanal</span>
+                            <span>Meta: <strong>@FormatearMinutos(metaMin)</strong></span>
+                            <span>·</span>
+                            <span>Trabajado: <strong>@FormatearMinutos(trabMin)</strong></span>
+                            <span>·</span>
+                            <span class="@(sobreMeta ? "text-success" : "text-danger")">
+                                @(sobreMeta
+                                    ? $"Extra sobre la meta: {FormatearMinutos(trabMin - metaMin)}"
+                                    : $"Déficit bajo la meta: {FormatearMinutos(metaMin - trabMin)}")
+                            </span>
+                            <span class="text-muted">El déficit descuenta sueldo (no genera permiso); el extra se autoriza aquí abajo.</span>
+                        </div>
+                    }
+
                     <div class="asis-res-neteo">
                         <div class="asis-res-neteo__row">
                             <div class="asis-res-neteo__item asis-res-neteo__item--info">
                                 <span class="asis-res-neteo__label">Extra detectado</span>
                                 <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosExtraDetectado)</span>
                             </div>
+                            @if (resumenPeriodo.MinutosExtraBajoUmbralNoPagadero > 0)
+                            {
+                                <div class="asis-res-neteo__item asis-res-neteo__item--info">
+                                    <span class="asis-res-neteo__label">Extra bajo umbral (no pagadero)</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosExtraBajoUmbralNoPagadero)</span>
+                                </div>
+                            }
                             @if (resumenPeriodo.MinutosPermisoConGocePeriodo > 0)
                             {
                                 <div class="asis-res-neteo__item asis-res-neteo__item--info">
@@ -62,6 +110,13 @@
                                     <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosRetardoAbsorbidoExtra)</span>
                                 </div>
                             }
+                            @if (resumenPeriodo.MinutosSalidaAnticipadaAbsorbidoExtra > 0)
+                            {
+                                <div class="asis-res-neteo__item asis-res-neteo__item--warn">
+                                    <span class="asis-res-neteo__label">Extra tapa salida</span>
+                                    <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.MinutosSalidaAnticipadaAbsorbidoExtra)</span>
+                                </div>
+                            }
                             @if (resumenPeriodo.MinutosBancoConsumidoPeriodo > 0)
                             {
                                 <div class="asis-res-neteo__item asis-res-neteo__item--info">
@@ -82,8 +137,123 @@
                                 <span class="asis-res-neteo__value">@FormatearMinutos(resumenPeriodo.SaldoBancoHorasMinutos)</span>
                             </div>
                         </div>
-                        <small class="text-muted d-block mt-2">Neteo del periodo: el extra detectado tapa primero el faltante neto (@FormatearMinutos(resumenPeriodo.MinutosFaltanteAbsorbidoExtra) min), luego el retardo (@FormatearMinutos(resumenPeriodo.MinutosRetardoAbsorbidoExtra) min), y por último repone el banco consumido en el periodo (@FormatearMinutos(resumenPeriodo.MinutosBancoRestauradoExtra) min). Solo el extra absorbible (@FormatearMinutos(extraAbsorbible) min) se reparte entre las líneas.</small>
+                        <small class="text-muted d-block mt-2">Neteo del periodo: el extra detectado tapa primero el faltante neto (@FormatearMinutos(resumenPeriodo.MinutosFaltanteAbsorbidoExtra) min), luego el retardo (@FormatearMinutos(resumenPeriodo.MinutosRetardoAbsorbidoExtra) min), luego la salida anticipada (@FormatearMinutos(resumenPeriodo.MinutosSalidaAnticipadaAbsorbidoExtra) min), y por último repone el banco consumido en el periodo (@FormatearMinutos(resumenPeriodo.MinutosBancoRestauradoExtra) min). Solo el extra absorbible (@FormatearMinutos(extraAbsorbible) min) se reparte entre las líneas. @if (resumenPeriodo.MinutosExtraBajoUmbralNoPagadero > 0) {<text>El extra <em>bajo umbral</em> (@FormatearMinutos(resumenPeriodo.MinutosExtraBajoUmbralNoPagadero) min) ayuda a tapar deducciones pero <em>no se paga</em>: el pagable se topa al extra detectado (sobre umbral).</text>}</small>
                     </div>
+
+                    @* Permiso por diferencia — siempre visible para diagnóstico (quitado el gate DiferenciaMinutos > 0).
+                       Meta semanal: el déficit descuenta sueldo como FaltanteDescontable, NO genera
+                       permiso → el panel se oculta (la detección ya viene en 0 desde el servicio).
+                       English: Permiso por diferencia — always visible for diagnostics. Weekly meta:
+                       the deficit docks salary as FaltanteDescontable, NO permiso → panel hidden
+                       (detection already comes back as 0 from the service). *@
+                    @if (_sugerenciaDiferencia is not null && !resumenPeriodo.EsMetaSemanal)
+                    {
+                        var diferenciaMax = _sugerenciaDiferencia.DiferenciaMinutos;
+                        var bancoDisp = _sugerenciaDiferencia.BancoDisponibleMinutos;
+                        var ed = _edicionPermisoDiferencia;
+                        var totalPerm = ed.TotalMinutos;
+                        var sumaExcede = totalPerm > diferenciaMax;
+                        var bancoExcede = ed.BancoMinutos > bancoDisp;
+                        var categoriasVacias = ed.BancoMinutos == 0 && ed.ConGoceMinutos == 0 && ed.SinGoceMinutos == 0;
+
+                        <div class="asis-res-perm-dif mt-3">
+                            <h6 class="asis-res-perm-dif__title">
+                                <i class="bi bi-arrow-left-right me-1"></i>Permiso por diferencia
+                                <span class="text-muted small ms-2">(sintético, se cierra al autorizar el periodo)</span>
+                            </h6>
+                            <div class="asis-res-perm-dif__resumen small text-muted mb-2">
+                                Diferencia sugerida: <strong>@FormatearMinutos(diferenciaMax)</strong> · Banco disponible: <strong>@FormatearMinutos(bancoDisp)</strong>
+                            </div>
+
+                            @if (!PuedeAprobarTiempoExtra || autorizada)
+                            {
+                                @* Solo lectura: mostrar el detalle capturado al autorizar. *@
+                                @if (ed.TotalMinutos > 0)
+                                {
+                                    <ul class="small mb-0">
+                                        @if (ed.BancoMinutos > 0)
+                                        {
+                                            <li><span class="badge bg-info text-dark">Banco</span> @FormatearMinutos(ed.BancoMinutos) · x@ed.BancoFactor.ToString("0.00")</li>
+                                        }
+                                        @if (ed.ConGoceMinutos > 0)
+                                        {
+                                            <li><span class="badge bg-success">Con goce</span> @FormatearMinutos(ed.ConGoceMinutos) · x@ed.ConGoceFactor.ToString("0.00")</li>
+                                        }
+                                        @if (ed.SinGoceMinutos > 0)
+                                        {
+                                            <li><span class="badge bg-secondary">Sin goce</span> @FormatearMinutos(ed.SinGoceMinutos) · x@ed.SinGoceFactor.ToString("0.00")</li>
+                                        }
+                                    </ul>
+                                }
+                                else
+                                {
+                                    <div class="small text-muted">Sin permisos por diferencia en este periodo.</div>
+                                }
+                            }
+                            else
+                            {
+                                @* Editor (autorizar). *@
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0 asis-res-perm-dif__tabla">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:130px">Categoría</th>
+                                                <th style="width:120px" class="text-end">Minutos</th>
+                                                <th style="width:90px">Factor</th>
+                                                <th>Observaciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td><span class="badge bg-info text-dark">Banco</span> <span class="small text-muted">c/goce, descuenta banco</span></td>
+                                                <td><input type="number" class="form-control form-control-sm text-end @((bancoExcede) ? "is-invalid" : "")" @bind="_edicionPermisoDiferencia.BancoMinutos" min="0" /></td>
+                                                <td><input type="number" step="0.25" class="form-control form-control-sm" @bind="_edicionPermisoDiferencia.BancoFactor" min="1" /></td>
+                                                <td><input type="text" class="form-control form-control-sm" placeholder="Obs." @bind="_edicionPermisoDiferencia.BancoObservaciones" /></td>
+                                            </tr>
+                                            <tr>
+                                                <td><span class="badge bg-success">Con goce</span> <span class="small text-muted">c/goce, sin banco</span></td>
+                                                <td><input type="number" class="form-control form-control-sm text-end" @bind="_edicionPermisoDiferencia.ConGoceMinutos" min="0" /></td>
+                                                <td><input type="number" step="0.25" class="form-control form-control-sm" @bind="_edicionPermisoDiferencia.ConGoceFactor" min="1" /></td>
+                                                <td><input type="text" class="form-control form-control-sm" placeholder="Obs." @bind="_edicionPermisoDiferencia.ConGoceObservaciones" /></td>
+                                            </tr>
+                                            <tr>
+                                                <td><span class="badge bg-secondary">Sin goce</span> <span class="small text-muted">s/goce, descuento</span></td>
+                                                <td><input type="number" class="form-control form-control-sm text-end" @bind="_edicionPermisoDiferencia.SinGoceMinutos" min="0" /></td>
+                                                <td><input type="number" step="0.25" class="form-control form-control-sm" @bind="_edicionPermisoDiferencia.SinGoceFactor" min="1" /></td>
+                                                <td><input type="text" class="form-control form-control-sm" placeholder="Obs." @bind="_edicionPermisoDiferencia.SinGoceObservaciones" /></td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr class="fw-semibold">
+                                                <td>Total</td>
+                                                <td class="text-end @(sumaExcede ? "text-danger" : "text-success")">
+                                                    @FormatearMinutos(totalPerm) / @FormatearMinutos(diferenciaMax)
+                                                </td>
+                                                <td colspan="2">
+                                                    @if (sumaExcede)
+                                                    {
+                                                        <span class="small text-danger"><i class="bi bi-exclamation-triangle me-1"></i>La suma (@FormatearMinutos(totalPerm)) excede la diferencia (@FormatearMinutos(diferenciaMax)).</span>
+                                                    }
+                                                    else if (bancoExcede)
+                                                    {
+                                                        <span class="small text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Banco @FormatearMinutos(ed.BancoMinutos) excede saldo @FormatearMinutos(bancoDisp).</span>
+                                                    }
+                                                    else if (categoriasVacias)
+                                                    {
+                                                        <span class="small text-muted">Captura al menos una categoría para autorizar el permiso por diferencia.</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="small text-muted">Se aplica al último día del periodo (@_sugerenciaDiferencia.PeriodoEtiqueta).</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
 
                     @if (resumenPeriodo.Dias is { Count: > 0 })
                     {
@@ -98,13 +268,14 @@
                                             <th class="text-end">Faltante neto</th>
                                             <th class="text-end">Perm. c/goce</th>
                                             <th class="text-end">Retardo</th>
+                                            <th class="text-end">Salida det.</th>
                                             <th class="text-end">Trab. netos</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @foreach (var dia in resumenPeriodo.Dias)
                                         {
-                                            var tieneMovimiento = dia.MinutosExtra > 0 || dia.MinutosFaltanteNeto > 0 || dia.MinutosRetardo > 0 || dia.MinutosPermisoConGoce > 0;
+                                            var tieneMovimiento = dia.MinutosExtra > 0 || dia.MinutosFaltanteNeto > 0 || dia.MinutosRetardo > 0 || dia.MinutosSalidaAnticipada > 0 || dia.MinutosPermisoConGoce > 0;
                                             <tr class="@(tieneMovimiento ? string.Empty : "asis-res-dias__row--muted")">
                                                 <td class="asis-res-dias__fecha">
                                                     <span class="asis-res-dias__dia">@ObtenerAbreviaturaDia(dia.Fecha)</span>
@@ -114,6 +285,7 @@
                                                 <td class="text-end @(dia.MinutosFaltanteNeto > 0 ? "fw-semibold text-danger" : "text-muted")">@FormatearMinutos(dia.MinutosFaltanteNeto)</td>
                                                 <td class="text-end @(dia.MinutosPermisoConGoce > 0 ? "fw-semibold" : "text-muted")">@FormatearMinutos(dia.MinutosPermisoConGoce)</td>
                                                 <td class="text-end @(dia.MinutosRetardo > 0 ? "fw-semibold text-warning" : "text-muted")">@FormatearMinutos(dia.MinutosRetardo)</td>
+                                                <td class="text-end @(dia.MinutosSalidaAnticipada > 0 ? "fw-semibold text-danger" : "text-muted")">@FormatearMinutos(dia.MinutosSalidaAnticipada)</td>
                                                 <td class="text-end text-muted">@FormatearMinutos(dia.MinutosTrabajadosNetos)</td>
                                             </tr>
                                         }
@@ -125,6 +297,7 @@
                                             <td class="text-end text-danger">@FormatearMinutos(resumenPeriodo.MinutosFaltanteNetoPeriodo)</td>
                                             <td class="text-end">@FormatearMinutos(resumenPeriodo.MinutosPermisoConGocePeriodo)</td>
                                             <td class="text-end text-warning">@FormatearMinutos(resumenPeriodo.MinutosRetardoDetectado)</td>
+                                            <td class="text-end text-danger">@FormatearMinutos(resumenPeriodo.MinutosSalidaAnticipadaDetectado)</td>
                                             <td class="text-end">@FormatearMinutos(resumenPeriodo.MinutosTrabajadosNetosDetectado)</td>
                                         </tr>
                                         @if (autorizada)
@@ -236,6 +409,47 @@
                     }
                 </div>
 
+                @* Tabla resumen estilo nómina Excel — solo visual *@
+                @if (_resumenPeriodo is not null)
+                {
+                    <div class="asis-res-nomina mt-3 mb-3 px-3">
+                        <h6 class="fw-bold small"><i class="bi bi-table me-1"></i>Resumen de nómina del periodo</h6>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm text-center mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Total Hrs</th>
+                                        <th>Hrs Pagadas</th>
+                                        <th>Entro a Banco</th>
+                                        <th>Usaste Banco</th>
+                                        <th>Saldo Banco</th>
+                                        <th>Total Hrs Adic. a Pago</th>
+                                        <th class="text-danger">Deducción faltante</th>
+                                        <th class="text-danger">Deducción retardo</th>
+                                        <th class="text-danger">Deducción salida</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>@FormatearMinutos(_resumenPeriodo.MinutosTrabajadosNetosDetectado)</td>
+                                        <td>@FormatearMinutos(CalcularJornadaProgramada())</td>
+                                        <td>@FormatearMinutos(_resolucion?.MinutosExtraBanco ?? 0)</td>
+                                        <td>@FormatearMinutos(_resumenPeriodo.MinutosBancoConsumidoPeriodo)</td>
+                                        <td>@FormatearMinutos(_resumenPeriodo.SaldoBancoHorasMinutos)</td>
+                                        <td>@FormatearMinutos(_resolucion?.MinutosExtraPago ?? 0)</td>
+                                        <td class="text-danger">@FormatearMinutos(CalcularDedFaltanteNeta())</td>
+                                        <td class="text-danger">@FormatearMinutos(CalcularDedRetardoNeto())</td>
+                                        <td class="text-danger">@FormatearMinutos(CalcularDedSalidaNeta())</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <strong>Total Hrs</strong> = tiempo trabajado neto (incluye el extra detectado, aún no autorizado). <strong>Hrs Pagadas</strong> = base pagada <em>neteada</em> por el extra del periodo = jornada − deducciones que el extra NO tapó. El extra de un día tapa el faltante/retardo/salida de otro, así que la base refleja esa compensación cruzada. <em>Deducción faltante/retardo/salida</em> = lo que realmente se descuenta en $ tras el neteo. Comprobación: <em>Hrs Pagadas + las 3 deducciones = jornada</em>. El extra autorizado va en <em>Adic. a Pago</em>.
+                        </div>
+                    </div>
+                }
+
                 <div class="modal-footer">
                     @if (autorizada && PuedeAprobarTiempoExtra)
                     {
@@ -243,7 +457,7 @@
                     }
                     else if (!autorizada && PuedeAprobarTiempoExtra)
                     {
-                        <button class="btn btn-success" @onclick="AutorizarAsync" disabled="@(cargando)" title="@(_edicion.DescartarExtra ? "Aceptar la detección descartando el extra (descuento completo, sin pago)" : (totalLineasMin == 0 ? "No hay minutos asignados: usa 'Todo pago', 'Descartar' o edita las líneas" : (excedeCap ? "Las líneas exceden el extra absorbible" : "Autorizar la resolución del periodo")))"><i class="bi bi-check2-circle me-1"></i>@(_edicion.DescartarExtra ? "Aceptar y descartar" : "Autorizar periodo")</button>
+                        <button class="btn btn-success" @onclick="AutorizarAsync" disabled="@(cargando)" title="@(descartarActivo ? "Aceptar la detección descartando el extra (descuento completo, sin pago)" : (excedeCap ? "Las líneas exceden el extra absorbible" : "Autorizar la resolución del periodo"))"><i class="bi bi-check2-circle me-1"></i>@(descartarActivo ? "Aceptar y descartar" : "Autorizar periodo")</button>
                     }
                     <button type="button" class="btn btn-outline-secondary" @onclick="CerrarAsync">Cerrar</button>
                 </div>

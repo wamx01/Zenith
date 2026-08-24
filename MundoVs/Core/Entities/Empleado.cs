@@ -23,6 +23,17 @@ public class Empleado
     public DateTime? FechaContratacion { get; set; }
     public Guid? PosicionId { get; set; }
     public Guid? TurnoBaseId { get; set; }
+    // Método de cálculo por defecto para los días Fija del empleado. null = "Vs horario"
+    // (aplica turno/retardo/salida/faltante/extra con umbral); "MarcajeReloj" = cuenta tal
+    // cual las marcas, sin reglas. Sólo aplica con jornada Fija (Por horas lo anula el
+    // processor). El "Recalcular por periodo" (forzarDefaultEmpleado=true) lo impone a
+    // todos los días; el recálculo por día/incremental lo usa como fallback.
+    // English: default calculation method for the employee's Fija days. null = "Vs schedule"
+    // (applies shift/late/early-leave/shortage/extra with threshold); "MarcajeReloj" = counts
+    // marks as-is, no rules. Only meaningful with Fija (Por horas nulls it in the processor).
+    // "Recalculate by period" (forzarDefaultEmpleado=true) enforces it on every day; per-day
+    // / incremental recalc uses it as a fallback.
+    public string? ModoSugerenciaExtraDefault { get; set; }
     public string? Puesto { get; set; }
     public string? Departamento { get; set; }
     public decimal SueldoSemanal { get; set; }
@@ -48,7 +59,6 @@ public class Empleado
     public ICollection<RrhhBancoHorasMovimiento> BancoHorasMovimientos { get; set; } = [];
     public ICollection<RrhhAusencia> Ausencias { get; set; } = [];
     public ICollection<NominaDetalle> NominaDetalles { get; set; } = [];
-    public ICollection<PrenominaDetalle> PrenominaDetalles { get; set; } = [];
     public ICollection<EmpleadoConceptoRrhh> ConceptosNomina { get; set; } = [];
     public ICollection<EmpleadoEsquemaPago> EsquemasPago { get; set; } = [];
     public ICollection<EmpleadoEsquemaJornada> EsquemasJornada { get; set; } = [];

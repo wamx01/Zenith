@@ -94,6 +94,14 @@ public sealed class RrhhAsistenciaProcessorTests
         Assert.Equal(0, asistencia.MinutosRetardo);
         Assert.Equal(RrhhAsistenciaEstatus.AsistenciaNormal, asistencia.Estatus);
         Assert.DoesNotContain("Retardo", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        // Tolerancia perdona también el TIEMPO: los 5 min crudos de llegada tardía se registran
+        // como perdón (MinutosToleranciaRetardoAplicada) y se suman al neto efectivo, reduciendo
+        // el faltante a 0 → día limpio (jornada neta 540 = trabajado 535 + perdón 5).
+        // English: Tolerance also forgives the TIME: the 5 raw late-arrival min are recorded as
+        // forgiveness (MinutosToleranciaRetardoAplicada) and added to net effective time, reducing
+        // the faltante to 0 → clean day (net jornada 540 = worked 535 + forgiven 5).
+        Assert.Equal(5, asistencia.MinutosToleranciaRetardoAplicada);
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia));
     }
 
     [Fact]
@@ -122,6 +130,14 @@ public sealed class RrhhAsistenciaProcessorTests
         Assert.Equal(6, asistencia.MinutosRetardo);
         Assert.Equal(RrhhAsistenciaEstatus.Retardo, asistencia.Estatus);
         Assert.Contains("Retardo de 6 min.", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        // Al rebasar la tolerancia no hay perdón de tiempo: la tolerancia aplicada es 0 y el
+        // retardo (6 min) se contabiliza en su propio bucket, EXCLUIDO del faltante neto →
+        // faltante 0 (no se cobra dos veces en neteo + descuento de salario).
+        // English: When the tolerance is exceeded there is no time forgiveness: applied tolerance
+        // is 0 and the retardo (6 min) is tracked in its own bucket, EXCLUDED from faltante neto
+        // → faltante 0 (not charged twice in neteo + salary discount).
+        Assert.Equal(0, asistencia.MinutosToleranciaRetardoAplicada);
+        Assert.Equal(0, RrhhTiempoExtraPolicy.ObtenerMinutosFaltanteNeto(asistencia));
     }
 
     [Fact]
@@ -1249,6 +1265,57 @@ public sealed class RrhhAsistenciaProcessorTests
     }
 
     [Fact]
+    public async Task ProcesarMarcacionesPendientesAsync_DescansoTomadoMuyFueraDeHorario_NoGeneraTercerDescansoFantasma()
+    {
+        // Turno 8-17 con DOS descansos planeados: D1 12:00-12:30 (30 min), D2 15:30-15:45 (15 min).
+        // El empleado toma dos descansos: T1 12:05-12:35 (cerca de D1) y T2 10:00-10:15
+        // (muy por fuera de ambas ventanas — el puntaje de emparejarlo con cualquier
+        // planeado supera 240). Antes del fix, el algoritmo dejaba D2 sin emparejar
+        // (descuento planeado 15) Y mandaba T2 a "adicional" (descuento real 15) → el
+        // mismo descanso se cobraba dos veces = un "tercer descanso" fantasma (60 min
+        // descontados en vez de 45). Con el fix de biyección, los dos tomados se asocian
+        // a los dos planeados por proximidad: se descuentan exactamente 45 min, sin
+        // adicional fantasma.
+        // English: shift 8-17 with TWO planned breaks (D1 12:00-12:30, D2 15:30-15:45).
+        // Two breaks taken, one far off-schedule (match score > 240). Before the fix the
+        // far taken break became a phantom "adicional" AND its planned break was deducted
+        // as untaken = double count (a "third break"). Bijection forces 1:1 pairing by
+        // proximity: exactly 45 min deducted, no phantom adicional.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id, configurarDescanso: true, configurarSegundoDescanso: true);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 10, 0, 0), "far-out"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 10, 15, 0), "far-in"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 12, 5, 0), "d1-out"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 12, 35, 0), "d1-in"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ProcesarMarcacionesPendientesAsync(db, empresa.Id, checador.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        // 30 (D1) + 15 (D2) = 45 min descontados; sin el fantasma de 15 extra.
+        Assert.Equal(45, asistencia.MinutosDescansoTomado);
+        Assert.Equal(495, asistencia.MinutosTrabajadosNetos);
+        var resumen = asistencia.ResumenDescansos ?? string.Empty;
+        Assert.Contains("D1:", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("D2:", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("D3:", resumen, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("adicional", asistencia.Observaciones ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ProcesarMarcacionesPendientesAsync_DescuentaDescansoAutomaticamente_CuandoLaJornadaCoincideConLaBruta()
     {
         await using var db = CreateDbContext();
@@ -2040,12 +2107,13 @@ public sealed class RrhhAsistenciaProcessorTests
 
     // ── F2: esquema PorHoras + refactor I11 (ModoSugerenciaExtra modo puro) ──
 
-    private static EmpleadoEsquemaJornada CrearEsquemaJornada(Guid empleadoId, TipoJornada tipo, DateTime desde, DateTime? hasta = null)
+    private static EmpleadoEsquemaJornada CrearEsquemaJornada(Guid empleadoId, TipoJornada tipo, DateTime desde, DateTime? hasta = null, bool pagoFijoPorLabor = false)
         => new()
         {
             Id = Guid.NewGuid(),
             EmpleadoId = empleadoId,
             TipoJornada = tipo,
+            PagoFijoPorLabor = pagoFijoPorLabor,
             VigenteDesde = desde,
             VigenteHasta = hasta,
             IsActive = true,
@@ -2160,6 +2228,108 @@ public sealed class RrhhAsistenciaProcessorTests
         Assert.Equal(turno.Id, asistencia.TurnoBaseId);
         Assert.Equal(6, asistencia.MinutosRetardo);
         Assert.Equal(RrhhAsistenciaEstatus.Retardo, asistencia.Estatus);
+    }
+
+    // ── Pago fijo por labor (perfil #4: limpieza) — el processor estampa EsPagoFijoPorLabor ──
+
+    [Fact]
+    public async Task Reprocesar_PorHoras_ConPagoFijoPorLabor_EstampaFlagTrue()
+    {
+        // Esquema PorHoras + flag PagoFijoPorLabor: el processor estampa EsPagoFijoPorLabor=true.
+        // Sigue siendo PorHoras (sin turno, sin retardo/extra); el snapshot es quien redirige
+        // el día al bucket Fija. Aquí sólo verificamos el estampado del flag.
+        // English: PorHoras scheme with PagoFijoPorLabor flag — processor stamps
+        // EsPagoFijoPorLabor=true. Still PorHoras (no shift, no retardo/extra); the snapshot
+        // is what redirects the day to the Fija bucket. Here we only verify the flag stamping.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, Guid.Empty);
+
+        db.Empresas.Add(empresa);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.EmpleadosEsquemaJornada.Add(CrearEsquemaJornada(empleado.Id, TipoJornada.PorHoras, new DateTime(2024, 1, 1), pagoFijoPorLabor: true));
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 9, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.True(asistencia.EsPorHoras);
+        Assert.True(asistencia.EsPagoFijoPorLabor);
+        Assert.Equal(60, asistencia.MinutosTrabajadosNetos);
+        Assert.Equal(0, asistencia.MinutosRetardo);
+        Assert.Equal(0, asistencia.MinutosExtra);
+        Assert.Equal(RrhhAsistenciaEstatus.TrabajadoPorHoras, asistencia.Estatus);
+    }
+
+    [Fact]
+    public async Task Reprocesar_PorHoras_SinPagoFijoPorLabor_EstampaFlagFalse()
+    {
+        // PorHoras SIN flag: EsPagoFijoPorLabor=false (comportamiento normal, paga por minutos).
+        // English: PorHoras WITHOUT the flag: EsPagoFijoPorLabor=false (normal by-minutes pay).
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, Guid.Empty);
+
+        db.Empresas.Add(empresa);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.EmpleadosEsquemaJornada.Add(CrearEsquemaJornada(empleado.Id, TipoJornada.PorHoras, new DateTime(2024, 1, 1), pagoFijoPorLabor: false));
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 14, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.True(asistencia.EsPorHoras);
+        Assert.False(asistencia.EsPagoFijoPorLabor);
+        Assert.Equal(360, asistencia.MinutosTrabajadosNetos);
+    }
+
+    [Fact]
+    public async Task Reprocesar_Fija_ConPagoFijoPorLaborTrue_IgnoraFlagYEstampaFalse()
+    {
+        // El flag PagoFijoPorLabor sólo aplica con PorHoras. Si el esquema es Fija (incluso
+        // si el flag viniera true por error de captura), el processor lo normaliza a false:
+        // EsPorHoras=false Y EsPagoFijoPorLabor=false. No debe pagar fijo-por-labor en Fija.
+        // English: the PagoFijoPorLabor flag only applies with PorHoras. If the scheme is Fija
+        // (even if the flag were true by data error), the processor normalizes it to false.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = CreateTurno(empresa.Id);
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        // Esquema Fija con flag true (incoherente) — el processor debe ignorar el flag.
+        db.EmpleadosEsquemaJornada.Add(CrearEsquemaJornada(empleado.Id, TipoJornada.Fija, new DateTime(2024, 1, 1), pagoFijoPorLabor: true));
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 8, 0, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 17, 0, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var asistencia = await db.RrhhAsistencias.SingleAsync();
+        Assert.False(asistencia.EsPorHoras);
+        Assert.False(asistencia.EsPagoFijoPorLabor);
+        Assert.Equal(turno.Id, asistencia.TurnoBaseId);
     }
 
     [Fact]
@@ -2307,8 +2477,8 @@ public sealed class RrhhAsistenciaProcessorTests
 
     // Mismo caso Aralim, con ModoSugerenciaExtra="MarcajeReloj" (se selecciona por día
     // en el modal de corrección de asistencias).
-    // Rediseño MarcajeReloj = reloj vs planeado (sin umbral; descanso NO marcado no se
-    // descuenta): D1 está marcado (11:03/11:30, Inicio/FinDescanso) -> 27 min se descuentan.
+    // Rediseño MarcajeReloj = reloj vs planeado (el extra respeta el umbral; descanso NO
+    // marcado no se descuenta): D1 está marcado (11:03/11:30, Inicio/FinDescanso) -> 27 min se descuentan.
     // D2 (14:00/14:44) son marcas SinClasificar -> el procesador NO las detecta como
     // descanso -> D2 queda no marcado -> no se descuenta (el reloj indica que se trabajó).
     // Nota abierta: si ese hueco 14:00-14:44 debiera contar como no trabajado bajo
@@ -2376,11 +2546,11 @@ public sealed class RrhhAsistenciaProcessorTests
 
         var asistencia = await db.RrhhAsistencias.SingleAsync();
 
-        // Rediseño MarcajeReloj: reloj vs planeado, sin umbral.
+        // Rediseño MarcajeReloj: reloj vs planeado (el extra respeta el umbral).
         // D1 (Inicio/Fin): 11:03->11:30 = 27 min -> se descuenta.
         // D2 (par SinClasificar 14:00/14:44): 44 min -> par intermedio = pausa -> se descuenta.
         // Bruto = 18:18-07:09 = 669 min. Neto = 669 - 27 - 44 = 598 min.
-        // Extra = Max(0, 598 - 540) = 58 min (sin umbral).
+        // Extra = Max(0, 598 - 540) = 58 min (≥ umbral 15 → cuenta).
         Assert.Equal(58, asistencia.MinutosExtra);
     }
 }

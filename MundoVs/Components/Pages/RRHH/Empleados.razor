@@ -25,391 +25,497 @@
 
     @if (mostrarForm)
     {
-        <div class="card mb-4">
-            <div class="card-header"><h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo Empleado" : "Editar Empleado")</h5></div>
+        <div class="card mb-4" id="empleado-form-card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <h5 class="mb-0">@(editando.Id == Guid.Empty ? "Nuevo Empleado" : "Editar Empleado")</h5>
+                @if (editando.Id != Guid.Empty)
+                {
+                    <span class="text-muted small">@editando.Nombre @editando.ApellidoPaterno @editando.ApellidoMaterno</span>
+                }
+            </div>
             <div class="card-body">
+                @* Formulario por secciones colapsables para reducir la saturación de campos.
+                   Las 3 secciones de uso frecuente quedan abiertas; el resto colapsado con un
+                   resumen del valor actual (no necesitas abrir para verlo). Los bindings NO
+                   cambiaron — sólo se reagruparon.
+                   English: Sectioned collapsible form to cut field clutter. The 3 frequent
+                   sections stay open; the rest collapsed with a live value summary (no need
+                   to expand to see it). Bindings unchanged — only regrouped. *@
                 <EditForm Model="editando" OnValidSubmit="Guardar">
-                    <div class="row g-3">
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Número de empleado</label>
-                            <InputText class="form-control" @bind-Value="editando.NumeroEmpleado" />
-                            <small class="text-muted">Captura el número administrativo del empleado.</small>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Código checador</label>
-                            <InputText class="form-control" @bind-Value="editando.CodigoChecador" />
-                            <small class="text-muted">Debe coincidir con el código que envía el reloj.</small>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Nombre</label>
-                            <InputText class="form-control" @bind-Value="editando.Nombre" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Apellido Paterno</label>
-                            <InputText class="form-control" @bind-Value="editando.ApellidoPaterno" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Apellido Materno</label>
-                            <InputText class="form-control" @bind-Value="editando.ApellidoMaterno" />
-                        </div>
-                        <div class="col-6 col-md-1">
-                            <div class="form-check mt-md-4">
-                                <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
-                                <label class="form-check-label">Activo</label>
+                    <details class="empleado-seccion" open>
+                        <summary><i class="bi bi-person-vcard me-2"></i>Identificación</summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Número de empleado</label>
+                                <InputText class="form-control" @bind-Value="editando.NumeroEmpleado" />
+                                <small class="text-muted">Captura el número administrativo del empleado.</small>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Código checador</label>
+                                <InputText class="form-control" @bind-Value="editando.CodigoChecador" />
+                                <small class="text-muted">Debe coincidir con el código que envía el reloj.</small>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Nombre</label>
+                                <InputText class="form-control" @bind-Value="editando.Nombre" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Apellido Paterno</label>
+                                <InputText class="form-control" @bind-Value="editando.ApellidoPaterno" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Apellido Materno</label>
+                                <InputText class="form-control" @bind-Value="editando.ApellidoMaterno" />
+                            </div>
+                            <div class="col-6 col-md-1">
+                                <div class="form-check mt-md-4">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.IsActive" />
+                                    <label class="form-check-label">Activo</label>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">CURP</label>
+                                <InputText class="form-control" @bind-Value="editando.Curp" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">NSS</label>
+                                <InputText class="form-control" @bind-Value="editando.Nss" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Teléfono</label>
+                                <InputText class="form-control" @bind-Value="editando.Telefono" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Email</label>
+                                <InputText class="form-control" @bind-Value="editando.Email" />
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label">Dirección</label>
+                                <InputText class="form-control" @bind-Value="editando.Direccion" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Fecha Nacimiento</label>
+                                <InputDate class="form-control" @bind-Value="editando.FechaNacimiento" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Fecha Contratación</label>
+                                <InputDate class="form-control" @bind-Value="editando.FechaContratacion" />
                             </div>
                         </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">CURP</label>
-                            <InputText class="form-control" @bind-Value="editando.Curp" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">NSS</label>
-                            <InputText class="form-control" @bind-Value="editando.Nss" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Teléfono</label>
-                            <InputText class="form-control" @bind-Value="editando.Telefono" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Email</label>
-                            <InputText class="form-control" @bind-Value="editando.Email" />
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <label class="form-label">Dirección</label>
-                            <InputText class="form-control" @bind-Value="editando.Direccion" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Fecha Nacimiento</label>
-                            <InputDate class="form-control" @bind-Value="editando.FechaNacimiento" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Fecha Contratación</label>
-                            <InputDate class="form-control" @bind-Value="editando.FechaContratacion" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Posición</label>
-                            <InputSelect class="form-select" @bind-Value="editando.PosicionId">
-                                <option value="">Seleccione...</option>
-                                @foreach (var posicion in posiciones)
-                                {
-                                    <option value="@posicion.Id">@posicion.Nombre</option>
-                                }
-                            </InputSelect>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Departamento</label>
-                            <InputSelect class="form-select" @bind-Value="editando.Departamento">
-                                <option value="">Seleccione...</option>
-                                @foreach (var departamento in DepartamentosDisponibles)
-                                {
-                                    <option value="@departamento">@departamento</option>
-                                }
-                            </InputSelect>
-                        </div>
-                        <div class="col-12"><hr /><h6 class="text-muted">Turno</h6></div>
-                        <div class="col-6 col-md-4">
-                            <label class="form-label">Turno vigente</label>
-                            <InputSelect class="form-select" @bind-Value="turnoSeleccionadoId">
-                                <option value="">(sin turno)</option>
-                                @foreach (var turno in turnosBase)
-                                {
-                                    <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
-                                }
-                            </InputSelect>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Vigente desde</label>
-                            <InputDate class="form-control" @bind-Value="turnoVigenteDesde" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Vigente hasta</label>
-                            <InputDate class="form-control" @bind-Value="turnoVigenteHasta" />
-                            <small class="text-muted">Usa la misma fecha para cambio de un solo día.</small>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Observaciones de turno</label>
-                            <InputText class="form-control" @bind-Value="turnoObservaciones" placeholder="Ej. cambio temporal o reasignación operativa" />
-                        </div>
+                    </details>
 
-                        @if (historialTurnos.Count > 0)
-                        {
+                    <details class="empleado-seccion" open>
+                        <summary><i class="bi bi-tags me-2"></i>Posición y departamento</summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Posición</label>
+                                <InputSelect class="form-select" @bind-Value="editando.PosicionId">
+                                    <option value="">Seleccione...</option>
+                                    @foreach (var posicion in posiciones)
+                                    {
+                                        <option value="@posicion.Id">@posicion.Nombre</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Departamento</label>
+                                <InputSelect class="form-select" @bind-Value="editando.Departamento">
+                                    <option value="">Seleccione...</option>
+                                    @foreach (var departamento in DepartamentosDisponibles)
+                                    {
+                                        <option value="@departamento">@departamento</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="empleado-seccion" open>
+                        <summary><i class="bi bi-cash-coin me-2"></i>Sueldo y nómina</summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Sueldo Base</label>
+                                <InputNumber class="form-control" @bind-Value="editando.SueldoSemanal" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Periodicidad</label>
+                                <InputSelect class="form-select" @bind-Value="editando.PeriodicidadPago">
+                                    <option value="@PeriodicidadPago.Semanal">Semanal</option>
+                                    <option value="@PeriodicidadPago.Quincenal">Quincenal</option>
+                                    <option value="@PeriodicidadPago.Mensual">Mensual</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="form-check mt-md-4">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaImss" />
+                                    <label class="form-check-label">Aplica IMSS</label>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="form-check mt-md-4">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaIsr" />
+                                    <label class="form-check-label">Aplica ISR</label>
+                                </div>
+                            </div>
                             <div class="col-12">
-                                <details class="mt-2">
-                                    <summary class="text-muted small">Historial de turnos (@historialTurnos.Count)</summary>
-                                    <table class="table table-sm table-bordered mt-1 mb-0">
-                                        <thead class="table-light"><tr><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observaciones</th></tr></thead>
-                                        <tbody>
-                                            @foreach (var h in historialTurnos)
-                                            {
-                                                <tr>
-                                                    <td>@h.NombreTurno</td>
-                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
-                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
-                                                    <td>@(string.IsNullOrWhiteSpace(h.Observaciones) ? "—" : h.Observaciones)</td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </details>
-                            </div>
-                        }
-
-                        <div class="col-12">
-                            <div class="row g-3">
-                                <div class="col-6 col-md-3">
-                                    <div class="card border-0 bg-light h-100">
-                                        <div class="card-body py-2">
-                                            <div class="small text-muted">Vacaciones disponibles</div>
-                                            <div class="fw-bold">@ObtenerSaldoVacaciones(editando.Id).ToString("0.##") días</div>
+                                <div class="row g-3">
+                                    <div class="col-6 col-md-3">
+                                        <div class="card border-0 bg-light h-100">
+                                            <div class="card-body py-2">
+                                                <div class="small text-muted">Vacaciones disponibles</div>
+                                                <div class="fw-bold">@ObtenerSaldoVacaciones(editando.Id).ToString("0.##") días</div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="col-6 col-md-3">
-                                    <div class="card border-0 bg-light h-100">
-                                        <div class="card-body py-2">
-                                            <div class="small text-muted">Banco de horas</div>
-                                            <div class="fw-bold">@FormatearHorasBanco(ObtenerSaldoBancoHoras(editando.Id))</div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="card border-0 bg-light h-100">
+                                            <div class="card-body py-2">
+                                                <div class="small text-muted">Banco de horas</div>
+                                                <div class="fw-bold">@FormatearHorasBanco(ObtenerSaldoBancoHoras(editando.Id))</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                    </details>
 
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Sueldo Base</label>
-                            <InputNumber class="form-control" @bind-Value="editando.SueldoSemanal" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Periodicidad</label>
-                            <InputSelect class="form-select" @bind-Value="editando.PeriodicidadPago">
-                                <option value="@PeriodicidadPago.Semanal">Semanal</option>
-                                <option value="@PeriodicidadPago.Quincenal">Quincenal</option>
-                                <option value="@PeriodicidadPago.Mensual">Mensual</option>
-                            </InputSelect>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <div class="form-check mt-md-4">
-                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaImss" />
-                                <label class="form-check-label">Aplica IMSS</label>
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-clock me-2"></i>Turno <span class="empleado-seccion__hint">@(turnoSeleccionadoId is null ? "Sin turno" : ObtenerEtiquetaTurno(turnosBase.First(t => t.Id == turnoSeleccionadoId)))</span></summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-4">
+                                <label class="form-label">Turno vigente</label>
+                                <InputSelect class="form-select" @bind-Value="turnoSeleccionadoId">
+                                    <option value="">(sin turno)</option>
+                                    @foreach (var turno in turnosBase)
+                                    {
+                                        <option value="@turno.Id">@ObtenerEtiquetaTurno(turno)</option>
+                                    }
+                                </InputSelect>
                             </div>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <div class="form-check mt-md-4">
-                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaIsr" />
-                                <label class="form-check-label">Aplica ISR</label>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Vigente desde</label>
+                                <InputDate class="form-control" @bind-Value="turnoVigenteDesde" />
                             </div>
-                        </div>
-                        <div class="col-12"><hr /><h6 class="text-muted">Infonavit</h6></div>
-                        <div class="col-6 col-md-3">
-                            <div class="form-check mt-md-4">
-                                <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaInfonavit" />
-                                <label class="form-check-label">Aplica Infonavit</label>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Vigente hasta</label>
+                                <InputDate class="form-control" @bind-Value="turnoVigenteHasta" />
+                                <small class="text-muted">Usa la misma fecha para cambio de un solo día.</small>
                             </div>
-                        </div>
-                        <div class="col-6 col-md-4">
-                            <label class="form-label">Número de crédito</label>
-                            <InputText class="form-control" @bind-Value="editando.NumeroCreditoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Factor descuento</label>
-                            <InputNumber class="form-control" @bind-Value="editando.FactorDescuentoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
-                            <small class="text-muted">Usa porcentaje si es menor o igual a 1; si es mayor se toma como monto fijo.</small>
-                        </div>
-                        <div class="col-12"><hr /><h6 class="text-muted">Esquema de Pago</h6></div>
-                        <div class="col-6 col-md-4">
-                            <label class="form-label">Esquema</label>
-                            <InputSelect class="form-select" @bind-Value="esquemaSeleccionadoId">
-                                <option value="">(sin esquema)</option>
-                                @foreach (var esq in esquemasPago)
-                                {
-                                    <option value="@esq.Id">@esq.Nombre — @TipoEsquemaLabel(esq.Tipo)</option>
-                                }
-                            </InputSelect>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Vigente desde</label>
-                            <InputDate class="form-control" @bind-Value="esquemaVigenteDesde" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Sueldo base override</label>
-                            <InputNumber class="form-control" @bind-Value="esquemaSueldoOverride" />
-                            <small class="text-muted">Dejar en 0 para usar el sugerido</small>
-                        </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Observaciones de turno</label>
+                                <InputText class="form-control" @bind-Value="turnoObservaciones" placeholder="Ej. cambio temporal o reasignación operativa" />
+                            </div>
 
-                        @if (historialEsquemas.Count > 0)
-                        {
+                            @if (historialTurnos.Count > 0)
+                            {
+                                <div class="col-12">
+                                    <details class="mt-2">
+                                        <summary class="text-muted small">Historial de turnos (@historialTurnos.Count)</summary>
+                                        <table class="table table-sm table-bordered mt-1 mb-0">
+                                            <thead class="table-light"><tr><th>Turno</th><th>Desde</th><th>Hasta</th><th>Observaciones</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var h in historialTurnos)
+                                                {
+                                                    <tr>
+                                                        <td>@h.NombreTurno</td>
+                                                        <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                        <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                        <td>@(string.IsNullOrWhiteSpace(h.Observaciones) ? "—" : h.Observaciones)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </details>
+                                </div>
+                            }
+                        </div>
+                    </details>
+
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-house-heart me-2"></i>Infonavit <span class="empleado-seccion__hint">@(editando.AplicaInfonavit ? "Aplica" : "No aplica")</span></summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-3">
+                                <div class="form-check mt-md-4">
+                                    <InputCheckbox class="form-check-input" @bind-Value="editando.AplicaInfonavit" />
+                                    <label class="form-check-label">Aplica Infonavit</label>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <label class="form-label">Número de crédito</label>
+                                <InputText class="form-control" @bind-Value="editando.NumeroCreditoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Factor descuento</label>
+                                <InputNumber class="form-control" @bind-Value="editando.FactorDescuentoInfonavit" disabled="@(!editando.AplicaInfonavit)" />
+                                <small class="text-muted">Usa porcentaje si es menor o igual a 1; si es mayor se toma como monto fijo.</small>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-file-earmark-text me-2"></i>Esquema de pago <span class="empleado-seccion__hint">@(esquemaSeleccionadoId is null ? "Sin esquema" : esquemasPago.First(e => e.Id == esquemaSeleccionadoId).Nombre)</span></summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-4">
+                                <label class="form-label">Esquema</label>
+                                <InputSelect class="form-select" @bind-Value="esquemaSeleccionadoId">
+                                    <option value="">(sin esquema)</option>
+                                    @foreach (var esq in esquemasPago)
+                                    {
+                                        <option value="@esq.Id">@esq.Nombre — @TipoEsquemaLabel(esq.Tipo)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Vigente desde</label>
+                                <InputDate class="form-control" @bind-Value="esquemaVigenteDesde" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Sueldo base override</label>
+                                <InputNumber class="form-control" @bind-Value="esquemaSueldoOverride" />
+                                <small class="text-muted">Dejar en 0 para usar el sugerido</small>
+                            </div>
+
+                            @if (historialEsquemas.Count > 0)
+                            {
+                                <div class="col-12">
+                                    <details class="mt-2">
+                                        <summary class="text-muted small">Historial de esquemas (@historialEsquemas.Count)</summary>
+                                        <table class="table table-sm table-bordered mt-1 mb-0">
+                                            <thead class="table-light"><tr><th>Esquema</th><th>Desde</th><th>Hasta</th><th class="text-end">Override</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var h in historialEsquemas)
+                                                {
+                                                    <tr>
+                                                        <td>@h.NombreEsquema</td>
+                                                        <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                        <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                        <td class="text-end">@(h.Override.HasValue ? h.Override.Value.ToString("C2") : "—")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </details>
+                                </div>
+                            }
+                        </div>
+                    </details>
+
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-calendar2-week me-2"></i>Esquema de jornada <span class="empleado-seccion__hint">@(jornadaSeleccionada == TipoJornada.PorHoras ? (jornadaPagoFijoPorLabor ? "Por horas · pago fijo por labor" : "Por horas") : (jornadaModoCalculo == "MarcajeReloj" ? "Fija · marcaje de reloj" : "Fija · vs horario"))</span></summary>
+                        <div class="row g-3">
+                            <div class="col-6 col-md-4">
+                                <label class="form-label">Tipo de jornada</label>
+                                <InputSelect class="form-select" @bind-Value="jornadaSeleccionada">
+                                    <option value="@TipoJornada.Fija">Fija (horario programado)</option>
+                                    <option value="@TipoJornada.PorHoras">Por horas (sin horario fijo)</option>
+                                </InputSelect>
+                                <small class="text-muted">Por horas: se paga el tiempo trabajado, sin retardo/faltante; extra sólo manual y no en festivo.</small>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label">Vigente desde</label>
+                                <InputDate class="form-control" @bind-Value="jornadaVigenteDesde" />
+                            </div>
+
+                            @* Pago fijo por labor (perfil #4: limpieza). Sólo aplica con PorHoras:
+                               cobra el sueldo del día sin importar cuánto tardó (1h o 5h = lo mismo).
+                               English: Fixed per-task pay (e.g. cleaning) — only with PorHoras;
+                               earns the day's salary regardless of duration. *@
+                            @if (jornadaSeleccionada == TipoJornada.PorHoras)
+                            {
+                                <div class="col-12">
+                                    <div class="form-check ms-2">
+                                        <InputCheckbox id="jornadaPagoFijoPorLabor" class="form-check-input" @bind-Value="jornadaPagoFijoPorLabor" />
+                                        <label class="form-check-label" for="jornadaPagoFijoPorLabor">
+                                            Pago fijo por labor <span class="text-muted">(ej. limpieza)</span>
+                                        </label>
+                                    </div>
+                                    <small class="text-muted d-block ms-2">
+                                        Cobra el sueldo del día sin importar cuánto tardó (dure 1h o 5h, cobra lo mismo). Si no, cobra por el tiempo trabajado.
+                                        <br /><em>Fixed per-task pay: earns the day's salary regardless of duration (1h or 5h pays the same). Otherwise paid by time worked.</em>
+                                    </small>
+                                </div>
+                            }
+
+                            @* Método de cálculo por defecto (sólo Fija). El cliente es indeciso y no
+                               trata a todos igual: asigna por persona si cuenta "Vs horario" (con
+                               reglas: turno/retardo/salida/faltante/extra con umbral) o "Marcaje de
+                               reloj" (tal cual las marcas, sin reglas). El "Recalcular por periodo"
+                               impone este default a todos los días. Oculto para Por horas (su
+                               esquema ya anula retardo/faltante/salida).
+                               English: default calc method (Fija only). The client is indecisive and
+                               treats people differently: per person choose "Vs schedule" (with
+                               rules) or "Clock punch" (marks as-is, no rules). "Recalculate by
+                               period" enforces this default on every day. Hidden for Por horas. *@
+                            @if (jornadaSeleccionada == TipoJornada.Fija)
+                            {
+                                <div class="col-12 col-md-5">
+                                    <label class="form-label">Método de cálculo</label>
+                                    <select class="form-select" @onchange="@((ChangeEventArgs e) => jornadaModoCalculo = (e.Value?.ToString() == "MarcajeReloj") ? "MarcajeReloj" : null)">
+                                        <option value="EntradaSalida" selected="@(jornadaModoCalculo != "MarcajeReloj")">Vs horario (con reglas)</option>
+                                        <option value="MarcajeReloj" selected="@(jornadaModoCalculo == "MarcajeReloj")">Marcaje de reloj (tal cual)</option>
+                                    </select>
+                                    <small class="text-muted">
+                                        Vs horario: aplica turno, retardo, salida anticipada, faltante y extra con umbral. Marcaje de reloj: cuenta tal cual las marcas, sin reglas.
+                                        <br /><em>Vs schedule: applies shift, late, early-leave, shortage and extra with threshold. Clock punch: counts marks as-is, no rules.</em>
+                                    </small>
+                                </div>
+                            }
+
+                            @if (historialJornadas.Count > 0)
+                            {
+                                <div class="col-12">
+                                    <details class="mt-2">
+                                        <summary class="text-muted small">Historial de jornadas (@historialJornadas.Count)</summary>
+                                        <table class="table table-sm table-bordered mt-1 mb-0">
+                                            <thead class="table-light"><tr><th>Tipo</th><th>Desde</th><th>Hasta</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var h in historialJornadas)
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            @ObtenerEtiquetaJornada(h.TipoJornada)
+                                                            @if (h.PagoFijoPorLabor)
+                                                            {
+                                                                <span class="badge bg-info text-dark ms-1" title="Pago fijo por labor: cobra el sueldo del día sin importar la duración">Pago fijo</span>
+                                                            }
+                                                        </td>
+                                                        <td>@h.Desde.ToString("dd/MM/yyyy")</td>
+                                                        <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </details>
+                                </div>
+                            }
+                        </div>
+                    </details>
+
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-list-ul me-2"></i>Conceptos recurrentes de nómina <span class="empleado-seccion__hint">@conceptosEmpleadoEditando.Count concepto(s)</span></summary>
+                        <div class="row g-3">
                             <div class="col-12">
-                                <details class="mt-2">
-                                    <summary class="text-muted small">Historial de esquemas (@historialEsquemas.Count)</summary>
-                                    <table class="table table-sm table-bordered mt-1 mb-0">
-                                        <thead class="table-light"><tr><th>Esquema</th><th>Desde</th><th>Hasta</th><th class="text-end">Override</th></tr></thead>
-                                        <tbody>
-                                            @foreach (var h in historialEsquemas)
+                                <div class="alert alert-light border small py-2 mb-3">
+                                    <strong>Uso rápido:</strong> para descuento fijo de IMSS usa <em>IMSS fijo obrero</em> o <em>IMSS fijo patronal</em>. Para ingresos recurrentes usa <em>Percepción recurrente</em>, <em>Premio puntualidad recurrente</em> o <em>Premio asistencia recurrente</em>.
+                                </div>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label">Concepto configurable</label>
+                                        <InputSelect class="form-select form-select-sm" @bind-Value="conceptoEmpleadoTipoSeleccionadoId">
+                                            <option value="">Seleccione...</option>
+                                            @foreach (var concepto in conceptosNominaDisponibles)
                                             {
-                                                <tr>
-                                                    <td>@h.NombreEsquema</td>
-                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
-                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
-                                                    <td class="text-end">@(h.Override.HasValue ? h.Override.Value.ToString("C2") : "—")</td>
-                                                </tr>
+                                                <option value="@concepto.Id">@concepto.Nombre (@concepto.Naturaleza)</option>
                                             }
-                                        </tbody>
-                                    </table>
-                                </details>
-                            </div>
-                        }
-
-                        <div class="col-12"><hr /><h6 class="text-muted">Esquema de Jornada</h6></div>
-                        <div class="col-6 col-md-4">
-                            <label class="form-label">Tipo de jornada</label>
-                            <InputSelect class="form-select" @bind-Value="jornadaSeleccionada">
-                                <option value="@TipoJornada.Fija">Fija (horario programado)</option>
-                                <option value="@TipoJornada.PorHoras">Por horas (sin horario fijo)</option>
-                            </InputSelect>
-                            <small class="text-muted">Por horas: se paga el tiempo trabajado, sin retardo/faltante; extra sólo manual y no en festivo.</small>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label">Vigente desde</label>
-                            <InputDate class="form-control" @bind-Value="jornadaVigenteDesde" />
-                        </div>
-
-                        @if (historialJornadas.Count > 0)
-                        {
-                            <div class="col-12">
-                                <details class="mt-2">
-                                    <summary class="text-muted small">Historial de jornadas (@historialJornadas.Count)</summary>
-                                    <table class="table table-sm table-bordered mt-1 mb-0">
-                                        <thead class="table-light"><tr><th>Tipo</th><th>Desde</th><th>Hasta</th></tr></thead>
-                                        <tbody>
-                                            @foreach (var h in historialJornadas)
-                                            {
-                                                <tr>
-                                                    <td>@ObtenerEtiquetaJornada(h.TipoJornada)</td>
-                                                    <td>@h.Desde.ToString("dd/MM/yyyy")</td>
-                                                    <td>@(h.Hasta?.ToString("dd/MM/yyyy") ?? "(vigente)")</td>
-                                                </tr>
-                                            }
-                                        </tbody>
-                                    </table>
-                                </details>
-                            </div>
-                        }
-
-                        <div class="col-12"><hr /><h6 class="text-muted">Conceptos recurrentes de nómina</h6></div>
-                        <div class="col-12">
-                            <div class="alert alert-light border small py-2 mb-3">
-                                <strong>Uso rápido:</strong> para descuento fijo de IMSS usa <em>IMSS fijo obrero</em> o <em>IMSS fijo patronal</em>. Para ingresos recurrentes usa <em>Percepción recurrente</em>, <em>Premio puntualidad recurrente</em> o <em>Premio asistencia recurrente</em>.
-                            </div>
-                            <div class="row g-2 mb-3">
-                                <div class="col-6 col-md-3">
-                                    <label class="form-label">Concepto configurable</label>
-                                    <InputSelect class="form-select form-select-sm" @bind-Value="conceptoEmpleadoTipoSeleccionadoId">
-                                        <option value="">Seleccione...</option>
-                                        @foreach (var concepto in conceptosNominaDisponibles)
-                                        {
-                                            <option value="@concepto.Id">@concepto.Nombre (@concepto.Naturaleza)</option>
-                                        }
-                                    </InputSelect>
-                                </div>
-                                <div class="col-4 col-md-2">
-                                    <label class="form-label">Monto</label>
-                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Monto" />
-                                </div>
-                                <div class="col-4 col-md-2">
-                                    <label class="form-label">Porcentaje</label>
-                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Porcentaje" />
-                                </div>
-                                <div class="col-4 col-md-2">
-                                    <label class="form-label">Cantidad</label>
-                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Cantidad" />
-                                </div>
-                                <div class="col-4 col-md-2">
-                                    <label class="form-label">Tarifa</label>
-                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Tarifa" />
-                                </div>
-                                <div class="col-4 col-md-1">
-                                    <label class="form-label">Límite</label>
-                                    <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Limite" />
-                                </div>
-                                <div class="col-6 col-md-3">
-                                    <label class="form-label">Fecha inicio</label>
-                                    <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaInicio" />
-                                </div>
-                                <div class="col-6 col-md-3">
-                                    <label class="form-label">Fecha fin</label>
-                                    <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaFin" />
-                                </div>
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label">Observaciones</label>
-                                    <InputText class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Observaciones" />
-                                </div>
-                                <div class="col-6 col-md-2 d-flex align-items-end">
-                                    <div class="form-check">
-                                        <InputCheckbox class="form-check-input" @bind-Value="conceptoEmpleadoEnCaptura.EsRecurrente" />
-                                        <label class="form-check-label">Recurrente</label>
+                                        </InputSelect>
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label class="form-label">Monto</label>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Monto" />
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label class="form-label">Porcentaje</label>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Porcentaje" />
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label class="form-label">Cantidad</label>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Cantidad" />
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label class="form-label">Tarifa</label>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Tarifa" />
+                                    </div>
+                                    <div class="col-4 col-md-1">
+                                        <label class="form-label">Límite</label>
+                                        <InputNumber class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Limite" />
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label">Fecha inicio</label>
+                                        <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaInicio" />
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label">Fecha fin</label>
+                                        <InputDate class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.FechaFin" />
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label">Observaciones</label>
+                                        <InputText class="form-control form-control-sm" @bind-Value="conceptoEmpleadoEnCaptura.Observaciones" />
+                                    </div>
+                                    <div class="col-6 col-md-2 d-flex align-items-end">
+                                        <div class="form-check">
+                                            <InputCheckbox class="form-check-input" @bind-Value="conceptoEmpleadoEnCaptura.EsRecurrente" />
+                                            <label class="form-check-label">Recurrente</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-primary" @onclick="AgregarOActualizarConceptoEmpleado">@(conceptoEmpleadoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoConceptoEmpleado">Limpiar</button>
                                     </div>
                                 </div>
-                                <div class="col-12 d-flex gap-2">
-                                    <button type="button" class="btn btn-sm btn-primary" @onclick="AgregarOActualizarConceptoEmpleado">@(conceptoEmpleadoEnCaptura.Id == Guid.Empty ? "Agregar" : "Actualizar")</button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PrepararNuevoConceptoEmpleado">Limpiar</button>
-                                </div>
-                            </div>
 
-                            <div class="table-responsive">
-                                <table class="table table-sm table-bordered align-middle mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Concepto</th>
-                                            <th class="text-end">Monto</th>
-                                            <th class="text-end">%</th>
-                                            <th class="text-end">Cant.</th>
-                                            <th class="text-end">Tarifa</th>
-                                            <th>Vigencia</th>
-                                            <th class="text-center">Rec.</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @if (conceptosEmpleadoEditando.Count == 0)
-                                        {
-                                            <tr><td colspan="8" class="text-center text-muted py-3">No hay conceptos recurrentes asignados.</td></tr>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var item in conceptosEmpleadoEditando.OrderBy(c => c.Orden).ThenBy(c => c.ConceptoNombre))
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Concepto</th>
+                                                <th class="text-end">Monto</th>
+                                                <th class="text-end">%</th>
+                                                <th class="text-end">Cant.</th>
+                                                <th class="text-end">Tarifa</th>
+                                                <th>Vigencia</th>
+                                                <th class="text-center">Rec.</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @if (conceptosEmpleadoEditando.Count == 0)
                                             {
-                                                <tr>
-                                                    <td>
-                                                        <div class="fw-semibold">@item.ConceptoNombre</div>
-                                                        <div class="small text-muted">@item.Naturaleza · @item.Destino</div>
-                                                    </td>
-                                                    <td class="text-end">@item.Monto.ToString("C2")</td>
-                                                    <td class="text-end">@item.Porcentaje.ToString("0.####")</td>
-                                                    <td class="text-end">@item.Cantidad.ToString("0.####")</td>
-                                                    <td class="text-end">@item.Tarifa.ToString("0.####")</td>
-                                                    <td class="small">@(item.FechaInicio?.ToString("dd/MM/yyyy") ?? "—") - @(item.FechaFin?.ToString("dd/MM/yyyy") ?? "Vigente")</td>
-                                                    <td class="text-center">@(item.EsRecurrente ? "Sí" : "No")</td>
-                                                    <td class="text-end">
-                                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarConceptoEmpleado(item)"><i class="bi bi-pencil"></i></button>
-                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarConceptoEmpleado(item)"><i class="bi bi-trash"></i></button>
-                                                    </td>
-                                                </tr>
+                                                <tr><td colspan="8" class="text-center text-muted py-3">No hay conceptos recurrentes asignados.</td></tr>
                                             }
-                                        }
-                                    </tbody>
-                                </table>
+                                            else
+                                            {
+                                                @foreach (var item in conceptosEmpleadoEditando.OrderBy(c => c.Orden).ThenBy(c => c.ConceptoNombre))
+                                                {
+                                                    <tr>
+                                                        <td>
+                                                            <div class="fw-semibold">@item.ConceptoNombre</div>
+                                                            <div class="small text-muted">@item.Naturaleza · @item.Destino</div>
+                                                        </td>
+                                                        <td class="text-end">@item.Monto.ToString("C2")</td>
+                                                        <td class="text-end">@item.Porcentaje.ToString("0.####")</td>
+                                                        <td class="text-end">@item.Cantidad.ToString("0.####")</td>
+                                                        <td class="text-end">@item.Tarifa.ToString("0.####")</td>
+                                                        <td class="small">@(item.FechaInicio?.ToString("dd/MM/yyyy") ?? "—") - @(item.FechaFin?.ToString("dd/MM/yyyy") ?? "Vigente")</td>
+                                                        <td class="text-center">@(item.EsRecurrente ? "Sí" : "No")</td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => EditarConceptoEmpleado(item)"><i class="bi bi-pencil"></i></button>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarConceptoEmpleado(item)"><i class="bi bi-trash"></i></button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="form-text">Aquí asignas descuentos fijos, IMSS/ISR fijo, provisiones y percepciones recurrentes específicas del empleado.</div>
                             </div>
-                            <div class="form-text">Aquí asignas descuentos fijos, IMSS/ISR fijo, provisiones y percepciones recurrentes específicas del empleado.</div>
                         </div>
+                    </details>
 
-                        <div class="col-12">
-                            <label class="form-label">Notas</label>
-                            <InputTextArea class="form-control" @bind-Value="editando.Notas" rows="2" />
+                    <details class="empleado-seccion">
+                        <summary><i class="bi bi-journal-text me-2"></i>Notas</summary>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label">Notas</label>
+                                <InputTextArea class="form-control" @bind-Value="editando.Notas" rows="2" />
+                            </div>
                         </div>
-                        <div class="col-12 d-flex gap-2">
-                            <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
-                            <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
-                        </div>
+                    </details>
+
+                    <div class="col-12 d-flex gap-2 mt-3">
+                        <button class="btn btn-success" type="submit" disabled="@guardando"><i class="bi bi-check-lg me-1"></i>Guardar</button>
+                        <button class="btn btn-outline-secondary" type="button" @onclick="() => mostrarForm = false">Cancelar</button>
                     </div>
                 </EditForm>
             </div>

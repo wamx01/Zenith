@@ -65,7 +65,7 @@
         <div class="alert alert-info py-2 px-3 small d-flex align-items-start gap-2 mb-3">
             <i class="bi bi-info-circle mt-1"></i>
             <div>
-                Los porcentajes configurados por rubro son topes máximos. Si un empleado no gana el 100% del rubro, puedes capturar un valor menor; únicamente se bloquean excedentes.
+                Captura por rubro el <strong>% del rubro</strong> que gana cada empleado (0–100%; 100% = se lleva toda la asignación de ese rubro). El <strong>tope del rubro</strong> (ej. 30%) es su participación en el pool, no un límite sobre lo que capturas. El <strong>"Total %" por empleado</strong> = su % del pool = Σ(% × tope / 100), máximo Σ topes = 100%. El pool es por empleado: dos empleados al 100% cada uno es válido (no se suman entre sí).
             </div>
         </div>
 
@@ -74,16 +74,29 @@
             <div class="card-body">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-2">
-                        <label class="form-label small mb-1">Fecha inicio</label>
-                        <InputDate class="form-control form-control-sm" @bind-Value="fechaInicio" @bind-Value:after="OnPeriodoEditadoAsync" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-1">Fecha fin</label>
-                        <InputDate class="form-control form-control-sm" @bind-Value="fechaFin" @bind-Value:after="OnPeriodoEditadoAsync" />
+                        <label class="form-label small mb-1">Periodicidad</label>
+                        <InputSelect class="form-select form-select-sm" @bind-Value="periodicidadSeleccionada" @bind-Value:after="OnPeriodicidadChangedAsync">
+                            @foreach (var periodicidad in PeriodicidadesDisponibles)
+                            {
+                                <option value="@periodicidad">@periodicidad</option>
+                            }
+                        </InputSelect>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small mb-1">Período</label>
-                        <InputText class="form-control form-control-sm" @bind-Value="periodo" readonly />
+                        <label class="form-label small mb-1" title="@ObtenerAyudaFechaReferencia(periodicidadSeleccionada)">Fecha de referencia</label>
+                        <div class="d-flex gap-1 align-items-center">
+                            <button type="button" class="btn btn-outline-secondary btn-sm px-2" title="Periodo anterior" @onclick="PeriodoAnteriorAsync">‹</button>
+                            <InputDate class="form-control form-control-sm" @bind-Value="fechaReferencia" @bind-Value:after="OnPeriodoEditadoAsync" />
+                            <button type="button" class="btn btn-outline-secondary btn-sm px-2" title="Periodo siguiente" @onclick="PeriodoSiguienteAsync">›</button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Período (grilla de nómina)</label>
+                        <div class="form-control form-control-sm d-flex justify-content-between align-items-center">
+                            <span class="text-truncate">@periodo</span>
+                            <span class="badge text-bg-light ms-2">@numeroNomina</span>
+                        </div>
+                        <div class="small text-muted">@fechaInicio.ToString("dd/MM/yyyy") – @fechaFin.ToString("dd/MM/yyyy")</div>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small mb-1">Área</label>
@@ -125,13 +138,38 @@
                     <div class="d-flex flex-wrap gap-2 mt-3 small">
                         <span class="badge text-bg-light">Posiciones: @gruposCaptura.Count</span>
                         <span class="badge text-bg-light">Empleados: @TotalEmpleadosCapturados</span>
-                        <span class="badge text-bg-light">Monto base: @MontoBaseTotal.ToString("C2")</span>
-                        <span class="badge text-bg-success">Asignado: @MontoAsignadoTotal.ToString("C2")</span>
-                        <span class="badge @(MontoRemanenteTotal > 0m ? "text-bg-warning" : "text-bg-light")">Remanente: @MontoRemanenteTotal.ToString("C2")</span>
+                        <span class="badge text-bg-light" title="Suma de los botes por posición (cada empleado puede ganar hasta su bote)">Monto base por posición: @MontoBaseTotal.ToString("C2")</span>
+                        <span class="badge text-bg-success" title="Total pagado = Σ MontoAsignado de todos los empleados (puede exceder el base, el pool es por empleado)">Asignado: @MontoAsignadoTotal.ToString("C2")</span>
+                        <span class="badge @(MontoRemanenteTotal > 0m ? "text-bg-warning" : "text-bg-light")" title="Bonus que cada empleado aún puede capturar de su bote (Σ max(0, bote − asignado por empleado))">Pendiente capturar: @MontoRemanenteTotal.ToString("C2")</span>
                     </div>
                 }
             </div>
         </div>
+
+        @if (_catalogosCargados)
+        {
+            <div class="card mb-3 shadow-sm border-@(nominasPeriodo.Count > 0 ? "success" : "warning")">
+                <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between gap-2 flex-wrap small">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <i class="bi bi-wallet2"></i>
+                        <span class="fw-semibold">Nómina de este periodo:</span>
+                        @if (nominasPeriodo.Count == 0)
+                        {
+                            <span class="text-warning-emphasis">No hay nómina para este periodo — el bono se guardará pero no llegará al recibo hasta que exista una nómina con estas fechas exactas (@fechaInicio.ToString("dd/MM/yyyy") – @fechaFin.ToString("dd/MM/yyyy")).</span>
+                        }
+                        else
+                        {
+                            @foreach (var n in nominasPeriodo)
+                            {
+                                <span class="badge @EstatusBadge(n.Estatus)">@n.Estatus</span>
+                            }
+                            <span class="text-muted">El bono se aplicará a esta(s) nómina(s) al Cerrar y calcular.</span>
+                        }
+                    </div>
+                    <a class="btn btn-outline-secondary btn-sm" href="/rrhh/nominas"><i class="bi bi-box-arrow-up-right me-1"></i>Ver nóminas</a>
+                </div>
+            </div>
+        }
 
         @if (gruposCaptura.Count == 0)
         {
@@ -153,14 +191,34 @@
                             <div class="small text-muted">@(string.IsNullOrWhiteSpace(grupo.EstructuraNombre) ? "Sin estructura" : grupo.EstructuraNombre) · @grupo.TipoCapturaTexto</div>
                         </div>
                         <div class="d-flex flex-wrap gap-2 small">
-                            <span class="badge text-bg-light">Monto base: @grupo.MontoTotalDistribuir.ToString("C2")</span>
+                            @if (_puedeEditar)
+                            {
+                                // Monto base editable por periodo: al cambiarlo recalcula los montos
+                                // por empleado de este periodo (RecalcularMontos). Así se puede abrir el
+                                // periodo que se quiera, ajustar el monto y re-aplicar el bono sin tocar el
+                                // maestro de Configuración (que sigue siendo forward-looking). El guardado
+                                // persiste el nuevo MontoTotalDistribuir en la captura del periodo.
+                                // English: Per-period editable base amount: changing it recalculates every
+                                // employee's monto for this period (RecalcularMontos). So you can open any
+                                // period, adjust the amount and re-apply the bonus without touching the
+                                // Configuración master (which stays forward-looking). Saving persists the
+                                // new MontoTotalDistribuir into the period capture.
+                                <div class="d-flex align-items-center gap-1">
+                                    <span class="text-muted">Monto base:</span>
+                                    <InputNumber class="form-control form-control-sm text-end" style="max-width:130px" @bind-Value="grupo.MontoTotalDistribuir" @bind-Value:after="OnDistribucionRubroChangedAsync" />
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-light">Monto base: @grupo.MontoTotalDistribuir.ToString("C2")</span>
+                            }
                             <span class="badge text-bg-light">Empleados: @grupo.Empleados.Count</span>
                             @if (filtroEmpleadoActivo || empleadoEnfoqueId.HasValue)
                             {
                                 <span class="badge text-bg-primary">Visibles: @empleadosVisibles.Count</span>
                             }
-                            <span class="badge @(GrupoDentroDeTopes(grupo) ? "text-bg-success" : "text-bg-danger")">Capturado: @ObtenerTotalGrupo(grupo).ToString("0.##")%</span>
-                            <span class="badge @(ObtenerRemanenteGrupo(grupo) > 0m ? "text-bg-warning" : "text-bg-light")">Remanente: @ObtenerRemanenteGrupo(grupo).ToString("0.##")%</span>
+                            <span class="badge @(GrupoDentroDeTopes(grupo) ? "text-bg-success" : "text-bg-danger")" title="Promedio capturado por empleado (el tope es por empleado, no la suma del grupo)">Capturado: @ObtenerPromedioCapturaGrupo(grupo).ToString("0.##")%</span>
+                            <span class="badge text-bg-light" title="Promedio pendiente por empleado hasta su tope personal">Remanente: @ObtenerRemanentePromedioGrupo(grupo).ToString("0.##")%</span>
                             <span class="badge text-bg-success">Asignado: @ObtenerMontoGrupo(grupo).ToString("C2")</span>
                         </div>
                     </div>
@@ -237,11 +295,11 @@
                                             @foreach (var rubro in grupo.Rubros)
                                             {
                                                 var totalRubro = ObtenerTotalRubro(grupo, rubro.BonoRubroRrhhId);
-                                                <td class="text-end @(Math.Round(totalRubro, 2) <= Math.Round(rubro.TopePorcentaje, 2) ? "text-success" : "text-danger")" @key="@($"total-{grupo.PosicionId}-{rubro.BonoRubroRrhhId}")">
+                                                <td class="text-end text-muted" @key="@($"total-{grupo.PosicionId}-{rubro.BonoRubroRrhhId}")" title="Promedio capturado por empleado (el pool es por empleado, no compartido)">
                                                     @totalRubro.ToString("0.##")%
                                                 </td>
                                             }
-                                            <td class="text-end @(GrupoDentroDeTopes(grupo) ? string.Empty : "text-danger")">@ObtenerTotalGrupo(grupo).ToString("0.##")%</td>
+                                            <td class="text-end @(GrupoDentroDeTopes(grupo) ? string.Empty : "text-danger")">@ObtenerPromedioCapturaGrupo(grupo).ToString("0.##")%</td>
                                             <td class="text-end">@ObtenerMontoGrupo(grupo).ToString("C2")</td>
                                         </tr>
                                     </tfoot>
@@ -283,9 +341,29 @@
     private List<Posicion> posicionesDistribuidas = [];
     private List<PosicionCapturaDistribucion> gruposCaptura = [];
     private NominaCorteRrhh corteSemanal = new() { PeriodicidadPago = PeriodicidadPago.Semanal, DiaCorteSemana = DayOfWeek.Sunday, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteQuincenal = new() { PeriodicidadPago = PeriodicidadPago.Quincenal, DiaCorteMes = 15, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    private NominaCorteRrhh corteMensual = new() { PeriodicidadPago = PeriodicidadPago.Mensual, DiaCorteMes = 31, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
+    // Periodicidad activa en el picker. El bono distribuido se captura sobre un periodo de
+    // nómina concreto; el selector deja al usuario escoger la grilla (Semanal/Quincenal/Mensual)
+    // y las fechas se reajustan a esa grilla — así siempre coinciden con una Nomina real y el
+    // bono fluye al recibo al "Cerrar y calcular". // English: active periodicity in the picker.
+    // The distributed bonus is captured against a concrete payroll period; the selector lets the
+    // user pick the grid (Semanal/Quincenal/Mensual) and the dates re-snap to that grid — so they
+    // always match a real Nomina and the bonus flows to the receipt on "Close and calculate".
+    private PeriodicidadPago periodicidadSeleccionada = PeriodicidadPago.Semanal;
+    private DateTime fechaReferencia = DateTime.Today;
     private DateTime fechaInicio;
     private DateTime fechaFin;
     private string periodo = string.Empty;
+    private string numeroNomina = string.Empty;
+    // Nóminas de la empresa cuyas fechas coinciden exactamente con el periodo seleccionado. El
+    // bono capturado aquí se aplica a estas nóminas al "Cerrar y calcular" — si la lista está
+    // vacía, el bono se guarda pero no llega al recibo hasta que exista una nómina con estas
+    // fechas. // English: company nóminas whose dates exactly match the selected period. The
+    // bonus captured here is applied to these nóminas on "Close and calculate" — if the list is
+    // empty, the bonus is saved but won't reach the receipt until a nómina with these dates exists.
+    private List<Nomina> nominasPeriodo = [];
+    private static IReadOnlyList<PeriodicidadPago> PeriodicidadesDisponibles { get; } = [PeriodicidadPago.Semanal, PeriodicidadPago.Quincenal, PeriodicidadPago.Mensual];
     private string? departamentoFiltro = string.Empty;
     private string? filtroEmpleado;
     private string posicionSeleccionadaId = string.Empty;
@@ -304,9 +382,28 @@
         : null;
     private bool filtroEmpleadoActivo => !string.IsNullOrWhiteSpace(filtroEmpleado);
     private int TotalEmpleadosCapturados => gruposCaptura.Sum(g => g.Empleados.Count);
+    // "Monto base por posición": MontoTotalDistribuir es el pool POR POSICIÓN (un bote por
+    // posición), no el presupuesto total — cada empleado puede ganar hasta el bote completo
+    // (pool por-empleado). Se suma por posición sólo para mostrar el total de botes configurados,
+    // NO como tope de gasto. / "Base amount per position": MontoTotalDistribuir is the PER-POSITION
+    // pool (one pot per position), not the total budget — each employee can earn up to the full
+    // pot (per-employee pool). Summed per position just to show total configured pots, NOT a
+    // spend ceiling.
     private decimal MontoBaseTotal => gruposCaptura.Sum(g => g.MontoTotalDistribuir);
+    // Total pagado = Σ MontoAsignado de todos los empleados. Puede exceder MontoBaseTotal porque
+    // el pool es por-empleado: 2 empleados al 100% pagan 2× el bote. / Total paid = Σ MontoAsignado
+    // of all employees. Can exceed MontoBaseTotal because the pool is per-employee: 2 employees
+    // at 100% pay 2× the pot.
     private decimal MontoAsignadoTotal => gruposCaptura.Sum(ObtenerMontoGrupo);
-    private decimal MontoRemanenteTotal => Math.Max(0m, MontoBaseTotal - MontoAsignadoTotal);
+    // Pendiente por capturar = capacidad NO capturada por empleado = Σ empleados max(0, bote −
+    // MontoAsignado). El pool es por-empleado, así que "base − asignado" no tiene sentido (el
+    // asignado puede superar a la base); lo significativo es cuánto bonus le queda a cada
+    // empleado por capturar de SU bote. / Uncaptured capacity = per-employee headroom = Σ
+    // employees max(0, pot − MontoAsignado). The pool is per-employee, so "base − assigned" is
+    // meaningless (assigned can exceed base); what's meaningful is how much bonus each employee
+    // still has left to capture from THEIR pot.
+    private decimal MontoRemanenteTotal => gruposCaptura.Sum(g =>
+        g.Empleados.Sum(e => Math.Max(0m, g.MontoTotalDistribuir - e.MontoAsignado)));
 
     protected override async Task OnInitializedAsync()
     {
@@ -363,11 +460,56 @@
         if (_disposed)
             return;
 
-        corteSemanal = await db.NominaCortesRrhh
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.PeriodicidadPago == PeriodicidadPago.Semanal && c.IsActive)
-            ?? corteSemanal;
+        // Carga los tres cortes de la empresa (espejo de Nominas.razor). El picker de bonos
+        // soporta las tres periodicidades para que la captura se alinee a la grilla de la
+        // nómina real del empleado, sea semanal, quincenal o mensual. // English: load all three
+        // company cortes (mirrors Nominas.razor). The bonus picker supports the three
+        // periodicities so the capture aligns to the real payroll grid — weekly, biweekly or monthly.
+        corteSemanal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Semanal, 31);
+        corteQuincenal = await CargarCortePeriodoAsync(db, PeriodicidadPago.Quincenal, 15);
+        corteMensual = await CargarCortePeriodoAsync(db, PeriodicidadPago.Mensual, 31);
     }
+
+    private async Task<NominaCorteRrhh> CargarCortePeriodoAsync(CrmDbContext db, PeriodicidadPago periodicidad, int diaCorteMesDefault)
+        => await db.NominaCortesRrhh
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.EmpresaId == _empresaId && c.PeriodicidadPago == periodicidad && c.IsActive)
+            ?? new NominaCorteRrhh
+            {
+                EmpresaId = _empresaId,
+                PeriodicidadPago = periodicidad,
+                DiaCorteSemana = DayOfWeek.Sunday,
+                DiaCorteMes = diaCorteMesDefault,
+                DiaPagoSugerido = DayOfWeek.Friday,
+                IsActive = true
+            };
+
+    private NominaCorteRrhh ObtenerCortePeriodo(PeriodicidadPago periodicidad)
+        => periodicidad switch
+        {
+            PeriodicidadPago.Quincenal => corteQuincenal,
+            PeriodicidadPago.Mensual => corteMensual,
+            _ => corteSemanal
+        };
+
+    private static string ObtenerAyudaFechaReferencia(PeriodicidadPago periodicidadPago)
+        => periodicidadPago switch
+        {
+            PeriodicidadPago.Quincenal => "Elige cualquier fecha dentro de la quincena que quieres capturar.",
+            PeriodicidadPago.Mensual => "Elige cualquier fecha dentro del mes o período mensual que quieres capturar.",
+            _ => "Elige cualquier fecha dentro de la semana que quieres capturar."
+        };
+
+    // Badge de estatus de nómina (réplica mínima de Nominas.razor para el panel emparejado).
+    // English: nómina status badge (minimal replica of Nominas.razor for the matched-period panel).
+    private static string EstatusBadge(EstatusNomina e) => e switch
+    {
+        EstatusNomina.Borrador => "bg-secondary",
+        EstatusNomina.Aprobada => "bg-info",
+        EstatusNomina.Pagada => "bg-success",
+        EstatusNomina.Cancelada => "bg-danger",
+        _ => "bg-light"
+    };
 
     private async Task CargarCatalogosAsync()
     {
@@ -419,13 +561,55 @@
         if (!tieneContexto)
             return;
 
-        if (InicioQuery.HasValue)
-            fechaInicio = InicioQuery.Value.Date;
+        // Si viene de una nómina (AbrirDistribucionBonos pasa inicio/fin exactos), inferir la
+        // periodicidad probando cada corte: la que reproduzca esas fechas exactas con la grilla
+        // de la empresa es la grilla de esa nómina. Así el picker arranca ya alineado. Si ninguna
+        // coincide (fechas no-estándar), se dejan las fechas del query forzadas para no romper el
+        // flujo desde la nómina. // English: when coming from a nómina (which passes exact
+        // inicio/fin), infer the periodicity by trying each corte: the one that reproduces those
+        // exact dates with the company grid is that nómina's grid. If none matches (non-standard
+        // dates), the query dates are forced so the flow from the nómina doesn't break.
+        var forzarFechasQuery = false;
+        if (InicioQuery.HasValue && FinQuery.HasValue)
+        {
+            var inicioQ = InicioQuery.Value.Date;
+            var finQ = FinQuery.Value.Date;
+            var periodicidadInferida = (PeriodicidadPago?)null;
+            foreach (var p in PeriodicidadesDisponibles)
+            {
+                var cal = NominaPeriodoHelper.ObtenerPeriodoContenedor(p, inicioQ, ObtenerCortePeriodo(p));
+                if (cal.Inicio == inicioQ && cal.Fin == finQ)
+                {
+                    periodicidadInferida = p;
+                    break;
+                }
+            }
+            fechaReferencia = inicioQ;
+            if (periodicidadInferida is not null)
+            {
+                periodicidadSeleccionada = periodicidadInferida.Value;
+            }
+            else
+            {
+                // Fechas no-estándar (nómina fuera de grilla): forzarlas tal cual, sin re-snap.
+                // English: non-standard dates (off-grid nómina): force them as-is, no re-snap.
+                periodicidadSeleccionada = PeriodicidadPago.Semanal;
+                fechaInicio = inicioQ;
+                fechaFin = finQ;
+                periodo = NominaPeriodoHelper.ConstruirEtiquetaSemanal(inicioQ, finQ);
+                numeroNomina = NominaPeriodoHelper.ConstruirNumeroNomina(PeriodicidadPago.Semanal, inicioQ, finQ);
+                forzarFechasQuery = true;
+            }
+        }
+        else if (InicioQuery.HasValue)
+        {
+            fechaReferencia = InicioQuery.Value.Date;
+        }
 
-        if (FinQuery.HasValue)
-            fechaFin = FinQuery.Value.Date;
-
-        await OnPeriodoEditadoAsync();
+        if (forzarFechasQuery)
+            await CargarNominasPeriodoAsync();
+        else
+            await OnPeriodoEditadoAsync();
 
         if (!string.IsNullOrWhiteSpace(PosicionIdQuery))
             posicionSeleccionadaId = PosicionIdQuery!;
@@ -438,17 +622,77 @@
 
     private Task InicializarPeriodoAsync()
     {
-        var (inicio, fin) = NominaPeriodoHelper.ObtenerPeriodoSemanal(DateTime.Today, corteSemanal.DiaCorteSemana);
-        fechaInicio = inicio;
-        fechaFin = fin;
-        periodo = NominaPeriodoHelper.ConstruirEtiquetaSemanal(inicio, fin);
-        return Task.CompletedTask;
+        fechaReferencia = DateTime.Today;
+        return RecomputarPeriodoAsync();
     }
 
-    private Task OnPeriodoEditadoAsync()
+    // Recalcula inicio/fin/periodo a partir de fechaReferencia + periodicidad + corte de la
+    // empresa, usando la MISMA grilla que la página de nóminas
+    // (NominaPeriodoHelper.ObtenerPeriodoContenedor). Así las fechas del bono siempre coinciden
+    // con una Nomina real y el bono fluye al recibo al "Cerrar y calcular". También normaliza
+    // fechaReferencia al inicio del periodo (prev/next estables) y refresca las nóminas
+    // emparejadas. // English: recomputes inicio/fin/periodo from fechaReferencia + periodicity +
+    // company corte, using the SAME grid as the payroll page. So bonus dates always match a real
+    // Nomina and the bonus flows to the receipt on "Close and calculate". Also normalizes
+    // fechaReferencia to the period start (stable prev/next) and refreshes the matched nóminas.
+    private async Task RecomputarPeriodoAsync()
     {
-        periodo = NominaPeriodoHelper.ConstruirEtiquetaSemanal(fechaInicio.Date, fechaFin.Date);
-        return Task.CompletedTask;
+        var cal = NominaPeriodoHelper.ObtenerPeriodoContenedor(
+            periodicidadSeleccionada, fechaReferencia, ObtenerCortePeriodo(periodicidadSeleccionada));
+        fechaInicio = cal.Inicio;
+        fechaFin = cal.Fin;
+        periodo = cal.Periodo;
+        numeroNomina = cal.NumeroNomina;
+        fechaReferencia = cal.Inicio;
+
+        await CargarNominasPeriodoAsync();
+    }
+
+    // @bind-Value:after del InputDate de fechaReferencia y del InputSelect de periodicidad:
+    // re-snap a la grilla tras cualquier edición. // English: @bind-Value:after for the
+    // fechaReferencia InputDate and the periodicity InputSelect: re-snap to the grid after any edit.
+    private Task OnPeriodoEditadoAsync() => RecomputarPeriodoAsync();
+
+    private Task OnPeriodicidadChangedAsync() => RecomputarPeriodoAsync();
+
+    private async Task PeriodoAnteriorAsync()
+    {
+        var cal = NominaPeriodoHelper.ObtenerPeriodoContenedor(
+            periodicidadSeleccionada, fechaReferencia, ObtenerCortePeriodo(periodicidadSeleccionada));
+        fechaReferencia = cal.FechaReferenciaAnterior();
+        await RecomputarPeriodoAsync();
+    }
+
+    private async Task PeriodoSiguienteAsync()
+    {
+        var cal = NominaPeriodoHelper.ObtenerPeriodoContenedor(
+            periodicidadSeleccionada, fechaReferencia, ObtenerCortePeriodo(periodicidadSeleccionada));
+        fechaReferencia = cal.FechaReferenciaSiguiente();
+        await RecomputarPeriodoAsync();
+    }
+
+    // Nóminas de la empresa cuyas fechas coinciden exactamente con el periodo seleccionado (excluye
+    // canceladas). Es el match que usa la sincronización de nómina para aplicar el bono al recibo.
+    // English: company nóminas whose dates exactly match the selected period (excludes cancelled).
+    // This is the match the payroll sync uses to apply the bonus to the receipt.
+    private async Task CargarNominasPeriodoAsync()
+    {
+        if (_empresaId == Guid.Empty)
+        {
+            nominasPeriodo = [];
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (_disposed)
+            return;
+        nominasPeriodo = await db.Nominas
+            .AsNoTracking()
+            .Where(n => n.EmpresaId == _empresaId
+                && n.FechaInicio == fechaInicio.Date
+                && n.FechaFin == fechaFin.Date
+                && n.Estatus != EstatusNomina.Cancelada)
+            .OrderBy(n => n.CreatedAt)
+            .ToListAsync();
     }
 
     private async Task CargarEmpleadosAsync()
@@ -724,6 +968,20 @@
         if (grupo.MontoTotalDistribuir <= 0m)
             return $"La posición {grupo.PosicionNombre} no tiene monto válido para distribuir.";
 
+        // Porcentaje (por rubro y empleado) = fracción del rubro que gana el empleado (0–100%;
+        // 100% = se lleva toda la asignación del rubro). TopePorcentaje = participación del rubro
+        // en el pool (ej. 30%), NO un cap sobre Porcentaje. El "Total %" por empleado =
+        // Σ (Porcentaje × Tope / 100) = su % del pool, máximo Σ Tope = 100%. Por eso dos
+        // empleados al 100% cada uno es válido (el pool es POR EMPLEADO, no compartido): NO se
+        // suma el Porcentaje de todos los empleados contra el tope — eso trata al tope como
+        // bolsa compartida y bloquea guardados legítimos (bug: 2×100%=200%>100%).
+        // English: Porcentaje (per rubro & employee) = fraction of the rubro the employee earns
+        // (0–100%; 100% = takes the rubro's whole allocation). TopePorcentaje = the rubro's share
+        // of the pool (e.g. 30%), NOT a cap on Porcentaje. The per-employee "Total %" =
+        // Σ (Porcentaje × Tope / 100) = their % of the pool, max Σ Tope = 100%. That's why two
+        // employees at 100% each is valid (the pool is PER EMPLOYEE, not shared): do NOT sum all
+        // employees' Porcentaje against the tope — that treats the tope as a shared pool and
+        // blocks legitimate saves (bug: 2×100%=200%>100%).
         foreach (var item in grupo.Empleados)
         {
             foreach (var detalle in item.Detalles)
@@ -731,17 +989,9 @@
                 if (detalle.Porcentaje < 0m)
                     return $"El rubro {detalle.RubroNombre} de {item.NombreEmpleado} no puede ser negativo.";
 
-                if (Math.Round(detalle.Porcentaje, 2) > Math.Round(detalle.TopePorcentaje, 2))
-                    return $"El rubro {detalle.RubroNombre} de {item.NombreEmpleado} no puede exceder {detalle.TopePorcentaje:0.##}%.";
+                if (Math.Round(detalle.Porcentaje, 2) > 100m)
+                    return $"El rubro {detalle.RubroNombre} de {item.NombreEmpleado} no puede exceder 100%.";
             }
-        }
-
-        foreach (var rubro in grupo.Rubros)
-        {
-            var totalRubro = Math.Round(ObtenerTotalRubro(grupo, rubro.BonoRubroRrhhId), 2);
-            var topeRubro = Math.Round(rubro.TopePorcentaje, 2);
-            if (totalRubro > topeRubro)
-                return $"La distribución del rubro {rubro.Nombre} en {grupo.PosicionNombre} no puede exceder {topeRubro:0.##}%.";
         }
 
         return null;
@@ -905,17 +1155,29 @@
         return $"\"{texto.Replace("\"", "\"\"")}\"";
     }
 
+    // "Total %" por empleado = su % del pool = Σ (Porcentaje × Tope / 100). NO es la suma cruda
+    // de Porcentaje (que daría 400% para 4 rubros al 100%): cada rubro contribuye su
+    // TopePorcentaje cuando el empleado lo captura al 100%, así Σ Tope = 100% = pool completo.
+    // English: Per-employee "Total %" = their pool share = Σ (Porcentaje × Tope / 100). NOT the
+    // raw sum of Porcentaje (which would be 400% for 4 rubros at 100%): each rubro contributes
+    // its TopePorcentaje when captured at 100%, so Σ Tope = 100% = the full pool.
     private decimal ObtenerTotalFila(EmpleadoCapturaDistribucion empleado)
-        => empleado.Detalles.Sum(d => d.Porcentaje);
+        => empleado.Detalles.Sum(d => (d.Porcentaje / 100m) * (d.TopePorcentaje / 100m) * 100m);
 
     private decimal ObtenerMontoFila(EmpleadoCapturaDistribucion empleado)
         => empleado.Detalles.Sum(d => d.MontoAsignado);
 
+    // Promedio del Porcentaje capturado por empleado para un rubro. El modelo es por-empleado
+    // (el pool NO es compartido), así que la métrica de pie consistente con la grid es el
+    // promedio, no la suma: 2 empleados al 100% → 100% (no 200%, que leía como sobrepasó bajo
+    // un encabezado que muestra el tope del rubro). / Average Porcentaje captured per employee
+    // for a rubro. The model is per-employee (the pool is NOT shared), so the footer metric
+    // consistent with the grid is the average, not the sum: 2 employees at 100% → 100% (not
+    // 200%, which read as an overshoot under a header showing the rubro's tope).
     private decimal ObtenerTotalRubro(PosicionCapturaDistribucion grupo, Guid bonoRubroRrhhId)
-        => grupo.Empleados.Sum(e => e.Detalles.Where(d => d.BonoRubroRrhhId == bonoRubroRrhhId).Sum(d => d.Porcentaje));
-
-    private decimal ObtenerTotalGrupo(PosicionCapturaDistribucion grupo)
-        => grupo.Empleados.Sum(ObtenerTotalFila);
+        => grupo.Empleados.Count == 0 ? 0m
+            : grupo.Empleados.Average(e =>
+                e.Detalles.Where(d => d.BonoRubroRrhhId == bonoRubroRrhhId).Sum(d => d.Porcentaje));
 
     private decimal ObtenerMontoGrupo(PosicionCapturaDistribucion grupo)
         => grupo.Empleados.Sum(ObtenerMontoFila);
@@ -923,11 +1185,50 @@
     private decimal ObtenerTopeTotalGrupo(PosicionCapturaDistribucion grupo)
         => grupo.Rubros.Sum(r => r.TopePorcentaje);
 
-    private decimal ObtenerRemanenteGrupo(PosicionCapturaDistribucion grupo)
-        => Math.Max(0m, ObtenerTopeTotalGrupo(grupo) - ObtenerTotalGrupo(grupo));
+    // Promedio del PorcentajeTotal por empleado. El tope es por empleado, así que el promedio
+    // (no la suma) es la métrica correcta del grupo: dos empleados al 100% dan promedio 100%,
+    // no 200%. / Average of per-employee PorcentajeTotal. The cap is per employee, so the
+    // average (not the sum) is the right group metric: two employees at 100% average 100%.
+    private decimal ObtenerPromedioCapturaGrupo(PosicionCapturaDistribucion grupo)
+        => grupo.Empleados.Count == 0 ? 0m : grupo.Empleados.Average(ObtenerTotalFila);
 
+    // Tope máximo por empleado = Σ TopePorcentaje = el 100% del pool (cada rubro al 100%).
+    // Como Porcentaje ∈ [0,100] (fracción del rubro, NO del tope) y el monto =
+    // MontoTotal × (Tope/100) × (Porcentaje/100), el PorcentajeTotal máximo de un empleado es
+    // Σ Tope, NO Σ Tope²/100. / Per-employee max = Σ TopePorcentaje = 100% of the pool (every
+    // rubro at 100%). Since Porcentaje ∈ [0,100] (fraction of the rubro, NOT of the tope) and
+    // monto = MontoTotal × (Tope/100) × (Porcentaje/100), an employee's max PorcentajeTotal is
+    // Σ Tope, NOT Σ Tope²/100.
+    private static decimal ObtenerMaxCapturaEmpleado(EmpleadoCapturaDistribucion empleado)
+        => empleado.Detalles.Sum(d => Math.Round(d.TopePorcentaje, 2));
+
+    // Promedio del remanente por empleado hasta su tope personal. / Average per-employee
+    // headroom to their personal cap.
+    private decimal ObtenerRemanentePromedioGrupo(PosicionCapturaDistribucion grupo)
+        => grupo.Empleados.Count == 0 ? 0m
+            : grupo.Empleados.Average(e => Math.Max(0m, ObtenerMaxCapturaEmpleado(e) - ObtenerTotalFila(e)));
+
+    // Dentro de topes = NINGÚN empleado excede SU pool personal (Σ Topes = 100% del pool por
+    // empleado). El candado es por-empleado sobre el PorcentajeTotal ponderado, NO por-rubro
+    // contra TopePorcentaje: ese era el modelo viejo (tope del rubro = cap sobre Porcentaje) y
+    // daba falso rojo cuando un empleado capturaba 100% en un rubro con tope < 100 (ej. 30%):
+    // 100 > 30 → rojo, aunque el guardado sí procedía. Como Porcentaje ∈ [0,100] (validado en
+    // ValidarGrupo) y PorcentajeTotal = Σ (Porcentaje × Tope / 100), el máximo por empleado es
+    // Σ Tope, así que este guard ya casi nunca dispara — pero es el check semánticamente correcto
+    // y mantiene la UI (borde/pie/badge "Capturado") consistente con ValidarGrupo. El pool es por
+    // empleado, no compartido: 2 empleados al 100% cada uno es válido (promedio 100%, no 200%).
+    // English: Within topes = NO employee exceeds THEIR personal pool (Σ Topes = 100% of the
+    // per-employee pool). The check is per-employee on the weighted PorcentajeTotal, NOT per-rubro
+    // against TopePorcentaje: that was the old model (rubro tope = cap on Porcentaje) and gave a
+    // false red when an employee captured 100% in a rubro with tope < 100 (e.g. 30%): 100 > 30 →
+    // red, even though the save succeeded. Since Porcentaje ∈ [0,100] (validated in ValidarGrupo)
+    // and PorcentajeTotal = Σ (Porcentaje × Tope / 100), the per-employee max is Σ Tope, so this
+    // guard almost never fires now — but it's the semantically correct check and keeps the UI
+    // (border/footer/"Capturado" badge) consistent with ValidarGrupo. The pool is per employee,
+    // not shared: 2 employees at 100% each is valid (average 100%, not 200%).
     private bool GrupoDentroDeTopes(PosicionCapturaDistribucion grupo)
-        => grupo.Rubros.All(r => Math.Round(ObtenerTotalRubro(grupo, r.BonoRubroRrhhId), 2) <= Math.Round(r.TopePorcentaje, 2));
+        => grupo.Empleados.All(e =>
+            Math.Round(ObtenerTotalFila(e), 2) <= Math.Round(ObtenerMaxCapturaEmpleado(e), 2));
 
     public void Dispose()
     {

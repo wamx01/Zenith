@@ -1,6 +1,6 @@
 # Manual operativo
 
-> Última revisión: 2026-07-03
+> Última revisión: 2026-08-22
 
 Este archivo existe solo por compatibilidad con enlaces antiguos.
 

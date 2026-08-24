@@ -609,20 +609,23 @@
 
             eliminandoPeriodoId = resolucion.PeriodoKey;
 
-            // Validar que NO exista una prenómina Cerrada o Aplicada para el mismo periodo.
-            var prenominas = await db.Prenominas
+            // Guard: block deletion if a Nomina for the same period has its capture closed
+            // (period frozen, calculation already ran). Replaces the old prenomina check.
+            // Guarda: bloquea la eliminación si una Nomina del mismo periodo tiene la captura
+            // cerrada (periodo congelado, cálculo ya corrido). Reemplaza el chequeo de prenómina.
+            var nominaCapturaCerrada = await db.Nominas
                 .AsNoTracking()
-                .Where(p => p.EmpresaId == _empresaId
-                    && p.PeriodicidadPago == resolucion.PeriodicidadPago
-                    && p.AnioPeriodo == resolucion.AnioPeriodo
-                    && p.NumeroPeriodo == resolucion.NumeroPeriodo
-                    && p.Estatus != EstatusPrenomina.Cancelada)
-                .Select(p => new { p.Estatus })
-                .ToListAsync();
+                .Where(n => n.EmpresaId == _empresaId
+                    && n.PeriodicidadPago == resolucion.PeriodicidadPago
+                    && n.AnioPeriodo == resolucion.AnioPeriodo
+                    && n.NumeroPeriodo == resolucion.NumeroPeriodo
+                    && n.Estatus != EstatusNomina.Cancelada
+                    && n.FechaCierreCaptura != null)
+                .AnyAsync();
 
-            if (prenominas.Any(p => p.Estatus == EstatusPrenomina.Cerrada || p.Estatus == EstatusPrenomina.Aplicada))
+            if (nominaCapturaCerrada)
             {
-                error = "No se puede eliminar la autorización: ya existe una prenómina cerrada o aplicada para este periodo. Reabre la prenómina primero.";
+                error = "No se puede eliminar la autorización: ya existe una nómina con captura cerrada para este periodo. Reabre la captura de la nómina primero.";
                 return;
             }
 

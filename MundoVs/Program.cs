@@ -100,8 +100,9 @@ builder.Services.AddScoped<IRrhhEmpleadoPerfilPageService, RrhhEmpleadoPerfilPag
 builder.Services.AddScoped<IRrhhAsistenciaCorreccionAdvisor, RrhhAsistenciaCorreccionAdvisor>();
 builder.Services.AddScoped<IRrhhTiempoExtraResolutionService, RrhhTiempoExtraResolutionService>();
 builder.Services.AddScoped<IRrhhResolucionPeriodoService, RrhhResolucionPeriodoService>();
+builder.Services.AddScoped<IRrhhPermisoPorDiferenciaService, RrhhPermisoPorDiferenciaService>();
 builder.Services.AddScoped<IRrhhTiempoExtraReporteService, RrhhTiempoExtraReporteService>();
-builder.Services.AddScoped<IRrhhPrenominaSnapshotService, RrhhPrenominaSnapshotService>();
+builder.Services.AddScoped<IRrhhNominaSnapshotService, RrhhNominaSnapshotService>();
 builder.Services.AddScoped<IRrhhMarcacionIngestionService, RrhhMarcacionIngestionService>();
 builder.Services.AddScoped<IRrhhMarcacionZonaHorariaService, RrhhMarcacionZonaHorariaService>();
 builder.Services.AddScoped<CodigoNegocioService>();
@@ -384,7 +385,8 @@ app.MapPost("/api/rrhh/asistencias/reprocesar", async (HttpContext httpContext, 
         request.FechaDesde,
         request.FechaHasta,
         request.EmpleadoId,
-        httpContext.RequestAborted);
+        forzarDefaultEmpleado: true,
+        cancellationToken: httpContext.RequestAborted);
 
     db.RrhhLogsChecador.Add(new RrhhLogChecador
     {

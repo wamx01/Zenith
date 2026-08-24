@@ -12,7 +12,23 @@ public sealed class NominaLegalPolicyService : INominaLegalPolicyService
     }
 
     public decimal ObtenerSueldoReferencia(Empleado empleado, EmpleadoEsquemaPago? asignacion)
-        => asignacion?.SueldoBaseOverride ?? asignacion?.EsquemaPago?.SueldoBaseSugerido ?? empleado.SueldoSemanal;
+    {
+        // Resuelve el sueldo de referencia del esquema (override > sugerido). Si el esquema trae
+        // un valor nulo (sin configurar) el ?? ya cae a SueldoSemanal; PERO si trae un 0 explícito
+        // (p.ej. un EsquemaPago creado sin setear SueldoBaseSugerido a un valor > 0, o un override
+        // en 0), el ?? NO cae y zeroiza el sueldo de todo el periodo. Como safety-net, si el valor
+        // resuelto del esquema es <= 0, caemos al SueldoSemanal del empleado (que es la fuente por
+        // defecto cuando no hay esquema configurado). Así un esquema mal configurado nunca le cobra
+        // $0 a un empleado con sueldo capturado.
+        // English: resolves the scheme's reference salary (override > suggested). A null scheme
+        // value already falls through to SueldoSemanal via ??; BUT an explicit 0 (e.g. an
+        // EsquemaPago created without setting SueldoBaseSugerido > 0, or a 0 override) does NOT
+        // fall through and zeroes the whole period's salary. As a safety net, when the resolved
+        // scheme value is <= 0 we fall back to the employee's SueldoSemanal (the default source
+        // when no scheme is configured). A misconfigured scheme can never bill an employee $0.
+        var sueldoEsquema = asignacion?.SueldoBaseOverride ?? asignacion?.EsquemaPago?.SueldoBaseSugerido ?? 0m;
+        return sueldoEsquema > 0m ? sueldoEsquema : empleado.SueldoSemanal;
+    }
 
     public decimal CalcularSueldoBasePeriodo(decimal sueldoReferencia, PeriodicidadPago periodicidadPago, int diasPagados, NominaConfiguracion configuracion)
     {

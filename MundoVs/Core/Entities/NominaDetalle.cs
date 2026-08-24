@@ -40,6 +40,55 @@ public class NominaDetalle
     public int DiasDomingoTrabajado { get; set; }
     public int DiasFestivoTrabajado { get; set; }
     public decimal HorasTrabajadasNetas { get; set; }
+
+    // Fusión prenómina→nómina: snapshot de asistencia congelado en la propia nómina (antes
+    // vivía en PrenominaDetalle). Estos campos los puebla "Cargar empleados desde
+    // asistencias" (Fase A) y se congelan al cerrar la captura. El cálculo los lee de aquí.
+    // English: prenómina→nómina fusion — attendance snapshot frozen on the nómina itself
+    // (previously on PrenominaDetalle). "Load employees from attendances" (Phase A) fills
+    // these and they freeze at capture-close. Calculation reads them from here.
+
+    // F4b: desglose PorHoras (pago por minutos trabajados). DiasFestivoTrabajadoFija =
+    // festivos trabajados no-PorHoras (los PorHoras festivos van al sueldo base por
+    // minutos × factor, no al monto flat). Los tres agregados alimentan NominaSueldoBasePolicy.
+    // English: F4b PorHoras breakdown (pay by worked minutes). DiasFestivoTrabajadoFija =
+    // non-PorHoras worked holidays (PorHoras holidays go to base salary by minutes × factor,
+    // not the flat holiday amount). The three aggregates feed NominaSueldoBasePolicy.
+    public int DiasPorHorasTrabajados { get; set; }
+    public int MinutosPorHorasNetos { get; set; }
+    public int MinutosPorHorasFestivoNetos { get; set; }
+    public int DiasFestivoTrabajadoFija { get; set; }
+
+    // Banco de horas: acumulado/consumido del periodo + saldo vivo al momento de capturar
+    // (HorasBancoSaldoActual es informativo, viene del servicio de banco; se congela al
+    // cerrar para auditoría). English: hours bank: period accumulated/consumed + live
+    // balance at capture time (HorasBancoSaldoActual is informational, from the bank
+    // service; frozen at close for audit).
+    public decimal HorasBancoAcumuladas { get; set; }
+    public decimal HorasBancoConsumidas { get; set; }
+    public decimal HorasBancoSaldoActual { get; set; }
+
+    // Descansos del periodo (tomado/pagado/no pagado) — informativo para el resumen.
+    // English: period rest breaks (taken/paid/unpaid) — informational for the summary.
+    public decimal HorasDescansoTomado { get; set; }
+    public decimal HorasDescansoPagado { get; set; }
+    public decimal HorasDescansoNoPagado { get; set; }
+
+    // Destajo informativo del periodo (suma de vales aprobados) — display, no de pago.
+    // English: informational period destajo (sum of approved vales) — display, not payout.
+    public decimal MontoDestajoInformativo { get; set; }
+
+    // Vacaciones: saldo disponible al inicio del periodo y restantes tras aplicar las
+    // vacaciones del periodo. English: vacation: balance available at period start and
+    // remaining after applying the period's vacation days.
+    public decimal DiasVacacionesDisponibles { get; set; }
+    public decimal DiasVacacionesRestantes { get; set; }
+
+    // Complemento salarial mínimo sugerido (display en Fase A); el aplicado al calcular
+    // va a ComplementoSalarioMinimo (más arriba). English: suggested minimum-wage
+    // complement (display in Phase A); the applied one at calculation goes to
+    // ComplementoSalarioMinimo (above).
+    public decimal ComplementoSalarioMinimoSugerido { get; set; }
     public decimal MontoFestivoTrabajado { get; set; }
     public decimal MontoDescansoTrabajado { get; set; }
     public decimal MontoPrimaDominical { get; set; }

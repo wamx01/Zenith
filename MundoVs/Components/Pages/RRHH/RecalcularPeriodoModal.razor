@@ -1,0 +1,82 @@
+@* Diálogo previo a "Recalcular periodo": pregunta bajo qué método se recalcula el periodo
+   antes de disparar el reproceso. Reusado por el drawer "Ver detalle" del resumen semanal y
+   por el botón "Recalcular por periodo" de Asistencias. Emite OnConfirmar con la opción
+   elegida; cada página traduce la opción a los parámetros del processor.
+   English: Pre-"Recalculate period" dialog: asks under which method to recalc the period
+   before firing the reprocess. Reused by the weekly-summary "Ver detalle" drawer and by the
+   Asistencias "Recalcular por periodo" button. Emits OnConfirmar with the chosen option; each
+   page translates the option into the processor params. *@
+@if (Visible)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" style="background:rgba(0,0,0,.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Recalcular periodo</h5>
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Cancelar"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(Contexto))
+                    {
+                        <p class="text-muted mb-3">@Contexto</p>
+                    }
+                    <p class="fw-semibold mb-2">¿Bajo qué método recalculo los días del periodo?</p>
+                    <div class="d-flex flex-column gap-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="recalcMetodo" id="recalcDefault" value="@RecalcularPeriodoOpcion.DefaultEmpleado" checked="@(_opcion == RecalcularPeriodoOpcion.DefaultEmpleado)" @onchange="() => _opcion = RecalcularPeriodoOpcion.DefaultEmpleado" />
+                            <label class="form-check-label" for="recalcDefault">
+                                <strong>Default del empleado</strong>
+                                <small class="d-block text-muted">Usa el método configurado en Empleados · Esquema de jornada (recomendado). Pisa los ajustes manuales por día.</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="recalcMetodo" id="recalcVsHorario" value="@RecalcularPeriodoOpcion.VsHorario" checked="@(_opcion == RecalcularPeriodoOpcion.VsHorario)" @onchange="() => _opcion = RecalcularPeriodoOpcion.VsHorario" />
+                            <label class="form-check-label" for="recalcVsHorario">
+                                <strong>Vs horario (con reglas)</strong>
+                                <small class="d-block text-muted">Aplica turno, retardo, salida anticipada, faltante y extra con umbral. Ignora el default del empleado.</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="recalcMetodo" id="recalcReloj" value="@RecalcularPeriodoOpcion.MarcajeReloj" checked="@(_opcion == RecalcularPeriodoOpcion.MarcajeReloj)" @onchange="() => _opcion = RecalcularPeriodoOpcion.MarcajeReloj" />
+                            <label class="form-check-label" for="recalcReloj">
+                                <strong>Marcaje de reloj (tal cual)</strong>
+                                <small class="d-block text-muted">Cuenta tal cual las marcas, sin reglas (cero retardo/salida, descanso no marcado no descuenta, extra sin umbral). Ignora el default del empleado.</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar">Cancelar</button>
+                    <button type="button" class="btn btn-primary" @onclick="Confirmar"><i class="bi bi-arrow-repeat me-1"></i>Recalcular</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Visible controla el render; el padre lo abre/cierra. _opcion es la selección local,
+    // reseteada a DefaultEmpleado (recomendado) cada vez que se muestra.
+    // English: Visible drives rendering; the parent opens/closes it. _opcion is the local
+    // selection, reset to DefaultEmpleado (recommended) each time it's shown.
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string? Contexto { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<RecalcularPeriodoOpcion> OnConfirmar { get; set; }
+
+    private RecalcularPeriodoOpcion _opcion = RecalcularPeriodoOpcion.DefaultEmpleado;
+
+    // Cuando se muestra de nuevo, volver al default recomendado. English: when shown again,
+    // reset back to the recommended default.
+    protected override void OnParametersSet()
+    {
+        if (Visible)
+        {
+            _opcion = RecalcularPeriodoOpcion.DefaultEmpleado;
+        }
+    }
+
+    private Task Cancelar() => OnClose.InvokeAsync();
+
+    private Task Confirmar() => OnConfirmar.InvokeAsync(_opcion);
+}

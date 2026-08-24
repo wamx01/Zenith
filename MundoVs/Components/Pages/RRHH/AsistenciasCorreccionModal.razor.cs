@@ -9,7 +9,7 @@ using MundoVs.Infrastructure.Data;
 
 namespace MundoVs.Components.Pages.RRHH;
 
-public partial class AsistenciasCorreccionModal : ComponentBase
+public partial class AsistenciasCorreccionModal : ComponentBase, IAsyncDisposable
 {
     [Inject] private IDbContextFactory<CrmDbContext> DbFactory { get; set; } = default!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
@@ -187,7 +187,24 @@ public partial class AsistenciasCorreccionModal : ComponentBase
     private HashSet<int> _descansosNoDescontarSeleccionados = [];
     private int _toleranciaExcesoDescansoMinutos = RrhhAsistenciaDescansoSettings.ToleranciaExcesoDescansoDefault;
     private TurnoBaseDetalle? _detalleTurnoVigenteCache;
-    private static readonly SemaphoreSlim _initLock = new(1, 1);
+    // Lock POR INSTANCIA (no static): serializa el ciclo de vida del _draftDb de ESTE
+    // componente. Antes era static y compartido entre todos los circuitos → si un circuito
+    // moría mid-init sin soltar el lock (el finally no corría al tirar el circuito), TODOS los
+    // demás circuitos se colgaban para siempre en WaitAsync() → el modal se veía "roto al
+    // abrir en fresco". Instance evita que un circuito muerto bloquee a los demás.
+    // English: PER-INSTANCE lock (not static): serializes this component's _draftDb lifecycle.
+    // Before it was static and shared across all circuits → if a circuit died mid-init without
+    // releasing the lock (its finally didn't run on circuit teardown), every other circuit hung
+    // forever on WaitAsync() → the modal looked "broken on fresh open". Instance prevents a dead
+    // circuit from blocking the rest.
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    // Flag de disposición: cortocircuita OnParametersSetAsync/InicializarAsync cuando el
+    // circuito Blazor ya se dispuso, para no resolver servicios (IDbContextFactory scoped,
+    // AuthStateProvider scoped) de un IServiceProvider ya dispuesto → ObjectDisposedException.
+    // English: Disposal flag: short-circuits OnParametersSetAsync/InicializarAsync once the Blazor
+    // circuit is disposed, so we don't resolve scoped services (IDbContextFactory, AuthStateProvider)
+    // from an already-disposed IServiceProvider → ObjectDisposedException.
+    private bool _disposed;
 
     #endregion
 
@@ -195,6 +212,15 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     protected override async Task OnParametersSetAsync()
     {
+        // Circuito ya dispuesto: no resolver servicios scoped (IDbContextFactory/AuthStateProvider
+        // viven en el scope del circuito que ya se dispuso) → cortocircuito limpio.
+        // English: Circuit already disposed: don't resolve scoped services (IDbContextFactory/
+        // AuthStateProvider live in the circuit scope which is already disposed) → clean short-circuit.
+        if (_disposed)
+        {
+            return;
+        }
+
         // Serializar TODO el ciclo de vida del _draftDb (inicialización y disposal)
         // bajo el mismo _initLock. Antes, la rama de cierre (!Visible) disponía
         // _draftDb FUERA del lock mientras InicializarAsync aún corría el reproceso
@@ -244,6 +270,21 @@ public partial class AsistenciasCorreccionModal : ComponentBase
 
     private async Task InicializarAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // El cuerpo resuelve servicios scoped (DbFactory.CreateDbContextAsync → IEmpresaContext,
+        // AuthStateProvider) y usa _draftDb. Si el circuito se dispone mid-init, esas
+        // resoluciones lanzan ObjectDisposedException. Atrapamos y salimos en silencio para
+        // no inundar el log con renders sobre un circuito ya muerto.
+        // English: The body resolves scoped services (DbFactory.CreateDbContextAsync →
+        // IEmpresaContext, AuthStateProvider) and uses _draftDb. If the circuit disposes
+        // mid-init, those resolutions throw ObjectDisposedException. Catch and exit silently to
+        // avoid flooding the log with renders on an already-dead circuit.
+        try
+        {
         error = null;
         ok = null;
         _tieneCambiosPendientes = false;
@@ -309,6 +350,32 @@ public partial class AsistenciasCorreccionModal : ComponentBase
         CargarDescansosNoDescontar(AsistenciaActual);
         CargarCapturaResolucion(AsistenciaActual);
         await CargarContextoDiaAsync(_draftDb, AsistenciaActual.Fecha, recargarAsistencia: false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Circuito/_draftDb dispuesto mid-init: ver comentario del try. Salida silenciosa.
+            // English: Circuit/_draftDb disposed mid-init: see try comment. Silent exit.
+        }
+    }
+
+    // IAsyncDisposable: Blazor lo invoca al disposing del circuito. Marcamos _disposed para
+    // que los lifecycle subsiguientes cortocircuiten, y liberamos el _draftDb best-effort SIN
+    // adquirir el lock (si una InicializarAsync in-flight lo retiene, esperar colgaría el
+    // dispose del circuito; el guard _disposed evita nuevos usos). No disponemos _initLock:
+    // ahora es por-instancia, pero dispose del semáforo mientras WaitAsync pendiente es
+    // innecesario (GC lo recoge).
+    // English: IAsyncDisposable: Blazor calls this on circuit teardown. Set _disposed so
+    // subsequent lifecycles short-circuit, and release _draftDb best-effort WITHOUT acquiring
+    // the lock (if an in-flight InicializarAsync holds it, waiting would hang circuit disposal;
+    // the _disposed guard prevents further use). Don't dispose _initLock.
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_draftDb is not null)
+        {
+            await _draftDb.DisposeAsync();
+            _draftDb = null;
+        }
     }
 
     // Disposición SIN adquirir el lock: se usa sólo donde el _initLock ya se

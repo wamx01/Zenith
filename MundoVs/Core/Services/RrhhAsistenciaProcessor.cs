@@ -57,16 +57,16 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
 
         foreach (var grupo in grupos)
         {
-            await ReprocesarGrupoAsync(db, empresaId, grupo, configuracionNomina, cancellationToken);
+            await ReprocesarGrupoAsync(db, empresaId, grupo, configuracionNomina, forzarDefaultEmpleado: false, modoCalculoForzado: null, cancellationToken);
         }
 
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<int> ReprocesarRangoAsync(CrmDbContext db, Guid empresaId, DateOnly fechaDesde, DateOnly fechaHasta, Guid? empleadoId = null, CancellationToken cancellationToken = default)
-        => await ReprocesarRangoAsync(db, empresaId, fechaDesde, fechaHasta, empleadoId, null, cancellationToken);
+    public async Task<int> ReprocesarRangoAsync(CrmDbContext db, Guid empresaId, DateOnly fechaDesde, DateOnly fechaHasta, Guid? empleadoId = null, bool forzarDefaultEmpleado = false, RrhhModoCalculoForzado? modoCalculoForzado = null, CancellationToken cancellationToken = default)
+        => await ReprocesarRangoAsync(db, empresaId, fechaDesde, fechaHasta, empleadoId, null, forzarDefaultEmpleado, modoCalculoForzado, cancellationToken);
 
-    public async Task<int> ReprocesarRangoAsync(CrmDbContext db, Guid empresaId, DateOnly fechaDesde, DateOnly fechaHasta, Guid? empleadoId, IProgress<RrhhAsistenciaReprocesoProgreso>? progress, CancellationToken cancellationToken = default)
+    public async Task<int> ReprocesarRangoAsync(CrmDbContext db, Guid empresaId, DateOnly fechaDesde, DateOnly fechaHasta, Guid? empleadoId, IProgress<RrhhAsistenciaReprocesoProgreso>? progress, bool forzarDefaultEmpleado = false, RrhhModoCalculoForzado? modoCalculoForzado = null, CancellationToken cancellationToken = default)
     {
         if (fechaHasta < fechaDesde)
         {
@@ -134,7 +134,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         for (var indice = 0; indice < grupos.Count; indice++)
         {
             var grupo = grupos[indice];
-            await ReprocesarGrupoAsync(db, empresaId, grupo, configuracionNomina, cancellationToken);
+            await ReprocesarGrupoAsync(db, empresaId, grupo, configuracionNomina, forzarDefaultEmpleado, modoCalculoForzado, cancellationToken);
             progress?.Report(new RrhhAsistenciaReprocesoProgreso(indice + 1, grupos.Count, grupo.EmpleadoId, grupo.Fecha));
         }
 
@@ -231,7 +231,7 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         }
     }
 
-    private static async Task ReprocesarGrupoAsync(CrmDbContext db, Guid empresaId, GrupoProceso grupo, NominaConfiguracion configuracionNomina, CancellationToken cancellationToken)
+    private static async Task ReprocesarGrupoAsync(CrmDbContext db, Guid empresaId, GrupoProceso grupo, NominaConfiguracion configuracionNomina, bool forzarDefaultEmpleado, RrhhModoCalculoForzado? modoCalculoForzado, CancellationToken cancellationToken)
     {
         var fecha = grupo.Fecha;
         // Ventana UTC amplia (±14h) para cubrir cualquier zona de checador; cada marcación se filtra después por su fecha local real.
@@ -252,9 +252,18 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         // Esquema de jornada vigente a la fecha: PorHoras = trabaja por horas con
         // horario variable, se paga lo trabajado, sin faltante/retardo/salida, extra
         // sólo manual. Se resuelve una vez por (empleado, día) y rige el path del día.
+        // PagoFijoPorLabor (sólo con PorHoras) = cobra el sueldo del día sin importar
+        // cuánto tardó (ej. limpieza); se estampa en la asistencia para que el snapshot
+        // lo redirija al bucket Fija en vez de por minutos.
+        // English: Active jornada scheme for the date. PorHoras = variable schedule, paid
+        // for worked time, no late/shortage/early-leave, manual extra only. PagoFijoPorLabor
+        // (PorHoras only) = earns the day's salary regardless of duration (e.g. cleaning);
+        // stamped on the asistencia so the snapshot routes it to the Fija bucket, not by minutes.
         var esquemaResolver = new RrhhEsquemaJornadaResolver();
-        var esPorHoras = await esquemaResolver.ObtenerTipoJornadaAsync(
-            db, grupo.EmpleadoId, fecha.ToDateTime(TimeOnly.MinValue), cancellationToken) == TipoJornada.PorHoras;
+        var esquemaVigente = await esquemaResolver.ObtenerEsquemaVigenteAsync(
+            db, grupo.EmpleadoId, fecha.ToDateTime(TimeOnly.MinValue), cancellationToken);
+        var esPorHoras = esquemaVigente.TipoJornada == TipoJornada.PorHoras;
+        var esPagoFijoPorLabor = esPorHoras && esquemaVigente.PagoFijoPorLabor;
 
         var candidatas = await db.RrhhMarcaciones
             .Include(m => m.Checador)
@@ -283,7 +292,40 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var asistenciaPrevia = await db.RrhhAsistencias
             .FirstOrDefaultAsync(a => a.EmpresaId == empresaId && a.EmpleadoId == grupo.EmpleadoId && a.Fecha == fecha, cancellationToken);
         var descansosNoDescontarPrevios = ParsearDescansosNoDescontar(asistenciaPrevia?.DescansosNoDescontar);
-        var modoSugerencia = asistenciaPrevia?.ModoSugerenciaExtra;
+        // Método de cálculo del día. Prioridad: (1) modoCalculoForzado — método concreto elegido
+        // por el operador en el diálogo de "Recalcular periodo" (VsHorario/MarcajeReloj), gana
+        // sobre todo sin importar el default del empleado ni overrides por día. (2) forzarDefault
+        // Empleado=true (reproceso por periodo) impone el default del empleado a todos los días y
+        // pisa cualquier override manual por día ("el default gana en todos"). (3) false
+        // (recálculo por día / incremental) preserva el override manual del día y usa el default
+        // del empleado sólo como fallback. El valor legacy "SinTurno" se normaliza a null. El
+        // modo resuelto se persiste más abajo en asistencia.ModoSugerenciaExtra.
+        // English: day calculation method. Priority: (1) modoCalculoForzado — concrete method
+        // chosen by the operator in the "Recalculate period" dialog (VsHorario/MarcajeReloj),
+        // wins over everything regardless of the employee default or per-day overrides.
+        // (2) forzarDefaultEmpleado=true (period reprocess) enforces the employee's default on
+        // every day, overriding any per-day manual override ("default wins on all"). (3) false
+        // (per-day / incremental recalc) preserves the per-day override and uses the employee
+        // default only as a fallback. Legacy "SinTurno" is normalized to null. The resolved mode
+        // is persisted below in ModoSugerenciaExtra.
+        var modoPrevio = asistenciaPrevia?.ModoSugerenciaExtra;
+        if (string.Equals(modoPrevio, "SinTurno", StringComparison.OrdinalIgnoreCase))
+        {
+            modoPrevio = null;
+        }
+        string? modoSugerencia;
+        if (modoCalculoForzado is { } modoForzado)
+        {
+            modoSugerencia = modoForzado == RrhhModoCalculoForzado.MarcajeReloj ? "MarcajeReloj" : null;
+        }
+        else if (forzarDefaultEmpleado)
+        {
+            modoSugerencia = empleado.ModoSugerenciaExtraDefault;
+        }
+        else
+        {
+            modoSugerencia = modoPrevio ?? empleado.ModoSugerenciaExtraDefault;
+        }
         var analisisJornada = AnalizarJornada(detalleTurno, marcacionesClasificadas, resolucionesSegmento, configuracionDescansos, permisoParcial, descansosNoDescontarPrevios, modoSugerencia);
         await ConciliarResolucionesSegmentoAsync(db, empresaId, grupo.EmpleadoId, fecha, marcacionesClasificadas, resolucionesSegmento, cancellationToken);
 
@@ -293,9 +335,19 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         var minutosEntradaAnticipada = !esModoMarcajeReloj && detalleTurno?.HoraEntrada is TimeSpan entradaProgramadaAnticipada && entradaReal.HasValue
             ? Math.Max(0, (int)Math.Round((entradaProgramadaAnticipada - entradaReal.Value).TotalMinutes))
             : 0;
-        var minutosRetardo = !esModoMarcajeReloj && detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
-            ? ObtenerMinutosRetardoAplicables(Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramada).TotalMinutes)), configuracionDescansos)
+        var minutosRetardoCrudo = !esModoMarcajeReloj && detalleTurno?.HoraEntrada is TimeSpan entradaProgramada && entradaReal.HasValue
+            ? Math.Max(0, (int)Math.Round((entradaReal.Value - entradaProgramada).TotalMinutes))
             : 0;
+        var minutosRetardo = ObtenerMinutosRetardoAplicables(minutosRetardoCrudo, configuracionDescansos);
+        // Tolerancia de retardo que perdona el TIEMPO: los minutos crudos perdonados por el
+        // umbral se registran para sumarlos al neto efectivo (ObtenerMinutosNetoEfectivo) y
+        // reducir el faltante, dejando el día limpio. Espejo del umbral: si el retardo crudo
+        // es <= tolerancia, se perdonan todos esos minutos; si la supera, 0 (sin perdón).
+        // English: Retardo tolerance that forgives TIME: the raw minutes forgiven by the
+        // threshold are recorded to add them to net effective time (ObtenerMinutosNetoEfectivo)
+        // and reduce the faltante, leaving the day clean. Mirrors the threshold: if the raw
+        // retardo is <= tolerance, all those minutes are forgiven; if it exceeds, 0 (no forgiveness).
+        var minutosToleranciaRetardoAplicada = ObtenerMinutosToleranciaRetardoAplicada(minutosRetardoCrudo, configuracionDescansos);
         var minutosSalidaAnticipada = !esModoMarcajeReloj && detalleTurno?.HoraSalida is TimeSpan salidaProgramada && salidaReal.HasValue
             ? Math.Max(0, (int)Math.Round((salidaProgramada - salidaReal.Value).TotalMinutes))
             : 0;
@@ -348,19 +400,20 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
         asistencia.MinutosDescansoPagado = analisisJornada.MinutosDescansoPagado;
         asistencia.MinutosDescansoNoPagado = analisisJornada.MinutosDescansoNoPagado;
         asistencia.MinutosRetardo = minutosRetardo;
+        asistencia.MinutosToleranciaRetardoAplicada = minutosToleranciaRetardoAplicada;
         asistencia.MinutosSalidaAnticipada = minutosSalidaAnticipada;
         asistencia.MinutosExtra = minutosExtra;
-        // I11: ModoSugerenciaExtra es ahora modo puro (EntradaSalida/MarcajeReloj); el
-        // modo "SinTurno" ya no se persiste (los casos sin referencia de jornada se
-        // derivan en el policy vía EsSinReferenciaJornada). Limpiar valores legacy.
-        if (string.Equals(asistencia.ModoSugerenciaExtra, "SinTurno", StringComparison.OrdinalIgnoreCase))
-        {
-            asistencia.ModoSugerenciaExtra = null;
-        }
         // Esquema PorHoras vigente: sin jornada/hora esperada, sin faltante/retardo/
         // salida anticipada, extra sólo manual (no auto-detección). Se paga el tiempo
         // trabajado (MinutosTrabajadosNetos); en festivo va al factor festivo (F4).
+        // PagoFijoPorLabor (sólo PorHoras): el snapshot paga este día como Fija (sueldoDiario
+        // × día) en vez de por minutos — cobra lo mismo sin importar cuánto tardó.
+        // English: Active PorHoras scheme: no expected schedule, no late/shortage/early-leave,
+        // manual extra only. Paid for worked time (festivo → festivo factor). PagoFijoPorLabor
+        // (PorHoras only): the snapshot pays this day as Fija (daily salary × day) instead of
+        // by minutes — earns the same regardless of duration.
         asistencia.EsPorHoras = esPorHoras;
+        asistencia.EsPagoFijoPorLabor = esPagoFijoPorLabor;
         if (esPorHoras)
         {
             asistencia.TurnoBaseId = null;
@@ -369,13 +422,28 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             asistencia.MinutosJornadaProgramada = 0;
             asistencia.MinutosJornadaNetaProgramada = 0;
             asistencia.MinutosRetardo = 0;
+            asistencia.MinutosToleranciaRetardoAplicada = 0;
             asistencia.MinutosSalidaAnticipada = 0;
             asistencia.MinutosExtra = 0;
-            asistencia.ModoSugerenciaExtra = null;
             estatus = RrhhAsistenciaEstatus.TrabajadoPorHoras;
             requiereRevision = false;
-            observaciones = "Esquema por horas: se paga el tiempo trabajado, sin jornada esperada.";
+            observaciones = esPagoFijoPorLabor
+                ? "Esquema por horas · pago fijo por labor: se paga el sueldo del día sin importar la duración."
+                : "Esquema por horas: se paga el tiempo trabajado, sin jornada esperada.";
         }
+        // Persistir el modo efectivo con el que se calculó el día. En PorHoras siempre null
+        // (el método es irrelevante). En Fija: el modo resuelto — el forzado por el operador
+        // (modoCalculoForzado), o el default del empleado (forzarDefaultEmpleado), o el override
+        // manual preservado con default como fallback. Esto pisa overrides viejos cuando el
+        // recálculo impone un modo (forzado o default) y deja el campo coherente con el cálculo
+        // para que el modal de corrección muestre el método correcto.
+        // English: persist the effective mode used to compute the day. PorHoras always null
+        // (method is irrelevant). Fija: the resolved mode — operator-forced (modoCalculoForzado),
+        // or the employee default (forzarDefaultEmpleado), or the preserved manual override with
+        // default as fallback. This overwrites old overrides when the recalc enforces a mode
+        // (forced or default) and keeps the field consistent with the calc so the correction
+        // modal shows the correct method.
+        asistencia.ModoSugerenciaExtra = esPorHoras ? null : modoSugerencia;
         asistencia.Estatus = estatus;
         asistencia.RequiereRevision = requiereRevision;
         asistencia.Observaciones = observaciones;
@@ -464,19 +532,23 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             return analisisJornada.MinutosExtraManual;
         }
 
-        // Modo MarcajeReloj: calcula extra como (neto trabajado + perdón) − neto esperado del turno.
-        // Solo se usa cuando el usuario lo seleccionó explícitamente para este día (requiere turno).
+        // Modo MarcajeReloj: calcula extra como (neto trabajado + perdón) − neto esperado del
+        // turno, respetando el mismo umbral mínimo que el modo EntradaSalida. El excedente neto
+        // por debajo del umbral NO cuenta como extra (jornada 9h, trabajado 9h10 → 10 min < umbral
+        // → 0); al superarlo sí cuenta TODO el excedente (9h31 → 31 min ≥ umbral → 31). El extra
+        // manual autorizado por el operador se suma aparte, sin umbral (igual que EntradaSalida).
+        // English: MarcajeReloj mode: extra = (net worked + forgiveness) − net expected of the
+        // shift, honoring the same minimum threshold as EntradaSalida. Net surplus below the
+        // threshold does NOT count as extra (9h shift, 9h10 worked → 10 min < threshold → 0);
+        // once exceeded, the whole surplus counts (9h31 → 31 min ≥ threshold → 31).
+        // Operator-authorized manual extra is added on top, without threshold (same as EntradaSalida).
         if (string.Equals(modoSugerencia, "MarcajeReloj", StringComparison.OrdinalIgnoreCase))
         {
             var netoTrabajado = Math.Max(0, analisisJornada.MinutosTrabajadosNetos);
             var netoEsperado = Math.Max(0, analisisJornada.MinutosJornadaNetaProgramada);
             var excedenteNeto = Math.Max(0, netoTrabajado - netoEsperado);
-            var minutosExtraCalculados = excedenteNeto + analisisJornada.MinutosExtraManual;
-
-            // Modo MarcajeReloj: sin umbral — el excedente neto real se reporta tal cual
-            // (3 min de excedente son 3 min de extra, no se truncan a 0). El umbral sólo
-            // aplica al modo EntradaSalida (default), que evalúa componentes por separado.
-            return minutosExtraCalculados;
+            var extraAutomatico = excedenteNeto < minutosMinimosTiempoExtra ? 0 : excedenteNeto;
+            return extraAutomatico + analisisJornada.MinutosExtraManual;
         }
 
         // Modo EntradaSalida (default): extra = Max(0, Trabajado − Planeado) con umbral mínimo.
@@ -580,12 +652,23 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
     }
 
     private static int ObtenerMinutosMinimosTiempoExtra(int minutosMinimosTiempoExtra)
-        => minutosMinimosTiempoExtra > 0 ? minutosMinimosTiempoExtra : 15;
+        => RrhhTiempoExtraPolicy.NormalizarMinutosMinimosTiempoExtra(minutosMinimosTiempoExtra);
 
     private static int ObtenerMinutosRetardoAplicables(int minutosRetardo, RrhhAsistenciaDescansoSettings configuracionDescansos)
         => minutosRetardo <= Math.Max(0, configuracionDescansos.ToleranciaRetardoMinutos)
             ? 0
             : minutosRetardo;
+
+    // Espejo del umbral de retardo para el lado del TIEMPO: devuelve los minutos crudos que la
+    // tolerancia perdona (mismo umbral que ObtenerMinutosRetardoAplicables). Cuando el retardo
+    // crudo es <= tolerancia, se perdonan todos esos minutos (día limpio); si la supera, 0.
+    // English: Mirror of the retardo threshold for the TIME side: returns the raw minutes the
+    // tolerance forgives (same threshold as ObtenerMinutosRetardoAplicables). When the raw retardo
+    // is <= tolerance, all those minutes are forgiven (clean day); if it exceeds, 0.
+    private static int ObtenerMinutosToleranciaRetardoAplicada(int minutosRetardoCrudo, RrhhAsistenciaDescansoSettings configuracionDescansos)
+        => minutosRetardoCrudo <= Math.Max(0, configuracionDescansos.ToleranciaRetardoMinutos)
+            ? minutosRetardoCrudo
+            : 0;
 
     private static string? ConstruirObservaciones(int minutosEntradaAnticipada, int minutosRetardo, int minutosSalidaAnticipada, int minutosExtra, int minutosMinimosTiempoExtra, string? baseObservacion, IEnumerable<string>? observacionesAdicionales = null)
     {
@@ -1703,7 +1786,23 @@ public sealed class RrhhAsistenciaProcessor : IRrhhAsistenciaProcessor
             }
 
             asignacionActual[indiceConfigurado] = null;
-            Buscar(indiceConfigurado + 1, costoAcumulado + costoDescansoNoEmparejado);
+            // Forzar biyección: nunca dejar un descanso planeado sin emparejar si todavía
+            // hay un tomado disponible. Sin esto, un descanso tomado "muy por fuera" de su
+            // ventana planeada (puntaje > 240) prefería quedarse sin par: el planeado se
+            // descontaba como "no tomado" (minutos programados) Y el tomado se descontaba
+            // como "adicional" (minutos reales) → el mismo descanso se cobraba dos veces
+            // (un "tercer descanso" fantasma). Solo se permite dejar un planeado sin par
+            // cuando genuinamente hay más planeados que tomados disponibles.
+            // English: force bijection — never leave a configured break unmatched while a
+            // taken break is still available, or the same rest is double-counted (planned
+            // deduction + adicional). Only allow an unmatched configured when there are
+            // fewer taken breaks available than configured breaks remaining to place.
+            var disponiblesTomados = descansosTomadosRestantes.Count - usados.Count(u => u);
+            var restantesConfigurados = configuradosPendientes.Count - indiceConfigurado;
+            if (disponiblesTomados < restantesConfigurados)
+            {
+                Buscar(indiceConfigurado + 1, costoAcumulado + costoDescansoNoEmparejado);
+            }
 
             for (var i = 0; i < descansosTomadosRestantes.Count; i++)
             {

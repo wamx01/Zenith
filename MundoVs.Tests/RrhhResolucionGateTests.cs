@@ -122,7 +122,9 @@ public sealed class RrhhResolucionGateTests
     }
 
     private static IRrhhResolucionPeriodoService CreateService()
-        => new RrhhResolucionPeriodoService(new RrhhTiempoExtraResolutionService());
+        => new RrhhResolucionPeriodoService(
+            new RrhhTiempoExtraResolutionService(),
+            new RrhhPermisoPorDiferenciaService(new RrhhTiempoExtraResolutionService()));
 
     private static async Task<(Empresa Empresa, Empleado Empleado)> SembrarAsync(CrmDbContext db)
     {

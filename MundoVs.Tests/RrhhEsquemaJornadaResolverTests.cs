@@ -36,12 +36,13 @@ public class RrhhEsquemaJornadaResolverTests
         CreatedAt = DateTime.UtcNow
     };
 
-    private static EmpleadoEsquemaJornada Esquema(Guid empleadoId, TipoJornada tipo, DateTime desde, DateTime? hasta = null)
+    private static EmpleadoEsquemaJornada Esquema(Guid empleadoId, TipoJornada tipo, DateTime desde, DateTime? hasta = null, bool pagoFijoPorLabor = false)
         => new()
         {
             Id = Guid.NewGuid(),
             EmpleadoId = empleadoId,
             TipoJornada = tipo,
+            PagoFijoPorLabor = pagoFijoPorLabor,
             VigenteDesde = desde,
             VigenteHasta = hasta,
             IsActive = true,
@@ -195,5 +196,56 @@ public class RrhhEsquemaJornadaResolverTests
         Assert.Equal(TipoJornada.Fija, resuelto.TipoJornada);
         Assert.True(resuelto.EsDefault);
         Assert.False(resuelto.EsHueco);
+    }
+
+    [Fact]
+    public async Task EsquemaPorHoras_SurfeaFlagPagoFijoPorLabor()
+    {
+        // El flag PagoFijoPorLabor del registro activo se debe surfear en
+        // EsquemaJornadaResuelto. Sólo aplica con PorHoras (perfil #4: limpieza).
+        // English: the active record's PagoFijoPorLabor flag must be surfaced in
+        // EsquemaJornadaResuelto. Only meaningful with PorHoras (profile #4: cleaning).
+        await using var db = CreateDbContext();
+        var (_, empleado) = await SembrarSemillaAsync(db);
+        db.EmpleadosEsquemaJornada.Add(Esquema(empleado.Id, TipoJornada.PorHoras, new DateTime(2026, 6, 1), pagoFijoPorLabor: true));
+        await db.SaveChangesAsync();
+        var resolver = new RrhhEsquemaJornadaResolver();
+
+        var resuelto = await resolver.ObtenerEsquemaVigenteAsync(db, empleado.Id, new DateTime(2026, 7, 18));
+
+        Assert.Equal(TipoJornada.PorHoras, resuelto.TipoJornada);
+        Assert.True(resuelto.PagoFijoPorLabor);
+        Assert.NotNull(resuelto.EsquemaId);
+    }
+
+    [Fact]
+    public async Task EsquemaPorHoras_SinFlag_SurfeaPagoFijoPorLaborFalse()
+    {
+        await using var db = CreateDbContext();
+        var (_, empleado) = await SembrarSemillaAsync(db);
+        db.EmpleadosEsquemaJornada.Add(Esquema(empleado.Id, TipoJornada.PorHoras, new DateTime(2026, 6, 1), pagoFijoPorLabor: false));
+        await db.SaveChangesAsync();
+        var resolver = new RrhhEsquemaJornadaResolver();
+
+        var resuelto = await resolver.ObtenerEsquemaVigenteAsync(db, empleado.Id, new DateTime(2026, 7, 18));
+
+        Assert.Equal(TipoJornada.PorHoras, resuelto.TipoJornada);
+        Assert.False(resuelto.PagoFijoPorLabor);
+    }
+
+    [Fact]
+    public async Task DefaultFija_SinEsquema_SurfeaPagoFijoPorLaborFalse()
+    {
+        // Al caer a default/hueco Fija, PagoFijoPorLabor debe ser false (no hay esquema activo).
+        // English: when falling back to default/hueco Fija, PagoFijoPorLabor must be false.
+        await using var db = CreateDbContext();
+        var (_, empleado) = await SembrarSemillaAsync(db);
+        var resolver = new RrhhEsquemaJornadaResolver();
+
+        var resuelto = await resolver.ObtenerEsquemaVigenteAsync(db, empleado.Id, new DateTime(2026, 7, 18));
+
+        Assert.Equal(TipoJornada.Fija, resuelto.TipoJornada);
+        Assert.True(resuelto.EsDefault);
+        Assert.False(resuelto.PagoFijoPorLabor);
     }
 }

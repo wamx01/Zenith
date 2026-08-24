@@ -1127,16 +1127,37 @@
     vertical-align: middle;
 }
 
+/* Wrapper del listado diario: scroll horizontal en pantallas angostas sin volver
+   scroll-contenedor vertical (overflow-y: clip NO crea scroll-container, así el
+   thead sticky se ancla al viewport y no a esta caja). / Horizontal scroll on
+   narrow screens without becoming a vertical scroll container (overflow-y: clip
+   is not a scroll-container, so the sticky thead anchors to the viewport). */
+.asis-day-table-scroll {
+    overflow-x: auto;
+    overflow-y: clip;
+}
+
 .asis-table thead th {
     position: sticky;
-    top: 0;
-    z-index: 1;
+    /* Anclaje bajo el topbar fijo (~76px móvil / 78px ≥992). / Sticky below the
+       fixed topbar. */
+    top: 76px;
+    z-index: 2;
     font-size: .7rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .04em;
     white-space: nowrap;
     padding: .7rem .75rem;
+    /* Fondo opaco para que las filas no se vean por detrás al hacer scroll. */
+    background: #212529;
+    color: #f8fafc;
+}
+
+@media (min-width: 992px) {
+    .asis-table thead th {
+        top: 78px;
+    }
 }
 
 .asis-table-wrap {

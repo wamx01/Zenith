@@ -10,10 +10,12 @@ namespace MundoVs.Tests;
 /// Tests del modo "Marcaje de Reloj" (antes NetoVsNeto), rediseñados desde cero
 /// a partir de la especificación canónica 2026-07-27:
 /// - Parte del reloj tal cual.
-/// - Sin horarios, sin umbral, sin retardo/salida anticipada.
+/// - Sin retardo/salida anticipada (no usa el turno para reglas de entrada/salida).
+/// - El extra SÍ respeta el umbral mínimo (MinutosMinimosTiempoExtra, default 15):
+///   excedente < umbral → 0; excedente ≥ umbral → todo el excedente (igual que EntradaSalida).
 /// - Pausa = par intermedio real; por defecto se descuenta.
 /// - Sin par intermedio = trabajo continuo; el descanso planeado no marcado NO se descuenta.
-/// - Extra = Max(0, Trabajado - Planeado).
+/// - Extra = Max(0, Trabajado - Planeado) con umbral mínimo.
 /// - Tiempo Acreditado = Min(Trabajado + Permiso, Planeado).
 /// - Extra aprobado es semanal (se prueba en RrhhAsistenciaNeteoSemanalTests).
 /// </summary>
@@ -81,6 +83,75 @@ public sealed class RrhhAsistenciaMarcajeRelojTests
         Assert.Equal(435, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(a, 0)); // Acreditado
         Assert.Equal(0, a.MinutosRetardo);                   // modo no usa turno
         Assert.Equal(0, a.MinutosSalidaAnticipada);          // modo no usa turno
+    }
+
+    [Fact]
+    public async Task ExcedenteMenorAlUmbral_NoCuentaComoExtra_Da0()
+    {
+        // Jornada 11:30-19:00, D1 14:00-14:15 NO pagado → neta 435. Sin par intermedio →
+        // el descanso no marcado NO se descuenta. Marcas 11:20/18:45 → neto 445, excedente 10.
+        // 10 < umbral 15 → NO cuenta como extra (antes, sin umbral, daba 10). El tiempo
+        // acreditado queda en Min(445, 435) = 435.
+        // English: 11:30-19:00 shift, unpaid D1 14:00-14:15 → net 435. No intermediate pair →
+        // unmarked break is NOT deducted. Marks 11:20/18:45 → net 445, surplus 10. 10 < threshold
+        // 15 → does NOT count as extra (previously, without threshold, it gave 10). Credited time
+        // stays at Min(445, 435) = 435.
+        await using var db = CreateDbContext();
+        var empresa = CreateEmpresa();
+        var turno = new TurnoBase
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            Nombre = "11:30-19:00",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        turno.Detalles.Add(new TurnoBaseDetalle
+        {
+            Id = Guid.NewGuid(),
+            TurnoBaseId = turno.Id,
+            DiaSemana = DiaSemanaTurno.Lunes,
+            Labora = true,
+            HoraEntrada = new TimeSpan(11, 30, 0),
+            HoraSalida = new TimeSpan(19, 0, 0),
+            CantidadDescansos = 1,
+            Descanso1Inicio = new TimeSpan(14, 0, 0),
+            Descanso1Fin = new TimeSpan(14, 15, 0),
+            Descanso1EsPagado = false,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        var checador = CreateChecador(empresa.Id);
+        var empleado = CreateEmpleado(empresa.Id, turno.Id);
+
+        db.Empresas.Add(empresa);
+        db.TurnosBase.Add(turno);
+        db.RrhhChecadores.Add(checador);
+        db.Empleados.Add(empleado);
+        db.RrhhAsistencias.Add(new RrhhAsistencia
+        {
+            Id = Guid.NewGuid(),
+            EmpresaId = empresa.Id,
+            EmpleadoId = empleado.Id,
+            Fecha = new DateOnly(2026, 1, 5),
+            ModoSugerenciaExtra = "MarcajeReloj",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        db.RrhhMarcaciones.AddRange(
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 11, 20, 0), "in-1"),
+            CreateMarcacionLocal(empresa.Id, checador.Id, empleado, new DateTime(2026, 1, 5, 18, 45, 0), "out-1", TipoClasificacionMarcacionRrhh.Salida));
+        await db.SaveChangesAsync();
+
+        var processor = new RrhhAsistenciaProcessor();
+        await processor.ReprocesarRangoAsync(db, empresa.Id, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), empleado.Id);
+
+        var a = await db.RrhhAsistencias.SingleAsync();
+        Assert.Equal(445, a.MinutosTrabajadosNetos);        // 18:45-11:20
+        Assert.Equal(435, a.MinutosJornadaNetaProgramada);   // 480 - 45
+        Assert.Equal(0, a.MinutosDescansoNoPagado);         // no marcado -> no descuenta
+        Assert.Equal(0, a.MinutosExtra);                    // excedente 10 < umbral 15 -> 0
+        Assert.Equal(435, RrhhTiempoExtraPolicy.ObtenerMinutosTiempoVisible(a, 0)); // Acreditado Min(445,435)
     }
 
     [Fact]

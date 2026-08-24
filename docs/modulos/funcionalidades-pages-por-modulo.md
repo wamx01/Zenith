@@ -1,6 +1,6 @@
 # Documentación funcional por módulo
 
-> Última revisión: 2026-07-03
+> Última revisión: 2026-08-22
 > Mantenedor: equipo MundoVs
 
 ## Objetivo
@@ -175,12 +175,14 @@ Función general: gestión comercial de clientes, productos, relaciones cliente-
 ---
 
 ## 6. Módulo `RRHH`
-Función general: administración de empleados, turnos, marcaciones, asistencias, esquemas de pago, vales de destajo, prenóminas, ausencias, banco de horas, bonos, deducciones e integración de nómina. Es el módulo con mayor superficie del CRM MundoVs.
+Función general: administración de empleados, turnos, marcaciones, asistencias, esquemas de pago, vales de destajo, ausencias, banco de horas, bonos, deducciones e integración de nómina. Es el módulo con mayor superficie del CRM MundoVs.
+
+> **Fusión 2026-08-22:** la etapa separada de `Prenómina` fue eliminada. El flujo de RRHH ahora tiene 2 páginas: `Asistencia Semanal -> Nómina`. La ruta `/rrhh/prenominas` redirige a `/rrhh/nominas`. La captura y revisión previas al cierre viven dentro de Nómina como las fases "Cerrar periodo y calcular" / "Reabrir captura".
 
 ### Páginas
 
 - `RRHH/Dashboard.razor` — ruta `/rrhh/dashboard`
-  - Vista de KPIs: empleados activos, checadores en línea, prenóminas pendientes, nóminas del período, alertas de jornada.
+  - Vista de KPIs: empleados activos, checadores en línea, nóminas del período, alertas de jornada.
 
 - `RRHH/Empleados.razor` — ruta `/rrhh/empleados`
   - Administra empleados.
@@ -257,11 +259,8 @@ Función general: administración de empleados, turnos, marcaciones, asistencias
   - Porcentajes como topes máximos.
   - Entidades: `BonoDistribucionPeriodoRrhh`, `BonoDistribucionEmpleadoRrhh`, `BonoDistribucionEmpleadoDetalleRrhh`.
 
-- `RRHH/Prenominas.razor` — ruta `/rrhh/prenominas`
-  - Prenóminas con captura rápida de bonos/percepciones.
-  - Consolida días trabajados, vacaciones, faltas, incapacidades, horas extra, validación IMSS.
-  - Al cerrar: congela la configuración vía `IRrhhPrenominaSnapshotService`.
-  - Entidades: `Prenomina`, `PrenominaDetalle`, `PrenominaCapturaRapidaRrhh`.
+- `RRHH/Prenominas.razor` — ruta `/rrhh/prenominas` **(redirige a `/rrhh/nominas` desde la fusión 2026-08-22)**
+  - La página existe solo como redirección a `/rrhh/nominas`. La entidad `Prenomina` fue eliminada; la captura y revisión previas al cierre ahora viven dentro de Nómina.
 
 - `RRHH/Nominas.razor` — ruta `/rrhh/nominas`
   - Administra periodos de nómina.
@@ -269,7 +268,8 @@ Función general: administración de empleados, turnos, marcaciones, asistencias
   - Calcula detalle por empleado con sueldo base, destajo, bonos, horas extra y deducciones.
   - Integra vales de destajo aprobados dentro del cálculo.
   - Permite recalcular nómina y guardar ajustes por empleado.
-  - Servicios: `INominaCalculator`, `INominaResumenBuilder`, `INominaReciboBuilder`, `INominaLegalPolicyService`, `INominaPdfService`, `INominaSatCatalogInitializer`.
+  - **Captura y cierre del periodo (antigua prenómina):** "Cerrar periodo y calcular" estampa `FechaCierreCaptura` y ejecuta el cálculo sobre la semana cerrada; "Reabrir captura" limpia ese estampado.
+  - Servicios: `INominaCalculator`, `INominaResumenBuilder`, `INominaReciboBuilder`, `INominaLegalPolicyService`, `INominaPdfService`, `INominaSatCatalogInitializer`, `IRrhhNominaSnapshotService`.
 
 - `RRHH/ReciboNomina.razor` — ruta `/rrhh/nominas/recibo/{DetalleId:guid}`
   - Vista individual de recibo de nómina (PDF + HTML).

@@ -238,7 +238,12 @@ public sealed class ReglasPrenominaConfiguracion
 {
     public bool PermitirHorasExtraManual { get; set; } = true;
     public bool ValidarDiasPagadosContraPeriodo { get; set; } = true;
-    public bool RequierePrenominaCerradaParaNomina { get; set; } = true;
+    // Fusión prenómina→nómina: el gate "RequierePrenominaCerradaParaNomina" se elimina (ya no
+    // hay prenómina; el cierre de captura vive en Nomina.FechaCierreCaptura). Se conserva el
+    // nombre del tipo para no migrar la llave de config en DB.
+    // English: prenómina→nómina fusion: the "RequierePrenominaCerradaParaNomina" gate is removed
+    // (no more prenomina; capture-close now lives on Nomina.FechaCierreCaptura). The type name
+    // is kept to avoid migrating the config key in the DB.
     /// <summary>Gate duro: bloquea generar prenómina y calcular nómina cuando hay tiempo extra
     /// detectado sin resolución Autorizada del periodo (Fase 7).</summary>
     public bool RequiereResolucionAutorizadaParaNomina { get; set; } = true;
