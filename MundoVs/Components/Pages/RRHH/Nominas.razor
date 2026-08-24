@@ -365,13 +365,15 @@
                 }
             </div>
 
-            @* Observaciones (Notas) aparte — no van en la tabla de asistencia para mantenerla
-               compacta (sólo horas/días). Se listan los empleados con Notas no vacías.
-               English: Observations (Notas) kept separate — kept out of the attendance table to
-               keep it compact (hours/days only). Lists employees with non-empty Notas. *@
+            @* Observaciones (NotasRecibo) aparte — no van en la tabla de asistencia para
+               mantenerla compacta (sólo horas/días). Se listan los empleados con observaciones
+               no vacías. NotasManual (override) gana sobre Notas (auto). English: observations
+               (NotasRecibo) kept separate — kept out of the attendance table to keep it compact
+               (hours/days only). Lists employees with non-empty observations. NotasManual
+               (override) wins over Notas (auto). *@
             @{
                 var detallesConNotas = detallesNomina
-                    .Where(d => !string.IsNullOrWhiteSpace(d.Notas))
+                    .Where(d => !string.IsNullOrWhiteSpace(d.NotasRecibo))
                     .OrderBy(d => d.Empleado.Nombre)
                     .ToList();
             }
@@ -386,7 +388,7 @@
                                 <li class="list-group-item px-0 py-1">
                                     <span class="fw-semibold">@d.Empleado.Nombre @d.Empleado.ApellidoPaterno</span>
                                     <span class="text-muted"> · #@d.Empleado.NumeroEmpleado</span>
-                                    <div class="text-muted">@d.Notas</div>
+                                    <div class="text-muted">@d.NotasRecibo</div>
                                 </li>
                             }
                         </ul>
@@ -444,6 +446,33 @@
                                     <a class="btn btn-sm btn-outline-secondary" href="@($"/rrhh/nominas/recibo/{detalleModalSeleccionado.Id}")" target="_blank">
                                         <i class="bi bi-printer me-1"></i>Recibo
                                     </a>
+                                </div>
+
+                                <div class="card border-info mb-3">
+                                    <div class="card-header bg-info-subtle fw-semibold"><i class="bi bi-eye me-1"></i>Vista previa del recibo</div>
+                                    <div class="card-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label small fw-semibold mb-1">Observaciones del recibo</label>
+                                                <InputTextArea class="form-control form-control-sm" rows="3" @bind-Value="detalleModalSeleccionado.NotasManual" disabled="@(!PuedeModificarNominaSeleccionada)" placeholder="@detalleModalSeleccionado.Notas"></InputTextArea>
+                                                <div class="d-flex justify-content-between align-items-center mt-1 small">
+                                                    <span class="text-muted">Vacío = se usa la sugerencia automática.</span>
+                                                    @if (PuedeModificarNominaSeleccionada)
+                                                    {
+                                                        <button type="button" class="btn btn-sm btn-link py-0 px-1" @onclick="() => RestaurarNotasRecibo(detalleModalSeleccionado)">Restaurar sugerencia</button>
+                                                    }
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="text-muted small mb-1">Así aparecerá en el recibo:</div>
+                                                <div class="border rounded p-2 bg-light small">
+                                                    <strong>Observaciones:</strong>
+                                                    @(string.IsNullOrWhiteSpace(detalleModalSeleccionado.NotasRecibo) ? "(sin observaciones)" : detalleModalSeleccionado.NotasRecibo)
+                                                </div>
+                                                <div class="text-muted small mt-2"><i class="bi bi-qr-code me-1"></i>El QR del recibo se genera automático al exportar el PDF y apunta a este recibo.</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="row g-3">
@@ -2732,6 +2761,10 @@
             existente.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
             existente.Bonos = detalle.Bonos;
             existente.Deducciones = detalle.Deducciones;
+            // Override de observaciones del recibo: NotasManual vacío/blank = null (usa la
+            // sugerencia automática Notas). No afecta TotalPagar ni el cálculo. English:
+            // receipt observations override — blank NotasManual = null (uses auto Notas).
+            existente.NotasManual = string.IsNullOrWhiteSpace(detalle.NotasManual) ? null : detalle.NotasManual.Trim();
 
             var empleado = await db.Empleados.FirstOrDefaultAsync(x => x.Id == existente.EmpleadoId);
 
@@ -2754,6 +2787,15 @@
         {
             guardando = false;
         }
+    }
+
+    // Limpia el override manual de observaciones para que el recibo vuelva a usar la
+    // sugerencia automática (Notas). Sólo efecto en memoria + UI; persiste al "Guardar
+    // detalle". English: clears the manual observations override so the receipt falls back
+    // to the auto-suggested Notas. In-memory + UI only; persists on "Guardar detalle".
+    private void RestaurarNotasRecibo(NominaDetalle detalle)
+    {
+        detalle.NotasManual = null;
     }
 
     private async Task GuardarNomina()

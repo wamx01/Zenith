@@ -145,6 +145,18 @@ public class NominaDetalle
 
     public string? Notas { get; set; }
 
+    // Override manual de las observaciones del recibo. El snapshot siembra `Notas` (auto,
+    // ausencias + revisión); si el usuario edita aquí desde el modal de detalle, su texto
+    // gana sobre el autogenerado. NULL/blank = usar `Notas`. English: manual override of the
+    // receipt observations. The snapshot seeds `Notas` (auto, absences + revision); if the
+    // user edits this from the detail modal, their text wins over the auto value. NULL/blank
+    // = use `Notas`.
+    public string? NotasManual { get; set; }
+
+    // Precedencia del recibo: NotasManual (si no está en blanco) gana sobre Notas.
+    // English: receipt precedence — NotasManual (when non-blank) wins over Notas.
+    public string? NotasRecibo => !string.IsNullOrWhiteSpace(NotasManual) ? NotasManual : Notas;
+
     public ICollection<ValeDestajo> ValesDestajo { get; set; } = [];
     public ICollection<NominaBono> BonosEstructurados { get; set; } = [];
     public ICollection<NominaPercepcion> PercepcionesManuales { get; set; } = [];

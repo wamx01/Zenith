@@ -2,8 +2,8 @@ namespace MundoVs.Core.Interfaces;
 
 public interface INominaPdfService
 {
-    Task<byte[]> GenerateReciboPdfAsync(Guid nominaDetalleId, CancellationToken cancellationToken = default);
-    Task<byte[]> GenerateRecibosPdfAsync(Guid nominaId, CancellationToken cancellationToken = default);
+    Task<byte[]> GenerateReciboPdfAsync(Guid nominaDetalleId, string? baseUrl = null, CancellationToken cancellationToken = default);
+    Task<byte[]> GenerateRecibosPdfAsync(Guid nominaId, string? baseUrl = null, CancellationToken cancellationToken = default);
     Task<byte[]> GenerateDashboardCostosPdfAsync(NominaDashboardCostosReport report, CancellationToken cancellationToken = default);
 }
 

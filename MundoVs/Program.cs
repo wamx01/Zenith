@@ -741,7 +741,7 @@ app.MapGet("/api/nomina/recibo/{detalleId:guid}/pdf", async (HttpContext httpCon
     if (empresaIdDetalle != empresaIdClaim)
         return Results.Forbid();
 
-    var pdf = await nominaPdfService.GenerateReciboPdfAsync(detalleId, cancellationToken);
+    var pdf = await nominaPdfService.GenerateReciboPdfAsync(detalleId, $"{httpContext.Request.Scheme}://{httpContext.Request.Host}", cancellationToken);
     return Results.File(pdf, "application/pdf", $"recibo-nomina-{detalleId:N}.pdf");
 }).RequireAuthorization();
 
@@ -765,7 +765,7 @@ app.MapGet("/api/nomina/{nominaId:guid}/recibos/pdf", async (HttpContext httpCon
     if (empresaIdNomina != empresaIdClaim)
         return Results.Forbid();
 
-    var pdf = await nominaPdfService.GenerateRecibosPdfAsync(nominaId, cancellationToken);
+    var pdf = await nominaPdfService.GenerateRecibosPdfAsync(nominaId, $"{httpContext.Request.Scheme}://{httpContext.Request.Host}", cancellationToken);
     return Results.File(pdf, "application/pdf", $"recibos-nomina-{nominaId:N}.pdf");
 }).RequireAuthorization();
 

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MundoVs.Core.Entities;
 using MundoVs.Core.Interfaces;
 using MundoVs.Infrastructure.Data;
+using QRCoder;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -21,24 +22,24 @@ public sealed class NominaPdfService : INominaPdfService
         _tenantFileStorage = tenantFileStorage;
     }
 
-    public async Task<byte[]> GenerateReciboPdfAsync(Guid nominaDetalleId, CancellationToken cancellationToken = default)
+    public async Task<byte[]> GenerateReciboPdfAsync(Guid nominaDetalleId, string? baseUrl = null, CancellationToken cancellationToken = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var detalle = await CargarDetalleAsync(db, d => d.Id == nominaDetalleId, cancellationToken);
         if (detalle == null)
             throw new InvalidOperationException("No se encontró el recibo de nómina.");
 
-        return await GeneratePdfAsync(db, [detalle], cancellationToken);
+        return await GeneratePdfAsync(db, [detalle], baseUrl, cancellationToken);
     }
 
-    public async Task<byte[]> GenerateRecibosPdfAsync(Guid nominaId, CancellationToken cancellationToken = default)
+    public async Task<byte[]> GenerateRecibosPdfAsync(Guid nominaId, string? baseUrl = null, CancellationToken cancellationToken = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var detalles = await CargarDetallesAsync(db, d => d.NominaId == nominaId, cancellationToken);
         if (detalles.Count == 0)
             throw new InvalidOperationException("No hay recibos de nómina para generar PDF.");
 
-        return await GeneratePdfAsync(db, detalles, cancellationToken);
+        return await GeneratePdfAsync(db, detalles, baseUrl, cancellationToken);
     }
 
     public Task<byte[]> GenerateDashboardCostosPdfAsync(NominaDashboardCostosReport report, CancellationToken cancellationToken = default)
@@ -57,7 +58,7 @@ public sealed class NominaPdfService : INominaPdfService
         return Task.FromResult(pdf);
     }
 
-    private async Task<byte[]> GeneratePdfAsync(CrmDbContext db, IReadOnlyList<NominaDetalle> detalles, CancellationToken cancellationToken)
+    private async Task<byte[]> GeneratePdfAsync(CrmDbContext db, IReadOnlyList<NominaDetalle> detalles, string? baseUrl, CancellationToken cancellationToken)
     {
         var recibos = await ConstruirRecibosAsync(db, detalles, cancellationToken);
 
@@ -71,7 +72,7 @@ public sealed class NominaPdfService : INominaPdfService
                     page.Size(PageSizes.Letter);
                     page.Margin(20);
                     page.DefaultTextStyle(x => x.FontFamily(Fonts.Arial).FontSize(9));
-                    page.Content().Element(content => ComposeRecibo(content, detalle, reciboData.Recibo, reciboData.LogoEmpresa));
+                    page.Content().Element(content => ComposeRecibo(content, detalle, reciboData.Recibo, reciboData.LogoEmpresa, baseUrl));
                 });
             }
         }).GeneratePdf();
@@ -333,7 +334,7 @@ public sealed class NominaPdfService : INominaPdfService
         });
     }
 
-    private static void ComposeRecibo(IContainer container, NominaDetalle detalle, NominaReciboResult recibo, byte[]? logoEmpresa)
+    private static void ComposeRecibo(IContainer container, NominaDetalle detalle, NominaReciboResult recibo, byte[]? logoEmpresa, string? baseUrl)
     {
         var nombreEmpresa = string.IsNullOrWhiteSpace(detalle.Nomina.Empresa.NombreComercial)
             ? detalle.Nomina.Empresa.RazonSocial
@@ -491,6 +492,13 @@ public sealed class NominaPdfService : INominaPdfService
                 });
             });
 
+            // Observaciones ANTES de la sección "Comprobante interno de nómina" para que el
+            // empleado las vea primero. NotasManual (edición del usuario) gana sobre Notas (auto).
+            // English: observations BEFORE the "Comprobante interno de nómina" section so the
+            // employee sees them first. NotasManual (user edit) wins over Notas (auto).
+            if (!string.IsNullOrWhiteSpace(detalle.NotasRecibo))
+                column.Item().PaddingTop(8).Text($"Observaciones: {detalle.NotasRecibo}").FontSize(8).FontColor(Colors.Grey.Darken2);
+
             column.Item().PaddingTop(10).Column(col =>
             {
                 col.Item().Background("#0b2a68").PaddingVertical(4).PaddingHorizontal(8).Text("Comprobante interno de nómina").Bold().FontSize(9).FontColor(Colors.White);
@@ -507,17 +515,39 @@ public sealed class NominaPdfService : INominaPdfService
                         left.Item().Text($"Total: {recibo.NetoPagar:C2}").FontSize(8.2f).SemiBold();
                     });
 
+                    // QR real que codifica la URL del recibo en la app (al escanearlo abre el
+                    // recibo). Antes era texto "QR" literal. English: real QR encoding the
+                    // receipt URL (scanning opens the receipt). Previously literal "QR" text.
                     row.ConstantItem(110).AlignCenter().AlignMiddle().Column(qr =>
                     {
-                        qr.Item().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(6).Width(92).Height(92).AlignCenter().AlignMiddle().Text("QR").SemiBold().FontSize(16).FontColor(Colors.Grey.Darken1);
+                        var qrBytes = GenerarQrBytes(baseUrl, detalle.Id);
+                        qr.Item().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(6).Width(92).Height(92).AlignCenter().AlignMiddle().Element(e =>
+                        {
+                            if (qrBytes is { Length: > 0 })
+                                e.Image(qrBytes, ImageScaling.FitArea);
+                            else
+                                e.Text("QR").SemiBold().FontSize(16).FontColor(Colors.Grey.Darken1);
+                        });
                         qr.Item().PaddingTop(4).AlignCenter().Text("Comprobante interno").FontSize(7.2f).FontColor(Colors.Grey.Darken1);
                     });
                 });
             });
-
-            if (!string.IsNullOrWhiteSpace(detalle.Notas))
-                column.Item().PaddingTop(8).Text($"Observaciones: {detalle.Notas}").FontSize(8).FontColor(Colors.Grey.Darken2);
         });
+    }
+
+    // Genera los bytes PNG de un QR que codifica la URL del recibo en la app. Si no hay
+    // baseUrl (p.ej. llamado sin HttpContext) usa la ruta relativa para no romper. English:
+    // builds the PNG bytes of a QR encoding the receipt URL; falls back to a relative path QR
+    // when no baseUrl is available so it never throws.
+    private static byte[]? GenerarQrBytes(string? baseUrl, Guid detalleId)
+    {
+        var url = string.IsNullOrWhiteSpace(baseUrl)
+            ? $"/rrhh/nominas/recibo/{detalleId}"
+            : $"{baseUrl.TrimEnd('/')}/rrhh/nominas/recibo/{detalleId}";
+
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrData = qrGenerator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+        return new PngByteQRCode(qrData).GetGraphic(20);
     }
 
     private static Task<NominaDetalle?> CargarDetalleAsync(CrmDbContext db, System.Linq.Expressions.Expression<Func<NominaDetalle, bool>> predicate, CancellationToken cancellationToken)
