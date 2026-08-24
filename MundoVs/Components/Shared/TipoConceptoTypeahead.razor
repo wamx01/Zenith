@@ -1,0 +1,207 @@
+@* Typeahead de conceptos: buscador por palabra sobre Nombre + Clave, insensible a
+   acentos y mayúsculas, con navegación por teclado (↑/↓/Enter/Esc) y selección por clic.
+   Reemplaza los dropdowns del catálogo SAT en el modal de nómina.
+   English: concept typeahead — accent/case-insensitive search over Nombre+Clave, with
+   keyboard nav and click selection. Replaces the SAT-catalog dropdowns in the nomina modal. *@
+@using System.Globalization
+@using System.Text
+
+<div class="tipo-typeahead position-relative">
+    <input type="text"
+           class="@ClaseInput"
+           value="@ValorInput"
+           placeholder="@(abierto ? Placeholder : (NombreSeleccionado ?? Placeholder))"
+           disabled="@Disabled"
+           autocomplete="off"
+           @onfocus="Abrir"
+           @onblur="Cerrar"
+           @oninput="@(e => { busqueda = e.Value?.ToString() ?? string.Empty; indiceResaltado = 0; })"
+           @onkeydown="Navegar" />
+    @if (abierto && !Disabled)
+    {
+        var opts = OpcionesFiltradas;
+        <div class="tipo-typeahead-panel shadow-sm">
+            @if (opts.Count == 0)
+            {
+                <div class="tipo-typeahead-item text-muted fst-italic">Sin coincidencias…</div>
+            }
+            else
+            {
+                @for (var i = 0; i < opts.Count; i++)
+                {
+                    var idx = i;
+                    var op = opts[i];
+                    <div class="@ClaseItem(idx)"
+                         title="@op.Nombre"
+                         @onmousedown:preventDefault="true"
+                         @onclick="() => Seleccionar(op)">
+                        @if (!string.IsNullOrWhiteSpace(op.Clave))
+                        {
+                            <span class="tipo-typeahead-clave text-muted me-1">@op.Clave</span>
+                            <span class="text-muted me-1">·</span>
+                        }
+                        <span>@op.Nombre</span>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Opción mínima que el componente consume (Id + Nombre + Clave opcional).</summary>
+    public sealed record TipoConceptoOpcion(Guid Id, string Nombre, string? Clave = null);
+
+    [Parameter] public IReadOnlyList<TipoConceptoOpcion> Opciones { get; set; } = [];
+    [Parameter] public Guid? Value { get; set; }
+    [Parameter] public EventCallback<Guid?> ValueChanged { get; set; }
+    [Parameter] public string? Placeholder { get; set; } = "Buscar tipo…";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? InputClass { get; set; }
+
+    // Estado interno del buscador. / Internal search state.
+    private string busqueda = string.Empty;
+    private bool abierto;
+    private int indiceResaltado;
+
+    // Clase del input: form-control base + clase extra del padre (p.ej. form-control-sm).
+    // English: input class — form-control base + extra class from the parent (e.g. form-control-sm).
+    private string ClaseInput
+    {
+        get
+        {
+            var extra = InputClass;
+            return string.IsNullOrWhiteSpace(extra)
+                ? "tipo-typeahead-input form-control"
+                : $"tipo-typeahead-input form-control {extra.Trim()}";
+        }
+    }
+
+    // Clase de cada item del dropdown; resalta el indicado por el teclado.
+    // English: class for each dropdown item; highlights the keyboard-selected one.
+    private string ClaseItem(int idx)
+        => idx == indiceResaltado ? "tipo-typeahead-item active" : "tipo-typeahead-item";
+
+    // Nombre del tipo seleccionado (derivado de Value) para mostrar cuando el panel está cerrado.
+    // English: name of the selected type (derived from Value) shown while the panel is closed.
+    private string? NombreSeleccionado
+        => Value.HasValue ? Opciones.FirstOrDefault(o => o.Id == Value.Value)?.Nombre : null;
+
+    // Valor que toma el input: lo tecleado cuando está abierto, el nombre seleccionado cuando cerrado.
+    private string ValorInput => abierto ? busqueda : (NombreSeleccionado ?? string.Empty);
+
+    // Filtrado insensible a acentos/mayúsculas sobre Nombre + Clave; los que empiezan con el
+    // término van primero. Top 50 para no inflar el DOM. Vacío → lista completa.
+    // English: accent/case-insensitive filter over Nombre+Clave; starts-with matches first.
+    private List<TipoConceptoOpcion> OpcionesFiltradas
+    {
+        get
+        {
+            var n = Normalizar(busqueda);
+            var baseList = string.IsNullOrEmpty(n)
+                ? Opciones
+                : Opciones.Where(o => Normalizar(o.Nombre).Contains(n, StringComparison.Ordinal)
+                                      || Normalizar(o.Clave).Contains(n, StringComparison.Ordinal));
+            return baseList
+                .OrderBy(o => !Normalizar(o.Nombre).StartsWith(n, StringComparison.Ordinal))
+                .ThenBy(o => o.Nombre)
+                .Take(50)
+                .ToList();
+        }
+    }
+
+    private void Abrir()
+    {
+        if (Disabled) return;
+        abierto = true;
+        busqueda = NombreSeleccionado ?? string.Empty;
+        indiceResaltado = 0;
+    }
+
+    private void Cerrar()
+    {
+        abierto = false;
+        busqueda = string.Empty;
+        indiceResaltado = 0;
+    }
+
+    private async Task Seleccionar(TipoConceptoOpcion op)
+    {
+        abierto = false;
+        busqueda = string.Empty;
+        indiceResaltado = 0;
+        await ValueChanged.InvokeAsync(op.Id);
+    }
+
+    // Navegación por teclado. En un input de una sola línea ↑/↓ no tienen comportamiento por
+    // defecto y Enter/Esc no actúan fuera de un form, así que no se necesita preventDefault.
+    // English: keyboard nav. ↑/↓ have no default in a single-line input; Enter/Esc are inert
+    // outside a form, so preventDefault is unnecessary.
+    private void Navegar(KeyboardEventArgs e)
+    {
+        if (!abierto) return;
+        var opts = OpcionesFiltradas;
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (opts.Count > 0) indiceResaltado = Math.Min(indiceResaltado + 1, opts.Count - 1);
+                break;
+            case "ArrowUp":
+                if (opts.Count > 0) indiceResaltado = Math.Max(indiceResaltado - 1, 0);
+                break;
+            case "Enter":
+                if (opts.Count > 0 && indiceResaltado >= 0 && indiceResaltado < opts.Count)
+                    _ = Seleccionar(opts[indiceResaltado]);
+                break;
+            case "Escape":
+                Cerrar();
+                break;
+        }
+    }
+
+    // Quita diacríticos y pasa a minúsculas: "prestamo" matacea "Préstamos", "seguridad"/"imss"
+    // matacea "Seguridad social". / Strips diacritics + lowercases for accent-insensitive match.
+    private static string Normalizar(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+        var sb = new StringBuilder();
+        foreach (var c in s.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+}
+
+<style>
+    .tipo-typeahead-input { cursor: pointer; }
+    .tipo-typeahead-panel {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 1050;
+        min-width: 100%;
+        width: max-content;
+        max-width: 28rem;
+        max-height: 15rem;
+        overflow-y: auto;
+        margin-top: 2px;
+        padding: 2px;
+        background: #fff;
+        border: 1px solid var(--bs-border-color, #dee2e6);
+        border-radius: .375rem;
+    }
+    .tipo-typeahead-item {
+        padding: .25rem .5rem;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-radius: .25rem;
+        font-size: .875rem;
+    }
+    .tipo-typeahead-item.active { background: var(--bs-primary, #0d6efd); color: #fff; }
+    .tipo-typeahead-item.active .text-muted { color: rgba(255,255,255,.85) !important; }
+    .tipo-typeahead-clave { font-variant-numeric: tabular-nums; }
+</style>

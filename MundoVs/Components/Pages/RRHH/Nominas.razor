@@ -21,6 +21,29 @@
 @inject IRrhhNominaSnapshotService PrenominaSnapshotService
 @rendermode InteractiveServer
 
+<style>
+    /* Encabezado pegajoso (sticky) de la tabla por empleado: al hacer scroll vertical
+       dentro del .table-responsive, los th se quedan fijos. La segunda fila (filtros por
+       columna) también queda pegada debajo del header. English: sticky header for the
+       per-employee table — on vertical scroll inside .table-responsive the th stay put.
+       The second (per-column filter) row also sticks under the header. */
+    .nominas-sticky-wrap { max-height: 70vh; }
+    .nominas-sticky thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--bs-gray-100, #f8f9fa);
+        box-shadow: inset 0 -1px 0 #dee2e6;
+    }
+    .nominas-sticky thead tr + tr th {
+        top: 2.1rem; /* debajo de la fila de encabezados / under the header row */
+        z-index: 2;
+        background: var(--bs-gray-100, #f8f9fa);
+        box-shadow: inset 0 -1px 0 #dee2e6;
+    }
+    .nominas-filtro-row input { min-width: 7rem; }
+</style>
+
 <PageTitle>Nóminas</PageTitle>
 
 <div class="container-fluid px-4">
@@ -223,6 +246,9 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                     <h6 class="mb-0"><i class="bi bi-clipboard-data me-1"></i>Fase A — Resumen y captura del periodo</h6>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge text-bg-primary" title="Periodo y semana ISO (antes eran columnas SEM/Periodo del/Al)">
+                            <i class="bi bi-calendar-range me-1"></i>Periodo: @nominaSeleccionada.FechaInicio.ToString("dd/MM/yyyy") – @nominaSeleccionada.FechaFin.ToString("dd/MM/yyyy") · Sem @ObtenerNumeroSemanaIso()
+                        </span>
                         <span class="badge @(CapturaCerradaNominaSeleccionada ? "bg-success" : "bg-warning text-dark")">@(CapturaCerradaNominaSeleccionada ? "Captura cerrada" : "Captura abierta")</span>
                         <span class="badge text-bg-light">@ObtenerEtiquetaCorteNomina()</span>
                         @if (CapturaCerradaNominaSeleccionada && !string.IsNullOrWhiteSpace(nominaSeleccionada.CerradaCapturaPor))
@@ -259,8 +285,18 @@
                 else
                 {
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                        <input class="form-control form-control-sm" style="max-width: 22rem;" placeholder="Filtrar por nombre, n° empleado o checador…" @bind="filtroEmpleadosNomina" />
-                        <span class="small text-muted">@ObtenerDetallesVisiblesNomina().Count() de @detallesNomina.Count empleados</span>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="small text-muted">@ObtenerDetallesVisiblesNomina().Count() de @detallesNomina.Count empleados</span>
+                            <div class="d-inline-flex align-items-center gap-1">
+                                <label class="small text-muted mb-0">Filas:</label>
+                                <select class="form-select form-select-sm" style="width:auto;" @bind="tamanoPaginaEmpleados" @bind:after="() => { paginaEmpleados = 1; }">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="0">Todos</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
 
                     @* Hint: los ingresos/descuentos en dinero se calculan al "Cerrar periodo y calcular".
@@ -275,23 +311,25 @@
                         </div>
                     }
 
-                    @* Tabla de 18 columnas por empleado: SEMANA · Periodo del · Al · Total Hrs Pagadas ·
-                       Entró a Banco · Usaste Banco · Saldo Banco · Hrs Adic a Pagar · Pago Hrs Adic ·
-                       DESEMPEÑO % · INCENTIVOS · ASUETO · IMSS · Descuento por Falta · Total Ingresos ·
-                       Abono a Deuda · Saldo Deuda · Total a Pagar. El desglose granular día a día y el
-                       recibo viven en el modal "Detalle" (botón en la celda Empleado). Descuento por
-                       Falta = MontoDescuentoMinutos en $ (antes sólo se veía en minutos). English:
-                       18-column per-employee table. Day-by-day detail and the receipt live in the
-                       "Detalle" modal (button in the Empleado cell). Descuento por Falta =
-                       MontoDescuentoMinutos in $ (previously only shown in minutes). *@
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered mb-0 align-middle small text-center text-nowrap">
+                    @* Tabla por empleado — 18 columnas: Empleado · N° Empleado · Checador · Total Hrs
+                       Pagadas · Entró a Banco · Usaste Banco · Saldo Banco · Hrs Adic a Pagar ·
+                       Pago Hrs Adic · DESEMPEÑO % · INCENTIVOS · ASUETO · IMSS · Descuento por Falta ·
+                       Total Ingresos · Abono a Deuda · Saldo Deuda · Total a Pagar. El rango del
+                       periodo y la semana ISO ya no son columnas (constantes) — se muestran en la
+                       barra de Fase A. N° Empleado y Checador ahora son columnas propias con filtro
+                       por columna. Encabezados ordenables (icono) y sticky. El desglose día a día y
+                       el recibo viven en el modal "Detalle". English: per-employee table — 18
+                       columns. Period range + ISO week are no longer columns (constant) — shown in
+                       the Phase A bar. Employee # and clock code are now their own columns with
+                       per-column filters. Sortable (icon) + sticky headers. Day-by-day detail and
+                       receipt live in the "Detalle" modal. *@
+                    <div class="table-responsive nominas-sticky-wrap">
+                        <table class="table table-sm table-bordered mb-0 align-middle small text-center text-nowrap nominas-sticky">
                             <thead class="table-light text-center">
                                 <tr>
-                                    <th class="text-start" style="min-width:14rem;">Empleado</th>
-                                    <th>SEM.</th>
-                                    <th>Periodo del</th>
-                                    <th>Al</th>
+                                    <th class="text-start" style="min-width:14rem;cursor:pointer;" @onclick='() => AlternarOrdenNomina("Nombre")'>Empleado <i class='@IconoOrdenNomina("Nombre")'></i></th>
+                                    <th style="cursor:pointer;" @onclick='() => AlternarOrdenNomina("NumeroEmpleado")'>N° Empleado <i class='@IconoOrdenNomina("NumeroEmpleado")'></i></th>
+                                    <th style="cursor:pointer;" @onclick='() => AlternarOrdenNomina("CodigoChecador")'>Checador <i class='@IconoOrdenNomina("CodigoChecador")'></i></th>
                                     <th>Total Hrs. Pagadas</th>
                                     <th>Entró a Banco de Hrs</th>
                                     <th>Usaste Banco de Hrs</th>
@@ -303,14 +341,20 @@
                                     <th>ASUETO</th>
                                     <th>IMSS</th>
                                     <th>Descuento por Falta</th>
-                                    <th>Total de Ingresos</th>
+                                    <th style="cursor:pointer;" @onclick='() => AlternarOrdenNomina("TotalIngresos")'>Total de Ingresos <i class='@IconoOrdenNomina("TotalIngresos")'></i></th>
                                     <th>Abono a Deuda</th>
                                     <th>Saldo Deuda</th>
-                                    <th>Total a Pagar</th>
+                                    <th style="cursor:pointer;" @onclick='() => AlternarOrdenNomina("TotalPagar")'>Total a Pagar <i class='@IconoOrdenNomina("TotalPagar")'></i></th>
+                                </tr>
+                                <tr class="nominas-filtro-row">
+                                    <th class="p-1"><input class="form-control form-control-sm" placeholder="Filtrar nombre…" @bind="filtroNombreNomina" @bind:after="() => { paginaEmpleados = 1; }" /></th>
+                                    <th class="p-1"><input class="form-control form-control-sm" placeholder="Filtrar…" @bind="filtroNumeroEmpleadoNomina" @bind:after="() => { paginaEmpleados = 1; }" /></th>
+                                    <th class="p-1"><input class="form-control form-control-sm" placeholder="Filtrar…" @bind="filtroChecadorNomina" @bind:after="() => { paginaEmpleados = 1; }" /></th>
+                                    <th colspan="15"></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var d in ObtenerDetallesVisiblesNomina())
+                                @foreach (var d in ObtenerDetallesPaginaNomina())
                                 {
                                     <tr class="@(d.DiasConMarcacion == 0 ? "table-warning" : null)">
                                         <td class="text-start align-top">
@@ -319,7 +363,6 @@
                                                 <button class="btn btn-sm btn-outline-primary ms-1 py-0 px-1" type="button" @onclick="() => AbrirDetalleEmpleado(d)" title="Detalle día a día"><i class="bi bi-pencil-square"></i></button>
                                                 <a class="btn btn-sm btn-outline-secondary py-0 px-1" href="@($"/rrhh/nominas/recibo/{d.Id}")" target="_blank" title="Recibo de nómina"><i class="bi bi-printer"></i></a>
                                             </div>
-                                            <div class="text-muted">#@d.Empleado.NumeroEmpleado · Checador @d.Empleado.CodigoChecador</div>
                                             <div class="text-muted">@ObtenerNombreEsquema(d.EsquemaPagoId) · @d.Empleado.PeriodicidadPago</div>
                                             <div class="d-flex flex-wrap gap-1 mt-1">
                                                 @if (TieneFestivosAplicados(d.EmpleadoId))
@@ -332,9 +375,8 @@
                                                 }
                                             </div>
                                         </td>
-                                        <td>@ObtenerNumeroSemanaIso()</td>
-                                        <td>@(nominaSeleccionada?.FechaInicio.ToString("dd-MMM"))</td>
-                                        <td>@(nominaSeleccionada?.FechaFin.ToString("dd-MMM"))</td>
+                                        <td>@(d.Empleado?.NumeroEmpleado ?? "—")</td>
+                                        <td>@(d.Empleado?.CodigoChecador ?? "—")</td>
                                         <td>@ObtenerHorasPagadasResumen(d.EmpleadoId)</td>
                                         <td>@FormatearHorasResumen(d.HorasExtraBanco)</td>
                                         <td>@FmtHorasNeg(d.HorasBancoConsumidas)</td>
@@ -355,12 +397,24 @@
                             </tbody>
                             <tfoot class="table-light fw-bold">
                                 <tr>
-                                    <td class="text-end" colspan="18">Total (@detallesNomina.Count):</td>
+                                    <td class="text-end text-muted" colspan="17">Total página (@ObtenerDetallesPaginaNomina().Count() visibles):</td>
+                                    <td class="text-end">@ObtenerDetallesPaginaNomina().Sum(d => ObtenerTotalPagarPreview(d)).ToString("C2")</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-end" colspan="17">Total periodo (@detallesNomina.Count):</td>
                                     <td class="text-end">@resumenNomina.TotalNeto.ToString("C2")</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
+                    @if (tamanoPaginaEmpleados > 0 && TotalPaginasEmpleados > 1)
+                    {
+                        <div class="d-flex justify-content-between align-items-center gap-2 mt-2 small">
+                            <button class="btn btn-sm btn-outline-secondary" disabled="@(paginaEmpleados <= 1)" @onclick="() => CambiarPaginaEmpleados(-1)"><i class="bi bi-chevron-left"></i> Anterior</button>
+                            <span class="text-muted">Página @paginaEmpleados de @TotalPaginasEmpleados</span>
+                            <button class="btn btn-sm btn-outline-secondary" disabled="@(paginaEmpleados >= TotalPaginasEmpleados)" @onclick="() => CambiarPaginaEmpleados(1)">Siguiente <i class="bi bi-chevron-right"></i></button>
+                        </div>
+                    }
                     <div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Fila en amarillo = empleado sin marcas en el periodo. Descuento por Falta = tiempo no laborado (retardo/salida/faltante) en $. El desglose día a día y el recibo se abren con <i class="bi bi-pencil-square"></i> en la celda Empleado.</div>
                 }
             </div>
@@ -705,7 +759,7 @@
                                                                         @foreach (var item in percepcionesEditando.OrderBy(p => p.Orden).ThenBy(p => p.TipoNombre))
                                                                         {
                                                                             <tr>
-                                                                                <td><InputSelect class="form-select form-select-sm" @bind-Value="item.TipoPercepcionId" @bind-Value:after="() => OnTipoPercepcionChanged(item)" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var tipo in tiposPercepcion) { <option value="@tipo.Id">@tipo.Nombre</option> }</InputSelect></td>
+                                                                                <td><TipoConceptoTypeahead Opciones="OpcionesPercepcion" Value="item.TipoPercepcionId" ValueChanged="@(g => AsignarTipoPercepcion(item, g))" Placeholder="Buscar tipo…" Disabled="@(!PuedeModificarNominaSeleccionada)" InputClass="form-control-sm" /></td>
                                                                                 <td><InputText class="form-control form-control-sm" @bind-Value="item.Descripcion" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
                                                                                 <td><InputText class="form-control form-control-sm" @bind-Value="item.Referencia" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
                                                                                 <td><InputSelect class="form-select form-select-sm" @bind-Value="item.Origen" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var origen in Enum.GetValues<OrigenPercepcionNomina>()) { <option value="@origen">@origen</option> }</InputSelect></td>
@@ -719,13 +773,7 @@
                                                         </div>
                                                         <div class="row g-2 mb-3">
                                                             <div class="col-md-6">
-                                                                <select class="form-select form-select-sm" @bind="tipoPercepcionSeleccionadoId" disabled="@(!PuedeModificarNominaSeleccionada)">
-                                                                    <option value="">Seleccionar tipo...</option>
-                                                                    @foreach (var tipo in tiposPercepcion)
-                                                                    {
-                                                                        <option value="@tipo.Id">@tipo.Nombre</option>
-                                                                    }
-                                                                </select>
+                                                                <TipoConceptoTypeahead Opciones="OpcionesPercepcion" Value="tipoPercepcionSeleccionadoGuid" ValueChanged="@(g => tipoPercepcionSeleccionadoGuid = g)" Placeholder="Buscar tipo para agregar…" Disabled="@(!PuedeModificarNominaSeleccionada)" InputClass="form-control-sm" />
                                                             </div>
                                                             <div class="col-md-2">
                                                                 <button class="btn btn-sm btn-success w-100" @onclick="AgregarPercepcionManual" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-plus"></i></button>
@@ -773,7 +821,7 @@
                                                                         @foreach (var item in deduccionesEditando.OrderBy(d => d.Orden).ThenBy(d => d.TipoNombre))
                                                                         {
                                                                             <tr>
-                                                                                <td><InputSelect class="form-select form-select-sm" @bind-Value="item.TipoDeduccionId" @bind-Value:after="() => OnTipoDeduccionChanged(item)" disabled="@(!PuedeModificarNominaSeleccionada)">@foreach (var tipo in tiposDeduccion) { <option value="@tipo.Id">@tipo.Nombre</option> }</InputSelect></td>
+                                                                                <td><TipoConceptoTypeahead Opciones="OpcionesDeduccion" Value="item.TipoDeduccionId" ValueChanged="@(g => AsignarTipoDeduccion(item, g))" Placeholder="Buscar tipo…" Disabled="@(!PuedeModificarNominaSeleccionada)" InputClass="form-control-sm" /></td>
                                                                                 <td><InputText class="form-control form-control-sm" @bind-Value="item.Descripcion" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
                                                                                 <td class="text-center"><InputCheckbox class="form-check-input" @bind-Value="item.EsRetencionLegal" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
                                                                                 <td class="text-end"><InputNumber class="form-control form-control-sm text-end" @bind-Value="item.Importe" disabled="@(!PuedeModificarNominaSeleccionada)" /></td>
@@ -786,13 +834,7 @@
                                                         </div>
                                                         <div class="row g-2 mb-3">
                                                             <div class="col-md-6">
-                                                                <select class="form-select form-select-sm" @bind="tipoDeduccionSeleccionadoId" disabled="@(!PuedeModificarNominaSeleccionada)">
-                                                                    <option value="">Seleccionar tipo...</option>
-                                                                    @foreach (var tipo in tiposDeduccion)
-                                                                    {
-                                                                        <option value="@tipo.Id">@tipo.Nombre</option>
-                                                                    }
-                                                                </select>
+                                                                <TipoConceptoTypeahead Opciones="OpcionesDeduccion" Value="tipoDeduccionSeleccionadoGuid" ValueChanged="@(g => tipoDeduccionSeleccionadoGuid = g)" Placeholder="Buscar tipo para agregar…" Disabled="@(!PuedeModificarNominaSeleccionada)" InputClass="form-control-sm" />
                                                             </div>
                                                             <div class="col-md-2">
                                                                 <button class="btn btn-sm btn-danger w-100" @onclick="AgregarDeduccion" disabled="@(!PuedeModificarNominaSeleccionada)"><i class="bi bi-plus"></i></button>
@@ -822,43 +864,96 @@
 
     @* ══ TABLA NÓMINAS ══ *@
     <div class="card">
-        <div class="card-body p-0">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Folio</th><th>Nómina</th><th>Ciclo</th><th>Periodo</th><th>Inicio</th><th>Fin</th><th>Pago</th>
-                        <th class="text-center">Estatus</th><th class="text-end">Total</th><th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var n in nominas)
+        <div class="card-body">
+            @* Barra de filtros de la lista de periodos: búsqueda libre + estatus + "Este año"
+               + limpiar. Pensada para no saturar con 20-50+ semanas ni multi-año. English:
+               period-list filter bar: free search + status + "This year" + clear. Designed
+               not to overwhelm with 20-50+ weeks or multi-year. *@
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="input-group input-group-sm" style="max-width: 26rem;">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input class="form-control" placeholder="Buscar folio, nómina, periodo, ciclo…" @bind="filtroPeriodoTexto" @bind:after="() => { paginaLista = 1; }" />
+                </div>
+                <select class="form-select form-select-sm" style="width:auto;" @bind="filtroPeriodoEstatus" @bind:after="() => { paginaLista = 1; }">
+                    <option value="">Todos los estatus</option>
+                    @foreach (var e in Enum.GetValues<EstatusNomina>())
                     {
-                        var total = n.Detalles.Sum(d => d.TotalPagar);
-                        <tr class="@(nominaSeleccionada?.Id == n.Id ? "table-active" : "")">
-                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.Folio) ? "—" : n.Folio)</td>
-                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.NumeroNomina) ? "—" : n.NumeroNomina)</td>
-                            <td><span class="badge text-bg-light">@ObtenerClavePeriodo(n.PeriodicidadPago, n.AnioPeriodo, n.NumeroPeriodo)</span></td>
-                            <td class="fw-semibold">@n.Periodo</td>
-                            <td>@n.FechaInicio.ToString("dd/MM/yyyy")</td>
-                            <td>@n.FechaFin.ToString("dd/MM/yyyy")</td>
-                            <td>@(n.FechaPago?.ToString("dd/MM/yyyy") ?? "—")</td>
-                            <td class="text-center">
-                                <div class="d-flex flex-column align-items-center gap-1">
-                                    <span class="badge @EstatusBadge(n.Estatus)">@n.Estatus</span>
-                                </div>
-                            </td>
-                            <td class="text-end fw-bold">@total.ToString("C2")</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-info me-1" @onclick="() => VerDetalle(n)" title="Ver detalle"><i class="bi bi-eye"></i></button>
-                                @if (_puedeEditar && !EstaBloqueadaNomina(n.Estatus))
-                                {
-                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarNomina(n)" title="Editar"><i class="bi bi-pencil"></i></button>
-                                }
-                            </td>
-                        </tr>
+                        <option value="@e">@e</option>
                     }
-                </tbody>
-            </table>
+                </select>
+                <button class="btn btn-sm @(FiltroEsteAnioActivo ? "btn-primary" : "btn-outline-primary")" @onclick="AlternarEsteAnio">
+                    <i class="bi bi-calendar-event me-1"></i>Este año
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="LimpiarFiltrosPeriodo"><i class="bi bi-x-lg me-1"></i>Limpiar</button>
+                <span class="small text-muted ms-auto">@NominasFiltradas.Count() de @nominas.Count periodos</span>
+                <div class="d-inline-flex align-items-center gap-1">
+                    <label class="small text-muted mb-0">Filas:</label>
+                    <select class="form-select form-select-sm" style="width:auto;" @bind="tamanoPaginaLista" @bind:after="() => { paginaLista = 1; }">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="cursor:pointer;" @onclick='() => AlternarOrdenLista("Folio")'>Folio <i class='@IconoOrdenLista("Folio")'></i></th>
+                            <th style="cursor:pointer;" @onclick='() => AlternarOrdenLista("NumeroNomina")'>Nómina <i class='@IconoOrdenLista("NumeroNomina")'></i></th>
+                            <th>Ciclo</th>
+                            <th>Periodo</th>
+                            <th style="cursor:pointer;" @onclick='() => AlternarOrdenLista("FechaInicio")'>Inicio <i class='@IconoOrdenLista("FechaInicio")'></i></th>
+                            <th style="cursor:pointer;" @onclick='() => AlternarOrdenLista("FechaFin")'>Fin <i class='@IconoOrdenLista("FechaFin")'></i></th>
+                            <th style="cursor:pointer;" @onclick='() => AlternarOrdenLista("FechaPago")'>Pago <i class='@IconoOrdenLista("FechaPago")'></i></th>
+                            <th class="text-center" style="cursor:pointer;" @onclick='() => AlternarOrdenLista("Estatus")'>Estatus <i class='@IconoOrdenLista("Estatus")'></i></th>
+                            <th class="text-end" style="cursor:pointer;" @onclick='() => AlternarOrdenLista("Total")'>Total <i class='@IconoOrdenLista("Total")'></i></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var n in NominasVisibles)
+                        {
+                            var total = n.Detalles.Sum(d => d.TotalPagar);
+                            <tr class="@(nominaSeleccionada?.Id == n.Id ? "table-active" : "")">
+                                <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.Folio) ? "—" : n.Folio)</td>
+                                <td class="fw-semibold">@(string.IsNullOrWhiteSpace(n.NumeroNomina) ? "—" : n.NumeroNomina)</td>
+                                <td><span class="badge text-bg-light">@ObtenerClavePeriodo(n.PeriodicidadPago, n.AnioPeriodo, n.NumeroPeriodo)</span></td>
+                                <td class="fw-semibold">@n.Periodo</td>
+                                <td>@n.FechaInicio.ToString("dd/MM/yyyy")</td>
+                                <td>@n.FechaFin.ToString("dd/MM/yyyy")</td>
+                                <td>@(n.FechaPago?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                <td class="text-center">
+                                    <div class="d-flex flex-column align-items-center gap-1">
+                                        <span class="badge @EstatusBadge(n.Estatus)">@n.Estatus</span>
+                                    </div>
+                                </td>
+                                <td class="text-end fw-bold">@total.ToString("C2")</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-info me-1" @onclick="() => VerDetalle(n)" title="Ver detalle"><i class="bi bi-eye"></i></button>
+                                    @if (_puedeEditar && !EstaBloqueadaNomina(n.Estatus))
+                                    {
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => EditarNomina(n)" title="Editar"><i class="bi bi-pencil"></i></button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        @if (!NominasVisibles.Any())
+                        {
+                            <tr><td colspan="10" class="text-center text-muted py-3"><i class="bi bi-info-circle me-1"></i>No hay periodos que coincidan con los filtros.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (TotalPaginasLista > 1)
+            {
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-2 small">
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@(paginaLista <= 1)" @onclick="() => CambiarPaginaLista(-1)"><i class="bi bi-chevron-left"></i> Anterior</button>
+                    <span class="text-muted">Página @paginaLista de @TotalPaginasLista</span>
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@(paginaLista >= TotalPaginasLista)" @onclick="() => CambiarPaginaLista(1)">Siguiente <i class="bi bi-chevron-right"></i></button>
+                </div>
+            }
         </div>
     </div>
     }
@@ -881,6 +976,14 @@
     private List<Empleado> empleados = [];
     private List<NominaPercepcionTipo> tiposPercepcion = [];
     private List<DeduccionTipoRrhh> tiposDeduccion = [];
+
+    // Proyección de los catálogos SAT a opciones del typeahead (Id + Nombre + Clave). Barato:
+    // proyecta ~50-85 ítems ya en memoria en cada render. / Project the SAT catalogs to
+    // typeahead options (Id + Nombre + Clave). Cheap: ~50-85 in-memory items per render.
+    private IReadOnlyList<TipoConceptoTypeahead.TipoConceptoOpcion> OpcionesPercepcion
+        => tiposPercepcion.Select(t => new TipoConceptoTypeahead.TipoConceptoOpcion(t.Id, t.Nombre, t.Clave)).ToList();
+    private IReadOnlyList<TipoConceptoTypeahead.TipoConceptoOpcion> OpcionesDeduccion
+        => tiposDeduccion.Select(t => new TipoConceptoTypeahead.TipoConceptoOpcion(t.Id, t.Nombre, t.Clave)).ToList();
     private NominaConfiguracion configuracionNomina = new();
     private NominaCorteRrhh corteSemanal = new() { PeriodicidadPago = PeriodicidadPago.Semanal, DiaCorteSemana = DayOfWeek.Sunday, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
     private NominaCorteRrhh corteQuincenal = new() { PeriodicidadPago = PeriodicidadPago.Quincenal, DiaCorteMes = 15, DiaPagoSugerido = DayOfWeek.Friday, IsActive = true };
@@ -895,8 +998,14 @@
     private NominaDetalle detalleDeduccionSeleccionado = null!;
     private List<PercepcionManualEditor> percepcionesEditando = [];
     private string tipoPercepcionSeleccionadoId = string.Empty;
+    // Selector "agregar percepción" vía typeahead (Guid?; el stringlegacy se conserva inerte).
+    // English: "add perception" picker via typeahead (Guid?; the legacy string is kept inert).
+    private Guid? tipoPercepcionSeleccionadoGuid;
     private List<DeduccionEditor> deduccionesEditando = [];
     private string tipoDeduccionSeleccionadoId = string.Empty;
+    // Selector "agregar deducción" vía typeahead (Guid?; el stringlegacy se conserva inerte).
+    // English: "add deduction" picker via typeahead (Guid?; the legacy string is kept inert).
+    private Guid? tipoDeduccionSeleccionadoGuid;
     private Nomina nominaSeleccionada = null!;
     private NominaResumenResult resumenNomina = new();
     private bool mostrarForm, mostrarFormDetalle, guardando;
@@ -907,11 +1016,36 @@
     private Guid _empresaId;
     private ReglasPrenominaConfiguracion reglasPrenomina = new();
 
-    // Fusión prenómina→nómina — Fase A "Resumen y captura del periodo". Filtro de empleados
-    // y bandera de carga del snapshot de asistencias. English: prenómina→nómina fusion —
-    // Phase A "Period summary and capture". Employee filter + snapshot-loading flag.
-    private string filtroEmpleadosNomina = string.Empty;
+    // Fusión prenómina→nómina — Fase A "Resumen y captura del periodo". Bandera de carga del
+    // snapshot de asistencias. English: prenómina→nómina fusion — Phase A "Period summary and
+    // capture". Snapshot-loading flag.
     private bool cargandoSnapshot;
+
+    // ── Tabla por empleado (Fase A): filtros por columna, orden y paginación client-side.
+    //    Los filtros/orden/paginación son sólo display: no mutan detallesNomina, así los
+    //    badges del header siguen sumando sobre todos. English: per-employee table (Phase A):
+    //    per-column filters, sort and client-side paging — display only, doesn't mutate
+    //    detallesNomina so header badges still sum over everyone.
+    private string filtroNombreNomina = string.Empty;
+    private string filtroNumeroEmpleadoNomina = string.Empty;
+    private string filtroChecadorNomina = string.Empty;
+    private string ordenColumnaNomina = "Nombre";
+    private bool ordenAscendenteNomina = true;
+    private int paginaEmpleados = 1;
+    // 0 = "Todos" (sin paginar). / 0 = "All" (no paging).
+    private int tamanoPaginaEmpleados = 25;
+
+    // ── Lista de periodos (tabla inferior): filtros, orden y paginación client-side sobre
+    //    `nominas` ya cargada. Pensado para no saturar con 20-50+ semanas ni multi-año.
+    //    English: period list (bottom table): filters, sort and client-side paging over the
+    //    already-loaded `nominas`. Designed not to overwhelm with 20-50+ weeks or multi-year.
+    private string filtroPeriodoTexto = string.Empty;
+    private EstatusNomina? filtroPeriodoEstatus;
+    private int? filtroPeriodoAnio;
+    private string ordenColumnaLista = "FechaInicio";
+    private bool ordenAscendenteLista = false;
+    private int paginaLista = 1;
+    private int tamanoPaginaLista = 10;
 
     private decimal TotalPercepcionesManualesEditando => percepcionesEditando.Sum(p => p.Importe);
     private decimal TotalDeduccionesEditando => deduccionesEditando.Sum(d => d.Importe);
@@ -1256,7 +1390,9 @@
         if (!PuedeModificarNominaSeleccionada)
             return;
 
-        if (!Guid.TryParse(tipoPercepcionSeleccionadoId, out var tipoId))
+        // El typeahead escribe sobre el Guid?; el stringlegacy queda inerte.
+        // English: the typeahead writes to the Guid?; the legacy string stays inert.
+        if (tipoPercepcionSeleccionadoGuid is not Guid tipoId)
             return;
 
         var tipo = tiposPercepcion.FirstOrDefault(t => t.Id == tipoId);
@@ -1272,6 +1408,7 @@
             Orden = percepcionesEditando.Count + 1
         });
 
+        tipoPercepcionSeleccionadoGuid = null;
         tipoPercepcionSeleccionadoId = string.Empty;
     }
 
@@ -1285,13 +1422,17 @@
             percepcionesEditando[i].Orden = i + 1;
     }
 
-    private Task OnTipoPercepcionChanged(PercepcionManualEditor item)
+    // Asigna el tipo de percepción elegido vía typeahead y sincroniza TipoNombre.
+    // English: assigns the perception type chosen via typeahead and syncs TipoNombre.
+    private void AsignarTipoPercepcion(PercepcionManualEditor item, Guid? g)
     {
-        var tipo = tiposPercepcion.FirstOrDefault(t => t.Id == item.TipoPercepcionId);
+        if (!g.HasValue)
+            return;
+
+        item.TipoPercepcionId = g.Value;
+        var tipo = tiposPercepcion.FirstOrDefault(t => t.Id == g.Value);
         if (tipo != null)
             item.TipoNombre = tipo.Nombre;
-
-        return Task.CompletedTask;
     }
 
     private void AgregarDeduccion()
@@ -1299,7 +1440,9 @@
         if (!PuedeModificarNominaSeleccionada)
             return;
 
-        if (!Guid.TryParse(tipoDeduccionSeleccionadoId, out var tipoId))
+        // El typeahead escribe sobre el Guid?; el stringlegacy queda inerte.
+        // English: the typeahead writes to the Guid?; the legacy string stays inert.
+        if (tipoDeduccionSeleccionadoGuid is not Guid tipoId)
             return;
 
         var tipo = tiposDeduccion.FirstOrDefault(t => t.Id == tipoId);
@@ -1315,6 +1458,7 @@
             Orden = deduccionesEditando.Count + 1
         });
 
+        tipoDeduccionSeleccionadoGuid = null;
         tipoDeduccionSeleccionadoId = string.Empty;
     }
 
@@ -1328,16 +1472,20 @@
             deduccionesEditando[i].Orden = i + 1;
     }
 
-    private Task OnTipoDeduccionChanged(DeduccionEditor item)
+    // Asigna el tipo de deducción elegido vía typeahead; sincroniza TipoNombre y EsRetencionLegal.
+    // English: assigns the deduction type chosen via typeahead; syncs TipoNombre and EsRetencionLegal.
+    private void AsignarTipoDeduccion(DeduccionEditor item, Guid? g)
     {
-        var tipo = tiposDeduccion.FirstOrDefault(t => t.Id == item.TipoDeduccionId);
+        if (!g.HasValue)
+            return;
+
+        item.TipoDeduccionId = g.Value;
+        var tipo = tiposDeduccion.FirstOrDefault(t => t.Id == g.Value);
         if (tipo != null)
         {
             item.TipoNombre = tipo.Nombre;
             item.EsRetencionLegal = tipo.EsLegal;
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task GuardarPercepcionesDetalleAsync()
@@ -1369,55 +1517,12 @@
                 return;
             }
 
-            var existentes = await db.NominasPercepciones
-                .Where(p => p.NominaDetalleId == detallePercepcionSeleccionado.Id)
-                .ToListAsync();
-
-            var idsEditor = percepcionesEditando.Where(p => p.Id != Guid.Empty).Select(p => p.Id).ToHashSet();
-            var eliminar = existentes.Where(p => !idsEditor.Contains(p.Id)).ToList();
-            if (eliminar.Count > 0)
-                db.NominasPercepciones.RemoveRange(eliminar);
-
-            foreach (var item in percepcionesEditando)
+            var err = await PersistirPercepcionesAsync(db, detallePercepcionSeleccionado.Id);
+            if (err != null)
             {
-                if (item.Importe < 0)
-                {
-                    error = "Las percepciones manuales no pueden tener importe negativo.";
-                    return;
-                }
-
-                var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(p => p.Id == item.Id);
-                if (entity == null)
-                {
-                    entity = new NominaPercepcion
-                    {
-                        EmpresaId = _empresaId,
-                        NominaDetalleId = detallePercepcionSeleccionado.Id,
-                        TipoPercepcionId = item.TipoPercepcionId,
-                        Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
-                        Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim(),
-                        Importe = item.Importe,
-                        Origen = item.Origen,
-                        Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
-                        CreatedAt = DateTime.UtcNow,
-                        IsActive = true
-                    };
-                    db.NominasPercepciones.Add(entity);
-                }
-                else
-                {
-                    entity.TipoPercepcionId = item.TipoPercepcionId;
-                    entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
-                    entity.Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim();
-                    entity.Importe = item.Importe;
-                    entity.Origen = item.Origen;
-                    entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
-                    entity.UpdatedAt = DateTime.UtcNow;
-                }
+                error = err;
+                return;
             }
-
-            var nominaDetalle = await db.NominaDetalles.FirstAsync(d => d.Id == detallePercepcionSeleccionado.Id);
-            nominaDetalle.Bonos = TotalPercepcionesManualesEditando;
 
             await db.SaveChangesAsync();
             await Cargar();
@@ -1469,59 +1574,12 @@
                 return;
             }
 
-            var existentes = await db.NominasDeducciones
-                .Where(d => d.NominaDetalleId == detalleDeduccionSeleccionado.Id)
-                .ToListAsync();
-
-            var idsEditor = deduccionesEditando.Where(d => d.Id != Guid.Empty).Select(d => d.Id).ToHashSet();
-            var eliminar = existentes.Where(d => !idsEditor.Contains(d.Id)).ToList();
-            if (eliminar.Count > 0)
-                db.NominasDeducciones.RemoveRange(eliminar);
-
-            foreach (var item in deduccionesEditando)
+            var err = await PersistirDeduccionesAsync(db, detalleDeduccionSeleccionado.Id);
+            if (err != null)
             {
-                if (item.Importe < 0)
-                {
-                    error = "Las deducciones no pueden tener importe negativo.";
-                    return;
-                }
-
-                var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(d => d.Id == item.Id);
-                if (entity == null)
-                {
-                    entity = new NominaDeduccion
-                    {
-                        EmpresaId = _empresaId,
-                        NominaDetalleId = detalleDeduccionSeleccionado.Id,
-                        TipoDeduccionId = item.TipoDeduccionId,
-                        Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
-                        Importe = item.Importe,
-                        EsRetencionLegal = item.EsRetencionLegal,
-                        Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
-                        CreatedAt = DateTime.UtcNow,
-                        IsActive = true
-                    };
-                    db.NominasDeducciones.Add(entity);
-                }
-                else
-                {
-                    entity.TipoDeduccionId = item.TipoDeduccionId;
-                    entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
-                    entity.Importe = item.Importe;
-                    entity.EsRetencionLegal = item.EsRetencionLegal;
-                    entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
-                    entity.UpdatedAt = DateTime.UtcNow;
-                }
+                error = err;
+                return;
             }
-
-            var nominaDetalle = await db.NominaDetalles.FirstAsync(d => d.Id == detalleDeduccionSeleccionado.Id);
-            nominaDetalle.Deducciones = TotalDeduccionesEditando;
-            nominaDetalle.ConceptoDeducciones = deduccionesEditando.Count switch
-            {
-                0 => null,
-                1 => deduccionesEditando[0].TipoNombre,
-                _ => "Deducciones estructuradas"
-            };
 
             await db.SaveChangesAsync();
             await Cargar();
@@ -1542,6 +1600,128 @@
         {
             guardando = false;
         }
+    }
+
+    // Persiste las filas hijas de NominasPercepciones (alta/baja/edición) y el total
+    // denormalizado (NominaDetalle.Bonos) sobre la instancia trackeada del DbContext que se
+    // pase. Devuelve null en éxito o un mensaje de error (que el llamador pone en `error`).
+    // Reutilizado por GuardarPercepcionesDetalleAsync y por GuardarCambiosDetalle (cuando el
+    // editor de percepciones está abierto). English: persists the NominasPercepciones child
+    // rows (add/delete/edit) and the denormalized total (NominaDetalle.Bonos) on the tracked
+    // instance of the given DbContext. Returns null on success or an error message.
+    private async Task<string?> PersistirPercepcionesAsync(CrmDbContext db, Guid detalleId)
+    {
+        var existentes = await db.NominasPercepciones
+            .Where(p => p.NominaDetalleId == detalleId)
+            .ToListAsync();
+
+        var idsEditor = percepcionesEditando.Where(p => p.Id != Guid.Empty).Select(p => p.Id).ToHashSet();
+        var eliminar = existentes.Where(p => !idsEditor.Contains(p.Id)).ToList();
+        if (eliminar.Count > 0)
+            db.NominasPercepciones.RemoveRange(eliminar);
+
+        foreach (var item in percepcionesEditando)
+        {
+            if (item.Importe < 0)
+                return "Las percepciones manuales no pueden tener importe negativo.";
+
+            var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(p => p.Id == item.Id);
+            if (entity == null)
+            {
+                entity = new NominaPercepcion
+                {
+                    EmpresaId = _empresaId,
+                    NominaDetalleId = detalleId,
+                    TipoPercepcionId = item.TipoPercepcionId,
+                    Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
+                    Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim(),
+                    Importe = item.Importe,
+                    Origen = item.Origen,
+                    Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasPercepciones.Add(entity);
+            }
+            else
+            {
+                entity.TipoPercepcionId = item.TipoPercepcionId;
+                entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
+                entity.Referencia = string.IsNullOrWhiteSpace(item.Referencia) ? null : item.Referencia.Trim();
+                entity.Importe = item.Importe;
+                entity.Origen = item.Origen;
+                entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
+                entity.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // Mismo DbContext → el FirstAsync devuelve la instancia trackeada (existente), así el
+        // total denormalizado queda sobre la misma entidad que GuardarCambiosDetalle recalcula.
+        // English: same DbContext → FirstAsync returns the tracked instance, so the
+        // denormalized total lands on the same entity GuardarCambiosDetalle recalculates.
+        var nd = await db.NominaDetalles.FirstAsync(d => d.Id == detalleId);
+        nd.Bonos = TotalPercepcionesManualesEditando;
+        return null;
+    }
+
+    // Persiste las filas hijas de NominasDeducciones (alta/baja/edición) y los totales
+    // denormalizados (NominaDetalle.Deducciones + ConceptoDeducciones) sobre la instancia
+    // trackeada del DbContext. Devuelve null en éxito o un mensaje de error. Reutilizado por
+    // GuardarDeduccionesDetalleAsync y por GuardarCambiosDetalle. English: persists the
+    // NominasDeducciones child rows and the denormalized totals on the tracked instance.
+    private async Task<string?> PersistirDeduccionesAsync(CrmDbContext db, Guid detalleId)
+    {
+        var existentes = await db.NominasDeducciones
+            .Where(d => d.NominaDetalleId == detalleId)
+            .ToListAsync();
+
+        var idsEditor = deduccionesEditando.Where(d => d.Id != Guid.Empty).Select(d => d.Id).ToHashSet();
+        var eliminar = existentes.Where(d => !idsEditor.Contains(d.Id)).ToList();
+        if (eliminar.Count > 0)
+            db.NominasDeducciones.RemoveRange(eliminar);
+
+        foreach (var item in deduccionesEditando)
+        {
+            if (item.Importe < 0)
+                return "Las deducciones no pueden tener importe negativo.";
+
+            var entity = item.Id == Guid.Empty ? null : existentes.FirstOrDefault(d => d.Id == item.Id);
+            if (entity == null)
+            {
+                entity = new NominaDeduccion
+                {
+                    EmpresaId = _empresaId,
+                    NominaDetalleId = detalleId,
+                    TipoDeduccionId = item.TipoDeduccionId,
+                    Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim(),
+                    Importe = item.Importe,
+                    EsRetencionLegal = item.EsRetencionLegal,
+                    Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                db.NominasDeducciones.Add(entity);
+            }
+            else
+            {
+                entity.TipoDeduccionId = item.TipoDeduccionId;
+                entity.Descripcion = string.IsNullOrWhiteSpace(item.Descripcion) ? null : item.Descripcion.Trim();
+                entity.Importe = item.Importe;
+                entity.EsRetencionLegal = item.EsRetencionLegal;
+                entity.Observaciones = string.IsNullOrWhiteSpace(item.Observaciones) ? null : item.Observaciones.Trim();
+                entity.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        var nd = await db.NominaDetalles.FirstAsync(d => d.Id == detalleId);
+        nd.Deducciones = TotalDeduccionesEditando;
+        nd.ConceptoDeducciones = deduccionesEditando.Count switch
+        {
+            0 => null,
+            1 => deduccionesEditando[0].TipoNombre,
+            _ => "Deducciones estructuradas"
+        };
+        return null;
     }
 
     private async Task CargarTiposDeduccionBaseAsync()
@@ -2165,20 +2345,176 @@
         }
     }
 
-    // Filtro de visualización (sólo render; no muta detallesNomina, así los badges de resumen
-    // siguen sumando sobre todos). Acepta nombre, n° de empleado o código de checador.
-    // English: Display-only filter (render only; doesn't mutate detallesNomina, so the summary
-    // badges still sum over everyone). Matches name, employee number, or clock code.
+    // Pipeline client-side de la tabla por empleado (Fase A): filtra por columna (nombre,
+    // n° empleado, checador) → ordena → devuelve la lista completa filtrada/ordenada (sin
+    // paginar). Es sólo display: no muta detallesNomina, así los badges del header siguen
+    // sumando sobre todos. English: client-side pipeline for the per-employee table (Phase A):
+    // per-column filter (name, employee #, clock) → sort → returns the full filtered/sorted
+    // list (unpaged). Display only — doesn't mutate detallesNomina so header badges still
+    // sum over everyone.
     private IEnumerable<NominaDetalle> ObtenerDetallesVisiblesNomina()
     {
-        var filtro = filtroEmpleadosNomina?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(filtro))
-            return detallesNomina;
+        var query = detallesNomina.AsEnumerable();
 
-        return detallesNomina.Where(d =>
-            (d.Empleado?.NombreCompleto ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase)
-            || (d.Empleado?.NumeroEmpleado ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase)
-            || (d.Empleado?.CodigoChecador ?? string.Empty).Contains(filtro, StringComparison.OrdinalIgnoreCase));
+        var fn = (filtroNombreNomina ?? string.Empty).Trim();
+        if (fn.Length > 0)
+            query = query.Where(d => (d.Empleado?.NombreCompleto ?? string.Empty).Contains(fn, StringComparison.OrdinalIgnoreCase));
+
+        var fne = (filtroNumeroEmpleadoNomina ?? string.Empty).Trim();
+        if (fne.Length > 0)
+            query = query.Where(d => (d.Empleado?.NumeroEmpleado ?? string.Empty).Contains(fne, StringComparison.OrdinalIgnoreCase));
+
+        var fc = (filtroChecadorNomina ?? string.Empty).Trim();
+        if (fc.Length > 0)
+            query = query.Where(d => (d.Empleado?.CodigoChecador ?? string.Empty).Contains(fc, StringComparison.OrdinalIgnoreCase));
+
+        query = ordenColumnaNomina switch
+        {
+            "NumeroEmpleado" => ordenAscendenteNomina
+                ? query.OrderBy(d => d.Empleado?.NumeroEmpleado ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                : query.OrderByDescending(d => d.Empleado?.NumeroEmpleado ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+            "CodigoChecador" => ordenAscendenteNomina
+                ? query.OrderBy(d => d.Empleado?.CodigoChecador ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                : query.OrderByDescending(d => d.Empleado?.CodigoChecador ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+            "TotalIngresos" => ordenAscendenteNomina
+                ? query.OrderBy(d => ObtenerTotalIngresos(d))
+                : query.OrderByDescending(d => ObtenerTotalIngresos(d)),
+            "TotalPagar" => ordenAscendenteNomina
+                ? query.OrderBy(d => ObtenerTotalPagarPreview(d))
+                : query.OrderByDescending(d => ObtenerTotalPagarPreview(d)),
+            _ => ordenAscendenteNomina
+                ? query.OrderBy(d => d.Empleado?.Nombre ?? string.Empty).ThenBy(d => d.Empleado?.ApellidoPaterno ?? string.Empty)
+                : query.OrderByDescending(d => d.Empleado?.Nombre ?? string.Empty).ThenByDescending(d => d.Empleado?.ApellidoPaterno ?? string.Empty)
+        };
+
+        return query;
+    }
+
+    // Slice paginado de la tabla por empleado. tamanoPaginaEmpleados == 0 = "Todos" (sin
+    // paginar). English: paged slice of the per-employee table. tamanoPaginaEmpleados == 0
+    // = "All" (no paging).
+    private IEnumerable<NominaDetalle> ObtenerDetallesPaginaNomina()
+    {
+        var todos = ObtenerDetallesVisiblesNomina();
+        if (tamanoPaginaEmpleados <= 0)
+            return todos;
+        return todos.Skip((paginaEmpleados - 1) * tamanoPaginaEmpleados).Take(tamanoPaginaEmpleados);
+    }
+
+    private int TotalPaginasEmpleados => tamanoPaginaEmpleados <= 0
+        ? 1
+        : Math.Max(1, (int)Math.Ceiling(ObtenerDetallesVisiblesNomina().Count() / (double)tamanoPaginaEmpleados));
+
+    private void CambiarPaginaEmpleados(int delta)
+        => paginaEmpleados = Math.Clamp(paginaEmpleados + delta, 1, TotalPaginasEmpleados);
+
+    // Orden de la tabla por empleado — replica el patrón de Empleados.razor.cs.
+    // English: per-employee table sort — mirrors the Empleados.razor.cs pattern.
+    private void AlternarOrdenNomina(string columna)
+    {
+        if (ordenColumnaNomina == columna)
+            ordenAscendenteNomina = !ordenAscendenteNomina;
+        else
+        {
+            ordenColumnaNomina = columna;
+            ordenAscendenteNomina = true;
+        }
+        paginaEmpleados = 1;
+    }
+
+    private string IconoOrdenNomina(string columna) => ordenColumnaNomina == columna
+        ? (ordenAscendenteNomina ? "bi bi-sort-up" : "bi bi-sort-down")
+        : "bi bi-sort-down opacity-25";
+
+    // ── Lista de periodos: pipeline client-side (filtro + orden) y slice paginado.
+    //    English: period list: client-side pipeline (filter + sort) and paged slice.
+    private IEnumerable<Nomina> NominasFiltradas
+    {
+        get
+        {
+            var query = nominas.AsEnumerable();
+
+            var ft = (filtroPeriodoTexto ?? string.Empty).Trim();
+            if (ft.Length > 0)
+            {
+                query = query.Where(n =>
+                    (n.Folio ?? string.Empty).Contains(ft, StringComparison.OrdinalIgnoreCase)
+                    || (n.NumeroNomina ?? string.Empty).Contains(ft, StringComparison.OrdinalIgnoreCase)
+                    || (n.Periodo ?? string.Empty).Contains(ft, StringComparison.OrdinalIgnoreCase)
+                    || ObtenerClavePeriodo(n.PeriodicidadPago, n.AnioPeriodo, n.NumeroPeriodo).Contains(ft, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (filtroPeriodoEstatus.HasValue)
+                query = query.Where(n => n.Estatus == filtroPeriodoEstatus.Value);
+
+            if (filtroPeriodoAnio.HasValue)
+                query = query.Where(n => n.FechaInicio.Year == filtroPeriodoAnio.Value);
+
+            query = ordenColumnaLista switch
+            {
+                "Folio" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.Folio ?? string.Empty)
+                    : query.OrderByDescending(n => n.Folio ?? string.Empty),
+                "NumeroNomina" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.NumeroNomina ?? string.Empty)
+                    : query.OrderByDescending(n => n.NumeroNomina ?? string.Empty),
+                "FechaFin" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.FechaFin)
+                    : query.OrderByDescending(n => n.FechaFin),
+                "FechaPago" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.FechaPago ?? DateTime.MinValue)
+                    : query.OrderByDescending(n => n.FechaPago ?? DateTime.MinValue),
+                "Total" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.Detalles.Sum(d => d.TotalPagar))
+                    : query.OrderByDescending(n => n.Detalles.Sum(d => d.TotalPagar)),
+                "Estatus" => ordenAscendenteLista
+                    ? query.OrderBy(n => n.Estatus)
+                    : query.OrderByDescending(n => n.Estatus),
+                _ => ordenAscendenteLista
+                    ? query.OrderBy(n => n.FechaInicio)
+                    : query.OrderByDescending(n => n.FechaInicio)
+            };
+
+            return query;
+        }
+    }
+
+    private IEnumerable<Nomina> NominasVisibles
+        => NominasFiltradas.Skip((paginaLista - 1) * tamanoPaginaLista).Take(tamanoPaginaLista);
+
+    private int TotalPaginasLista => Math.Max(1, (int)Math.Ceiling(NominasFiltradas.Count() / (double)tamanoPaginaLista));
+
+    private void CambiarPaginaLista(int delta)
+        => paginaLista = Math.Clamp(paginaLista + delta, 1, TotalPaginasLista);
+
+    private void AlternarOrdenLista(string columna)
+    {
+        if (ordenColumnaLista == columna)
+            ordenAscendenteLista = !ordenAscendenteLista;
+        else
+        {
+            ordenColumnaLista = columna;
+            ordenAscendenteLista = true;
+        }
+        paginaLista = 1;
+    }
+
+    private string IconoOrdenLista(string columna) => ordenColumnaLista == columna
+        ? (ordenAscendenteLista ? "bi bi-sort-up" : "bi bi-sort-down")
+        : "bi bi-sort-down opacity-25";
+
+    // "Este año" como chip conmutable: enciende filtrando por el año actual, apaga limpiando
+    // el filtro de año. English: "This year" as a toggle chip: on filters by current year,
+    // off clears the year filter.
+    private bool FiltroEsteAnioActivo => filtroPeriodoAnio.HasValue && filtroPeriodoAnio.Value == DateTime.Today.Year;
+    private void AlternarEsteAnio() => filtroPeriodoAnio = FiltroEsteAnioActivo ? null : DateTime.Today.Year;
+
+    private void LimpiarFiltrosPeriodo()
+    {
+        filtroPeriodoTexto = string.Empty;
+        filtroPeriodoEstatus = null;
+        filtroPeriodoAnio = null;
+        paginaLista = 1;
     }
 
     // Réplica de RrhhTiempoExtraPolicy.ObtenerMinutosDescuentoTotal: retardo + salida +
@@ -2759,8 +3095,43 @@
             existente.MinutosSalidaAnticipada = detalle.MinutosSalidaAnticipada;
             existente.MinutosFaltanteDescontable = detalle.MinutosFaltanteDescontable;
             existente.MinutosDescuentoManual = detalle.MinutosDescuentoManual;
-            existente.Bonos = detalle.Bonos;
-            existente.Deducciones = detalle.Deducciones;
+            // Percepciones manuales y deducciones estructuradas viven como filas hijas
+            // (NominasPercepciones / NominasDeducciones). Si el editor correspondiente está
+            // abierto para este detalle, persistir las filas hijas y el total denormalizado
+            // (Bonos/Deducciones) desde el editor; si no, copiar el escalar del objeto en
+            // memoria. El helper escribe sobre la misma instancia trackeada (existente), así
+            // el recálculo de abajo ya ve el total correcto. English: manual perceptions
+            // and structured deductions live as child rows. If the corresponding editor is
+            // open for this detail, persist the child rows + denormalized total from the
+            // editor; otherwise copy the scalar from the in-memory object. The helper
+            // writes on the same tracked instance (existente) so the recalc below sees it.
+            if (detallePercepcionSeleccionado?.Id == detalle.Id)
+            {
+                var errP = await PersistirPercepcionesAsync(db, detalle.Id);
+                if (errP != null)
+                {
+                    error = errP;
+                    return;
+                }
+            }
+            else
+            {
+                existente.Bonos = detalle.Bonos;
+            }
+
+            if (detalleDeduccionSeleccionado?.Id == detalle.Id)
+            {
+                var errD = await PersistirDeduccionesAsync(db, detalle.Id);
+                if (errD != null)
+                {
+                    error = errD;
+                    return;
+                }
+            }
+            else
+            {
+                existente.Deducciones = detalle.Deducciones;
+            }
             // Override de observaciones del recibo: NotasManual vacío/blank = null (usa la
             // sugerencia automática Notas). No afecta TotalPagar ni el cálculo. English:
             // receipt observations override — blank NotasManual = null (uses auto Notas).
